@@ -520,6 +520,7 @@ paths = ["tests/backend/programs", "tests/conformance"]
 | `resolve` | `tools/resolve_check` | refused by the LOADER with exactly the expected codes |
 | `check` | `tools/check` | refused by the frontend — the type checker, a static analysis, expansion, derive, whichever the suite's directory names — with exactly the expected codes |
 | `accept` | `tools/check` | accepted in silence |
+| `object` | `llc` (after the compiler under test) | (1.5.1b step 3c, the workbench's O-N14) each module under the entry's path compiled ALONE to an object `llc` must accept, its undefined symbols the runtime's and `npk_failsafe` (§4.1); `stage_names` accepts the stage and `nitpick.toml` declares the suite (the row was missing from this table until landing 165, the library seat's note of 2026-10-29) |
 | `fixture` | the compiler under test | built like a program and never run; its uppercased stem becomes an `// argv:` token (a `.c` here is a reference driver built with the system C compiler — test tooling outside the TCB, D-149) |
 | `program` | the compiler under test | emitted, scanned, assembled, linked, run at -O0 and again through `opt -O2`, the same exit required |
 | `runtime` | `llc` + `ld.lld` | a hand-written `.ll` assembled, linked against the floor, run, its `expect-exit:` met |

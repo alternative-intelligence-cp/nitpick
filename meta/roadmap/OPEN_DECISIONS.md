@@ -3790,7 +3790,8 @@ defect declares a `DEF-` in §2f.
 > no file of src/, npkg/, lib/, tools/, the libraries, the applications or the fuzz corpus moves). The call-result direct-deref
 > face and the destroy-through-field face the matrix left open are DEF-309 and DEF-310.
 
-> **DEF-307 — OPEN (registered 2026-10-25 by `nitpick-compiler_48` at landing 162, measuring DEF-304's siblings; HIGH: a
+> **DEF-307 — FIXED 2026-10-29 (landing 165, with DEF-314, by `nitpick-compiler_51` (Fable); registered 2026-10-25 by
+> `nitpick-compiler_48` at landing 162, measuring DEF-304's siblings; HIGH: a
 > use-after-free in safe code at both legs). A POINTER INTO A `List` ELEMENT REACHED OTHER THAN SYNTACTICALLY `@l[i]` IS NOT
 > FROZEN AGAINST A REALLOCATION.** DEF-304 (landing 162) freezes a `List` against a reallocating operation while a plain
 > address `@l[i]` into one of its elements is live, raised SYNTACTICALLY by `place_is_list_element` reading the addressed
@@ -3811,6 +3812,42 @@ defect declares a `DEF-` in §2f.
 > (`wt/51a/.internal/probes/def307/`): u304j and u304b unchanged, 11/11 at both legs, silent on both checkers -- its mechanism is the
 > PARTY side (raising `PARTY_ELEM_ADDR` for a call-result or parameter-carried element address), not DEF-309's write side. PLACED by
 > management 2026-10-28: landing 165, with DEF-312 beside it, smallest first by size, both before M3.
+> *2026-10-29 (landing 165):* FIXED by `nitpick-compiler_51` (Fable) in alias.npk, with DEF-314, every face MEASURED FIRST on landing 164's
+> binaries (`wt/51a/.internal/probes/t165/`: `gen_t165.py`, `gen_t165b.py`, `gen_t165c.py`, the kept runner `run_sib.sh`; results `elem_164.txt`,
+> `elem2_164.txt`, `elem3_164.txt`; the reading `MEASURED_164.md`), each 11/11 at both legs under landing 164 (a negative length read through the
+> freed buffer) and `NITPICK-BORROW-015` at the operation now (`elem_165c.txt`, `elem2_165c.txt`, `elem3_165c.txt`): (j) the call-result element
+> pointer `m_c2_call_result_w1_grow_by_name` (u304j); (b) the address and the `List` pointer handed to one callee that grows and reads,
+> `m_c6_one_call_pushread` (u304b); an element addressed THROUGH a `List` pointer `e = @(<-lp0)[0i64]`, `m_c3_through_ptr_w1_grow_by_name`; the
+> address kept in a struct literal's field `PE{ p: @l[0i64] }`, `m_c7_in_struct_field_w1_grow_by_name`; and the c8 faces, folded in as DEF-307's own
+> on management's ruling of 2026-10-29 00:46 (option (a), no new number) -- a call-result element pointer kept in a struct field `PE{ p: raw first(@l) }`
+> (`m_c8_call_result_in_struct_field_w1`), in a nested struct (`m_c8b_nested_struct_w1`), a struct a callee builds around the address `raw mkpe(@l)`
+> (`m_c8d_callee_builds_struct_w1`), a struct assigned later (`m_c8e_struct_assigned_later_w1`), and a call-result pointer to a FIELD of the element
+> `string->:s = raw firsto(@l)` (`m_c8c_field_of_elem_ptr_w1`); with both sides through pointers `m_c2_call_result_w3_assign_call_deref`,
+> `m_c2_call_result_w5_assign_named_ptr_lpfirst`, `m_c3_through_ptr_w7_grow_through_ptr_lpfirst`. THE CAUSE (alias.npk): `party_kind_of` raised
+> `PARTY_ELEM_ADDR` for a BARE `@place` initialiser or assigned value alone (`place_is_list_element`), rooted at `place_root_symbol` --
+> `prescan_view_parties` returned early for a pointer holder and kept VIEW refs alone, so a call's result or a literal's field made no party; a party
+> rooted at a `List` pointer was never re-rooted at the `List`; an element-address argument was a plain admission for the call's duration. NOW:
+> `prescan_view_parties` raises the party off the holder's recorded refs -- a `REF_ADDR` whose place is a `List` element; for a POINTER holder a
+> `REF_ADDR` of a whole `List` whose type is not the holder's pointee (`H2->:e = raw first(@l)`: rule A, D-326, the result points INTO `l`; the
+> party's place the `List` itself); for an AGGREGATE holder the same when the holder's TYPE holds a pointer whose pointee is not the `List`
+> (`type_holds_elem_pointer`, `decreases fuel`, fuel 8: a pointer member not to the `List` yes; `dyn`, `any`, an enum with payloads, an unresolved
+> type and fuel out yes, DEF-54's closed direction; a struct, `Optional`, `Result`, array, slice or `List` when a member does; a scalar or a string no;
+> a pointer TO the `List` is D-286's plain party) --, `prescan_party` pushes one party per address (`pre_has_elem_party`) and marks a pointer root,
+> `acc_call`'s claim loop pushes a party of the `List` FOR THE CALL for an element-address argument (holder 0, gone at the call's end), and the
+> pointer readers judge the party (DEF-314): `check_pointer_view_parties` re-roots a party taken through a pointer at the pointer's target, its
+> `List` level carried across (`elem_party_level`). CONTROLS clean 0/0 under both compilers (twenty-two: k1-k5, k7, k9-k15, k16a-c, k17a-c, k18, k20,
+> k21 -- another `List`, the address's block ended, a fixed array, a `List` pointer only read through or handed to a reader, a write INTO another
+> element, the whole element or a method through the address's own pointer, a writer callee handed the address, two addresses to one callee, a
+> call-result element pointer writing its own field, a growth with no address live, a struct holding a pointer TO the `List` -- direct, through a
+> call, callee-built --, an element-type pointer not into this `List`, the element by value, the growth before the struct). ACCEPTED (D-286): k22 --
+> a MIXED holder `PX{ lp: @l, q: @g }`, a pointer TO the `List` beside an unrelated element-type pointer, is refused at the growth (clean on 164): a
+> `ViewRef` records the ADDRESSED place, not the holder's field it lands in, so the type reading cannot tell `q` from `lp`; the sweep finds 0 sites
+> of the shape; the same note covers the reading's conservative YES for an enum with payloads, `dyn`, `any`, an unresolved type and fuel out; k6
+> (a `List` pointer taken AFTER the element address and only read through, refused at the write-capable `@l`) stands as DEF-304's by-order false
+> positive; c5 (a copy out of an inner block, BORROW-002, D-004 rule 3) now also reports BORROW-015 at the growths under the copy, the safe
+> direction. TESTS: `tests/analysis/rejection/list_elem_ptr_through_pointer.npk` sites 12-18 (239:20, 249:20, 258:20, 266:36, 274:20, 283:20,
+> 292:20), 19-20 (302:6, 313:20) and k22 (324:20); the legal half in `tests/backend/programs/list_elem_ptr_through_pointer_ok.npk` (exits 11-32).
+> 0 TREE SITES (the sweep over the tree, the libraries, the applications and the fuzz corpus).
 
 > **DEF-308 — FIXED 2026-10-26 (landing 163; registered 2026-10-26 by `nitpick-compiler_49`, the VIEW twin of DEF-306, folded in
 > on management's GO 2026-10-26 11:33; HIGH: a use-after-free in safe code at both legs). A CALLEE THAT REPLACES THE WHOLE POINTEE,
@@ -3861,6 +3898,14 @@ defect declares a `DEF-` in §2f.
 > over 5,292 files: no file of `src/`, `npkg/`, `lib/`, `tools/`, the libraries, the applications or the fuzz corpus moves). The
 > two-level face through a call-result dereference (`(<-(raw idph(@ph))).p.o`, v309p, 113/113 under landing 163 and this compiler)
 > is DEF-312.
+> *2026-10-29 (landing 165):* two corrections from management's diff review of landing 164 (F5, F7) and the review's scope reading. The
+> sentence "a write at or below the dereference of a call-result pointer is checked against the views of and the lends on the storage it
+> reaches" held for the VIEW and LENT parties alone: the ELEMENT-ADDRESS party (DEF-304) was not admitted by `check_view_parties_at` until
+> landing 165 (DEF-314, FIXED there); a `Self->` METHOD whose receiver is the explicit dereference of a call result (DEF-315), a SLICE reached
+> through such a dereference (DEF-316) and the two-level family (DEF-312, widened by F3a/F3b) stay open, HIGH. `call_result_deref_write.npk`'s
+> header named `steps_below`, `check_rootless_pointer_targets` and `ptr_last_base` for what are `rootless_deref_base`, `path_steps`'s stop and
+> `check_pointer_targets`'s call-result arm -- rewritten in place at 165. And the one accepted double report (v309g) is the exception to
+> `acc_place`'s "one report per write", noted in its comment and the landing-164 gotcha at 165.
 
 > **DEF-310 — FIXED 2026-10-28 (landing 164, with DEF-309 and DEF-311, by `nitpick-compiler_51` (Fable); registered 2026-10-26 by
 > `nitpick-compiler_49` at landing 163, found by the DEF-306/308 matrix; HIGH: a use-after-free / double free in safe code at both
@@ -3905,6 +3950,11 @@ defect declares a `DEF-` in §2f.
 > call result rooted at it; the view's block ended before the write). The matrix's `param_call_result` path (19 cells over the lend,
 > view and task sides) all REFUSED. The redone chain is the guard this fix landed under (management, 21:09): it changes every rule A
 > query for a parameter-rooted call result, and the sweep moved no site outside the landing's own rejection files and no emission.
+> *2026-10-29 (landing 165):* a wording correction (management's review of 164, F5): "no ref, no target" is true because nothing had recorded a
+> chain for the KIND the stale `cur_fn` made the parameter read as -- a `for` binding -- not because a parameter's chain is empty; and rule A
+> answers a pointer PARAMETER as the parameter ITSELF (a bare `REF_PASS` of it, `escape_pointer_targets`), not "a parameter's chain": a chain is the
+> escape pass's record of what a LOCAL's pointee holds (`pointer_targets_of`), and a parameter's pointee is the caller's. The fix stands as described.
+> A store THROUGH a pointer parameter into its pointee, recorded on no chain the slice resolver reads, is DEF-313 (M3).
 
 > **DEF-312 — OPEN (registered 2026-10-28 by `nitpick-compiler_51` (Fable) at landing 164, found measuring DEF-309's siblings; HIGH:
 > a use-after-free in safe code at both legs, SILENT on landing 163 and on landing 164). A POINTER FIELD OF A CALL-RESULT POINTER'S
@@ -3920,6 +3970,91 @@ defect declares a `DEF-` in §2f.
 > member against each target's chain as `ptr_inner_base` resolves a named two-level pointer (≈40-60 lines, alias.npk); the matrix's
 > two cells then flip to REFUSED and the check FAILS -- the signal to empty its KNOWN_LIMIT map. Placed by management 2026-10-28
 > beside DEF-307 (landing 165), smallest first by size, both before M3. Please write none.
+> *2026-10-29 (landing 165):* WIDENED by management's diff review of landing 164 (its F3a and F3b, numbered by `management_4` 2026-10-28 22:43),
+> each 113/113 under landing 163's and 164's compilers (`wt/51a/.internal/probes/rev164/f3a_two_level_double_deref.npk`,
+> `f3b_two_level_field_explicit_deref.npk`): F3a `(<-(<-(raw idpp(@hp)))).o = …` -- a call-result POINTER-TO-POINTER through two explicit
+> dereferences, under a view of `h.o`; F3b `(<-((<-(raw idph(@ph))).p)).o = …` -- v309p respelled with an explicit dereference of the pointer FIELD.
+> The family is the rootless two-level write, auto- or explicit dereference, pointer field or pointer-to-pointer: `rootless_deref_base` answers
+> the OUTER dereference's operand and the inner pointer hop is never re-resolved. Recorded by probe path; the kept matrix's KNOWN-LIMIT stays its
+> two cells by exact id (add F3a's and F3b's spellings as cells with the fix, so they flip with the others). Placed as landing 167 (management_4,
+> 22:43), after 166 (DEF-315 + DEF-316 + DEF-317), before M3. Please write none.
+
+> **DEF-313 — OPEN (registered 2026-10-28 by `nitpick-compiler_51` (Fable) from management's diff review of landing 164, its F5; the number from
+> `management_4` at 22:43; HIGH: a use-after-free in safe code at both legs, SILENT on landing 163 and 164). A STORE THROUGH A POINTER PARAMETER
+> INTO ITS POINTEE IS RECORDED ON NO CHAIN THE SLICE RESOLVER READS.** `func:f = int32(B->:bp, P->:p2) never fails { bp.sl = p2.arr[0i64...2i64];
+> fixed uint8[]:vw = string_bytes(p2.arr[0i64].o); drop wsl(raw getsl(bp)); … }` -- `wsl(H2[]:s)` writing `s[0i64].o`, `getsl(B->:q) = q.sl` --
+> compiles and reads 113 at both legs (`wt/51a/.internal/probes/rev164/f5_param_slice_view.npk`); so does the slice field handed BY NAME, `wsl(bp.sl)`
+> (`t165/d313/d313d_param_store_field_by_name.npk`, 113/113), the store in the CALLER with the view and the write in the callee through two
+> parameters (d313e, 113/113), and the store through the parameter with the call-result slice through a LOCAL COPY of the parameter pointer (d313f,
+> 113/113). THE CAUSE: the store `bp.sl = p2.arr[…]` goes THROUGH a pointer PARAMETER into its pointee -- the caller's storage -- and is recorded on
+> no chain the slice resolver (`escape_slice_targets`, DEF-297/DEF-301) reads: the store `b.sl = …` by name is recorded (d313c, BORROW-015, the
+> control), a store through a LOCAL pointer is BORROW-002 at the store (d313a, D-004 rule 3), a store through a parameter is neither -- the
+> STORE-MATRIX DESTINATION question of DEF-289's class, M3's. 0 TREE SITES. Fix direction: DEF-299's local-chain-recorder step records a store
+> through a pointer parameter on the pointee's chain as the caller's own store would be, and the cross-call face (d313e) is M3's store matrix.
+> JOINS M3 (DEF-298 + DEF-299) by management's placement of 2026-10-28 22:52, after landings 165-167. The local carrier face found beside it
+> (d313b) is DEF-317. Please write none.
+
+> **DEF-314 — FIXED 2026-10-29 (landing 165, with DEF-307, by `nitpick-compiler_51` (Fable); registered 2026-10-28 by `nitpick-compiler_51` from
+> management's diff review of landing 164, its F4a-F4d, the number from `management_4` at 22:43; HIGH: a use-after-free in safe code at both legs,
+> SILENT on landing 162, where DEF-304 landed, and on 163 and 164). A `List` FROZEN BY A LIVE ELEMENT ADDRESS WAS NOT FROZEN AGAINST AN OPERATION
+> REACHED THROUGH A POINTER.** DEF-304 (landing 162) raised `PARTY_ELEM_ADDR` for a live `@l[i]` and judged it in `check_access_reported`'s
+> same-root loop -- the by-name operation (`list_push(@l, …)`, `l = …`). Every operation reached THROUGH a pointer to the `List` resolves through
+> `check_view_parties_at` (DEF-302's named-pointer route, DEF-305's call-result arm, DEF-309's deref arm, the callee-summary route) or
+> `check_pointer_view_parties`, and both admitted VIEW (and LENT) parties alone -- so with `H2->:e = @l[0i64];` live,
+> `(<-(raw idl(@l))) = raw list_init::<H2>(1i64);` (F4a, w3), `move(<-(raw idl(@l)))` (F4b, w4), `list_push(raw idl(@l), …)` (w8), and through
+> `List<H2>->:lp = @l;` taken first `(<-lp) = …` (F4c, w5), `rep(lp)` replacing the pointee (F4d, w6), `list_push(lp, …)` (w7), `grow(lp)` (w9),
+> `list_clear(lp)` (w10), `raw list_pop(lp)` (w11), `list_truncate(lp, 0i64)` (w12) and `list_reserve(lp, 64i64)` (w13) each compiled and read the
+> freed buffer at both legs (11/11 or 10/10; w11 0/0, unjudged -- `wt/51a/.internal/probes/t165/elem_164.txt`, `elem2_164.txt`). FIXED HERE
+> (alias.npk): `check_view_parties_at` admits `PARTY_ELEM_ADDR` beside VIEW and LENT and gains `own`, the bare pointer binding the write goes
+> through (`check_pointer_targets` passes it for a named pointer, 0 for a call result): a write through the address's own holder, or strictly
+> below the elements (`write_into_elements` at the party's `elem_party_level` -- into a PART of an element, `(<-lp)[1i64].k`, the summary's
+> `items/x/f…`, which moves no buffer), is exempt; every other write reaches `report_elem_addr_conflict`. `check_pointer_view_parties` admits it
+> too (the party taken through a pointer, re-rooted at the pointer's target as a view is, its `List` level carried across). `NITPICK-BORROW-015`
+> at the operation. TESTS: `tests/analysis/rejection/list_elem_ptr_through_pointer.npk` sites 01-11 (131:6, 140:23, 150:20, 160:6, 170:14,
+> 180:20, 190:15, 200:21, 210:26, 220:24, 230:23) and 19 (302:6); the legal half's k7 (a write INTO another element through the pointer), k9 and k10
+> (the whole element and a method through the address's own pointer) and k15 (a growth through a call-result pointer with no address live) in
+> `list_elem_ptr_through_pointer_ok.npk`. 0 TREE SITES (the sweep). A `List` pointer taken AFTER the element address was refused at the
+> write-capable `@l` already (DEF-304's by-order reading; k6 the known false positive, D-286).
+
+> **DEF-315 — OPEN (registered 2026-10-28 by `nitpick-compiler_51` (Fable) from management's diff review of landing 164, its F1 and F1-lend; the
+> number from `management_4` at 22:43; HIGH: a use-after-free and a data race in safe code, SILENT on landing 163 and 164). A `Self->` METHOD
+> WHOSE RECEIVER IS THE EXPLICIT DEREFERENCE OF A CALL-RESULT POINTER IS NOT RESOLVED TO THE POINTEE.** `fixed uint8[]:vw = string_bytes(h.s);
+> drop (<-(raw ids(@h))).sset();` -- `sset(S->:self)` writing `self.s` -- compiles and reads 113 at both legs
+> (`wt/51a/.internal/probes/rev164/f1_method_on_deref_call.npk`), where the receiver spelled as the call result itself, `(raw ids(@h)).sset()`, is
+> BORROW-015 (DEF-305's receiver arm, landing 161) and `h.sset()` by name is BORROW-015 (D-325). The lend twin: `drop filler(@w.a, …);
+> drop (<-(raw idw(@w))).rep();` -- `rep(W->:self)` doing `self.a = shared_arena_make(4i64)` -- replaces the lent arena under its task
+> (`f1l_method_on_deref_call_lend.npk`; a race seen about once in twenty runs at each leg, exit 107 or 114, `f1l_race_20x.txt`). THE CAUSE
+> (alias.npk, `acc_call`): the receiver branch asks the receiver's shape -- a pointer-typed place chain, a bare call result -- and an explicit
+> DEREFERENCE of a call result is neither: its type is the pointee's (a struct), its root is 0, and DEF-309's `rootless_deref_base` route serves
+> `acc_place`'s WRITE and EXCLUSIVE places, not a method receiver; so the receiver is admitted as a plain read and the method's summary write of
+> `self.s` is judged against nothing. 0 TREE SITES. Fix direction: in `acc_call`'s receiver branch, a receiver whose place has a rootless
+> dereference base (`rootless_deref_base`) is resolved like DEF-309's write -- the base to its targets by rule A (`escape_pointer_targets`), the
+> summary's writes composed onto each target, checked by `check_view_parties_at` and `check_pointer_view_parties` (about 20-30 lines, alias.npk).
+> Landing 166 with DEF-316 and DEF-317 (management_4, 2026-10-28 22:43 and 22:52). Please write none.
+
+> **DEF-316 — OPEN (registered 2026-10-28 by `nitpick-compiler_51` (Fable) from management's diff review of landing 164, its F2; the number from
+> `management_4` at 22:43; HIGH: a use-after-free in safe code at both legs, SILENT on landing 163 and 164). A SLICE REACHED THROUGH THE
+> DEREFERENCE OF A CALL-RESULT POINTER IS NOT READ FOR THE STORAGE IT SPANS.** `H2[]:t = arr[0i64...2i64]; fixed uint8[]:vw =
+> string_bytes(arr[0i64].o); (<-(raw idsl(@t)))[0i64].o = string_concat("x", "y");` -- `idsl(H2[]->:q) = q` -- compiles and reads 113 at both legs
+> (`wt/51a/.internal/probes/rev164/f2_slice_elem_through_call_slice_ptr.npk`), where the named twin `(<-tp)[0i64].o = …` is BORROW-015 (DEF-305's
+> `escape_slice_targets_through_pointer`, landing 161) and `t[0i64].o = …` is BORROW-015 (DEF-297/DEF-301). THE CAUSE (escape.npk, alias.npk):
+> the slice readers walk inward from the slice base to the first POINTER-typed sub-expression and resolve a NAMED pointer to its pointee's chain;
+> a dereferenced CALL RESULT has no chain -- `escape_slice_targets_through_pointer` finds the pointer `raw idsl(@t)` but reads it as a binding,
+> and `check_slice_targets` is never handed rule A's answer (`escape_pointer_targets`), which does know the result points at `t`. 0 TREE SITES.
+> Fix direction: in the slice resolver, a call-result pointer on the base's path resolves by `escape_pointer_targets` to its pointee(s), each
+> read for its runs as the named pointer's pointee is (about 15-25 lines, escape.npk). Landing 166 with DEF-315 and DEF-317. Please write none.
+
+> **DEF-317 — OPEN (registered 2026-10-28 by `nitpick-compiler_51` (Fable) measuring DEF-313's siblings, the probe d313b; the number from
+> `management_4` at 22:52; HIGH: a use-after-free in safe code at both legs, SILENT on landing 163 and 164). A CALL-RESULT SLICE WHOSE PROVENANCE
+> IS A STRUCT'S SLICE FIELD IS NOT READ FOR THE RUNS THE FIELD SPANS.** `B:b = B{ sl: p.arr[0i64...1i64] }; b.sl = p.arr[0i64...2i64];
+> fixed uint8[]:vw = string_bytes(p.arr[0i64].o); drop wsl(raw getsl(@b));` -- `getsl(B->:q) = q.sl`, `wsl(H2[]:s)` writing `s[0i64].o` --
+> compiles and reads 113 at both legs (`wt/51a/.internal/probes/t165/d313/d313b_name_store_call_slice_addr.npk`), where the field handed by name,
+> `wsl(b.sl)`, is BORROW-015 (d313c, DEF-297's reader). THE CAUSE (escape.npk): the call's result borrows `b` WHOLE (a `REF_PASS` of the address
+> handed in, a view CARRIER), and `escape_slice_targets`'s call-result reader never re-reads the carrier's chain for the runs its slice FIELD spans
+> -- the reading `escape_slice_targets_through_pointer` does for a pointer on the base's path, not for a carrier reached by provenance. 0 TREE
+> SITES. Fix direction: when a call-result slice's ref is a struct carrier, read the carrier's chain (`push_binding_refs`, `escape_ref_is_run_of`)
+> for runs of the slice's element (about 15-25 lines, escape.npk). Landing 166 with DEF-315 and DEF-316 (management_4, 2026-10-28 22:52). The
+> parameter faces measured beside it (F5, d313d, d313e, d313f) are DEF-313's, M3's. Please write none.
 
 > **DEF-157 — FIXED at 1.6.1e step 1 (2026-09-26; found by the step's DEF-148 probes, registered and fixed the
 > same day). `destroy` THROUGH A POINTER FREED THE ARENA THE OWNER'S SCOPE EXIT FREED AGAIN** — `MachineFault`

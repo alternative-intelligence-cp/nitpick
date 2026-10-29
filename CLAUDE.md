@@ -8,16 +8,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   listener's and the fuzzer's findings, safety before correctness before performance. Cycles 0.0–1.5 are complete
   (`meta/roadmap/done/`); 1.4 made the compiler self-hosting (D-202) and 1.5 made the verification leg (`npkg verify`, the floor's
   specification and models, the schedule explorer).
-- **main = landing 164** — DEF-309 + DEF-310 + DEF-311 (a write at or below the dereference of a call-result pointer is resolved to the
-  pointer's target, in the lend and the view domains; `destroy` through any pointer, slice or handle on the receiver's path is TYPE-091; and
-  rule A reads a pointer PARAMETER's root from the aliasing pass, where the escape state's `cur_fn` had gone stale -- three use-after-frees in
-  safe code closed in twenty-two spellings, no safe shape refused; DEF-312 registered, HIGH). Every landing's full paragraph — the defect, what was measured first, the rule now, the
+- **main = landing 165** — DEF-307 + DEF-314 (a pointer into a `List` element freezes the `List` however the address is obtained -- a call's
+  result, through a `List` pointer, kept in a struct, handed to a call -- and a reallocating, replacing, moving or dropping operation reached
+  THROUGH a pointer to the `List` meets the live element addresses, BORROW-015 at the operation: two use-after-frees in safe code closed in
+  twenty-three measured cells, no safe shape refused, one known false positive of the type reading accepted (k22); DEF-313, DEF-315, DEF-316,
+  DEF-317 registered OPEN HIGH, DEF-312 widened). Every landing's full paragraph — the defect, what was measured first, the rule now, the
   tests, the sweep, the emission comparison, the manifest — is at the top of `meta/STATUS_HISTORY.md`, newest first; the cycle history
   0.0–1.5 follows it there. Read the newest few before planning work.
-- **The queue:** DEF-307 (HIGH: a `List`-element pointer reached other than syntactically -- a call's result, or carried into a callee that
-  reallocates through a pointer parameter; landing 165) and DEF-312 (HIGH: a pointer field of a call-result pointer's pointee written through
-  below the dereference, two levels; registered at 164) by size, smallest first, both before M3; then DEF-298 + DEF-299 (HIGH: DEF-289's class's
-  last two faces, with their pointer twins, s302k/s302l, and the fuzz seat's (A) face q05 as DEF-299's local two-level cell -- M3, the
+- **The queue:** landing 166 = DEF-315 + DEF-316 + DEF-317 (HIGH: a `Self->` method whose receiver is the explicit dereference of a call result,
+  under a view or a lend of the pointee; a slice element written through the dereference of a call-result pointer to a slice local; a
+  call-result slice carried by a local struct's slice field -- each measured 113/113, `wt/51a/.internal/probes/rev164/`, `t165/d313/`), then
+  landing 167 = DEF-312 widened (HIGH: a pointer field of a call-result pointer's pointee written two levels down, and its explicit-deref and
+  pointer-to-pointer spellings F3a/F3b), then DEF-298 + DEF-299 (HIGH: DEF-289's class's last two faces, with their pointer twins, s302k/s302l,
+  the fuzz seat's (A) face q05 and DEF-313 -- a store through a pointer PARAMETER into its pointee, recorded on no chain -- as M3, the
   store-matrix destination path, the census first), then DEF-286 (function types keyed by content; the libraries' next re-pin waits for it and
   carries every safety fix) -- management's order of 2026-10-28, safety before performance -- then DEF-292, DEF-293, DEF-294,
   DEF-291, DEF-295, D-358 (Fable's), step 3d's rest (DEF-239), step 4. The plan of record is `meta/roadmap/` (start at `ROADMAP.md`; cycle
@@ -296,6 +299,7 @@ Five more, each a 1.4 debugging cycle:
 - Resolve a rootless (call-result) pointer by its provenance (`escape_pointer_targets`), not a place-chain reader; follow a pointer under a slice to the pointee's chain — see "A call-result pointer has no place chain, and a slice through a pointer reads the pointee's chain"
 - Model a freeze-against-write party on the VIEW party (VIEW-like, `summary_judged`), never a standalone kind — see "A new aliasing party that must conflict with writes is VIEW-LIKE, not a standalone kind"
 - Set `x.esc.cur_fn` when the aliasing pass asks an escape reader (DEF-311); resolve a deref write through `rootless_deref_base` (DEF-309); test every node of a `destroy` receiver's path (DEF-310) — see "An escape reader asked from another pass needs the function it reads SET, and a place written at or below a dereference is resolved through the pointer below it"
+- Raise a new VIEW-like party wherever a view is raised (`prescan_view_parties`, `acc_call`) and admit it wherever a view is judged (`check_view_parties_at`, `check_pointer_view_parties`) — see "An element-address party is raised wherever a holder's refs carry one and judged by every pointer reader, as a view is"
 - Resolve a spawn's pointer argument and a whole-pointee write's pointer to their target (`lend_through_pointer`, `ptr_place_written_whole`) — see "A spawn's lend and a view of a pointee conflict with a write through an aliased pointer, the pointer resolved to its target"
 
 ### Reserved words that read like ordinary names

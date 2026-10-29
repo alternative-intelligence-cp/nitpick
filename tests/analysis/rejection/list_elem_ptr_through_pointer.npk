@@ -1,0 +1,368 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 131:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 140:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 150:20
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 160:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 170:14
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 180:20
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 190:15
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 200:21
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 210:26
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 220:24
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 230:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 239:20
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 249:20
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 258:20
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 266:36
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 274:20
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 283:20
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 292:20
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 302:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 313:20
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 324:20
+mod:list_elem_ptr_through_pointer;
+// A POINTER INTO A `List` ELEMENT REACHED OTHER THAN SYNTACTICALLY, OR A `List`
+// REALLOCATED THROUGH A POINTER (DEF-307 + DEF-314, landing 165; the twins of
+// DEF-304's `@l[i]` + by-name operation). DEF-304 (landing 162) froze a `List`
+// against a reallocating, replacing, moving or dropping operation BY NAME while
+// a syntactic `@l[i]` was live. Two faces stayed open, each a use-after-free in
+// safe code at both legs on every compiler to date (`wt/51a/.internal/probes/
+// t165/elem*`, exit 10/11 under landing 164): the OPERATION reached the `List`
+// through a POINTER (a named `List<H2>->`, a call's result, a callee handed the
+// pointer) and the PARTY was raised only at `@l[i]`, never for an element
+// address obtained through a call's result, through a `List` pointer, or
+// carried in a struct, a copy or a call argument. Now the element-address party
+// is judged by the pointer readers (`check_view_parties_at`,
+// `check_pointer_view_parties`: a write resolved through a pointer to the `List`
+// conflicts unless it goes STRICTLY INTO an element -- `(<-lp)[1].k` moves no
+// buffer -- or through the address's own holder), and it is raised off a
+// holder's recorded refs (`prescan_view_parties`: a REF_ADDR of a `List` element,
+// or `@l` carried into a pointer whose pointee is not the `List`, or into an
+// AGGREGATE whose type holds such a pointer, `type_holds_elem_pointer`) and for
+// an element-address ARGUMENT (`acc_call`). Every site is `NITPICK-BORROW-015`.
+//
+//   DEF-314, the operation through a pointer (the syntactic `@l[0i64]` live):
+//   01  the whole `List` assigned through a call-result dereference     at the assignment
+//   02  the whole `List` moved out through a call-result dereference    at the move
+//   03  grown through a call-result pointer (`list_push(raw idl(@l), …)`) at the push
+//   04  the whole `List` assigned through a named pointer `(<-lp) = …`   at the assignment
+//   05  a callee REPLACING the whole pointee, handed the named pointer   at the call
+//   06  grown through the named pointer (`list_push(lp, …)`)             at the push
+//   07  a callee GROWING the `List` through the pointer it is handed      at the call
+//   08  cleared through the pointer                                      at the clear
+//   09  popped through the pointer                                       at the pop
+//   10  truncated through the pointer                                    at the truncate
+//   11  reserved (reallocated) through the pointer                       at the reserve
+//   DEF-307, the party raised other than at `@l[i]` (the `List` grown by name):
+//   12  a call-result element pointer `raw first(@l)` (u304j)            at the push
+//   13  an element addressed THROUGH a `List` pointer `@(<-lp0)[0i64]`   at the push
+//   14  the address kept in a struct literal's field `PE{ p: @l[0i64] }` at the push
+//   15  the address and the `List` pointer handed to ONE callee that
+//       grows and reads (u304b, `pushread(@l[0i64], @l)`)                at the call
+//   16  a call-result element pointer kept in a struct field (c8)        at the push
+//   17  a struct a CALLEE builds around the element address (c8d)        at the push
+//   18  a call-result pointer to a FIELD of the element, `string->` (c8c) at the push
+//   both sides through pointers:
+//   19  a call-result element pointer, the `List` assigned through a
+//       named pointer                                                    at the assignment
+//   20  an element addressed through one `List` pointer, the `List` grown
+//       through ANOTHER, taken first                                     at the push
+//   the accepted false positive of the type reading (management_4, 2026-10-29
+//   00:58:57; k22, 0 tree sites):
+//   21  a MIXED holder, a pointer TO the `List` beside an unrelated
+//       element-type pointer (`PX{ lp: @l, q: @g }`): the holder's TYPE holds
+//       a pointer whose pointee is not the `List`, and a view ref records the
+//       ADDRESSED place, not the holder's field it lands in, so the reading
+//       cannot tell `q` from `lp` and refuses the growth                 at the push
+//
+// Refused by DEF-304 already, so not sites here: a copy of the element pointer
+// in the SAME block (`e = e0`: `e0`'s own party is live) and the `List` grown
+// through the SAME pointer the element was addressed through (one root). A
+// `List` pointer taken AFTER the element address and only READ through is
+// refused at the write-capable `@l` already (DEF-304, landing 162: the by-order
+// false positive k6, 0 tree sites, recorded under D-286). The legal half --
+// another element written INTO through the pointer, the whole element through
+// the address's own pointer, a method receiver, a writer callee handed the
+// address, a `List` pointer handed to a reader, a struct holding a pointer TO
+// the `List`, the element by value, another `List`'s element, the holder's block
+// ended -- is `list_elem_ptr_through_pointer_ok.npk`.
+struct:H2 = { string:o; int64:k; };
+struct:PE = { H2->:p; int32:k; };
+struct:PS = { string->:s; int32:k; };
+struct:PX = { List<H2>->:lp; H2->:q; };
+func:idl = List<H2>->(List<H2>->:q) never fails { pass q; };
+func:first = H2->(List<H2>->:lp) never fails { pass @(<-lp)[0i64]; };
+func:firsto = string->(List<H2>->:lp) never fails { pass @(<-lp)[0i64].o; };
+func:mkpe = PE(List<H2>->:lp) never fails { pass PE{ p: @(<-lp)[0i64], k: 1i32 }; };
+func:rep = NIL(List<H2>->:q) never fails { (<-q) = raw list_init::<H2>(1i64); pass NIL; };
+func:grow = NIL(List<H2>->:q) never fails { drop list_push(q, H2{ o: string_concat("c", "d"), k: 3i64 }); pass NIL; };
+func:pushread = int64(H2->:e, List<H2>->:lp) never fails {
+    drop list_push(lp, H2{ o: string_concat("c", "d"), k: 3i64 });
+    drop list_push(lp, H2{ o: string_concat("e", "f"), k: 4i64 });
+    pass e.o.len;
+};
+func:one = NIL(List<H2>->:q) never fails { drop list_push(q, H2{ o: string_concat("a", "b"), k: 1i64 }); pass NIL; };
+
+// 01
+func:assign_call_deref = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    H2->:e = @l[0i64];
+    (<-(raw idl(@l))) = raw list_init::<H2>(1i64);
+    discard(e.o.len);
+    pass NIL;
+};
+// 02
+func:move_call_deref = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    H2->:e = @l[0i64];
+    List<H2>:m = move(<-(raw idl(@l)));
+    discard(e.o.len);
+    discard(m.count);
+    pass NIL;
+};
+// 03
+func:grow_call_result = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    H2->:e = @l[0i64];
+    drop list_push(raw idl(@l), H2{ o: string_concat("c", "d"), k: 3i64 });
+    discard(e.o.len);
+    pass NIL;
+};
+// 04
+func:assign_named_ptr = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    List<H2>->:lp = @l;
+    H2->:e = @l[0i64];
+    (<-lp) = raw list_init::<H2>(1i64);
+    discard(e.o.len);
+    pass NIL;
+};
+// 05
+func:callee_replaces = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    List<H2>->:lp = @l;
+    H2->:e = @l[0i64];
+    drop rep(lp);
+    discard(e.o.len);
+    pass NIL;
+};
+// 06
+func:grow_through_ptr = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    List<H2>->:lp = @l;
+    H2->:e = @l[0i64];
+    drop list_push(lp, H2{ o: string_concat("c", "d"), k: 3i64 });
+    discard(e.o.len);
+    pass NIL;
+};
+// 07
+func:callee_grows = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    List<H2>->:lp = @l;
+    H2->:e = @l[0i64];
+    drop grow(lp);
+    discard(e.o.len);
+    pass NIL;
+};
+// 08
+func:clear_through_ptr = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    List<H2>->:lp = @l;
+    H2->:e = @l[0i64];
+    drop list_clear(lp);
+    discard(e.o.len);
+    pass NIL;
+};
+// 09
+func:pop_through_ptr = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    List<H2>->:lp = @l;
+    H2->:e = @l[0i64];
+    discard(raw list_pop(lp));
+    discard(e.o.len);
+    pass NIL;
+};
+// 10
+func:truncate_through_ptr = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    List<H2>->:lp = @l;
+    H2->:e = @l[0i64];
+    drop list_truncate(lp, 0i64);
+    discard(e.o.len);
+    pass NIL;
+};
+// 11
+func:reserve_through_ptr = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    List<H2>->:lp = @l;
+    H2->:e = @l[0i64];
+    drop list_reserve(lp, 64i64);
+    discard(e.o.len);
+    pass NIL;
+};
+// 12
+func:call_result_elem = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    H2->:e = raw first(@l);
+    drop list_push(@l, H2{ o: string_concat("c", "d"), k: 3i64 });
+    discard(e.o.len);
+    pass NIL;
+};
+// 13
+func:elem_through_list_ptr = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    List<H2>->:lp0 = @l;
+    H2->:e = @(<-lp0)[0i64];
+    drop list_push(@l, H2{ o: string_concat("c", "d"), k: 3i64 });
+    discard(e.o.len);
+    pass NIL;
+};
+// 14
+func:addr_in_struct_field = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    PE:pe = PE{ p: @l[0i64], k: 1i32 };
+    drop list_push(@l, H2{ o: string_concat("c", "d"), k: 3i64 });
+    discard(pe.p.o.len);
+    pass NIL;
+};
+// 15
+func:one_callee_grows_and_reads = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    discard(raw pushread(@l[0i64], @l));
+    pass NIL;
+};
+// 16
+func:call_result_in_struct_field = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    PE:pe = PE{ p: raw first(@l), k: 1i32 };
+    drop list_push(@l, H2{ o: string_concat("c", "d"), k: 3i64 });
+    discard(pe.p.o.len);
+    pass NIL;
+};
+// 17
+func:callee_builds_struct = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    PE:pe = raw mkpe(@l);
+    drop list_push(@l, H2{ o: string_concat("c", "d"), k: 3i64 });
+    discard(pe.p.o.len);
+    pass NIL;
+};
+// 18
+func:field_of_elem_ptr_in_struct = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    PS:ps = PS{ s: raw firsto(@l), k: 1i32 };
+    drop list_push(@l, H2{ o: string_concat("c", "d"), k: 3i64 });
+    discard((<-ps.s).len);
+    pass NIL;
+};
+// 19
+func:call_result_elem_assign_named_ptr = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    List<H2>->:lp = @l;
+    H2->:e = raw first(@l);
+    (<-lp) = raw list_init::<H2>(1i64);
+    discard(e.o.len);
+    pass NIL;
+};
+// 20
+func:elem_through_ptr_grown_through_other_ptr = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    List<H2>->:lp = @l;
+    List<H2>->:lp0 = @l;
+    H2->:e = @(<-lp0)[0i64];
+    drop list_push(lp, H2{ o: string_concat("c", "d"), k: 3i64 });
+    discard(e.o.len);
+    pass NIL;
+};
+
+// 21 (k22, the accepted false positive of the type reading)
+func:mixed_holder_list_ptr_and_other_ptr = NIL() never fails {
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop one(@l);
+    H2:g = H2{ o: string_concat("g", "h"), k: 9i64 };
+    PX:px = PX{ lp: @l, q: @g };
+    drop list_push(@l, H2{ o: string_concat("c", "d"), k: 3i64 });
+    discard((<-px.lp).count + px.q.k);
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    drop assign_call_deref();
+    drop move_call_deref();
+    drop grow_call_result();
+    drop assign_named_ptr();
+    drop callee_replaces();
+    drop grow_through_ptr();
+    drop callee_grows();
+    drop clear_through_ptr();
+    drop pop_through_ptr();
+    drop truncate_through_ptr();
+    drop reserve_through_ptr();
+    drop call_result_elem();
+    drop elem_through_list_ptr();
+    drop addr_in_struct_field();
+    drop one_callee_grows_and_reads();
+    drop call_result_in_struct_field();
+    drop callee_builds_struct();
+    drop field_of_elem_ptr_in_struct();
+    drop call_result_elem_assign_named_ptr();
+    drop elem_through_ptr_grown_through_other_ptr();
+    drop mixed_holder_list_ptr_and_other_ptr();
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -21,7 +21,7 @@ mod:call_result_param_root;
 // through `symbol_is_param` -> `param_decl_index` -> the escape state's "function being
 // walked"; the escape pass restores that to -1 after each function, so when the aliasing
 // pass asked, a pointer PARAMETER forwarded through a call (`raw ids(p)`) read as a `for`
-// binding with no chain: no ref, no target, the write judged by nothing. A view through
+// binding, a kind nothing had recorded a chain for -- no ref, so no target. A view through
 // `p` was freed by the write at both legs (113); a lent arena was replaced under its task.
 // The aliasing pass now tells the escape state which function it walks (alias_decl).
 // Every site here was SILENT under landing 163's checker; a local copy of the same pointer

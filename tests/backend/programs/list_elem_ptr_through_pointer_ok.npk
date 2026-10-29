@@ -1,0 +1,270 @@
+// expect-exit: 0
+mod:list_elem_ptr_through_pointer_ok;
+// THE LEGAL HALF OF DEF-307 + DEF-314 (landing 165: a pointer into a `List`
+// element reached other than at `@l[i]`, and a `List` reallocated through a
+// pointer): the shapes the precise reading must keep clean. Nothing here moves
+// the buffer an element address points at while that address is live: ANOTHER
+// `List` replaced through a pointer; the address's block ended before the
+// growth (by name, and through a pointer, for a call-result address too); a
+// fixed ARRAY element across a reassignment through a call result (arrays never
+// move); a `List` pointer only READ through; another element written INTO
+// through the `List` pointer (`(<-lp)[1].k`: no buffer moves); the whole element
+// written through the address's OWN pointer; a `Self->` method on it; a callee
+// writing through the element address it is handed; two element addresses to
+// one callee; a `List` pointer handed to a reader; a call-result element pointer
+// writing its own field; a `List` pointer obtained through a call and grown
+// through with NO element address live; a struct holding a pointer TO the
+// `List` (`PL{ lp: @l }`, through a call, built by a callee: the header never
+// moves); a struct holding an element-type pointer that is not into this
+// `List` (another `List`'s element, a separate binding, through a call); the
+// element BY VALUE; the c8 struct's block ended before the growth; the growth
+// before the struct. Each must stay clean and exit 0 at both legs under this
+// compiler AND landing 164's; each check fails at its own exit (11-32).
+struct:H2 = { string:o; int64:k; };
+struct:PE = { H2->:p; int32:k; };
+struct:PL = { List<H2>->:lp; int32:k; };
+struct:PLK = { List<H2>->:lp; int64:k; };
+struct:PV = { H2:v; int32:k; };
+impl:H2 = {
+    func:bump = NIL(Self->:self) never fails { self.k = self.k + 1i64; pass NIL; };
+};
+func:idl = List<H2>->(List<H2>->:q) never fails { pass q; };
+func:ida = H2[1]->(H2[1]->:q) never fails { pass q; };
+func:idh = H2->(H2->:q) never fails { pass q; };
+func:first = H2->(List<H2>->:lp) never fails { pass @(<-lp)[0i64]; };
+func:firstval = H2(List<H2>->:lp) never fails { pass H2{ o: string_concat((<-lp)[0i64].o, ""), k: (<-lp)[0i64].k }; };
+func:mkplk = PLK(List<H2>->:lp) never fails { pass PLK{ lp: lp, k: (<-lp).count }; };
+func:setk = NIL(H2->:e, int64:v) never fails { (<-e).k = v; pass NIL; };
+func:swapk = NIL(H2->:a, H2->:b) never fails { int64:t = (<-a).k; (<-a).k = (<-b).k; (<-b).k = t; pass NIL; };
+func:readcount = int64(List<H2>->:q) never fails { pass (<-q).count; };
+func:grow = NIL(List<H2>->:q) never fails { drop list_push(q, H2{ o: string_concat("c", "d"), k: 3i64 }); pass NIL; };
+func:two = NIL(List<H2>->:q) never fails {
+    drop list_push(q, H2{ o: string_concat("a", "b"), k: 1i64 });
+    drop list_push(q, H2{ o: string_concat("x", "y"), k: 2i64 });
+    pass NIL;
+};
+
+func:other_list_through_ptr = int64() never fails {                 // k1
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    H2->:e = @l[0i64];
+    List<H2>:l2 = raw list_init::<H2>(1i64);
+    List<H2>->:lp2 = @l2;
+    (<-lp2) = raw list_init::<H2>(1i64);                              // ANOTHER List replaced: clean
+    pass e.o.len;                                                     // 2
+};
+func:elem_ptr_block_ended = int64() never fails {                   // k2
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    int64:r = 0i64;
+    {
+        H2->:e = @l[0i64];
+        r = e.o.len;
+    }
+    drop list_push(@l, H2{ o: string_concat("c", "d"), k: 3i64 });   // e's block ended: clean
+    pass r + l.count;                                                 // 2 + 3
+};
+func:array_elem_through_call = int64() never fails {                // k3
+    H2[1]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }];
+    H2->:e = @arr[0i64];
+    (<-(raw ida(@arr))) = [H2{ o: string_concat("eee", "f"), k: 7i64 }];   // an array's storage does not move
+    pass e.o.len + e.k;                                               // 4 + 7
+};
+func:call_result_block_ended = int64() never fails {                // k4
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    List<H2>->:lp = @l;
+    int64:r = 0i64;
+    {
+        H2->:e = raw first(@l);
+        r = e.o.len;
+    }
+    drop list_push(lp, H2{ o: string_concat("c", "d"), k: 3i64 });   // the call-result address's block ended: clean
+    pass r + (<-lp).count;                                            // 2 + 3
+};
+func:read_only_through_ptr = int64() never fails {                  // k5
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    List<H2>->:lp = @l;
+    H2->:e = @l[0i64];
+    pass (<-lp).count + e.o.len;                                      // 2 + 2
+};
+func:other_elem_into_through_ptr = int64() never fails {            // k7
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    List<H2>->:lp = @l;
+    H2->:e = @l[0i64];
+    (<-lp)[1i64].k = 7i64;                                            // INTO another element: no buffer moves
+    pass e.k + l[1i64].k;                                             // 1 + 7
+};
+func:whole_elem_through_own_ptr = int64() never fails {             // k9
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    H2->:e = @l[0i64];
+    (<-e) = H2{ o: string_concat("m", "n"), k: 5i64 };                // through the address's OWN pointer
+    pass e.o.len + e.k;                                               // 2 + 5
+};
+func:method_receiver_own_ptr = int64() never fails {                // k10
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    H2->:e = @l[0i64];
+    drop e.bump();
+    pass e.k;                                                         // 2
+};
+func:writer_callee_handed_elem_addr = int64() never fails {         // k11
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    drop setk(@l[0i64], 4i64);
+    H2->:e = @l[0i64];
+    drop setk(e, 6i64);
+    pass e.k;                                                         // 6
+};
+func:two_elem_addrs_one_callee = int64() never fails {              // k12
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    drop swapk(@l[0i64], @l[1i64]);
+    pass (l[0i64].k * 10i64) + l[1i64].k;                             // 21
+};
+func:list_ptr_to_reader = int64() never fails {                     // k13
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    H2->:e = @l[0i64];
+    int64:c = raw readcount(@l);
+    pass c + e.k;                                                     // 2 + 1
+};
+func:call_result_elem_own_field = int64() never fails {             // k14
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    H2->:e = raw first(@l);
+    e.k = 8i64;
+    pass l[0i64].k;                                                   // 8
+};
+func:list_ptr_via_call_grown = int64() never fails {                // k15
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    List<H2>->:lp = raw idl(@l);
+    drop grow(lp);                                                    // no element address live
+    pass l.count;                                                     // 3
+};
+func:struct_holds_list_ptr = int64() never fails {                  // k16a
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    PL:pl = PL{ lp: @l, k: 1i32 };
+    drop list_push(@l, H2{ o: string_concat("c", "d"), k: 3i64 });
+    drop list_push(@l, H2{ o: string_concat("e", "f"), k: 4i64 });
+    pass (<-pl.lp).count;                                             // 4
+};
+func:struct_holds_list_ptr_via_call = int64() never fails {         // k16b
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    PL:pl = PL{ lp: raw idl(@l), k: 1i32 };
+    drop list_push(@l, H2{ o: string_concat("c", "d"), k: 3i64 });
+    drop list_push(@l, H2{ o: string_concat("e", "f"), k: 4i64 });
+    pass (<-pl.lp).count;                                             // 4
+};
+func:callee_builds_list_ptr_struct = int64() never fails {          // k16c
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    PLK:pk = raw mkplk(@l);
+    drop list_push(@l, H2{ o: string_concat("c", "d"), k: 3i64 });
+    drop list_push(@l, H2{ o: string_concat("e", "f"), k: 4i64 });
+    pass (<-pk.lp).count - pk.k;                                      // 4 - 2
+};
+func:elem_ptr_of_other_list = int64() never fails {                 // k17a
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    List<H2>:l2 = raw list_init::<H2>(1i64);
+    drop list_push(@l2, H2{ o: string_concat("m", "n"), k: 5i64 });
+    PE:pe = PE{ p: raw first(@l2), k: 1i32 };
+    drop list_push(@l, H2{ o: string_concat("c", "d"), k: 3i64 });
+    drop list_push(@l, H2{ o: string_concat("e", "f"), k: 4i64 });
+    pass pe.p.k;                                                      // 5
+};
+func:elem_type_ptr_separate_binding = int64() never fails {         // k17b
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    H2:g = H2{ o: string_concat("g", "h"), k: 9i64 };
+    PE:pe = PE{ p: @g, k: 1i32 };
+    drop list_push(@l, H2{ o: string_concat("c", "d"), k: 3i64 });
+    drop list_push(@l, H2{ o: string_concat("e", "f"), k: 4i64 });
+    pass pe.p.k;                                                      // 9
+};
+func:elem_type_ptr_through_call_not_list = int64() never fails {    // k17c
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    H2:g = H2{ o: string_concat("g", "h"), k: 9i64 };
+    PE:pe = PE{ p: raw idh(@g), k: 1i32 };
+    drop list_push(@l, H2{ o: string_concat("c", "d"), k: 3i64 });
+    drop list_push(@l, H2{ o: string_concat("e", "f"), k: 4i64 });
+    pass pe.p.k;                                                      // 9
+};
+func:struct_holds_elem_by_value = int64() never fails {             // k18
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    PV:pv = PV{ v: raw firstval(@l), k: 1i32 };
+    drop list_push(@l, H2{ o: string_concat("c", "d"), k: 3i64 });
+    drop list_push(@l, H2{ o: string_concat("e", "f"), k: 4i64 });
+    pass pv.v.o.len + pv.v.k;                                         // 2 + 1
+};
+func:c8_block_ended = int64() never fails {                         // k20
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    int64:r = 0i64;
+    {
+        PE:pe = PE{ p: raw first(@l), k: 1i32 };
+        r = pe.p.o.len;
+    }
+    drop list_push(@l, H2{ o: string_concat("c", "d"), k: 3i64 });
+    drop list_push(@l, H2{ o: string_concat("e", "f"), k: 4i64 });
+    pass r + l.count;                                                 // 2 + 4
+};
+func:c8_after_growth = int64() never fails {                        // k21
+    List<H2>:l = raw list_init::<H2>(1i64);
+    drop two(@l);
+    drop list_push(@l, H2{ o: string_concat("c", "d"), k: 3i64 });
+    drop list_push(@l, H2{ o: string_concat("e", "f"), k: 4i64 });
+    PE:pe = PE{ p: raw first(@l), k: 1i32 };
+    pass pe.p.o.len + l.count;                                        // 2 + 4
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw other_list_through_ptr()) != 2i64) { exit 11i32; }
+    if ((raw elem_ptr_block_ended()) != 5i64) { exit 12i32; }
+    if ((raw array_elem_through_call()) != 11i64) { exit 13i32; }
+    if ((raw call_result_block_ended()) != 5i64) { exit 14i32; }
+    if ((raw read_only_through_ptr()) != 4i64) { exit 15i32; }
+    if ((raw other_elem_into_through_ptr()) != 8i64) { exit 16i32; }
+    if ((raw whole_elem_through_own_ptr()) != 7i64) { exit 17i32; }
+    if ((raw method_receiver_own_ptr()) != 2i64) { exit 18i32; }
+    if ((raw writer_callee_handed_elem_addr()) != 6i64) { exit 19i32; }
+    if ((raw two_elem_addrs_one_callee()) != 21i64) { exit 20i32; }
+    if ((raw list_ptr_to_reader()) != 3i64) { exit 21i32; }
+    if ((raw call_result_elem_own_field()) != 8i64) { exit 22i32; }
+    if ((raw list_ptr_via_call_grown()) != 3i64) { exit 23i32; }
+    if ((raw struct_holds_list_ptr()) != 4i64) { exit 24i32; }
+    if ((raw struct_holds_list_ptr_via_call()) != 4i64) { exit 25i32; }
+    if ((raw callee_builds_list_ptr_struct()) != 2i64) { exit 26i32; }
+    if ((raw elem_ptr_of_other_list()) != 5i64) { exit 27i32; }
+    if ((raw elem_type_ptr_separate_binding()) != 9i64) { exit 28i32; }
+    if ((raw elem_type_ptr_through_call_not_list()) != 9i64) { exit 29i32; }
+    if ((raw struct_holds_elem_by_value()) != 3i64) { exit 30i32; }
+    if ((raw c8_block_ended()) != 6i64) { exit 31i32; }
+    if ((raw c8_after_growth()) != 6i64) { exit 32i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

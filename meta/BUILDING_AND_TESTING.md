@@ -2132,10 +2132,10 @@ that carried them retired at the cycle close):
   `path_steps(x, place, stop, out)` stops at it, and `check_pointer_targets`'s call-result arm (rule A, D-326) is handed the
   pointer with the steps below composed onto each target -- a disjoint field stays disjoint; `acc_place` checks such a WRITE or
   EXCLUSIVE place ONCE and then walks its children, handing the dereference to `acc_expr`, so DEF-123's shared-holder refusal
-  stays and no site reports twice. (2) DEF-311: rule A's readers (`escape_pointer_targets` and what it calls) know a parameter as
+  stays and no site reports twice (but v309g, a ternary of addresses, accepted). (2) DEF-311: rule A's readers know a parameter as
   a parameter only through `symbol_is_param` -> `param_decl_index` -> the escape state's `cur_fn`, which `escape_decl` restores to
   -1 after each function; asked from the ALIASING pass with it stale, a pointer PARAMETER forwarded through a call
-  (`ws(raw ids(p))`, `drop replace(raw idp(sp))` under a lend) read as a `for` binding with no chain -- no ref, no target,
+  (`ws(raw ids(p))`, `drop replace(raw idp(sp))` under a lend) read as a `for` binding, a kind with no recorded chain -- no ref, so no target,
   silent -- while a local copy of the pointer was refused through its own chain. `alias_decl` sets `x.esc.cur_fn` for the function
   it walks and restores it. WHEN ONE PASS ASKS ANOTHER PASS'S READER, ASK WHAT STATE THAT READER ASSUMES ITS OWN PASS SET; a
   reader that answers "no refs" for a parameter is the first thing to suspect. (3) DEF-310: `destroy_receiver_owned` tested only
@@ -2146,3 +2146,24 @@ that carried them retired at the cycle close):
   cells, 192 REFUSED, 2 KNOWN-LIMIT, 0 OPEN. STILL OPEN, HIGH, before M3: DEF-312 -- a pointer FIELD of a call-result pointer's
   pointee written through below the dereference (`(<-(raw idph(@ph))).p.o`), the composed steps never re-resolved at the field's
   hop (the two KNOWN-LIMIT cells; `rootless_deref_base`'s comment) -- and DEF-307 (landing 165); do not write those shapes in `src/`.
+- **An element-address party is raised wherever a holder's refs carry one and judged by every pointer reader, as a view is** (DEF-307 +
+  DEF-314, landing 165; alias.npk). DEF-304 (landing 162) froze a `List` against a by-name operation while a syntactic `@l[i]` was live,
+  and two gaps stayed, each measured before fixed (`wt/51a/.internal/probes/t165/`, fifty-seven cells). (1) DEF-307: `party_kind_of`
+  raised `PARTY_ELEM_ADDR` for a BARE `@place` alone, so an element address obtained as a call's result (`raw first(@l)`), through a
+  `List` pointer (`@(<-lp0)[0i64]`), kept in a struct literal's field or handed to a call beside the `List` froze nothing; now
+  `prescan_view_parties` raises it off the holder's recorded refs -- a REF_ADDR of a `List` element; for a POINTER holder a REF_ADDR of a
+  whole `List` whose type is not the pointee's (rule A: the result points INTO the `List`); for an AGGREGATE holder the same when the
+  holder's TYPE holds a pointer whose pointee is not the `List` (`type_holds_elem_pointer`; the closed direction for `dyn`, `any`, an
+  enum with payloads, an unresolved type and fuel out) -- `acc_call` pushes a party of the `List` FOR THE CALL for an element-address
+  argument, and `check_access_reported` skips a party at the address-taking that made it. (2) DEF-314: `check_view_parties_at`, the one
+  body every pointer-resolved write reader ends in (DEF-302's named route, DEF-305's call-result arm, DEF-309's deref arm, the
+  callee-summary route), admitted VIEW and LENT alone, and `check_pointer_view_parties` VIEW alone -- so a `List` assigned, moved,
+  grown, reserved, cleared, popped or truncated THROUGH a pointer under a live element address freed the buffer at both legs; both
+  admit the kind now, exempting a write through the address's own holder (`own`) and a write strictly below the elements
+  (`write_into_elements` at `elem_party_level`: `(<-lp)[1i64].k` moves no buffer). WHEN A PARTY KIND IS VIEW-LIKE, ASK EVERY READER
+  THAT ADMITS A VIEW WHETHER IT ADMITS THE NEW KIND, AND EVERY PLACE A VIEW IS RAISED WHETHER THE NEW KIND IS RAISED THERE TOO: landing
+  162 did one of each (the same-root loop, `party_kind_of`) and left the pointer readers and `prescan_view_parties`. Accepted (D-286):
+  k22 -- a struct holding a pointer TO the `List` beside an unrelated element-type pointer (`PX{ lp: @l, q: @g }`) is refused at the
+  growth, because a `ViewRef` records the ADDRESSED place and not the field it lands in (0 tree sites); k6, DEF-304's by-order false
+  positive, stands. Registered OPEN, HIGH: DEF-313 (M3), DEF-315, DEF-316, DEF-317 (landing 166), DEF-312 widened (167); do not write
+  those shapes in `src/`.

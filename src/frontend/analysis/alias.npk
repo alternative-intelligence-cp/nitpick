@@ -113,6 +113,17 @@ pub func:PARTY_LENT = int32() never fails      { pass 4i32; };
 // dropping operation while the address is live, as a viewed root is frozen
 // against a write. Caught exactly where a view is (the mutation-summary path,
 // `summary_judged`), reported BORROW-015, differing only in the sentence.
+// RAISED (landing 165, DEF-307) for every way an element address is obtained: a
+// bare `@l[i]` (`party_kind_of`), an address the holder's recorded refs carry --
+// kept in a struct literal's field, a call's result whose provenance is `@l[i]`
+// or `@l` into a pointer of the element's type (`prescan_view_parties`) -- and an
+// element address handed to a call, a party for the call (`acc_call`). JUDGED
+// (landing 165, DEF-314) by every pointer-resolved write reader too
+// (`check_view_parties_at`, `check_pointer_view_parties`): a reallocating or
+// dropping operation reached through a pointer to the `List` -- a call-result
+// pointer, a named pointer, a callee handed one -- meets the live address; a
+// write strictly below the elements, or through the address's own holder,
+// moves no buffer and is exempt there (`write_into_elements`).
 pub func:PARTY_ELEM_ADDR = int32() never fails { pass 5i32; };
 pub func:ACC_READ = int32() never fails        { pass 0i32; };
 pub func:ACC_WRITE = int32() never fails       { pass 1i32; };
@@ -234,11 +245,11 @@ func:alias_decl = NIL(Alias->:x, DeclId:id, int32:scope) never fails {
             // walked", which `escape_decl` restores to -1 after each function it walks.
             // Asked from here with it stale, a pointer parameter forwarded through a
             // call (`ws(raw ids(p))` under a view of `p.s`) read as a `for` binding --
-            // the complement of `symbol_is_param` over the kind -- whose chain holds
-            // nothing: no ref, no target, the write judged by nothing (113 at both
-            // legs), while a local copy of the same pointer resolved through its chain.
-            // Set for this function's walk and restored after it, as the escape pass
-            // does for its own.
+            // the complement of `symbol_is_param` over the kind -- for which nothing
+            // had recorded a chain: no ref, so no target, the write unjudged (113 at
+            // both legs), while a local copy of the same pointer resolved through its
+            // chain. Set for this function's walk and restored after it, as the escape
+            // pass does for its own.
             int32:saved_fn = x.esc.cur_fn;
             x.esc.cur_fn = id.index;
             drop alias_fn(x, d, body);
@@ -399,6 +410,111 @@ func:place_is_list_element = bool(Alias->:x, ExprId:place) never fails {
     pass false;
 };
 
+// THE `List` LEVEL OF AN ELEMENT-ADDRESS PARTY (DEF-307, DEF-314; landing 165):
+// the number of steps from the party's root to the `List` whose element the
+// address names -- `@l[0i64]` answers 0, `@s.items[2i64]` 1, `@(<-lp0)[0i64]` 0
+// (the dereference is no step) -- or, for a party whose place is the `List`
+// itself (a call-result pointer resolved by its provenance to the whole of `l`,
+// `prescan_view_parties`), the place's own step count: the `List` stands at the
+// party's end. Read at the party's own root; `pp` is the party's steps there.
+func:elem_party_level = int64(Alias->:x, Party:p, List<Step>:pp) never fails {
+    List<Step>:ps = raw list_init::<Step>(8i64);
+    int64:whole = pp.count;
+    if (raw path_steps(x, p.place, raw expr_none(), @ps)) { whole = ps.count; }
+    ExprId:cur = p.place;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass whole; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if (n.kind == ExprKind.ExprIndexExpr) {
+            ExprId:base = raw expr_lhs(n);
+            int32:bt = raw exprtypes_get(x.etypes, base);
+            if ((bt != 0i32) && (raw type_is_list(x.tr, bt))) {
+                List<Step>:bs = raw list_init::<Step>(8i64);
+                if (raw path_steps(x, base, raw expr_none(), @bs)) { pass bs.count; }
+                pass whole;
+            }
+            cur = base;
+            continue;
+        }
+        if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) { cur = raw expr_operand(n); continue; }
+        if (n.kind == ExprKind.ExprDerefExpr) { cur = raw expr_operand(n); continue; }
+        pass whole;
+    }
+    pass whole;
+};
+
+// DOES A WRITE AT `tp` GO STRICTLY BELOW THE ELEMENTS of the `List` at level `m`
+// (DEF-314, landing 165)? Into a PART of an element -- `(<-lp)[1i64].o`, a
+// callee's `(<-e).o` composed onto `l[0i64]`, the summary spelling
+// `items/x/f<o>` -- moves no buffer, so no element address dangles: the pointer
+// readers exempt it. The `List` written whole, its `items` buffer (a push, a
+// reserve, a clear) or an element written WHOLE (`(<-lp)[0i64] = …`, a pop's
+// `items/x`) is not exempt: the first two move or free the buffer, the last may
+// vacate the addressed element -- the same-root loop's coarse reading since
+// DEF-304, kept here so the two spellings of one operation agree.
+func:write_into_elements = bool(Alias->:x, List<Step>:tp, int64:m) never fails {
+    if (m < 0i64) { pass false; }
+    if (tp.count <= m) { pass false; }
+    Step:s = tp[m];
+    if (s.kind != 0i32) { pass (tp.count > (m + 1i64)); }
+    if (!(raw string_eq(raw intern_get(x.it, s.name), "items"))) { pass false; }
+    if (tp.count <= (m + 2i64)) { pass false; }
+    pass (tp[m + 1i64].kind != 0i32);
+};
+
+// IS THIS ELEMENT-ADDRESS PARTY ALREADY PRE-SCANNED (same holder, same place)?
+// A bare `@l[i]` initialiser is pushed by `prescan_party` AND carried as a
+// REF_ADDR among the holder's recorded refs (`prescan_view_parties`); an
+// assignment's address is pre-scanned after the declaration's refs were. One
+// party per address, never two.
+func:pre_has_elem_party = bool(Alias->:x, int32:holder, ExprId:place) never fails {
+    for (int64:i in 0i64...x.pre.count) {
+        Party:pp = x.pre[i];
+        if ((pp.kind == (raw PARTY_ELEM_ADDR())) && (pp.holder == holder) && (pp.place.index == place.index)) { pass true; }
+    }
+    pass false;
+};
+
+// DOES A TYPE HOLD A POINTER THAT MAY REACH INTO A `List`'S ELEMENTS (DEF-307,
+// landing 165, the c8 face)? A value of this type built from an address of the
+// `List` `lt` -- a REF_ADDR of `l` among a holder's refs: `PE{ p: raw first(@l) }`,
+// `raw mkpe(@l)`, a nested literal -- may carry a pointer into `l`'s buffer in
+// any pointer member whose pointee is not the `List` itself: the element
+// (`H2->`), a field of the element (`string->`, `int64->`), a pointer to either.
+// A pointer whose pointee IS the `List` (`List<H2>->`) reaches the header, which
+// never moves, and is D-286's plain party. A struct, an `Optional`, a `Result`,
+// an array, a slice, a `List` hold one when a member does; an enum with
+// payloads, a `dyn`, `any`, an unresolved type and fuel run out answer YES, the
+// closed direction (DEF-54); a scalar, a `string`, a `cstring` hold none.
+func:type_holds_elem_pointer = bool(Alias->:x, int32:t, int32:lt, int32:fuel) decreases fuel never fails {
+    if (fuel <= 0i32) { pass true; }
+    if (t == 0i32) { pass true; }
+    int32:k = raw type_kind(x.types, t);
+    if (k == (raw TY_POINTER())) { pass ((raw type_elem(x.types, t)) != lt); }
+    if ((k == (raw TY_DYN())) || (k == (raw TY_ANY()))) { pass true; }
+    if (k == (raw TY_ENUM())) { pass (raw enum_has_payload(x.ast, x.types, t)); }
+    if (k == (raw TY_STRUCT())) {
+        if (raw type_is_list(x.tr, t)) { pass (raw type_holds_elem_pointer(x, raw list_elem_type(x.tr, t), lt, fuel - 1i32)); }
+        int32:sdi = raw type_decl(x.types, t);
+        if (sdi <= 0i32) { pass true; }
+        if (sdi >= (raw ast_decl_count(x.ast))) { pass true; }
+        DeclId:did = DeclId{ index: sdi };
+        DeclNode:d = raw ast_decl(x.ast, did);
+        int32:home = raw symtab_home_scope(x.tab, did.index, 0i32);
+        int32:nmembers = raw item_member_count(x.ast, d);
+        for (int32:mi in 0i32...nmembers) {
+            DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, mi));
+            if (m.kind != DeclKind.DeclFieldDecl) { continue; }
+            FieldInfo:fi = raw struct_field(x.tr, t, raw decl_name(m), home);
+            if (!fi.found) { pass true; }
+            if (raw type_holds_elem_pointer(x, fi.type_id, lt, fuel - 1i32)) { pass true; }
+        }
+        pass false;
+    }
+    if (raw type_kind_has_elem(k)) { pass (raw type_holds_elem_pointer(x, raw type_elem(x.types, t), lt, fuel - 1i32)); }
+    pass false;
+};
+
 // The party kind an admitted value would make, or -1 for an ordinary value:
 // `$$i` shared, `$$m` exclusive, `@` plain -- the WHOLE value, nothing nested.
 func:party_kind_of = int32(Alias->:x, ExprId:val) never fails {
@@ -419,10 +535,22 @@ func:party_kind_of = int32(Alias->:x, ExprId:val) never fails {
 func:prescan_party = NIL(Alias->:x, ExprId:site, int32:kind, int32:holder) never fails {
     if (holder == 0i32) { pass NIL; }
     ExprNode:n = raw ast_expr(x.ast, site);
-    int32:root = raw place_root_symbol(x, raw expr_operand(n));
+    ExprId:place = raw expr_operand(n);
+    int32:root = raw place_root_symbol(x, place);
     if (root == 0i32) { pass NIL; }   // no named root: BORROW-014 at the walk
+    bool:root_ptr = false;
+    if (kind == (raw PARTY_ELEM_ADDR())) {
+        // ONE PARTY PER ADDRESS (DEF-307, landing 165): the holder's recorded refs
+        // carry this address too (`prescan_view_parties`).
+        if (raw pre_has_elem_party(x, holder, place)) { pass NIL; }
+        // AN ELEMENT ADDRESSED THROUGH A POINTER (`@(<-lp0)[0i64]`) roots at the
+        // pointer, whose own re-pointing leaves the `List` alone (D-286, as a view's
+        // pointer root does); the `List` it reaches is resolved by the pointer
+        // readers (`check_pointer_view_parties`, DEF-307).
+        root_ptr = raw root_ident_is_pointer(x, place);
+    }
     drop list_push(@x.pre, Party{ site: site, kind: kind, root: root, holder: holder,
-                                  place: raw expr_operand(n), view_kind: 0i32, root_ptr: false, path: 0i32 });
+                                  place: place, view_kind: 0i32, root_ptr: root_ptr, path: 0i32 });
     pass NIL;
 };
 
@@ -433,16 +561,58 @@ func:prescan_party = NIL(Alias->:x, ExprId:site, int32:kind, int32:holder) never
 // party, and freezes nothing.
 func:prescan_view_parties = NIL(Alias->:x, StmtId:sid, int32:holder) never fails {
     if (holder == 0i32) { pass NIL; }
-    if (raw escape_holder_is_pointer(x.esc, sid.index)) { pass NIL; }
+    bool:ptr_holder = raw escape_holder_is_pointer(x.esc, sid.index);
+    // THE HOLDER'S VALUE TYPE, read off its declaration's initialiser (0 when the
+    // declaration carries none: the type-keyed readings below then close to the
+    // syntactic one), and a POINTER holder's pointee type.
+    int32:hty = 0i32;
+    int32:pte = 0i32;
+    ExprId:dinit = raw stmt_decl_init(x.ast, raw ast_stmt(x.ast, sid));
+    if (!(raw expr_is_none(dinit))) { hty = raw exprtypes_get(x.etypes, dinit); }
+    if (ptr_holder && (hty != 0i32) && ((raw type_kind(x.types, hty)) == (raw TY_POINTER()))) { pte = raw type_elem(x.types, hty); }
     int32:i = raw escape_view_ref_first(x.esc, sid.index);
     while (i >= 0i32) decreases i + 1i32 {
         ViewRef:vr = raw escape_view_ref(x.esc, i);
         i = raw escape_view_ref_next(x.esc, i);
         if (vr.root == 0i32) { continue; }
+        ExprId:place = ExprId{ index: vr.place };
+        // AN ADDRESS INTO A `List` ELEMENT THE VALUE CARRIES (DEF-307, landing 165)
+        // freezes the `List` as a bare `@l[i]` does (DEF-304): the address kept in
+        // a struct literal's field (`PE{ p: @l[0i64] }`), a call's result whose
+        // provenance is such an address (`raw idp(@l[0i64])`), a copy of a binding
+        // that carries one -- a REF_ADDR whose place is a `List` element; and, for
+        // a POINTER holder, a call's result handed `@l` whose pointee type is not
+        // the `List` (`H2->:e = raw first(@l)`; rule A, D-326: the result points
+        // INTO `l`, at an element nobody here can name) -- a REF_ADDR of the whole
+        // `List`, the party's place the `List` itself; and, for an AGGREGATE holder
+        // (the c8 face), the same `@l` carried into a value whose TYPE holds a
+        // pointer that may reach into the `List` (`PE{ p: raw first(@l) }`,
+        // `raw mkpe(@l)`; `type_holds_elem_pointer`). A pointer TO the `List`
+        // (`List<H2>->:lp = raw idl(@l)`, `PL{ lp: @l }`, its pointee the `List`) is
+        // D-286's plain party and freezes nothing.
+        if (vr.kind == (raw REF_ADDR())) {
+            bool:elem = raw place_is_list_element(x, place);
+            if ((!elem) && ptr_holder && (pte != 0i32)) {
+                int32:pt = raw exprtypes_get(x.etypes, place);
+                if ((pt != 0i32) && (pt != pte) && (raw type_is_list(x.tr, pt))) { elem = true; }
+            }
+            if ((!elem) && (!ptr_holder) && (hty != 0i32)) {
+                int32:pt = raw exprtypes_get(x.etypes, place);
+                if ((pt != 0i32) && (raw type_is_list(x.tr, pt)) && (raw type_holds_elem_pointer(x, hty, pt, 8i32))) { elem = true; }
+            }
+            if (!elem) { continue; }
+            if (raw pre_has_elem_party(x, holder, place)) { continue; }
+            drop list_push(@x.pre, Party{ site: place, kind: raw PARTY_ELEM_ADDR(), root: vr.root, holder: holder,
+                                          place: place, view_kind: 0i32, root_ptr: raw root_ident_is_pointer(x, place),
+                                          path: vr.path });
+            continue;
+        }
+        // A POINTER binding holds addresses, D-286's plain party, and freezes
+        // nothing beyond the element addresses above.
+        if (ptr_holder) { continue; }
         // ONLY A VIEW IS A PARTY: a carried parameter value or an address the
         // result kept (D-286's plain party) freezes nothing.
         if ((vr.kind != (raw VIEW_DIRECT())) && (vr.kind != (raw VIEW_LAUNDERED()))) { continue; }
-        ExprId:place = ExprId{ index: vr.place };
         drop list_push(@x.pre, Party{ site: place, kind: raw PARTY_VIEW(), root: vr.root, holder: holder,
                                       place: place, view_kind: vr.kind, root_ptr: raw root_ident_is_pointer(x, place),
                                       path: vr.path });
@@ -897,7 +1067,10 @@ func:party_word = string(Alias->:x, Party:p) never fails {
         if (p.view_kind == (raw VIEW_LAUNDERED())) { pass "the possible view (through a call that was handed the place, D-004 rule A) of"; }
         pass "the view of";
     }
-    if (p.kind == (raw PARTY_ELEM_ADDR())) { pass "the plain address into a `List` element"; }
+    if (p.kind == (raw PARTY_ELEM_ADDR())) {
+        if (raw place_is_list_element(x, p.place)) { pass "the plain address into a `List` element"; }
+        pass "the pointer into an element of the `List` (a call's result, by its provenance)";
+    }
     pass "the plain address held by a binding";
 };
 
@@ -1018,6 +1191,18 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
         // spawn's own `@s` operand, and the spawn's callee is read against it
         // on purpose (DEF-148: a task that stores over what it was lent).
         if ((p.kind == (raw PARTY_VIEW())) && (p.place.index == place.index) && (extra == 0i32)) { continue; }
+        // AN ELEMENT-ADDRESS PARTY NEVER CONFLICTS WITH THE ADDRESS-TAKING THAT MADE
+        // IT (DEF-307, landing 165): a party raised off a holder's recorded refs
+        // (`prescan_view_parties`) is sited at its place, not at the `@`, so the
+        // self-site skip above does not see the `@l[0i64]` that feeds it -- a copy's
+        // source taken after the copy's holder was declared (`e = e0`, D-004) met
+        // its own address. And an element address handed to a call is a party
+        // FOR THE CALL (`acc_call`), judged against the call's OTHER arguments:
+        // what the callee writes through this address itself is the address's own.
+        if ((p.kind == (raw PARTY_ELEM_ADDR())) && (p.place.index == place.index)) {
+            if (extra == 0i32) { continue; }
+            if (p.holder == 0i32) { continue; }
+        }
         if (!(raw conflicts(p.kind, akind))) { continue; }
         List<Step>:pp = raw list_init::<Step>(8i64);
         if (!(raw party_steps(x, p, @pp))) { continue; }
@@ -1131,7 +1316,7 @@ func:check_slice_targets = bool(Alias->:x, ExprId:sb, int32:akind, Span:at, int3
         } else {
             drop list_truncate(@ap, 0i64);   // the whole root, the closed direction
         }
-        if (raw check_view_parties_at(x, r, ap, own_holder, akind, at, mode)) { pass true; }
+        if (raw check_view_parties_at(x, r, ap, own_holder, 0i32, akind, at, mode)) { pass true; }
     }
     pass false;
 };
@@ -1150,12 +1335,15 @@ func:check_slice_targets = bool(Alias->:x, ExprId:sb, int32:akind, Span:at, int3
 // write met `s`'s own view of `v.items` and was refused (the chain's sweep of
 // landing 159's first build: five sites of nitpick-time's `Vec` and `Bytes`).
 // DEF-275's twin through a pointer is the next reader.
-func:check_view_parties_at = bool(Alias->:x, ViewRef:tgt, List<Step>:ap, int32:self_holder, int32:akind,
+// `own` (landing 165): the POINTER BINDING the write goes through, when it is a
+// bare name -- the element-address parties it holds itself are its own writes
+// through its own address, never a hazard to them (0 otherwise).
+func:check_view_parties_at = bool(Alias->:x, ViewRef:tgt, List<Step>:ap, int32:self_holder, int32:own, int32:akind,
                                   Span:at, int32:mode) never fails {
     for (int64:i in 0i64...x.live.count) {
         Party:p = x.live[i];
         if (p.root != tgt.root) { continue; }
-        if ((p.kind != (raw PARTY_VIEW())) && (p.kind != (raw PARTY_LENT()))) { continue; }
+        if ((p.kind != (raw PARTY_VIEW())) && (p.kind != (raw PARTY_LENT())) && (p.kind != (raw PARTY_ELEM_ADDR()))) { continue; }
         if ((mode == (raw CHECK_LENT())) && (p.kind != (raw PARTY_LENT()))) { continue; }
         if (x.skip_lent && (p.kind == (raw PARTY_LENT()))) { continue; }
         if ((self_holder != 0i32) && (p.holder == self_holder)) { continue; }
@@ -1164,6 +1352,18 @@ func:check_view_parties_at = bool(Alias->:x, ViewRef:tgt, List<Step>:ap, int32:s
         if (!(raw party_steps(x, p, @pp))) { continue; }
         int32:cls = raw overlap_class(x, pp, ap);
         if (cls == (raw OV_DISJOINT())) { continue; }
+        if (p.kind == (raw PARTY_ELEM_ADDR())) {
+            // A `List` FROZEN BY AN ELEMENT ADDRESS, reached through a pointer
+            // (DEF-314, landing 165): a call-result pointer, a named pointer, a
+            // callee handed one -- the write resolved here moves or frees the
+            // buffer unless it goes strictly below the elements
+            // (`write_into_elements`) or through the address's own holder (`own`);
+            // neither dangles the address.
+            if ((own != 0i32) && (p.holder == own)) { continue; }
+            if (raw write_into_elements(x, ap, raw elem_party_level(x, p, pp))) { continue; }
+            drop report_elem_addr_conflict(x, p, akind, tgt.root, ap, cls, at);
+            pass true;
+        }
         if (p.kind == (raw PARTY_VIEW())) {
             drop report_view_conflict(x, p, akind, tgt.root, ap, cls, at);
             pass true;
@@ -1409,13 +1609,19 @@ func:check_pointer_targets = bool(Alias->:x, ExprId:place, List<Step>:ap, int32:
                 List<Step>:ctp = raw list_init::<Step>(8i64);
                 if (!(raw ptr_target_steps(x, cvr, @ctp))) { continue; }
                 for (int64:ck in 0i64...ap.count) { drop list_push(@ctp, ap[ck]); }
-                if (raw check_view_parties_at(x, cvr, ctp, 0i32, akind, at, mode)) { pass true; }
+                if (raw check_view_parties_at(x, cvr, ctp, 0i32, 0i32, akind, at, mode)) { pass true; }
                 if (raw check_pointer_view_parties(x, cvr.root, ctp, akind, at, 0i32)) { pass true; }
             }
         }
         pass false;
     }
     int32:r = raw place_root_symbol(x, pe);
+    // THE WRITE THROUGH A BARE POINTER NAME is that binding's own (landing 165):
+    // the element addresses it holds are not dangled by what it writes through
+    // itself (`check_view_parties_at`'s `own`). A pointer in a field (`pe.p`) is
+    // not the holder's own: the struct may hold the `List`'s pointer too.
+    int32:own_r = 0i32;
+    if ((raw ast_expr(x.ast, pe)).kind == ExprKind.ExprIdentifierExpr) { own_r = r; }
     List<Step>:pre = raw list_init::<Step>(8i64);
     if (!(raw path_steps(x, pe, raw expr_none(), @pre))) { pass false; }
     if (pre.count > ap.count) { pass false; }
@@ -1426,7 +1632,7 @@ func:check_pointer_targets = bool(Alias->:x, ExprId:place, List<Step>:ap, int32:
         List<Step>:tp = raw list_init::<Step>(8i64);
         if (!(raw ptr_target_steps(x, vr, @tp))) { continue; }
         for (int64:k in pre.count...ap.count) { drop list_push(@tp, ap[k]); }
-        if (raw check_view_parties_at(x, vr, tp, 0i32, akind, at, mode)) { pass true; }
+        if (raw check_view_parties_at(x, vr, tp, 0i32, own_r, akind, at, mode)) { pass true; }
         if (raw check_pointer_view_parties(x, vr.root, tp, akind, at, r)) { pass true; }
     }
     pass false;
@@ -1436,10 +1642,16 @@ func:check_pointer_targets = bool(Alias->:x, ExprId:place, List<Step>:ap, int32:
 // each live VIEW party taken THROUGH a pointer whose storage includes `root`
 // (`vw = string_bytes(hp.o)`, write `h.o`; two-level `bp.p.o`). `skip` is the
 // write's own pointer root, when this is called from the forward reader.
+// AND AN ELEMENT ADDRESS TAKEN THROUGH A POINTER (`e = @(<-lp0)[0i64]`, rooted at
+// `lp0`) against a write of the `List` by its own name or through another
+// pointer (DEF-307, landing 165): re-rooted at the pointer's target like a view,
+// its `List` level carried across (`elem_party_level` at the party's own root,
+// the pointer's steps replaced by the target's), a write strictly below the
+// elements exempt (`write_into_elements`).
 func:check_pointer_view_parties = bool(Alias->:x, int32:root, List<Step>:ap, int32:akind, Span:at, int32:skip) never fails {
     for (int64:i in 0i64...x.live.count) {
         Party:p = x.live[i];
-        if (p.kind != (raw PARTY_VIEW())) { continue; }
+        if ((p.kind != (raw PARTY_VIEW())) && (p.kind != (raw PARTY_ELEM_ADDR()))) { continue; }
         if (p.root == root) { continue; }
         if ((skip != 0i32) && (p.root == skip)) { continue; }
         if (!(raw conflicts(p.kind, akind))) { continue; }
@@ -1457,9 +1669,16 @@ func:check_pointer_view_parties = bool(Alias->:x, int32:root, List<Step>:ap, int
             if (vr.root != root) { continue; }
             List<Step>:tp = raw list_init::<Step>(8i64);
             if (!(raw ptr_target_steps(x, vr, @tp))) { continue; }
+            int64:tbase = tp.count;
             for (int64:k in pre.count...pp.count) { drop list_push(@tp, pp[k]); }
             int32:cls = raw overlap_class(x, tp, ap);
             if (cls == (raw OV_DISJOINT())) { continue; }
+            if (p.kind == (raw PARTY_ELEM_ADDR())) {
+                int64:lvl = ((raw elem_party_level(x, p, pp)) - pre.count) + tbase;
+                if (raw write_into_elements(x, ap, lvl)) { continue; }
+                drop report_elem_addr_conflict(x, p, akind, root, ap, cls, at);
+                pass true;
+            }
             drop report_view_conflict(x, p, akind, root, ap, cls, at);
             pass true;
         }
@@ -2006,13 +2225,13 @@ func:acc_place = NIL(Alias->:x, ExprId:place, int32:akind, ExprId:self_site, int
         if ((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE()))) {
             if (!(raw expr_is_none(raw rootless_deref_base(x, place)))) {
                 drop check_access_ex(x, place, 0i32, akind, self_site, pn.span, raw CHECK_ALL());
-                // ONE REPORT PER WRITE: the steps between `place` and the dereference
-                // are this write's own path, checked above as a whole -- so they are
-                // walked HERE, each index expression read, down to the dereference,
-                // which keeps the access kind (the deref arm of `acc_expr`: DEF-123's
-                // refusal at a shared holder's deref, the operand read below it).
-                // Re-entering `acc_place` at every step reported one write once per
-                // step (`(<-(raw idarr(@arr)))[0i64].o = …` at the element AND the field).
+                // ONE REPORT PER WRITE (the one accepted exception: v309g, a TERNARY of
+                // addresses dereferenced and assigned, reports here AND at D-286's plain-
+                // address admission; management 2026-10-28): the steps between `place` and
+                // the dereference are this write's own path, checked above as a whole, so
+                // they are walked HERE, each index read, down to the dereference, which keeps
+                // the access kind (`acc_expr`'s deref arm: DEF-123's shared-holder refusal).
+                // Re-entering `acc_place` per step reported `(<-(raw idarr(@arr)))[0i64].o` twice.
                 ExprId:cur = place;
                 for (int32:hop in 0i32...(raw BORROW_FUEL())) {
                     ExprNode:cn = raw ast_expr(x.ast, cur);
@@ -2260,7 +2479,25 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
             drop push_call_view_party(x, a);
             continue;
         }
-        if ((pk == (raw PARTY_PLAIN())) || (pk == (raw PARTY_ELEM_ADDR()))) { continue; }   // an address is no claim party (DEF-304: handled in the ordinary-arg loop)
+        if (pk == (raw PARTY_ELEM_ADDR())) {
+            // AN ELEMENT ADDRESS HANDED TO A CALL (DEF-307, landing 165): a party
+            // of its `List` FOR THE CALL -- live while the other arguments'
+            // summaries are judged (`pushread(@l[0i64], @l)`: the push through
+            // `@l` meets it), gone at the call's end (`mark`); never a claim
+            // (`PARTY_PLAIN` keeps D-286's `continue`), and what the callee writes
+            // through the address itself is the address's own
+            // (`check_access_reported`'s skip by place). The ordinary-arg loop
+            // below still admits it as a plain address (DEF-304).
+            ExprNode:ean = raw ast_expr(x.ast, a);
+            ExprId:eplace = raw expr_operand(ean);
+            int32:eroot = raw place_root_symbol(x, eplace);
+            if (eroot != 0i32) {
+                drop list_push(@x.live, Party{ site: a, kind: pk, root: eroot, holder: 0i32, place: eplace,
+                                               view_kind: 0i32, root_ptr: raw root_ident_is_pointer(x, eplace), path: 0i32 });
+            }
+            continue;
+        }
+        if (pk == (raw PARTY_PLAIN())) { continue; }   // an address is no claim party (D-286)
         ExprNode:an = raw ast_expr(x.ast, a);
         if (result_carries) {
             drop alias_err(x, raw BORROW_CLAIM_POSITION(),

@@ -36,11 +36,11 @@ mod:call_result_deref_write;
 // lent arena a FIELD replaced through the deref of a call-result pointer to its
 // struct.
 //
-// The written place's pointer base (`ptr_last_base`) is a ROOTLESS pointer: resolved
-// by `escape_pointer_targets` to the storage it points at, the steps between the
-// place and the base composed onto each target (`steps_below`), and checked against
-// the VIEW and LENT parties there (`check_view_parties_at`, `check_pointer_view_parties`)
-// -- `check_rootless_pointer_targets`, the one body behind DEF-305's arm and this one;
+// The written place's first explicit dereference has a ROOTLESS pointer operand
+// (`rootless_deref_base`): resolved by `escape_pointer_targets` to the storage it
+// points at, the steps between the place and the dereference (`path_steps`'s stop)
+// composed onto each target, and checked against the VIEW and LENT parties there
+// (`check_pointer_targets`'s call-result arm, DEF-305's and this one's one body);
 // `acc_place` hands such a place to the check before decomposing it. BORROW-015 at the
 // write (a view), BORROW-016 at the write or the call (a lend).
 //
