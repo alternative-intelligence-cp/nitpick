@@ -2727,6 +2727,12 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
     if (!ptr_recv) {
         if (!(raw fits(e, p0, recv))) {
             drop te_mismatch_at(e, p0, recv, n.span);
+        } else {
+            // AND A `move` RECEIVER IS A TRANSFER (DEF-366, landing 170): `check_args` below skips its slot.
+            if (raw param_is_move(e, raw exprtypes_callee(e.expr_types, id), 0i32)) {
+                drop require_move_receiver(e, raw expr_operand(n), recv,
+                                           raw arg_span(e, raw expr_operand(n), n.span));
+            }
         }
     }
     drop exprtypes_set_callee_ft(e.expr_types, id, ft);

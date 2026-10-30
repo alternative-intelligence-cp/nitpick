@@ -328,6 +328,10 @@ pub func:te_error = int32(ExprTyper->:e, move string:code, move string:message, 
 // else can reach it. That is why the test is `expr_is_place` rather than a
 // test on the type alone, and it is what keeps the rule from turning every
 // construction into ceremony.
+// (LANDING 170, 2026-10-30: the test is `move_slot_source` now, which asks it of
+// the ROOT of the path and of every operand by its own type -- an operator
+// handing back a place's value and an owning part of a temporary are copies
+// too, DEF-367 and DEF-368 -- and a `move` receiver asks it as well, DEF-366.)
 //
 // `move(x)` is not a place (its root is the move node), so it passes here
 // without a special case, and D-065's existing machinery invalidates `x`.
@@ -716,13 +720,76 @@ func:param_is_copy = bool(ExprTyper->:e, int32:ty) never fails {
     pass (raw param_declares(e.bounds, decl, copy_id, e.ast));
 };
 
+// WHERE A VALUE AT A MOVE SLOT COMES FROM (DEF-367, DEF-368; landing 170), for TYPE-046's rule (D-183): 0 a FRESH
+// value (a call's or a literal's whole result, a `move(...)`, an arithmetic result) or one whose OWN type owns
+// nothing -- a copy of plain data is harmless, so `l => dyn Tl` with `Pod:l`, or `?| c` with `Cat:c` into a `dyn`
+// slot, boxes a fresh copy --, 1 a PLACE, 2 an OPERATOR handing back a place's own value -- a ternary's arm, either
+// side of `??` and `?|`, the value of `?!` and `??!`, the operand of `relay` and of a cast (`=>`, `=>!`, `=> dyn`)
+// --, 3 an owning PART read out of a value no binding holds (a temporary's field or element, or the pointee of a
+// call's pointer), 4 a part read through `?.`, a place's Optional or a temporary's alike: no `move(...)` inside it
+// hands the part on (`move(o?.s)` is no place, `(move(o))?.s` a temporary's part). Asked of the ROOT of the path,
+// so `(is (c) : p1 : p2).s` copies a place and
+// `(raw mk()).s` is a part of a temporary, and of every operand by its own recorded type. Until this landing the
+// rule asked `expr_is_place`, and 2 and 3 were temporaries to it: `PS:r = is (c) : ps : qs;` and
+// `string:x = (raw mk()).s;` each left two owners (95/95 at both legs). `expr_is_place` stays the address question
+// (`@`). EXHAUSTION ANSWERS 2, a copy, and an untyped operand is read by its shape: the closed direction.
+pub func:move_slot_source = int32(ExprTyper->:e, ExprId:id, int32:fuel) decreases fuel never fails {
+    if (fuel <= 0i32) { pass 2i32; }
+    int32:own = raw exprtypes_get(e.expr_types, id);
+    if (own != 0i32) {
+        if (!(raw type_is_invalid(e.types, own))) {
+            if (!(raw type_owns_for_move(e, own))) { pass 0i32; }
+        }
+    }
+    PlaceRoot:r = raw place_root(e.ast, id, fuel);
+    if (r.exhausted) { pass 2i32; }
+    if (raw expr_is_none(r.id)) { pass 0i32; }
+    ExprNode:n = raw ast_expr(e.ast, r.id);
+    if ((n.kind == ExprKind.ExprIdentifierExpr) || (n.kind == ExprKind.ExprDerefExpr)) { pass 1i32; }
+    if (n.kind == ExprKind.ExprSafeNavExpr) { pass 4i32; }
+    int32:a = 0i32;
+    int32:b = 0i32;
+    if (n.kind == ExprKind.ExprTernaryExpr) {
+        a = raw move_slot_source(e, raw expr_rhs(n), fuel - 1i32);
+        b = raw move_slot_source(e, raw expr_third(n), fuel - 1i32);
+    }
+    bool:two = (n.kind == ExprKind.ExprNullCoalesceExpr) || (n.kind == ExprKind.ExprSafeUnwrapExpr);
+    if (two || (n.kind == ExprKind.ExprDefaultsExpr)) {
+        a = raw move_slot_source(e, raw expr_lhs(n), fuel - 1i32);
+        b = raw move_slot_source(e, raw expr_rhs(n), fuel - 1i32);
+    }
+    bool:one = (n.kind == ExprKind.ExprEmphaticUnwrapExpr) || (n.kind == ExprKind.ExprEmphaticCoalesceExpr);
+    if (one) { a = raw move_slot_source(e, raw expr_lhs(n), fuel - 1i32); }
+    bool:op = (n.kind == ExprKind.ExprRelayExpr) || (n.kind == ExprKind.ExprCastExpr);
+    if (op || (n.kind == ExprKind.ExprUncheckedCastExpr) || (n.kind == ExprKind.ExprDynCastExpr)) {
+        a = raw move_slot_source(e, raw expr_operand(n), fuel - 1i32);
+    }
+    if ((a != 0i32) || (b != 0i32)) { pass 2i32; }
+    if (r.id.index != id.index) { pass 3i32; }   // a path down from a temporary
+    pass 0i32;
+};
+
 pub func:require_move_if_owning = NIL(ExprTyper->:e, ExprId:id, int32:ty,
                                       Span:at) never fails {
     if (ty == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, ty)) { pass NIL; }
     if (!(raw type_owns_for_move(e, ty))) { pass NIL; }
-    if (!(raw expr_is_place(e.ast, id, raw BORROW_FUEL()))) { pass NIL; }
+    // A PLACE, AN OPERATOR HANDING ONE BACK (DEF-367), OR A PART OF A TEMPORARY (DEF-368): `move_slot_source`.
+    int32:src = raw move_slot_source(e, id, raw BORROW_FUEL());
+    if (src == 0i32) { pass NIL; }
     if (raw expr_is_variant_ctor(e, id)) { pass NIL; }
+    if (src != 1i32) {
+        string:o1 = string_concat("`", raw type_display(e.types, e.interns, ty));
+        string:o2 = string_concat(o1, "` owns storage (or is a type parameter that may, D-264), and this operator hands back a place's own value -- a ternary's arm, either side of `??` or `?|`, the value of `?!` or `??!`, the operand of `relay` or a cast -- so the result is a copy of that place and would leave two owners (D-183, DEF-367). Write `move(...)` at the place inside it (`is (c) : move(a) : move(b)`, `move(o) ?? d`, `move(s) => T`), or `.clone()` it");
+        if (src == 3i32) {
+            o2 = string_concat(o1, "` owns storage (or is a type parameter that may, D-264), and this reads it out of a value no binding holds -- a temporary's field or element, or what a call's pointer points at --: the temporary drops whole at the statement's end, the part with it, so the copy would leave two owners (D-183, DEF-368). Bind the value first and move the part out of the binding (`T:t = f(…); x = move(t.part);`), or `.clone()` the part");
+        }
+        if (src == 4i32) {
+            o2 = string_concat(o1, "` owns storage (or is a type parameter that may, D-264), and `?.` reads it out of an Optional as a PART: the Optional keeps it (a binding's) or drops it at the statement's end (a temporary's), so the copy would leave two owners, and no `move(...)` inside `?.` hands a part on (D-183, DEF-367). Unwrap and bind the value first and move the part out of the binding (`T:v = move(o) ?? d; x = move(v.part);`), or `.clone()` the part");
+        }
+        drop diaglist_push(e.diags, raw diag_error(raw TYPE_MOVE_REQUIRED(), move(o2), at));
+        pass NIL;
+    }
     // A BARE TYPE PARAMETER'S copy is refused for the reason a parameter has,
     // not a string's (D-264, 1.5.2f).
     int32:mk = raw type_kind(e.types, ty);
@@ -744,6 +811,40 @@ pub func:require_move_if_owning = NIL(ExprTyper->:e, ExprId:id, int32:ty,
     // restructured to read in place.
     drop diaglist_push(e.diags, raw diag_error(raw TYPE_MOVE_REQUIRED(),
         string_concat(m1, "` owns storage that is released at scope exit, so it is move-only (D-183): copying it here would leave two owners and one double free. Write `move(...)` to transfer it (invalidating the source), take an explicit copy with `.clone()`, or build the value in place — a temporary has no second name to invalidate"),
+        at));
+    pass NIL;
+};
+
+// A RECEIVER HANDED TO A `move` PARAMETER 0 IS A TRANSFER, AS A `move` ARGUMENT IS (DEF-366, landing 170): the rule
+// above, asked of the receiver's slot, which `check_args` skips (skip 1). Until this landing parameter 0's `move` was
+// read by nobody, so `ps.take()` with `take = int64(move PS:self)` copied `ps` into a method that drops it at its exit,
+// and the caller dropped it again at its own -- a double free (95/95 at both legs) by name, through a field, a
+// pointer, an explicit dereference and UFCS, at a call, an await and a spawn, where `takef(ps)` and `Tr.take(ps)` were
+// TYPE-046. THROUGH A POINTER (the auto-dereference, D-098) the value handed on is the POINTEE, and `move(pp)` moves
+// the pointer, not it: an owning pointee is refused whatever wraps the pointer, and its transfer is
+// `(move(<-pp)).m()`, which vacates the pointee (D-225). The closed direction (management_6, 2026-10-30): a named
+// receiver is never consumed implicitly.
+pub func:require_move_receiver = NIL(ExprTyper->:e, ExprId:ro, int32:recv, Span:at) never fails {
+    if (recv == 0i32) { pass NIL; }
+    if (raw type_is_invalid(e.types, recv)) { pass NIL; }
+    if (!(raw type_owns_for_move(e, recv))) { pass NIL; }
+    bool:through = false;
+    int32:rxt = raw exprtypes_get(e.expr_types, ro);
+    if (rxt != 0i32) {
+        if ((raw type_kind(e.types, rxt)) == (raw TY_POINTER())) { through = true; }
+    }
+    if (!through) {
+        if ((raw move_slot_source(e, ro, raw BORROW_FUEL())) == 0i32) { pass NIL; }   // DEF-367, DEF-368 too
+        if (raw expr_is_variant_ctor(e, ro)) { pass NIL; }
+    }
+    string:m1 = string_concat("`", raw type_display(e.types, e.interns, recv));
+    string:m2 = string_concat(m1, "` owns storage that is released at scope exit");
+    int32:rk = raw type_kind(e.types, recv);
+    if ((rk == (raw TY_PARAM())) || (rk == (raw TY_SELF()))) {
+        m2 = string_concat(m1, "` is a type parameter, owning storage at some of the types it is instantiated at (D-264)");
+    }
+    drop diaglist_push(e.diags, raw diag_error(raw TYPE_MOVE_REQUIRED(),
+        string_concat(m2, ", and this method takes its receiver by `move` (D-183): the call would copy the receiver and leave two owners, the method dropping it at its exit and the receiver's owner again at its own. Write `(move(x)).m(…)` to transfer a named receiver (invalidating it), or `(move(<-p)).m(…)` to transfer what a pointer points at (vacating it; `move(p)` moves the pointer, not its pointee) -- inside a ternary, `??`, `?!`, `relay` or a cast, `move(...)` at the place it reads; a temporary's part, bound first --, or call the method on `.clone()` or on a temporary"),
         at));
     pass NIL;
 };

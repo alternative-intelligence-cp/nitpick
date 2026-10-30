@@ -135,6 +135,22 @@ over the slot unconditionally -- a vacant slot's drop is a no-op, a re-filled
 one's is the drop the value was owed -- and only a binding nobody addressed
 keeps the one-byte test.
 
+**What reaches a move slot (DEF-366, DEF-367, DEF-368; 1.6.1e landing 170).** An
+owning value enters a slot that takes ownership -- an initialiser, an
+assignment, `pass`, `give`, a `move` argument, a `move` RECEIVER, a struct or
+array literal's element -- only FRESH (a call's or a literal's whole result,
+`move(...)`) or by `move(...)` at its place. A copy of a place through an
+operator is refused as the place itself is: `is (c) : a : b`, `a ?? d`, `r ?!
+E`, `r ?| d`, `relay r`, `a => T` and `a => dyn T` hand back a place's own
+value, so write `is (c) : move(a) : move(b)` or `move(o) ?? d`. A part read out
+of a value no binding holds is refused too -- `(f()).s` is a part of a statement
+temporary that drops whole at the statement's end -- so bind the value first
+(`T:t = f(); x = move(t.s);`); a part read through `?.` is unwrapped and bound
+first. A method whose receiver is `move Self:self` takes its receiver as a
+`move` argument: `(move(x)).m()`, and through a pointer `(move(<-p)).m()`, which
+leaves the pointee VACANT (above). A copy of PLAIN DATA through any of these is
+harmless and stays legal.
+
 ### 1.1d The four store shapes, and what each drops (D-186, DEF-120)
 
 Assigning over an owning value releases the old one first, after the right-hand

@@ -7276,6 +7276,14 @@ both legs on 168 and 169; `wt/51a/.internal/probes/t169/`, r8, r10b, r16). DEF-3
 landing 170 ports the load. Until then the spawn spelling is refused (landing 169's closed DEF-360
 rule) and the await spelling is a silent wrong value; `(<-pp).m()` is the faithful spelling of both.
 
+*[2026-10-30, 1.6.1e landing 170 — a dated note (DEF-363 fixed).]* The child-frame builder makes the
+auto-dereference now: `emit_child_frame` loads the pointee of a pointer receiver handed to a
+by-value `self` -- DEF-134's load, ported -- so `await pp.lookp()` and `drop pp.lookp()` read the
+POINTEE (r10b, r16, r8: 114 at both legs on 168 and 169, 0 under 170). At a spawn the copy is taken
+at the seed, before the task runs; an owning pointee stays refused there (D-180's dated note), and a
+`move` receiver through a pointer is TYPE-046 at the call, the await and the spawn (D-183's dated
+note, DEF-366): its transfer is `(move(<-pp)).m()`, which vacates the pointee.
+
 ## D-099 — `NIL` is the empty `Optional`; `Some` and `Optional{…}` are both struck
 
 **Settled in cycle 0.4.5.** `Result` gained its constructor in D-097 and the same
@@ -13220,6 +13228,8 @@ a spawned thread held it, the thread allocating in freed memory — is the shape
 
 *[2026-10-30, after landing 169's review — a dated note (DEF-364, DEF-365).]* The rule's receiver side is not yet the argument side's twin: a by-value receiver that HOLDS a borrow (`H{ p: @d }` with `rd = NIL(H:self)`, `drop h.rd()`) crosses unrefused where `drop rdf(h)` is `NITPICK-BORROW-004` -- `escape_spawn_recv` runs the receiver's walk and throws its verdict away (DEF-364); and a `T` INSIDE an Optional, an array, a `Result` or a generic struct crosses by value because `type_drops_recorded` answers false for a type parameter's element, DEF-361 testing the top-level kind alone (DEF-365). Both silent on 168 and 169 alike, OPEN HIGH, landing 170 with DEF-363; 0 tree and library sites. The qualifier reading of the note above is a TRAIT's name alone (the typer has no type-qualified call).
 
+*[2026-10-30, 1.6.1e landing 170 — a dated note (DEF-360 relaxed, DEF-363).]* A by-value receiver reached THROUGH A POINTER crosses a spawn as a COPY OF THE POINTEE -- the child frame loads it at the seed (DEF-363) -- and is judged by the pointee's type: an owner is `NITPICK-BORROW-004` (the task would hold its header while the pointee keeps the storage; the transfer is `(move(<-p)).m()` into a `move` receiver), a pointee whose type holds an ADDRESS is `-004` as a borrow crossing the spawn (`H{ p: @d }` behind the pointer: the copy carries the address), plain data crosses. Landing 169's blanket refusal of the spelling is gone. The by-name receiver holding a borrow (DEF-364) and a `T` inside a generic type (DEF-365) stay open, landing 171.
+
 ## D-181 — Threads: the `thread` modifier, the per-thread executor, and the lexical join — **SETTLED**
 
 C-9's thread half, ratified from `meta/roadmap/1.1/C9_THREAD_STUDY.md`. It
@@ -13994,6 +14004,29 @@ flag per owning local would be simple and uniformly wasteful, so **an
 instrument counts the residue** — proving most of them away is most of the
 value, and this is the one part of the design where measurement precedes
 optimisation.
+
+*[2026-10-30, 1.6.1e landing 170 — a dated note (DEF-366, DEF-367, DEF-368).]*
+The move-only rule asks WHERE A VALUE COMES FROM, not whether it has an address.
+TYPE-046 asked `expr_is_place` -- the address question, answered for the root of
+a path -- so three roads to a second owner stayed open on every compiler before
+landing 170: a method whose receiver is `move Self:self` took its receiver as a
+copy with nobody asking (DEF-366: `ps.take()`, `h.u.take()`, `pp.take()`,
+`ps.takef()`, awaited and spawned; 95/95 at both legs); an operator handing back
+a place's own value -- a ternary's arm, either side of `??` and `?|`, the value
+of `?!` and `??!`, the operand of `relay` and of a cast -- and `?.`'s part were
+"temporaries" (DEF-367: `PS:r = is (c) : a : b;`); and an owning part read out
+of a value no binding holds -- a call result's field, a literal's, a moved
+value's, a call's pointee's -- was a "temporary" although the temporary drops
+whole at the statement's end, the part with it (DEF-368: `string:x = (raw
+mk()).s;`). `move_slot_source` (type_expr.npk) answers for every move slot now
+-- an initialiser, an assignment, `pass`, `give`, a `move` argument, a `move`
+RECEIVER, a struct or array literal's element --: a place, an operator over one,
+a part of a temporary and a part through `?.` are refused; a fresh value and a
+copy of plain data are not. The transfers are `move(...)` at the place inside
+the operator (`is (c) : move(a) : move(b)`, `move(o) ?? d`), `(move(x)).m()` and
+`(move(<-p)).m()` for a receiver, and a temporary bound before its part is moved
+out. A named receiver is never consumed implicitly (the closed direction,
+management_6 2026-10-30 00:48; the permissive reading is the author's to grant).
 ## D-184 — The reactor: epoll without timerfd; the task-identity rule for every wait — **SETTLED at 1.1.12a; B-3a closed**
 
 **Mechanism.** The reactor is **epoll, and only epoll** — the proposal's

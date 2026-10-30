@@ -1,35 +1,35 @@
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 143:13
+// expect-error-at: 162:13
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 156:13
+// expect-error-at: 175:13
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 170:13
+// expect-error-at: 189:13
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 184:14
+// expect-error-at: 203:14
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 194:15
+// expect-error-at: 213:15
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 205:14
+// expect-error-at: 224:14
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 216:25
+// expect-error-at: 235:25
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 225:25
+// expect-error-at: 244:25
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 234:25
+// expect-error-at: 253:25
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 244:19
+// expect-error-at: 263:19
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 253:19
+// expect-error-at: 272:19
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 265:21
+// expect-error-at: 284:21
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 276:20
+// expect-error-at: 295:20
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 288:14
+// expect-error-at: 309:14
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 299:14
+// expect-error-at: 321:14
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 309:15
+// expect-error-at: 331:15
 // DEF-359 + DEF-360 + DEF-361 + DEF-362 (landing 169): THE FOUR FACES OF THE SPAWN READERS THAT MANAGEMENT'S
 // REVIEW OF LANDING 168 FOUND, each a hole on landing 167 and landing 168 alike.
 //
@@ -67,12 +67,23 @@
 // others; the legal half is tests/backend/programs/spawn_review_faces_ok.npk. The cells:
 // wt/51a/.internal/probes/t168/rev168/cells_all4/ (f1a-f1c, f2a-f2b, f3a, f3c, f4a-f4e) and t169/cells_r/,
 // cells_r2/ (r1-r14, the receiver's spellings at the spawn and under `await`).
+// LANDING 170 (2026-10-30): the child-frame seed loads the pointee (DEF-363), so a by-value receiver reached
+// through a pointer crosses as a COPY OF THE POINTEE, judged by the pointee's type (DEF-360 relaxed): sites 4-6, the
+// owner pointee, stay NITPICK-BORROW-004 (the message names `(move(<-p)).m()` into a `move` receiver); landing 169's
+// sites 14-16, PLAIN DATA through a pointer local with the owner writing, with nothing written and through an
+// inline address, are legal -- the legal half's controls 21-23 read the right value. Sites 14-16 are now a POINTEE
+// WHOSE TYPE HOLDS AN ADDRESS, `H{ p: @d }` behind the pointer, in the same three spellings: the copy carries the
+// address, a borrow crossing the spawn, NITPICK-BORROW-004 at the receiver -- refused on 169 by the blanket rule,
+// silent 114/114 at both legs under the relaxation's first cut, which judged ownership alone (DEF-364's shape
+// reached through a pointer; wt/51a/.internal/probes/t170/pre8/ x1-x3); the AWAIT of it is the legal half's
+// control 27.
 mod:spawn_review_faces;
 error:E1;
 fixed Duration:J2 = Duration{ ns: 2000000000i64 };
 struct:W = { int64:k; };
 struct:SS = { string:s; int64:k; };
 struct:PD = { int64:k; };
+struct:H = { string->:p; };
 impl:W = {
     thread async func:look = NIL(W:self) joins J2 {
         await sleep(raw duration_ms(1i64)) ?| NIL;
@@ -92,6 +103,14 @@ impl:SS = {
         await sleep(raw duration_ms(1i64)) ?| NIL;
         fixed uint8[]:xb = string_bytes(self.s);
         if (xb[0i64] != 97u8) { fail E1; }
+        pass NIL;
+    };
+};
+impl:H = {
+    async func:rd = NIL(H:self) {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        fixed uint8[]:xb = string_bytes(<-self.p);
+        if (xb[0i64] != 104u8) { fail E1; }
         pass NIL;
     };
 };
@@ -279,35 +298,38 @@ async func:trait_qualified_pointer_receiver = NIL() {
     pass NIL;
 };
 
-// --- DEF-360 + DEF-363: THE PLAIN-DATA FACES -- THE POINTER'S WORDS ARE WHAT THE TASK RECEIVES ------------
-// 14. plain data through a pointer local, the owner writing under the task (r1: the task read `self.k` wrong)
-async func:plain_through_pointer_owner_writes = NIL() {
-    PD:pd = PD{ k: 1i64 };
-    PD->:pp = @pd;
+// --- LANDING 170: A POINTEE WHOSE TYPE HOLDS AN ADDRESS ----------------------------------------------
+// 14. `H{ p: @d }` behind `H->:hp`, `drop hp.rd()`, `d` rewritten under the task: the copy of the pointee
+//     carries the address (x1: 114/114 at both legs on 168 and under the relaxation's first cut)
+async func:holds_address_through_pointer = NIL() {
+    string:d = string_concat("hello", " world");
+    H:h = H{ p: @d };
+    H->:hp = @h;
     {
-        drop pp.lookp();
-        pp.k = 2i64;
+        drop hp.rd();
+        d = string_concat("xyzzy", "!");
     }
     pass NIL;
 };
 
-// 15. plain data through a pointer local, NOTHING written: the value is wrong all the same (r8, 114 at both legs)
-async func:plain_through_pointer_no_write = NIL() {
-    PD:pd = PD{ k: 1i64 };
-    PD->:pp = @pd;
+// 15. the same with NOTHING written: a borrow crossing is refused whatever the owner does (x3, as site 6)
+async func:holds_address_through_pointer_no_write = NIL() {
+    string:d = string_concat("hello", " world");
+    H:h = H{ p: @d };
+    H->:hp = @h;
     {
-        drop pp.lookp();
+        drop hp.rd();
     }
-    if (pd.k != 1i64) { fail E1; }
     pass NIL;
 };
 
-// 16. plain data through an inline address, `drop (@pd).lookp()` (r2)
-async func:plain_through_address = NIL() {
-    PD:pd = PD{ k: 1i64 };
+// 16. through an inline address, `drop (@h).rd()`, `d` rewritten under the task (x2)
+async func:holds_address_through_address = NIL() {
+    string:d = string_concat("hello", " world");
+    H:h = H{ p: @d };
     {
-        drop (@pd).lookp();
-        pd.k = 3i64;
+        drop (@h).rd();
+        d = string_concat("xyzzy", "!");
     }
     pass NIL;
 };
@@ -326,9 +348,9 @@ async func:main = int32(cstring[]:_~argv) {
     await trait_qualified_temporary() ?| NIL;
     await trait_qualified_both_faces() ?| NIL;
     await trait_qualified_pointer_receiver() ?| NIL;
-    await plain_through_pointer_owner_writes() ?| NIL;
-    await plain_through_pointer_no_write() ?| NIL;
-    await plain_through_address() ?| NIL;
+    await holds_address_through_pointer() ?| NIL;
+    await holds_address_through_pointer_no_write() ?| NIL;
+    await holds_address_through_address() ?| NIL;
     exit 0i32;
 };
 func:failsafe = int32(Error:e) {

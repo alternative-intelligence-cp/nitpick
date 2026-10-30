@@ -15,12 +15,21 @@
 // and the root written AFTER the block's join. Each control fails at its own exit; exit 0 at both legs under
 // this compiler; landing 168's checker refuses control 1 alone (the over-refusal it introduced) and accepts
 // every other. The refusals of the same shapes are tests/analysis/rejection/spawn_review_faces.npk.
+// LANDING 170 (2026-10-30): the child-frame seed loads the pointee (DEF-363) and a by-value receiver through a
+// pointer crosses a spawn as a copy of the pointee, plain data legal (DEF-360 relaxed): controls 21-26 spell the
+// AUTO-DEREFERENCE the paragraph above calls refused -- the spawn with the owner writing, with nothing written,
+// through an inline address (landing 169's refusal sites 14-16), the await reporting what it read, a plain `async`
+// spawn, and an owning pointee awaited by a by-value receiver; control 27 awaits a pointee whose type HOLDS AN
+// ADDRESS, `H{ p: @d }`, the same way, reporting the byte it read (its spawn is the rejection file's sites 14-16).
+// Landing 169's checker refuses controls 21, 22, 23 and 25 (DEF-360's blanket rule), so this file's 169 leg cannot
+// run; its 168 leg could not either (control 1). Controls 28 and 29 spell the owning pointee's two transfers.
 mod:spawn_review_faces_ok;
 error:E1;
 fixed Duration:J2 = Duration{ ns: 2000000000i64 };
 struct:W = { int64:k; };
 struct:SS = { string:s; int64:k; };
 struct:PD = { int64:k; };
+struct:H = { string->:p; };
 impl:W = {
     thread async func:look = NIL(W:self) joins J2 {
         await sleep(raw duration_ms(1i64)) ?| NIL;
@@ -37,6 +46,11 @@ impl:PD = {
     async func:peekk = int64(PD:self) {
         await sleep(raw duration_ms(1i64)) ?| NIL;
         pass self.k;
+    };
+    async func:lookq = NIL(PD:self) {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        if (self.k != 1i64) { fail E1; }
+        pass NIL;
     };
 };
 thread async func:filler = NIL(shared_arena<int64>->:s) joins J2 {
@@ -64,6 +78,19 @@ impl:SS:Tm = {
         if (xb[0i64] != 97u8) { fail E1; }
         if (n != 5i64) { fail E1; }
         pass NIL;
+    };
+};
+impl:SS = {
+    async func:slen = int64(SS:self) {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        pass self.s.len;
+    };
+};
+impl:H = {
+    async func:rdb = uint8(H:self) {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        fixed uint8[]:xb = string_bytes(<-self.p);
+        pass xb[0i64];
     };
 };
 async func:generic_moved<T> = NIL(move T:a) {
@@ -181,6 +208,96 @@ async func:main = int32(cstring[]:_~argv) {
         int64:got = await (<-pp).peekk() ?! E1;
         if (got != 1i64) { exit 20i32; }
     }
+    // 21. (r1; landing 169's refusal site 14) plain data through a pointer local, `drop pp.lookp()`, the owner
+    //     writing under the task: the seed copies the POINTEE into the task's frame (DEF-363), so the task reads
+    //     1 (`lookp` fails otherwise, and the join relays it), never the write and never the pointer's words
+    {
+        PD:pd = PD{ k: 1i64 };
+        PD->:pp = @pd;
+        {
+            drop pp.lookp();
+            pp.k = 2i64;
+        }
+        if (pd.k != 2i64) { exit 21i32; }
+    }
+    // 22. (r8; site 15) the same with nothing written
+    {
+        PD:pd = PD{ k: 1i64 };
+        PD->:pp = @pd;
+        {
+            drop pp.lookp();
+        }
+        if (pd.k != 1i64) { exit 22i32; }
+    }
+    // 23. (r2; site 16) through an inline address, `drop (@pd).lookp()`, the owner writing under the task
+    {
+        PD:pd = PD{ k: 1i64 };
+        {
+            drop (@pd).lookp();
+            pd.k = 3i64;
+        }
+        if (pd.k != 3i64) { exit 23i32; }
+    }
+    // 24. (r10b) the by-value method AWAITED through the AUTO-DEREFERENCE, `await pp.peekk()`, reporting the value
+    //     it read: 1 (114 at both legs on 168 and 169, the pointer's words read as the struct -- DEF-363)
+    {
+        PD:pd = PD{ k: 1i64 };
+        PD->:pp = @pd;
+        int64:got = await pp.peekk() ?! E1;
+        if (got != 1i64) { exit 24i32; }
+    }
+    // 25. (r12) a plain `async` by-value method SPAWNED through a pointer, `drop pp.lookq()`, nothing written
+    {
+        PD:pd = PD{ k: 1i64 };
+        PD->:pp = @pd;
+        {
+            drop pp.lookq();
+        }
+        if (pd.k != 1i64) { exit 25i32; }
+    }
+    // 26. an OWNING pointee AWAITED through a pointer by a by-value (not `move`) receiver, `await sp.slen()`: the
+    //     child reads its loan of the header while the caller is suspended (D-177) -- 3, where 168 and 169 read the
+    //     pointer's words as a `string` header (a spawn of it stays refused: sites 4-6 of the rejection file)
+    {
+        SS:ss = SS{ s: string_concat("ab", "c"), k: 5i64 };
+        SS->:sp = @ss;
+        int64:n = await sp.slen() ?! E1;
+        if (n != 3i64) { exit 26i32; }
+    }
+    // 27. (x4) a pointee whose type HOLDS AN ADDRESS, `H{ p: @d }`, AWAITED through a pointer by a by-value receiver,
+    //     `await hp.rdb()`: the caller is suspended until the child ends (D-177), so nothing writes what the copy's
+    //     address names while the child reads it -- 104, the first byte of `d`, which is rewritten AFTER the await
+    //     (168 and 169 read the pointer's words as `H`: x4, `rd` failing inside, 114 at O0 and 109 at O2)
+    {
+        string:d = string_concat("hello", " world");
+        H:h = H{ p: @d };
+        H->:hp = @h;
+        uint8:b = await hp.rdb() ?! E1;
+        d = string_concat("xyzzy", "!");
+        if (b != 104u8) { exit 27i32; }
+    }
+    // 28. the owning pointee TRANSFERRED into a `move` receiver through the pointer, `(move(<-sp)).takec()` -- the
+    //     first transfer the spawn rule's owner message names; the pointee is left VACANT and assigned before a read
+    {
+        SC:w = SC{ s: string_concat("ab", "c"), k: 1i64 };
+        SC->:sp = @w;
+        {
+            drop (move(<-sp)).takec();
+        }
+        w = SC{ s: string_concat("de", "f"), k: 2i64 };
+        if (w.s.len != 3i64) { exit 28i32; }
+    }
+    // 29. a CLONE of the owning pointee into a `move` receiver, `((<-sp).clone() ?! E1).takec()` -- the second
+    //     transfer the message names (`.clone()` is fallible); the owner writes the pointee under the task
+    {
+        SC:w = SC{ s: string_concat("ab", "c"), k: 1i64 };
+        SC->:sp = @w;
+        {
+            drop ((<-sp).clone() ?! E1).takec();
+            sp.s = string_concat("zz", "z");
+        }
+        if (w.s.len != 3i64) { exit 29i32; }
+    }
     exit 0i32;
 };
 func:failsafe = int32(Error:e) {
@@ -201,4 +318,14 @@ func:failsafe = int32(Error:e) {
         (*)                 { exit 99i32; }
     }
     exit 9i32;
+};
+#[derive(Clone)]
+struct:SC = { string:s; int64:k; };
+impl:SC = {
+    thread async func:takec = NIL(move SC:self) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        fixed uint8[]:xb = string_bytes(self.s);
+        if (xb[0i64] != 97u8) { fail E1; }
+        pass NIL;
+    };
 };

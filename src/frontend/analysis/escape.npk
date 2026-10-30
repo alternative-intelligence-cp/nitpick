@@ -6716,19 +6716,40 @@ func:escape_spawn_recv = NIL(Escape->:x, ExprId:call, ExprId:recv, int32:depth) 
             rn.span);
         pass NIL;
     }
-    // A BY-VALUE RECEIVER REACHED THROUGH A POINTER CROSSES AS THAT POINTER (F2 of the review of
-    // landing 168, DEF-360; the emitter's face DEF-363): `drop p.looks()` with `looks = NIL(SS:self)`
-    // builds the task's frame from the receiver EXPRESSION's words -- the POINTER's, not the
-    // pointee's (r8, `drop pp.lookp()` with NOTHING written, read `self.k` wrong at both legs on
-    // 168 and 169; the owner pointee of f2a read a garbage header, OutOfBounds 109) -- so the
-    // pointer is what crosses, and `rxt`, the pointer's type, drops nothing. `drop (<-p).looks()`
-    // and the by-name spelling copy the pointee at the spawn (r3, r6) and take the by-value rule
-    // below; this spelling is refused whatever the pointee's type -- the closed direction
-    // (DEF-54) -- until the child-frame builder dereferences the receiver (DEF-363).
+    // A BY-VALUE RECEIVER REACHED THROUGH A POINTER IS THE POINTEE, COPIED AT THE SPAWN (DEF-360 relaxed,
+    // landing 170): the child-frame seed loads the pointee into the task's frame before the task runs
+    // (DEF-363's load, `emit_child_frame`), so what crosses is a copy of the POINTEE, judged as a by-value
+    // receiver of the pointee's type: PLAIN DATA crosses (r8, `drop pp.lookp()` with `PD->:pp`, reads the
+    // right value now), an OWNING pointee is refused -- the task would hold its header while the pointee keeps
+    // the storage, DEF-340's hazard -- and a `move` parameter does not exempt it: the load vacates nothing
+    // (`drop pp.take()` is TYPE-046 at the typer first, DEF-366). Until this landing the spelling was refused
+    // whatever the pointee's type, the closed direction while the seed stored the POINTER's words (169).
+    // A type parameter pointee is an owner, as DEF-361 reads a `T`. AND A POINTEE WHOSE TYPE HOLDS AN ADDRESS
+    // is a borrow crossing, refused as `escape_spawn_args` refuses an argument whose walk carries one: the
+    // copy carries the address (`H{ p: @d }` behind `H->:hp`, `drop hp.rd()` with `d` rewritten under the
+    // task -- refused on 169 by the blanket rule, silent 114/114 at both legs under this rule's first cut,
+    // DEF-364's shape through a pointer; the type is the closed reading, no ref walk of a pointee).
     if ((raw type_kind(x.types, rxt)) == (raw TY_POINTER())) {
-        drop escape_err(x, raw BORROW_SPAWNED(),
-            "the receiver of a spawned by-value method reached THROUGH A POINTER crosses the spawn as that pointer (DEF-360, DEF-363; D-180): the task's frame is built from the pointer's words, not the pointee's, and the task reads a wrong value -- write `(<-p).m()` to copy the pointee at the spawn, or copy it into a local first",
-            rn.span);
+        int32:pte = raw type_elem(x.types, rxt);
+        bool:owns = true;
+        bool:holds = true;
+        if (pte != 0i32) {
+            if ((raw type_kind(x.types, pte)) != (raw TY_PARAM())) {
+                if (!(raw type_drops(x.tr, pte, x.scope, 64i32))) { owns = false; }
+                if (!(raw type_holds_pointer(x.types, pte, 8i32))) { holds = false; }
+            }
+        }
+        if (owns) {
+            drop escape_err(x, raw BORROW_SPAWNED(),
+                "a by-value receiver reached THROUGH A POINTER crosses the spawn as a copy of the pointee (DEF-360, DEF-363; D-180, TYPE-046): an owning pointee's header would be held by the task while the pointee keeps the storage, and a write, move, destroy or reallocation of it before the join frees what the task reads -- declare the receiver `move` and transfer the pointee, `(move(<-p)).m()`, or a clone of it, `((<-p).clone() ?! E).m()`",
+                rn.span);
+            pass NIL;
+        }
+        if (holds) {
+            drop escape_err(x, raw BORROW_SPAWNED(),
+                "a by-value receiver reached THROUGH A POINTER crosses the spawn as a copy of the pointee (DEF-360, DEF-363; D-180), and the pointee's type holds an ADDRESS: a borrow cannot cross a spawn (D-004 rule 4, narrowed by D-180) -- the task would read through the copy while the owner writes, moves or frees what it points at, at a suspension point it did not choose; hand the task the values it reads, or a sanctioned pointer",
+                rn.span);
+        }
         pass NIL;
     }
     drop escape_spawn_byval(x, call, 0i32, recv, rxt, rn);

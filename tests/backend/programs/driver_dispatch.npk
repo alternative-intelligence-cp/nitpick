@@ -31,7 +31,7 @@ async func:main = int32(cstring[]:argv) {
     if (!bad2.is_error) { exit 12i32; }
 
     Result<Bridge>:br = await spawn_driver(p, 65536i64, 4i64, 0i64, raw duration_secs(5i64));
-    Bridge:b = br ?! E9;
+    Bridge:b = move(br) ?! E9;
 
     int64:i = 0i64;
     while (i < 6i64) decreases 6i64 - i {

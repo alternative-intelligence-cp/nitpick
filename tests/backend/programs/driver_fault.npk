@@ -23,7 +23,7 @@ async func:main = int32(cstring[]:argv) {
 
     // the fault path, and the tail
     Result<Bridge>:br = await spawn_driver(p, 65536i64, 64i64, 0i64, raw duration_secs(5i64));
-    Bridge:b = br ?! E9;
+    Bridge:b = move(br) ?! E9;
     Result<int32>:r = await dispatch(@b, 777i64, 0i64, raw duration_secs(5i64));
     if (!r.is_error)              { exit 21i32; }
     if (r.err != EDriverFault)    { exit 22i32; }
@@ -36,7 +36,7 @@ async func:main = int32(cstring[]:argv) {
 
     // the protocol path: a reply whose seq is not the one sent
     Result<Bridge>:br2 = await spawn_driver(p, 65536i64, 64i64, 0i64, raw duration_secs(5i64));
-    Bridge:b2 = br2 ?! E9;
+    Bridge:b2 = move(br2) ?! E9;
     Result<int32>:r3 = await dispatch(@b2, 666i64, 0i64, raw duration_secs(5i64));
     if (!r3.is_error)             { exit 31i32; }
     if (r3.err != EDriverProtocol){ exit 32i32; }

@@ -57,9 +57,9 @@ task independently of its body), so `raw await f(…)` is unlicensed by
 construction. The honest spellings are the handling ones:
 
 ```nitpick
-string:payload = relay await fetch_data(url);      // propagate
-string:p2 = await fetch_data(url) ?| fallback;     // default
-string:p3 = await fetch_data(url) ?! 9tbb32;       // trap
+string:payload = relay await fetch_data(url);         // propagate
+string:p2 = await fetch_data(url) ?| move(fallback);  // default (the fallback MOVED in: TYPE-046, DEF-367)
+string:p3 = await fetch_data(url) ?! 9tbb32;          // trap
 ```
 
 > **`await` is valid only inside an `async func`.** Using it in a synchronous

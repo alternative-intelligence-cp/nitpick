@@ -1,0 +1,378 @@
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 134:14
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 140:15
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 147:14
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 154:15
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 160:14
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 165:14
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 171:11
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 179:14
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 188:15
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 196:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 205:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 212:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 219:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 226:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 233:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 240:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 247:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 254:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 261:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 268:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 275:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 284:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 292:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 299:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 307:20
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 314:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 322:17
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 329:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 335:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 342:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 349:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 355:5
+// DEF-366 + DEF-367 + DEF-368 (landing 170): AN OWNER REACHES A MOVE SLOT ONLY BY `move(...)`, WHATEVER STANDS
+// BETWEEN THE PLACE AND THE SLOT. TYPE-046 (D-183) refused a PLACE copied into a slot that takes ownership -- an
+// initialiser, an assignment, `give`, a `move` argument, a struct literal's field, an array literal's element --
+// and asked `expr_is_place`, the ADDRESS question, so three roads stayed open on every compiler before this one:
+//
+// DEF-366: a method whose receiver is `move Self:self` (parameter 0, which `check_args` skips) took the receiver
+// with nobody asking the rule, so `ps.take()` copied `ps` into a method that drops it at its exit while the caller
+// dropped it again at its own -- by name, through a field, through a pointer (the auto-dereference and `<-pp`), by
+// UFCS, at a call, an await and a spawn (95/95 at both legs: the allocator's double-free check). Now the receiver
+// slot is a move slot: `(move(ps)).take()` transfers it, `(move(<-pp)).take()` what a pointer points at.
+// DEF-367: an operator handing back a place's own value -- a ternary's arm (nested too), either side of `??` and
+// `?|`, the value of `?!` and `??!`, the operand of `relay` and of a cast (`=>`, `=> dyn`) -- was no place to that
+// question, so `PS:r = is (c) : a : b;` left two owners (95/95), in every slot; and `?.` reads a part out of an
+// Optional (`o?.s`). Now each is refused; `move(...)` at the place inside the operator is the transfer
+// (`is (c) : move(a) : move(b)`, `move(oa) ?? d`), and `?.` is unwrapped and bound first.
+// DEF-368: an owning PART read out of a value no binding holds -- a call result's field, a struct literal's, a
+// moved value's, the pointee of a call's pointer -- was a "temporary" to the address question, but the temporary
+// drops whole at the statement's end and the part with it (95/95). Now refused: bind the value first and move the
+// part out of the binding.
+//
+// Each site is one function and one report. A copy of PLAIN DATA is harmless and stays legal (`Pod => dyn T`,
+// `?| c` with `Cat:c` into a `dyn` slot box a fresh copy: the operand's own type decides). Landing 169's checker
+// refuses none of the sites; the legal half is tests/backend/programs/move_slot_sources_ok.npk, and the matrix of
+// every slot x every form is wt/51a/.internal/probes/t170/MATRIX_170.txt (gen_matrix170.py).
+mod:move_slot_sources;
+error:E1;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+struct:PS = { string:s; int64:k; };
+impl:PS = {
+    func:take = int64(move PS:self) never fails {
+        pass self.s.len;
+    };
+    thread async func:takes = NIL(move PS:self) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        if (self.s.len != 4i64) { fail E1; }
+        pass NIL;
+    };
+};
+trait:Tl = { func:ln = int64(Self:self) never fails; };
+impl:PS:Tl = { func:ln = int64(PS:self) never fails { pass self.s.len; }; };
+trait:Tk = { func:tk = int64(move Self:self) never fails; };
+impl:PS:Tk = { func:tk = int64(move PS:self) never fails { pass self.s.len; }; };
+struct:HU = { PS:u; int64:j; };
+struct:HH = { HU:h; int64:j; };
+func:mk = PS() never fails {
+    pass PS{ s: string_concat("ab", "cd"), k: 1i64 };
+};
+func:mkh = HU() never fails {
+    pass HU{ u: raw mk(), j: 2i64 };
+};
+func:mkr = PS(bool:c) {
+    if (!c) { fail E1; }
+    pass raw mk();
+};
+func:mko = PS?(bool:c) never fails {
+    if (c) { pass NIL; }
+    pass raw mk();
+};
+func:getp = PS->(PS->:q) never fails {
+    pass q;
+};
+func:takef = int64(move PS:x) never fails {
+    pass x.s.len;
+};
+
+// --- DEF-366: THE `move` RECEIVER ------------------------------------------------------------------------------
+// 1. by name
+func:recv_by_name = int64() never fails {
+    PS:ps = raw mk();
+    pass raw ps.take();
+};
+
+// 2. a field
+func:recv_field = int64() never fails {
+    HU:h = raw mkh();
+    pass raw h.u.take();
+};
+
+// 3. through a pointer, the auto-dereference: the value handed on is the POINTEE
+func:recv_through_pointer = int64() never fails {
+    PS:ps = raw mk();
+    PS->:pp = @ps;
+    pass raw pp.take();
+};
+
+// 4. an explicit dereference
+func:recv_explicit_deref = int64() never fails {
+    PS:ps = raw mk();
+    PS->:pp = @ps;
+    pass raw (<-pp).take();
+};
+
+// 5. UFCS: a free function whose first parameter is `move`
+func:recv_ufcs = int64() never fails {
+    PS:ps = raw mk();
+    pass raw ps.takef();
+};
+
+// 6. a type parameter's `move Self:self` method, by name
+func:recv_generic<T: Tk> = int64(move T:x) never fails {
+    pass raw x.tk();
+};
+
+// 7. awaited
+async func:recv_await = NIL() {
+    PS:ps = raw mk();
+    await ps.takes() ?! E1;
+    pass NIL;
+};
+
+// 8. spawned
+async func:recv_spawn = NIL() {
+    PS:ps = raw mk();
+    {
+        drop ps.takes();
+    }
+    pass NIL;
+};
+
+// 9. a ternary as the receiver (DEF-366 with DEF-367)
+func:recv_ternary = int64(bool:c) never fails {
+    PS:a = raw mk();
+    PS:b = raw mk();
+    pass raw (is (c) : a : b).take();
+};
+
+// --- DEF-367: AN OPERATOR HANDING BACK A PLACE'S OWN VALUE ------------------------------------------------------
+// 10. a ternary's arm, in an initialiser
+func:op_ternary = int64(bool:c) never fails {
+    PS:a = raw mk();
+    PS:b = raw mk();
+    PS:r = is (c) : a : b;
+    pass r.k;
+};
+
+// 11. a nested ternary
+func:op_nested = int64(bool:c, bool:d) never fails {
+    PS:a = raw mk();
+    PS:b = raw mk();
+    PS:a2 = raw mk();
+    PS:r = is (c) : (is (d) : a : b) : a2;
+    pass r.k;
+};
+
+// 12. `??`'s Optional
+func:op_coalesce = int64() never fails {
+    PS?:oa = raw mk();
+    PS:r = oa ?? raw mk();
+    pass r.k;
+};
+
+// 13. `??`'s default
+func:op_coalesce_default = int64(bool:c) never fails {
+    PS:b = raw mk();
+    PS:r = raw mko(c) ?? b;
+    pass r.k;
+};
+
+// 14. `??!`
+func:op_emphatic_coalesce = int64() {
+    PS?:oa = raw mk();
+    PS:r = oa ??! E1;
+    pass r.k;
+};
+
+// 15. `?!`
+func:op_unwrap = int64(bool:c) {
+    Result<PS>:ra = mkr(c);
+    PS:r = ra ?! E1;
+    pass r.k;
+};
+
+// 16. `?|`'s Result
+func:op_default = int64(bool:c) never fails {
+    Result<PS>:ra = mkr(c);
+    PS:r = ra ?| raw mk();
+    pass r.k;
+};
+
+// 17. `?|`'s default (CONCURRENCY_REFERENCE's `?| fallback`)
+func:op_default_rhs = int64(bool:c) never fails {
+    PS:b = raw mk();
+    PS:r = mkr(c) ?| b;
+    pass r.k;
+};
+
+// 18. `relay`
+func:op_relay = int64(bool:c) {
+    Result<PS>:ra = mkr(c);
+    PS:r = relay ra;
+    pass r.k;
+};
+
+// 19. a cast
+func:op_cast = int64() never fails {
+    PS:a = raw mk();
+    PS:r = a => PS;
+    pass r.k;
+};
+
+// 20. a `dyn` cast of an owner (a plain-data operand boxes a fresh copy and stays legal)
+func:op_dyn_cast = int64() never fails {
+    PS:a = raw mk();
+    dyn Tl:d = a => dyn Tl;
+    pass 1i64;
+};
+
+// 21. `?.`: a part read out of an Optional
+func:op_safe_nav = int64() never fails {
+    PS?:o = raw mk();
+    string?:x = o?.s;
+    pass 1i64;
+};
+
+// 22. the assignment
+func:slot_assign = int64(bool:c) never fails {
+    PS:a = raw mk();
+    PS:b = raw mk();
+    PS:r = raw mk();
+    r = is (c) : a : b;
+    pass r.k;
+};
+
+// 23. `pass`
+func:slot_pass = PS(bool:c) never fails {
+    PS:a = raw mk();
+    PS:b = raw mk();
+    pass is (c) : a : b;
+};
+
+// 24. a `give`
+func:slot_give = int64(bool:c) never fails {
+    PS:a = raw mk();
+    PS:b = raw mk();
+    PS:r = pick (c) { (true) { give is (c) : a : b; }, (false) { give raw mk(); } };
+    pass r.k;
+};
+
+// 25. a `move` argument
+func:slot_move_arg = int64(bool:c) never fails {
+    PS:a = raw mk();
+    PS:b = raw mk();
+    pass raw takef(is (c) : a : b);
+};
+
+// 26. a struct literal's field
+func:slot_struct_field = int64(bool:c) never fails {
+    PS:a = raw mk();
+    PS:b = raw mk();
+    HU:y = HU{ u: is (c) : a : b, j: 1i64 };
+    pass y.j;
+};
+
+// 27. an array literal's element
+func:slot_array_elem = int64(bool:c) never fails {
+    PS:a = raw mk();
+    PS:b = raw mk();
+    PS[2]:arr = [is (c) : a : b, raw mk()];
+    pass 2i64;
+};
+
+// --- DEF-368: AN OWNING PART OF A VALUE NO BINDING HOLDS --------------------------------------------------------
+// 28. a call result's field
+func:part_call_field = int64() never fails {
+    string:x = (raw mk()).s;
+    pass x.len;
+};
+
+// 29. a struct literal's field
+func:part_literal_field = int64() never fails {
+    string:x = (PS{ s: string_concat("ab", "cd"), k: 1i64 }).s;
+    pass x.len;
+};
+
+// 30. a moved value's field
+func:part_moved_field = int64() never fails {
+    PS:ps = raw mk();
+    string:x = (move(ps)).s;
+    pass x.len;
+};
+
+// 31. the pointee of a call's pointer
+func:part_call_pointer = int64() never fails {
+    PS:ps = raw mk();
+    string:x = (raw getp(@ps)).s;
+    pass x.len;
+};
+
+// 32. a call result's nested part
+func:part_call_nested = int64() never fails {
+    PS:q = (raw mkh()).u;
+    pass q.k;
+};
+
+func:main = int32(cstring[]:_~argv) { pass 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

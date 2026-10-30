@@ -2784,6 +2784,12 @@ func:check_pass = NIL(ExprTyper->:e, StmtNode:s) never fails {
     // out from under everyone. The same rule `move(p)` answers to, asked of
     // the implicit move.
     drop refuse_move_of_borrowed(e, v, got, s.span);
+    // THE IMPLICIT MOVE REACHES A PLACE, NEVER AN OPERATOR'S OPERAND (DEF-367, landing 170): `pass is (c) : a : b;`
+    // copied the arm out while its binding still dropped (95/95), so an operator over a place answers to D-183's
+    // rule as any slot's value does -- `move(...)` at the place inside it.
+    if (!(raw expr_is_place(e.ast, v, raw BORROW_FUEL()))) {
+        drop require_move_if_owning(e, v, got, s.span);
+    }
     // AND THE SAME AGAIN THROUGH A POINTER: `pass m.files[i].text` returns a
     // cap-carrying copy of a value the POINTEE owns, and the first flagged
     // local it lands in frees the container's body — which is precisely how

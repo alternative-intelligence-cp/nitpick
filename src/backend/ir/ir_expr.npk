@@ -5682,6 +5682,27 @@ func:emit_child_frame = IrVal(ExprEmitter->:x, ExprId:cid, ExprNode:cn,
         if (!cwant_ptr) {
             IrVal:rv = raw emit_expr(x, raw expr_operand(cn));
             if (rv.state != (raw LL_OK())) { pass rv; }
+            // A VALUE RECEIVER THROUGH A POINTER IS THE POINTEE, LOADED, at an await and a spawn as at a call
+            // (DEF-363, landing 170; DEF-134's load in `emit_method_call`, which this seed never had): `await
+            // pp.lookp()` and `drop pp.lookp()` with `PD->:pp` and `lookp = int64(PD:self)` stored the POINTER's
+            // bits in slot 12 where the child loads the struct, and `self.k` read the pointer's low word (r10b,
+            // r16: 114/114 at both legs on 168 and 169). Loaded HERE, at the seed, so a spawned task holds a copy
+            // taken before it runs, never the pointer; an owning pointee is refused before this (DEF-366's
+            // TYPE-046 for a `move` receiver, DEF-360's rule at a spawn).
+            if (cp0w != 0i32) {
+                if ((raw type_kind(x.fe.ctx.types, rv.type_id)) == (raw TY_POINTER())) {
+                    int32:cp0s = raw subst_emitted_param(x.fe.ctx, cp0w);
+                    int32:cp0sk = raw type_kind(x.fe.ctx.types, cp0s);
+                    if ((cp0sk != (raw TY_POINTER())) && (cp0sk != (raw TY_DYN()))) {
+                        int32:cpte = raw type_elem(x.fe.ctx.types, rv.type_id);
+                        LlType:cpll = raw ll_type(x.fe.ctx, cpte);
+                        if (!(raw ll_is_ok(cpll))) { pass (raw iv_from_ll_at(x, cpll, cpte, at)); }
+                        string:cld = raw irw_temp(x.fe.w);
+                        drop irw_line(x.fe.w, raw cat5(cld, " = load ", cpll.text, ", ptr ", rv.ref));
+                        rv = raw iv(string_concat(cpll.text, ""), move(cld), cpte);
+                    }
+                }
+            }
             rv = raw emit_fit(x, cp0w, move(rv), at);
             if (raw call_arg_taken(x, cid, cn, 0i32)) { drop temp_take(x, rv.ref); }
             if (rv.state != (raw LL_OK())) { pass rv; }

@@ -2378,3 +2378,27 @@ that carried them retired at the cycle close):
   kind test on a TYPE PARAMETER must be recursive: `type_drops_recorded` has no `TY_PARAM`, `TY_SELF` or `TY_ASSOC` case, so `T?`, `T[n]`,
   `Result<T>` and a generic struct holding a `T` answer "owns nothing" and DEF-361's top-level test lets them cross (DEF-365, OPEN HIGH, landing
   170). Both probed silent on 168 and 169 alike, named and inline, 0 tree and library sites: `wt/51a/.internal/probes/t169/rev169/`.
+- **A move slot asks where its value COMES FROM, not whether it has an address; a `move` receiver is a move slot; and a by-value
+  receiver reached through a pointer is the POINTEE at an await and a spawn** (DEF-366, DEF-367, DEF-368, DEF-363, DEF-360 relaxed;
+  landing 170; type_expr.npk `move_slot_source`, `require_move_if_owning`, `require_move_receiver`; type_members.npk `type_method_call`;
+  type_stmt.npk `check_pass`; ir_expr.npk `emit_child_frame`; escape.npk `escape_spawn_recv`). TYPE-046 guarded the slots that take
+  ownership with `expr_is_place` -- the ADDRESS question -- so an operator's result (`is (c) : a : b`, `a ?? d`, `r ?! E`, `relay r`, a
+  cast) and a part of a temporary (`(raw mk()).s`) were "temporaries" and passed, each a second owner (95/95 at both legs on 168 and
+  169); `type_method_call` handed the arguments to `check_args` with skip 1, so a `move Self:self` receiver was read by nobody at a call,
+  an await, a spawn or UFCS; and `emit_child_frame` stored a pointer receiver's ADDRESS where a by-value `self` was expected. THE
+  LESSONS. (1) THE ADDRESS QUESTION IS NOT THE OWNERSHIP QUESTION: a copy needs no address. A rule that guards a TRANSFER asks where the
+  value comes from -- the root of the path and every operand by its own recorded type -- and answers "a copy" on exhaustion
+  (`move_slot_source`: 0 fresh or plain data, 1 a place, 2 an operator over one, 3 a part of a temporary, 4 a part through `?.`).
+  (2) A SLOT A HELPER SKIPS IS A SLOT NOBODY CHECKS: grep every `skip`/start offset handed to an argument walker and name who checks
+  what it skips (`check_args` skip 1 left parameter 0's `move` unread since `move` parameters existed). (3) `exit` HIDES A DOUBLE FREE:
+  the nine `Bridge:b = br ?! E9;` tests and the cells m1 and m1c read clean with two owners because `main` ends in `exit`, which runs no
+  drops (D-183) -- the new rule's sweep found the nine, and the cells were re-cut in a function that returns (m1b, m1e: 95/95). (4) A
+  RELAXATION IS RE-MEASURED AGAINST EVERY CELL THE CLOSED RULE REFUSED: build 7 relaxed 169's blanket pointer-receiver rule to the
+  pointee's OWNERSHIP and re-opened an address-holding pointee (`H{ p: @d }` behind the pointer: x1, x2 114/114 at both legs, refused on
+  169); the four-column table of the old refusals caught it, and the pointee's type is asked whether it holds an address too. (5) AN
+  EMITTER FIX CAN MAKE A DOUBLE FREE REACHABLE: DEF-363's load turns `await pp.take()` -- a `move` receiver through a pointer, a wrong
+  value before -- into the pointee's header freed twice, so DEF-366 lands first or with it; before an emission fix that makes code
+  "work", ask what it makes reachable. (6) A SWEEP THAT FINDS REAL SITES STOPS THE EDIT: the ten DEF-367 sites (nine tree tests, the
+  fuzz program cc0059) were reported before any respelling, and the respellings are the author's or management's to rule. The cells:
+  `wt/51a/.internal/probes/t170/` (`pre/` to `pre8b/`, the matrix `gen_matrix170.py` -> `MATRIX_170i.txt`, DEF-368's
+  `gen_def368.py` -> `DEF368_170i.txt`).

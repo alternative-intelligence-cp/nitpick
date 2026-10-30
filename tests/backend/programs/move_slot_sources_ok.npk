@@ -1,0 +1,301 @@
+// expect-exit: 0
+// stress: 40
+// explore: 1000
+//
+// THE LEGAL HALF OF DEF-366 + DEF-367 + DEF-368 (landing 170): every refusal of
+// tests/types/rejection/move_slot_sources.npk has its transfer here -- `move(...)` at the place: the receiver
+// `(move(ps)).take()` by name, through a field, through a pointer (`(move(<-pp)).take()`, which VACATES the
+// pointee), by UFCS, at a type parameter, awaited and spawned; the place inside each operator moved (a ternary's
+// arms, nested, `move(oa) ?? d`, `d ?? move(b)`, `??!`, `?!`, `?|` on either side, `relay`, a cast, a `dyn` cast)
+// in every slot (an initialiser, an assignment, `pass`, `give`, a `move` argument, a struct literal's field, an
+// array literal's element); `?.`'s part and a temporary's part BOUND FIRST and moved out of the binding, or
+// cloned; and plain data copied through an operator, which no rule refuses (a copy of plain data is harmless:
+// the operand's own type decides). Each control is a function that RETURNS, so its scope's drops run -- a
+// second owner would trap in the allocator's double-free check (95) --, and each fails at its own exit. Exit 0
+// at both legs under this compiler and landing 169's.
+mod:move_slot_sources_ok;
+error:E1;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+struct:PS = { string:s; int64:k; };
+impl:PS = {
+    func:take = int64(move PS:self) never fails {
+        pass self.s.len;
+    };
+    thread async func:takes = NIL(move PS:self) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        if (self.s.len != 4i64) { fail E1; }
+        pass NIL;
+    };
+    async func:taker = int64(move PS:self) {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        pass self.s.len;
+    };
+};
+trait:Tl = { func:ln = int64(Self:self) never fails; };
+impl:PS:Tl = { func:ln = int64(PS:self) never fails { pass self.s.len; }; };
+struct:PD = { int64:k; };
+impl:PD:Tl = { func:ln = int64(PD:self) never fails { pass self.k; }; };
+trait:Tk = { func:tk = int64(move Self:self) never fails; };
+impl:PS:Tk = { func:tk = int64(move PS:self) never fails { pass self.s.len; }; };
+struct:HU = { PS:u; int64:j; };
+func:mk = PS() never fails {
+    pass PS{ s: string_concat("ab", "cd"), k: 1i64 };
+};
+func:mk3 = PS() never fails {
+    pass PS{ s: string_concat("abc", "def"), k: 2i64 };
+};
+func:mkh = HU() never fails {
+    pass HU{ u: raw mk(), j: 2i64 };
+};
+func:mkr = PS(bool:c) {
+    if (!c) { fail E1; }
+    pass raw mk();
+};
+func:mko = PS?(bool:c) never fails {
+    if (c) { pass NIL; }
+    pass raw mk();
+};
+func:getp = PS->(PS->:q) never fails {
+    pass q;
+};
+func:takef = int64(move PS:x) never fails {
+    pass x.s.len;
+};
+
+// --- the receiver -------------------------------------------------------------------------------------------
+func:c_recv_by_name = int64() never fails {
+    PS:ps = raw mk();
+    pass raw (move(ps)).take();
+};
+func:c_recv_field = int64() never fails {
+    HU:h = raw mkh();
+    pass raw (move(h.u)).take();
+};
+// through a pointer: the POINTEE is transferred and left vacant (D-225), so `ps.s` reads empty after it
+func:c_recv_through_pointer = int64() never fails {
+    PS:ps = raw mk();
+    PS->:pp = @ps;
+    int64:n = raw (move(<-pp)).take();
+    pass (n * 10i64) + ps.s.len;
+};
+func:c_recv_ufcs = int64() never fails {
+    PS:ps = raw mk();
+    pass raw (move(ps)).takef();
+};
+func:c_recv_generic<T: Tk> = int64(move T:x) never fails {
+    pass raw (move(x)).tk();
+};
+async func:c_recv_await = int64() {
+    PS:ps = raw mk();
+    int64:n = await (move(ps)).taker() ?! E1;
+    pass n;
+};
+async func:c_recv_spawn = int64() {
+    PS:ps = raw mk();
+    {
+        drop (move(ps)).takes();
+    }
+    pass 4i64;
+};
+func:c_recv_ternary = int64(bool:c) never fails {
+    PS:a = raw mk();
+    PS:b = raw mk3();
+    pass raw (is (c) : move(a) : move(b)).take();
+};
+
+// --- the operators ------------------------------------------------------------------------------------------
+func:c_ternary = int64(bool:c) never fails {
+    PS:a = raw mk();
+    PS:b = raw mk3();
+    PS:r = is (c) : move(a) : move(b);
+    pass r.s.len;
+};
+func:c_nested = int64(bool:c, bool:d) never fails {
+    PS:a = raw mk();
+    PS:b = raw mk3();
+    PS:a2 = raw mk();
+    PS:r = is (c) : (is (d) : move(a) : move(b)) : move(a2);
+    pass r.s.len;
+};
+func:c_coalesce = int64() never fails {
+    PS?:oa = raw mk3();
+    PS:r = move(oa) ?? raw mk();
+    pass r.s.len;
+};
+func:c_coalesce_default = int64() never fails {
+    PS:b = raw mk3();
+    PS:r = raw mko(true) ?? move(b);
+    pass r.s.len;
+};
+func:c_emphatic_coalesce = int64() {
+    PS?:oa = raw mk3();
+    PS:r = move(oa) ??! E1;
+    pass r.s.len;
+};
+func:c_unwrap = int64() {
+    Result<PS>:ra = mkr(true);
+    PS:r = move(ra) ?! E1;
+    pass r.s.len;
+};
+func:c_default = int64() never fails {
+    Result<PS>:ra = mkr(true);
+    PS:r = move(ra) ?| raw mk3();
+    pass r.s.len;
+};
+func:c_default_rhs = int64() never fails {
+    PS:b = raw mk3();
+    PS:r = mkr(false) ?| move(b);
+    pass r.s.len;
+};
+func:c_relay = int64() {
+    Result<PS>:ra = mkr(true);
+    PS:r = relay move(ra);
+    pass r.s.len;
+};
+func:c_cast = int64() never fails {
+    PS:a = raw mk3();
+    PS:r = move(a) => PS;
+    pass r.s.len;
+};
+func:c_dyn_cast = int64() never fails {
+    PS:a = raw mk3();
+    dyn Tl:d = move(a) => dyn Tl;
+    pass raw d.ln();
+};
+// `?.`'s part: the Optional unwrapped and BOUND first, the part moved out of the binding
+func:c_safe_nav = int64() never fails {
+    PS?:o = raw mk3();
+    PS:v = move(o) ?? raw mk();
+    string:x = move(v.s);
+    pass x.len;
+};
+
+// --- the slots ----------------------------------------------------------------------------------------------
+func:c_assign = int64(bool:c) never fails {
+    PS:a = raw mk();
+    PS:b = raw mk3();
+    PS:r = raw mk();
+    r = is (c) : move(a) : move(b);
+    pass r.s.len;
+};
+func:c_pass_inner = PS(bool:c) never fails {
+    PS:a = raw mk();
+    PS:b = raw mk3();
+    pass is (c) : move(a) : move(b);
+};
+func:c_pass = int64(bool:c) never fails {
+    PS:r = raw c_pass_inner(c);
+    pass r.s.len;
+};
+func:c_give = int64(bool:c) never fails {
+    PS:a = raw mk();
+    PS:b = raw mk3();
+    PS:r = pick (c) { (true) { give is (c) : move(a) : move(b); }, (false) { give raw mk(); } };
+    pass r.s.len;
+};
+func:c_move_arg = int64(bool:c) never fails {
+    PS:a = raw mk();
+    PS:b = raw mk3();
+    pass raw takef(is (c) : move(a) : move(b));
+};
+func:c_struct_field = int64(bool:c) never fails {
+    PS:a = raw mk();
+    PS:b = raw mk3();
+    HU:y = HU{ u: is (c) : move(a) : move(b), j: 1i64 };
+    pass y.u.s.len;
+};
+func:c_array_elem = int64(bool:c) never fails {
+    PS:a = raw mk();
+    PS:b = raw mk3();
+    PS[2]:arr = [is (c) : move(a) : move(b), raw mk()];
+    pass arr[0i64].s.len;
+};
+
+// --- a temporary's part: bound first, or cloned ---------------------------------------------------------------
+func:c_part_bound = int64() never fails {
+    PS:t = raw mk3();
+    string:x = move(t.s);
+    pass x.len;
+};
+func:c_part_clone = int64() {
+    string:x = (raw mk3()).s.clone() ?! E1;
+    pass x.len;
+};
+func:c_part_pointer_clone = int64() {
+    PS:ps = raw mk3();
+    string:x = (raw getp(@ps)).s.clone() ?! E1;
+    pass x.len + ps.s.len;
+};
+func:c_part_nested_bound = int64() never fails {
+    HU:t = raw mkh();
+    PS:q = move(t.u);
+    pass q.s.len;
+};
+
+// --- plain data through an operator: a copy no rule refuses ------------------------------------------------------
+func:c_plain_ternary = int64(bool:c) never fails {
+    PD:pa = PD{ k: 7i64 };
+    PD:pb = PD{ k: 8i64 };
+    PD:r = is (c) : pa : pb;
+    pass r.k + pa.k;
+};
+func:c_plain_dyn = int64() never fails {
+    PD:pd = PD{ k: 9i64 };
+    dyn Tl:d = pd => dyn Tl;
+    pass (raw d.ln()) + pd.k;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    if ((raw c_recv_by_name()) != 4i64) { exit 11i32; }
+    if ((raw c_recv_field()) != 4i64) { exit 12i32; }
+    if ((raw c_recv_through_pointer()) != 40i64) { exit 13i32; }
+    if ((raw c_recv_ufcs()) != 4i64) { exit 14i32; }
+    if ((raw c_recv_generic(raw mk3())) != 6i64) { exit 15i32; }
+    if ((await c_recv_await() ?| 0i64) != 4i64) { exit 16i32; }
+    if ((await c_recv_spawn() ?| 0i64) != 4i64) { exit 17i32; }
+    if ((raw c_recv_ternary(false)) != 6i64) { exit 18i32; }
+    if ((raw c_ternary(false)) != 6i64) { exit 19i32; }
+    if ((raw c_nested(true, false)) != 6i64) { exit 20i32; }
+    if ((raw c_coalesce()) != 6i64) { exit 21i32; }
+    if ((raw c_coalesce_default()) != 6i64) { exit 22i32; }
+    if ((c_emphatic_coalesce() ?| 0i64) != 6i64) { exit 23i32; }
+    if ((c_unwrap() ?| 0i64) != 4i64) { exit 24i32; }
+    if ((raw c_default()) != 4i64) { exit 25i32; }
+    if ((raw c_default_rhs()) != 6i64) { exit 26i32; }
+    if ((c_relay() ?| 0i64) != 4i64) { exit 27i32; }
+    if ((raw c_cast()) != 6i64) { exit 28i32; }
+    if ((raw c_dyn_cast()) != 6i64) { exit 29i32; }
+    if ((raw c_safe_nav()) != 6i64) { exit 30i32; }
+    if ((raw c_assign(false)) != 6i64) { exit 31i32; }
+    if ((raw c_pass(false)) != 6i64) { exit 32i32; }
+    if ((raw c_give(true)) != 4i64) { exit 33i32; }
+    if ((raw c_move_arg(false)) != 6i64) { exit 34i32; }
+    if ((raw c_struct_field(true)) != 4i64) { exit 35i32; }
+    if ((raw c_array_elem(false)) != 6i64) { exit 36i32; }
+    if ((raw c_part_bound()) != 6i64) { exit 37i32; }
+    if ((c_part_clone() ?| 0i64) != 6i64) { exit 38i32; }
+    if ((c_part_pointer_clone() ?| 0i64) != 12i64) { exit 39i32; }
+    if ((raw c_part_nested_bound()) != 4i64) { exit 40i32; }
+    if ((raw c_plain_ternary(true)) != 14i64) { exit 41i32; }
+    if ((raw c_plain_dyn()) != 18i64) { exit 42i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};
