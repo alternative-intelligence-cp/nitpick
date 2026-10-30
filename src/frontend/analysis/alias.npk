@@ -339,6 +339,7 @@ func:prescan_stmt = NIL(Alias->:x, StmtId:id, int32:depth) never fails {
             drop prescan_party(x, init, pk, hsym);
         }
         drop prescan_view_parties(x, id, hsym);
+        drop prescan_expr_picks(x, init, dd);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtAssignStmt) {
@@ -348,8 +349,23 @@ func:prescan_stmt = NIL(Alias->:x, StmtId:id, int32:depth) never fails {
             int32:tsym = raw bare_local_symbol(x, raw stmt_target(s));
             if (tsym != 0i32) { drop prescan_party(x, val, pk2, tsym); }
         }
+        drop prescan_expr_picks(x, raw stmt_target(s), dd);
+        drop prescan_expr_picks(x, val, dd);
         pass NIL;
     }
+    // A STATEMENT'S OTHER EXPRESSION SLOTS (DEF-327): `discard(pick …)`, `pass pick …`, a
+    // condition, a `for`'s iterable, a counted loop's arguments, a statement pick's
+    // selector, an arm's `where` guard, an assignment's target -- every slot `alias_stmt`
+    // reads, walked for the pick expressions it nests (the third build of landing 168:
+    // the first two walked the body slots alone, and a pick in a `for` iterable, a `loop`
+    // argument, a `when` condition, a `where` guard or an assignment target's index kept
+    // its arm's holders unregistered -- q1, q2, q3, q6 113/113, q5 109/109 at both legs).
+    if ((s.kind == StmtKind.StmtPassStmt) || (s.kind == StmtKind.StmtFailStmt)
+        || (s.kind == StmtKind.StmtReturnStmt) || (s.kind == StmtKind.StmtExitStmt)) {
+        drop prescan_expr_picks(x, raw stmt_operand(s), dd);
+        pass NIL;
+    }
+    if (raw stmt_carries_expr(s.kind)) { drop prescan_expr_picks(x, raw stmt_expr(s), dd); }
     if (s.kind == StmtKind.StmtBlockStmt) {
         for (int32:i in 0i32...(raw stmt_list_count(s))) {
             drop prescan_stmt(x, StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) }, dd);
@@ -357,30 +373,136 @@ func:prescan_stmt = NIL(Alias->:x, StmtId:id, int32:depth) never fails {
         pass NIL;
     }
     if (s.kind == StmtKind.StmtIfStmt) {
+        drop prescan_expr_picks(x, raw stmt_cond(s), dd);
         drop prescan_stmt(x, raw stmt_then(s), dd);
         drop prescan_stmt(x, raw stmt_else(s), dd);
         pass NIL;
     }
-    if (s.kind == StmtKind.StmtWhileStmt) { drop prescan_stmt(x, raw stmt_body(x.ast, s), dd); pass NIL; }
+    if (s.kind == StmtKind.StmtWhileStmt) {
+        drop prescan_expr_picks(x, raw stmt_cond(s), dd);
+        drop prescan_stmt(x, raw stmt_body(x.ast, s), dd);
+        pass NIL;
+    }
     if (s.kind == StmtKind.StmtWhenStmt) {
+        drop prescan_expr_picks(x, raw stmt_cond(s), dd);
         drop prescan_stmt(x, raw stmt_when_body(x.ast, s), dd);
         drop prescan_stmt(x, raw stmt_when_then(x.ast, s), dd);
         drop prescan_stmt(x, raw stmt_when_end(x.ast, s), dd);
         pass NIL;
     }
-    if (s.kind == StmtKind.StmtForStmt) { drop prescan_stmt(x, raw stmt_for_body(x.ast, s), dd); pass NIL; }
+    if (s.kind == StmtKind.StmtForStmt) {
+        drop prescan_expr_picks(x, raw stmt_for_iter(x.ast, s), dd);
+        drop prescan_stmt(x, raw stmt_for_body(x.ast, s), dd);
+        pass NIL;
+    }
     if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
+        for (int32:ai in 0i32...(raw stmt_counted_argc(x.ast, s))) { drop prescan_expr_picks(x, raw stmt_counted_arg(x.ast, s, ai), dd); }
         drop prescan_stmt(x, raw stmt_counted_body(s), dd);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtPickStmt) {
+        drop prescan_expr_picks(x, raw pick_selector(s), dd);
         for (int32:pa in 0i32...(raw pick_arm_count(s))) {
             drop prescan_stmt(x, raw pick_arm_at(x.ast, raw pick_arm_start(s), pa), dd);
         }
         pass NIL;
     }
-    if (s.kind == StmtKind.StmtPickArm) { drop prescan_stmt(x, raw arm_body(s), dd); pass NIL; }
+    if (s.kind == StmtKind.StmtPickArm) {
+        drop prescan_expr_picks(x, raw arm_guard(s), dd);
+        drop prescan_stmt(x, raw arm_body(s), dd);
+        pass NIL;
+    }
     if (s.kind == StmtKind.StmtDeferStmt) { drop prescan_stmt(x, StmtId{ index: s.a }, dd); pass NIL; }
+    pass NIL;
+};
+
+// A PICK EXPRESSION'S ARMS ARE STATEMENTS (DEF-327, landing 168): the holders they
+// declare -- `fixed uint8[]:v = string_bytes(d);` inside `discard(pick … { (*) { … } })`,
+// `pass pick …`, an initialiser's or an assigned value's pick -- had no `x.pre` entry
+// until this landing, because `prescan_stmt` walked statements and never entered an
+// expression, so `register_holder` found nothing when the walk reached the arm and a
+// write of the viewed root inside the arm was unjudged (h7a, f3a: the arm's `give` read
+// the freed bytes, 113 at both legs; f3b a `$$m` claim with BORROW-013 due). Every
+// expression slot of a statement is walked for pick expressions, by `expr_shape` as the
+// walks are and by each custom shape's own window (a call's and a builtin's value
+// arguments, a struct literal's values), and each arm is prescanned as a statement
+// pick's arm is (`prescan_stmt` handles the `StmtPickArm`). Bounded by the prescan's
+// own depth.
+func:prescan_expr_picks = NIL(Alias->:x, ExprId:e, int32:depth) never fails {
+    if (depth <= 0i32) { pass NIL; }
+    if (raw expr_is_none(e)) { pass NIL; }
+    ExprNode:n = raw ast_expr(x.ast, e);
+    int32:dd = depth - 1i32;
+    if (n.kind == ExprKind.ExprPickExpr) {
+        drop prescan_expr_picks(x, raw pickx_selector(n), dd);
+        for (int32:pa in 0i32...(raw pickx_arm_count(n))) {
+            drop prescan_stmt(x, raw pick_arm_at(x.ast, raw pickx_arm_start(n), pa), dd);
+        }
+        pass NIL;
+    }
+    // THE CUSTOM SHAPES: a call's and a builtin's VALUE arguments stand after their
+    // generic ones, and a struct literal's window alternates NAME and VALUE -- each
+    // walked as `acc_expr` walks it. The first build of this landing bailed on every
+    // custom shape, and a pick in a CALL ARGUMENT (`raw idi(pick … { (*) { fixed
+    // uint8[]:v = string_bytes(d); d = …; give … } })`, p4) stayed silent at 113/113
+    // under it. An unknown custom or missing shape is an INTERNAL refusal here, as it
+    // is to the aliasing walk: the holders of an unwalked arm would be unregistered,
+    // and every write of their roots inside the arm unjudged.
+    if (n.kind == ExprKind.ExprCallExpr) {
+        drop prescan_expr_picks(x, raw expr_callee(n), dd);
+        drop prescan_pick_window(x, (raw expr_list_start(n)) + (raw expr_generic_count(n)),
+                                 (raw expr_list_count(n)) - (raw expr_generic_count(n)), dd);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        drop prescan_pick_window(x, (raw expr_list_start(n)) + (raw builtin_generic_count(n)),
+                                 (raw expr_list_count(n)) - (raw builtin_generic_count(n)), dd);
+        pass NIL;
+    }
+    if (n.kind == ExprKind.ExprStructLiteralExpr) {
+        int32:cnt = raw expr_list_count(n);
+        int32:i = 1i32;
+        while (i < cnt) decreases cnt - i {
+            drop prescan_expr_picks(x, ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) }, dd);
+            i = i + 2i32;
+        }
+        pass NIL;
+    }
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_NONE())) {
+        drop alias_err(x, raw BORROW_INTERNAL(),
+            "this expression kind has no entry in `expr_shape`, so the pick prescan cannot reach its slots",
+            n.span);
+        pass NIL;
+    }
+    if (shape == (raw EXPR_SHAPE_CUSTOM())) {
+        drop alias_err(x, raw BORROW_INTERNAL(),
+            "this expression kind has a custom shape the pick prescan has no case for",
+            n.span);
+        pass NIL;
+    }
+    if (shape == (raw EXPR_SHAPE_LIST())) {
+        drop prescan_pick_window(x, raw expr_list_start(n), raw expr_list_count(n), dd);
+        pass NIL;
+    }
+    drop prescan_expr_picks(x, raw expr_lhs(n), dd);
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass NIL; }
+    if (shape == (raw EXPR_SHAPE_ONELIST())) {
+        drop prescan_pick_window(x, raw expr_list_start(n), raw expr_list_count(n), dd);
+        pass NIL;
+    }
+    drop prescan_expr_picks(x, raw expr_rhs(n), dd);
+    if (shape == (raw EXPR_SHAPE_TWO())) { pass NIL; }
+    drop prescan_expr_picks(x, raw expr_third(n), dd);
+    pass NIL;
+};
+
+// A WINDOW of expressions, each walked for the pick expressions it nests.
+func:prescan_pick_window = NIL(Alias->:x, int32:start, int32:count, int32:depth) never fails {
+    for (int32:i in 0i32...count) {
+        drop prescan_expr_picks(x, ExprId{ index: raw ast_id_at(x.ast, start, i) }, depth);
+    }
     pass NIL;
 };
 
@@ -482,7 +604,7 @@ func:pre_has_elem_party = bool(Alias->:x, int32:holder, ExprId:place) never fail
 // any pointer member whose pointee is not the `List` itself: the element
 // (`H2->`), a field of the element (`string->`, `int64->`), a pointer to either.
 // A pointer whose pointee IS the `List` (`List<H2>->`) is read as the header, D-286's
-// plain party -- FALSE for a recursive element (DEF-320, landing 168). A struct, an `Optional`, a `Result`,
+// plain party -- FALSE for a recursive element (DEF-320, OPEN since landing 166). A struct, an `Optional`, a `Result`,
 // an array, a slice, a `List` hold one when a member does; an enum with
 // payloads, a `dyn`, `any`, an unresolved type and fuel run out answer YES, the
 // closed direction (DEF-54); a scalar, a `string`, a `cstring` hold none.
@@ -2569,8 +2691,8 @@ func:acc_expr = NIL(Alias->:x, ExprId:id, int32:akind, int32:depth) never fails 
         ExprId:saved_spawn = x.spawn_call;
         if (!(raw expr_is_none(sp_op))) {
             ExprNode:sp_n = raw ast_expr(x.ast, sp_op);
-            if (sp_n.kind == ExprKind.ExprCallExpr) {
-                if (raw callee_is_async(x.esc, sp_n)) { x.spawn_call = sp_op; }
+            if ((sp_n.kind == ExprKind.ExprCallExpr) || (sp_n.kind == ExprKind.ExprMethodCallExpr)) {
+                if (raw callee_is_async(x.esc, sp_op)) { x.spawn_call = sp_op; }   // a METHOD spawn too (DEF-339)
             }
         }
         drop acc_expr(x, sp_op, raw ACC_READ(), dd);
@@ -2895,6 +3017,10 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
     // handed through a pointer is lent at what the pointer points at too
     // (DEF-306, `lend_through_pointer`).
     if (id.index == x.spawn_call.index) {
+        // A METHOD SPAWN (DEF-339, landing 168) lends its ARGUMENTS here as a free function's
+        // spawn does (m24, m26); its receiver is never lent: a pointer receiver is the escape
+        // pass's BORROW-004 (no sanctioned kind takes a user method, TYPE-007), a by-value
+        // one crosses by DEF-340's rule.
         if (!(raw expr_is_none(x.spawn_call))) { drop lend_spawn_args(x, id, start, count, pos_base, callee_fn); }
     }
     pass NIL;

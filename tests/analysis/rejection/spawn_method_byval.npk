@@ -1,0 +1,360 @@
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 168:14
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 169:9
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 179:14
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 180:9
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 190:14
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 200:14
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 212:14
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 224:9
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 235:9
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 246:9
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 253:10
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 262:22
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 272:20
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 282:20
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 293:23
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 302:35
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 313:14
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 323:20
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 335:23
+// DEF-339 + DEF-340 (landing 168): AN ASYNC METHOD'S SPAWN IS A SPAWN, ITS RECEIVER A CROSSING, AND A
+// BY-VALUE OWNER CANNOT CROSS A SPAWN.
+//
+// Until this landing `callee_is_async` read an IDENTIFIER callee only, so `drop w.fill(@s)` -- an async
+// METHOD spawned -- was no spawn to the escape pass or the aliasing pass: its arguments' lend was never
+// recorded (the arena destroyed under the task: MachineFault at both legs) and its receiver's crossing
+// never judged (DEF-339). And a by-value OWNER handed to a spawn -- a `string`, a `List`, a struct holding
+// one, as an argument or as a by-value receiver -- crossed as a COPY of its header while the owner's
+// binding stayed live, so the owner's write before the join freed what the task read (DEF-340; the task
+// read the re-allocated block, 114 at both legs). NOW the call graph's edge names the callee -- a method,
+// a module-qualified spelling, the identifier as the fallback -- and a method's POINTER receiver crosses
+// as `@recv`, judged by D-180's crossing rule as `drop fillw(@w, …)` is: NITPICK-BORROW-004 at the receiver
+// (sites 1-5, 9: a plain struct's pointer, no Mutex, RwLock, CondVar, Barrier or shared_arena takes a user
+// method); a by-value receiver is a by-value argument, and the method's pointer ARGUMENTS are lent until the
+// block's join: NITPICK-BORROW-016 at the destroy or the assignment under the lend (sites 6-8; site 8 the
+// module-qualified spelling `drop tasks.fillq(@s)`) -- sites 1 and 2 report BOTH, the receiver's crossing at
+// the spawn and the lend at the destroy or the assignment, two rules at two lines. A by-value owner is NITPICK-BORROW-004 at the argument
+// or the receiver, whether or not the owner writes (sites 10-17; direction (A) of the ruling of 2026-10-29:
+// the copy is the hazard, TYPE-046's forbidden copy made by the spawn): a `move` parameter owns what it is
+// handed, a Channel is the designed by-value crossing (D-181), plain data copies harmlessly -- the legal
+// half, tests/backend/programs/spawn_method_byval_ok.npk. Landing 167's checker reports NONE of the sites
+// (site 9's program was refused by the EMITTER, NITPICK-EMIT-002, and never ran; every other site ran:
+// `wt/51a/.internal/probes/t167/cells_b/`, `t168/cells168m/`).
+mod:spawn_method_byval;
+error:E1;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+struct:W = { int64:k; };
+struct:SS = { string:s; int64:k; };
+impl:W = {
+    thread async func:fill = NIL(W->:self, shared_arena<int64>->:s) joins J2 {
+        await sleep(raw duration_ms(10i64)) ?| NIL;
+        Handle<int64>:h = s.alloc(424242i64);
+        int64:v = s.get(h) ?! E1;
+        if (v != 424242i64) { fail E1; }
+        pass NIL;
+    };
+    thread async func:tickw = NIL(W->:self) joins J2 {
+        await sleep(raw duration_ms(10i64)) ?| NIL;
+        if (self.k == 999i64) { fail E1; }
+        pass NIL;
+    };
+    thread async func:fillv = NIL(W:self, shared_arena<int64>->:s) joins J2 {
+        await sleep(raw duration_ms(10i64)) ?| NIL;
+        if (self.k == 999i64) { fail E1; }
+        Handle<int64>:h = s.alloc(424242i64);
+        int64:v = s.get(h) ?! E1;
+        if (v != 424242i64) { fail E1; }
+        pass NIL;
+    };
+    thread async func:look = NIL(W:self) joins J2 {
+        await sleep(raw duration_ms(10i64)) ?| NIL;
+        if (self.k != 1i64) { fail E1; }
+        pass NIL;
+    };
+};
+impl:SS = {
+    thread async func:looks = NIL(SS:self) joins J2 {
+        await sleep(raw duration_ms(10i64)) ?| NIL;
+        fixed uint8[]:xb = string_bytes(self.s);
+        if (xb[0i64] != 97u8) { fail E1; }
+        pass NIL;
+    };
+};
+thread async func:peek = NIL(W:x) joins J2 {
+    await sleep(raw duration_ms(10i64)) ?| NIL;
+    if (x.k != 1i64) { fail E1; }
+    pass NIL;
+};
+thread async func:peeks = NIL(SS:x) joins J2 {
+    await sleep(raw duration_ms(10i64)) ?| NIL;
+    fixed uint8[]:xb = string_bytes(x.s);
+    if (xb[0i64] != 97u8) { fail E1; }
+    if (x.s.len != 3i64) { fail E1; }
+    pass NIL;
+};
+thread async func:peekstr = NIL(string:x) joins J2 {
+    await sleep(raw duration_ms(10i64)) ?| NIL;
+    fixed uint8[]:xb = string_bytes(x);
+    if (xb[0i64] != 97u8) { fail E1; }
+    pass NIL;
+};
+thread async func:peeklist = NIL(List<int64>:x) joins J2 {
+    await sleep(raw duration_ms(10i64)) ?| NIL;
+    if (x[0i64] != 7i64) { fail E1; }
+    pass NIL;
+};
+thread async func:takestr = NIL(move string:x) joins J2 {
+    await sleep(raw duration_ms(10i64)) ?| NIL;
+    fixed uint8[]:xb = string_bytes(x);
+    if (xb[0i64] != 97u8) { fail E1; }
+    pass NIL;
+};
+thread async func:takess = NIL(move SS:x) joins J2 {
+    await sleep(raw duration_ms(10i64)) ?| NIL;
+    fixed uint8[]:xb = string_bytes(x.s);
+    if (xb[0i64] != 97u8) { fail E1; }
+    pass NIL;
+};
+async func:chw = NIL(Channel<int32, 3i32, 64i64>:ch) {
+    Result<int32>:m = await ch.recv(raw duration_ms(10i64));
+    if (!m.is_error) { fail E1; }
+    pass NIL;
+};
+mod:tasks = {
+    fixed Duration:J2m = Duration{ ns: 2000000000i64 };
+    pub thread async func:fillq = NIL(shared_arena<int64>->:s) joins J2m {
+        await sleep(raw duration_ms(10i64)) ?| NIL;
+        Handle<int64>:h = s.alloc(424242i64);
+        int64:v = s.get(h) ?| 0i64;
+        if (v != 424242i64) { pass NIL; }
+        pass NIL;
+    };
+};
+trait:Ticker = { async func:tick = NIL(Self->:self); };
+struct:TW = { int64:k; };
+impl:TW:Ticker = {
+    async func:tick = NIL(TW->:self) {
+        await sleep(raw duration_ms(10i64)) ?| NIL;
+        if (self.k == 999i64) { fail E1; }
+        pass NIL;
+    };
+};
+
+// --- DEF-339: AN ASYNC METHOD'S SPAWN IS A SPAWN ----------------------------------------------------
+// 1. the pointer receiver crosses as `@recv`; the arena argument lent, destroyed under the task (m1)
+async func:method_recv_lend_destroy = NIL() {
+    W:w = W{ k: 1i64 };
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    {
+        drop w.fill(@s);
+        s.destroy();
+    }
+    pass NIL;
+};
+
+// 2. the pointer receiver; the lent arena assigned over under the task (m2)
+async func:method_recv_lend_assign = NIL() {
+    W:w = W{ k: 1i64 };
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    {
+        drop w.fill(@s);
+        s = shared_arena_make(4i64);
+    }
+    s.destroy();
+    pass NIL;
+};
+
+// 3. the receiver the only crossing; the receiver reassigned under the task (m5)
+async func:method_recv_only_reassigned = NIL() {
+    W:w = W{ k: 1i64 };
+    {
+        drop w.tickw();
+        w = W{ k: 2i64 };
+    }
+    pass NIL;
+};
+
+// 4. the receiver the only crossing; the receiver moved out under the task (m6)
+async func:method_recv_only_moved = NIL() {
+    W:w = W{ k: 1i64 };
+    {
+        drop w.tickw();
+        W:w2 = move(w);
+        if (w2.k != 1i64) { fail E1; }
+    }
+    pass NIL;
+};
+
+// 5. the receiver the only crossing, nothing written: a plain struct's pointer crosses no spawn (m3, as m4's free function)
+async func:method_recv_only_no_write = NIL() {
+    W:w = W{ k: 1i64 };
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    {
+        drop w.fill(@s);
+    }
+    s.destroy();
+    pass NIL;
+};
+
+// 6. a BY-VALUE plain-data receiver; the lent arena argument destroyed under the task (m24)
+async func:method_byval_recv_lend_destroy = NIL() {
+    W:w = W{ k: 1i64 };
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    {
+        drop w.fillv(@s);
+        s.destroy();
+    }
+    pass NIL;
+};
+
+// 7. a by-value plain-data receiver; the lent arena assigned over under the task (m26)
+async func:method_byval_recv_lend_assign = NIL() {
+    W:w = W{ k: 1i64 };
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    {
+        drop w.fillv(@s);
+        s = shared_arena_make(4i64);
+    }
+    s.destroy();
+    pass NIL;
+};
+
+// 8. a MODULE-QUALIFIED async function spawned, its lent arena destroyed under the task (m31)
+async func:qualified_spawn_lend_destroy = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    {
+        drop tasks.fillq(@s);
+        s.destroy();
+    }
+    pass NIL;
+};
+
+// 9. an async method spawned through a `dyn`, its receiver `Self->` (m32): a plain struct's pointer crosses
+async func:dyn_method_spawn = NIL(dyn Ticker:t) {
+    drop t.tick();
+    pass NIL;
+};
+
+// --- DEF-340: A BY-VALUE OWNER CANNOT CROSS A SPAWN -------------------------------------------------
+// 10. a `string` by value, the owner replacing it under the task (m13)
+async func:byval_string_replaced = NIL() {
+    string:s = string_concat("ab", "c");
+    {
+        drop peekstr(s);
+        s = string_concat("zz", "z");
+    }
+    pass NIL;
+};
+
+// 11. a struct holding a string by value, the owner replacing the string under the task (m10)
+async func:byval_struct_field_replaced = NIL() {
+    SS:w = SS{ s: string_concat("ab", "c"), k: 1i64 };
+    {
+        drop peeks(w);
+        w.s = string_concat("zz", "z");
+    }
+    pass NIL;
+};
+
+// 12. the struct by value, reassigned WHOLE under the task (m11)
+async func:byval_struct_reassigned = NIL() {
+    SS:w = SS{ s: string_concat("ab", "c"), k: 1i64 };
+    {
+        drop peeks(w);
+        w = SS{ s: string_concat("zz", "z"), k: 2i64 };
+    }
+    pass NIL;
+};
+
+// 13. a `List` by value, the owner growing it under the task (m15)
+async func:byval_list_grown = NIL() {
+    List<int64>:l = raw list_init::<int64>(1i64);
+    drop list_push(@l, 7i64);
+    {
+        drop peeklist(l);
+        loop (0i64, 64i64, 1i64) { drop list_push(@l, 9i64); }
+    }
+    pass NIL;
+};
+
+// 14. a TEMPORARY owner handed by value: it dies at the statement's end, under the task (m17)
+async func:byval_temporary_owner = NIL() {
+    {
+        drop peekstr(string_concat("ab", "c"));
+        string:junk = string_concat("zz", "z");
+        string:junk2 = string_concat("yy", "y");
+    }
+    pass NIL;
+};
+
+// 15. a by-value OWNER RECEIVER, the owner replacing its string under the task (m27)
+async func:byval_owner_receiver = NIL() {
+    SS:w = SS{ s: string_concat("ab", "c"), k: 1i64 };
+    {
+        drop w.looks();
+        w.s = string_concat("zz", "z");
+    }
+    pass NIL;
+};
+
+// 16. the struct by value, the owner writing NOTHING: the copy is the hazard, refused whether or not the owner writes (m12)
+async func:byval_struct_no_write = NIL() {
+    SS:w = SS{ s: string_concat("ab", "c"), k: 1i64 };
+    {
+        drop peeks(w);
+    }
+    fixed uint8[]:wb = string_bytes(w.s);
+    if (wb[0i64] != 97u8) { fail E1; }
+    pass NIL;
+};
+
+// 17. the `List` by value, the owner writing nothing (m16)
+async func:byval_list_no_write = NIL() {
+    List<int64>:l = raw list_init::<int64>(1i64);
+    drop list_push(@l, 7i64);
+    {
+        drop peeklist(l);
+    }
+    if (l[0i64] != 7i64) { fail E1; }
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

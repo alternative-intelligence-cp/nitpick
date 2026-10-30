@@ -13,21 +13,21 @@
 // call through a `dyn` -- `NITPICK-TYPE-043` at the call, where each compiled to
 // a call of the coroutine's undefined symbol that `llc` refused (a rule written
 // for one spelling owed to the other). The controls: the call awaited, and a
-// `NIL` method spawned with `drop` (a spawned task's value has nowhere to go,
-// D-177, so the spawn control is a `NIL` method). A bare `j.run();` statement is
-// also TYPE-039, as a bare free call `run();` has always been.
+// `NIL` method spawned with `drop` on a BY-VALUE plain-data receiver (`tick =
+// NIL(Job:self)`, an inherent method: a by-value `Self` would make `Runner` no `dyn`,
+// TYPE-015). Respelt at landing 168 (DEF-339): a pointer receiver spawned is BORROW-004.
 mod:async_method_bare;
 
 trait:Runner = {
     async func:run = int32(Self->:self);
-    async func:tick = NIL(Self->:self);
 };
 struct:Job = { int32:n; };
 impl:Job:Runner = {
     async func:run = int32(Job->:self) { pass (self.n + 1i32); };
-    async func:tick = NIL(Job->:self) { pass NIL; };
 };
-
+impl:Job = {
+    async func:tick = NIL(Job:self) { pass NIL; };
+};
 async func:through_dyn = int32(dyn Runner:d) {
     Result<int32>:r = d.run();
     pass 0i32;

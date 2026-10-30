@@ -1,0 +1,200 @@
+// expect-exit: 0
+//
+// THE LEGAL HALF OF DEF-327 + DEF-337 (landing 168): a holder declared in a pick EXPRESSION's arm whose
+// root is written only AFTER the pick (the arm's binding dead), an arm that views one string and writes
+// ANOTHER, and a `give` nested in a loop that views a string the write after the pick does not touch.
+// Each must stay clean under this compiler AND landing 167's; exit 0 at both legs, each control failing
+// at its own exit. The refusals of the same shapes are tests/analysis/rejection/pick_expr_arm_holders.npk.
+mod:pick_expr_arm_holders_ok;
+error:E1;
+struct:H2 = { string:o; int64:k; };
+func:idi = int32(int32:x) never fails { pass x; };
+func:main = int32(cstring[]:_~argv) {
+    // 1. (f3e) the view declared in an initialiser's arm, the root written AFTER the pick
+    {
+        string:d = string_concat("hello", " world");
+        int32:r = pick (1i32) {
+            (*) {
+                fixed uint8[]:v = string_bytes(d);
+                give (v[0i64] => int32);
+            }
+        };
+        d = string_concat("xyzzy", "!");
+        if (r != 104i32) { exit 11i32; }
+        if (d.len != 6i64) { exit 11i32; }
+    }
+    // 2. (p9) the assigned-value form, the root written after the pick
+    {
+        string:d = string_concat("hello", " world");
+        int32:r = 0i32;
+        r = pick (1i32) {
+            (*) {
+                fixed uint8[]:v = string_bytes(d);
+                give (v[0i64] => int32);
+            }
+        };
+        d = string_concat("xyzzy", "!");
+        if (r != 104i32) { exit 12i32; }
+    }
+    // 3. (p10) the if-condition form, the arm viewing d and writing ANOTHER string
+    {
+        string:d = string_concat("hello", " world");
+        string:e = string_concat("ee", "ee");
+        if ((pick (1i32) {
+            (*) {
+                fixed uint8[]:v = string_bytes(d);
+                e = string_concat("xyzzy", "!");
+                give (v[0i64] => int32);
+            }
+        }) != 104i32) { exit 13i32; }
+        if (e.len != 6i64) { exit 13i32; }
+    }
+    // 4. (g15) the give inside a counted `loop` views e, another string; d written after the pick
+    {
+        string:d = string_concat("hello", " world");
+        string:e = string_concat("ee", "ee");
+        fixed uint8[]:v = pick (1i32) {
+            (*) {
+                loop (0i64, 1i64, 1i64) { give string_bytes(e); }
+                give string_bytes(e);
+            }
+        };
+        d = string_concat("xyzzy", "!");
+        string:junk = string_concat("qqqqqqqq", "qqq");
+        if (v[0i64] != 101u8) { exit 14i32; }
+        if (d.len != 6i64) { exit 14i32; }
+    }
+    // 5. the `discard` form, the root written after the pick
+    {
+        string:d = string_concat("hello", " world");
+        discard(pick (1i32) {
+            (*) {
+                fixed uint8[]:v = string_bytes(d);
+                if (v[0i64] != 104u8) { exit 15i32; }
+                give 0i32;
+            }
+        });
+        d = string_concat("xyzzy", "!");
+        if (d.len != 6i64) { exit 15i32; }
+    }
+    // 6. the call-argument form, the arm viewing d and writing another string
+    {
+        string:d = string_concat("hello", " world");
+        string:e = string_concat("ee", "ee");
+        int32:r = raw idi(pick (1i32) {
+            (*) {
+                fixed uint8[]:v = string_bytes(d);
+                e = string_concat("xyzzy", "!");
+                give (v[0i64] => int32);
+            }
+        });
+        if (r != 104i32) { exit 16i32; }
+        if (e.len != 6i64) { exit 16i32; }
+    }
+    // 7. a struct literal field's pick, the root written after the literal
+    {
+        string:d = string_concat("hello", " world");
+        H2:h = H2{ o: string_concat("a", "b"), k: (pick (1i32) {
+            (*) {
+                fixed uint8[]:v = string_bytes(d);
+                give (v[0i64] => int64);
+            }
+        }) };
+        d = string_concat("xyzzy", "!");
+        if (h.k != 104i64) { exit 17i32; }
+        if (d.len != 6i64) { exit 17i32; }
+    }
+    // 8. the give in a `when`'s END clause views e; d written after the pick
+    {
+        string:d = string_concat("hello", " world");
+        string:e = string_concat("ee", "ee");
+        fixed uint8[]:v = pick (1i32) {
+            (*) {
+                int64:n = 0i64;
+                when (n > 0i64) decreases n { n = n - 1i64; } then { give string_bytes(e); } end { give string_bytes(e); }
+                give string_bytes(e);
+            }
+        };
+        d = string_concat("xyzzy", "!");
+        string:junk = string_concat("qqqqqqqq", "qqq");
+        if (v[0i64] != 101u8) { exit 18i32; }
+        if (d.len != 6i64) { exit 18i32; }
+    }
+    // 9. (qc1) the pick in a `for` iterable, the arm viewing d, d written only AFTER the loop
+    {
+        string:d = string_concat("hello", " world");
+        int32:acc = 0i32;
+        for (int32:i in 0i32...(pick (1i32) {
+            (*) {
+                fixed uint8[]:v = string_bytes(d);
+                give (v[0i64] => int32);
+            }
+        })) { acc = acc + 1i32; }
+        d = string_concat("xyzzy", "!");
+        if (acc != 104i32) { exit 19i32; }
+        if (d.len != 6i64) { exit 19i32; }
+    }
+    // 10. (qc2) the pick in a `when` condition, the arm viewing d and writing ANOTHER string
+    {
+        string:d = string_concat("hello", " world");
+        string:e = string_concat("ee", "ee");
+        int64:n = 1i64;
+        int32:r = 0i32;
+        when (((pick (1i32) {
+            (*) {
+                fixed uint8[]:v = string_bytes(d);
+                e = string_concat("xyzzy", "!");
+                give (v[0i64] => int32);
+            }
+        }) == 104i32) && (n > 0i64)) decreases n { n = n - 1i64; r = r + 1i32; } then { if (r != 1i32) { exit 20i32; } } end { exit 20i32; }
+        if (e.len != 6i64) { exit 20i32; }
+    }
+    // 11. (qc3) the pick in a `for` iterable, the arm writing d with NO view live
+    {
+        string:d = string_concat("hello", " world");
+        int32:acc = 0i32;
+        for (int32:i in 0i32...(pick (1i32) {
+            (*) {
+                d = string_concat("xyzzy", "!");
+                give 3i32;
+            }
+        })) { acc = acc + 1i32; }
+        if (acc != 3i32) { exit 21i32; }
+        if (d.len != 6i64) { exit 21i32; }
+    }
+    // 12. (qc4) the pick in a `for` iterable, the arm viewing d and writing ANOTHER string
+    {
+        string:d = string_concat("hello", " world");
+        string:e = string_concat("ee", "ee");
+        int32:acc = 0i32;
+        for (int32:i in 0i32...(pick (1i32) {
+            (*) {
+                fixed uint8[]:v = string_bytes(d);
+                e = string_concat("xyzzy", "!");
+                give (v[0i64] => int32);
+            }
+        })) { acc = acc + 1i32; }
+        if (acc != 104i32) { exit 22i32; }
+        if (e.len != 6i64) { exit 22i32; }
+    }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

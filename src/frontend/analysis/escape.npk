@@ -3304,8 +3304,8 @@ func:collect_view_refs = NIL(Escape->:x, ExprId:id, int32:depth, List<ViewRef>->
     if (n.kind == ExprKind.ExprDropExpr) {
         ExprId:sp_op = raw expr_operand(n);
         ExprNode:sp_n = raw ast_expr(x.ast, sp_op);
-        if (sp_n.kind == ExprKind.ExprCallExpr) {
-            if (raw callee_is_async(x, sp_n)) { pass NIL; }
+        if ((sp_n.kind == ExprKind.ExprCallExpr) || (sp_n.kind == ExprKind.ExprMethodCallExpr)) {
+            if (raw callee_is_async(x, sp_op)) { pass NIL; }   // a spawn's value has nowhere to go (DEF-339: a method's too)
         }
         drop collect_view_refs(x, sp_op, d, out);
         pass NIL;
@@ -3475,9 +3475,28 @@ func:collect_gives_refs = NIL(Escape->:x, StmtId:sid, int32:depth, List<ViewRef>
         }
         pass NIL;
     }
+    // THE ARM'S `if` IS ENTERED BY `stmt_then`, AND ITS LOOPS ARE ENTERED (DEF-337, landing
+    // 168): `stmt_body` reads a WINDOW slot (a `while`'s), which an `if` holds its `then`
+    // statement in, so the `then` branch's gives were read off a wrong id, and no loop
+    // kind had an arm, so `for (…) { give string_bytes(d); }` gave a view nobody collected
+    // (g1, g2, g2b, g2d: 113 at both legs). The statement shapes a `give` can stand under
+    // are the escape walk's (`escape_stmt`), minus `defer` (TYPE-094: a defer body leaves
+    // for nowhere).
     if (s.kind == StmtKind.StmtIfStmt) {
-        drop collect_gives_refs(x, raw stmt_body(x.ast, s), depth - 1i32, out);
+        drop collect_gives_refs(x, raw stmt_then(s), depth - 1i32, out);
         drop collect_gives_refs(x, raw stmt_else(s), depth - 1i32, out);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) { drop collect_gives_refs(x, raw stmt_body(x.ast, s), depth - 1i32, out); pass NIL; }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        drop collect_gives_refs(x, raw stmt_when_body(x.ast, s), depth - 1i32, out);
+        drop collect_gives_refs(x, raw stmt_when_then(x.ast, s), depth - 1i32, out);
+        drop collect_gives_refs(x, raw stmt_when_end(x.ast, s), depth - 1i32, out);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtForStmt) { drop collect_gives_refs(x, raw stmt_for_body(x.ast, s), depth - 1i32, out); pass NIL; }
+    if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
+        drop collect_gives_refs(x, raw stmt_counted_body(s), depth - 1i32, out);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtPickStmt) {
@@ -3777,10 +3796,19 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) never fails {
         // -- and under D-249 a view-holding local's `.len` in a bound is
         // exactly that (`for (j in 0...ln.len)` over a viewed line). An
         // unknown or pointer-carrying element keeps the refusal: fail closed.
+        // THE ITERABLE IS WALKED WHATEVER ITS ELEMENTS CARRY (DEF-327, landing
+        // 168): a pick expression in a range bound (`for (i in 0i32...(pick … { (*)
+        // { fixed uint8[]:v = string_bytes(d); d = …; give … } }))`) declares the
+        // holders of its arms, and a holder this pass never reached had no view
+        // ref -- the arm's write of the viewed root was unjudged (q1, 113 at both
+        // legs). The refusal below is unchanged: a borrow the binding could carry.
         ExprId:fit = raw stmt_for_iter(x.ast, s);
-        if (raw for_binding_can_carry(x, fit)) {
-            drop escape_untracked(x, fit,
-                "a borrow cannot be iterated over: a `for` binding is not tracked by the escape analysis, so a borrow reaching one could not be followed");
+        bool:fb = raw escape_expr(x, fit, raw ESCAPE_DEPTH());
+        if (fb && (raw for_binding_can_carry(x, fit))) {
+            ExprNode:fnode = raw ast_expr(x.ast, fit);
+            drop escape_err(x, raw BORROW_UNTRACKED(),
+                "a borrow cannot be iterated over: a `for` binding is not tracked by the escape analysis, so a borrow reaching one could not be followed",
+                fnode.span);
         }
         drop escape_stmt(x, raw stmt_for_body(x.ast, s));
         pass NIL;
@@ -5190,9 +5218,22 @@ func:collect_gives_roots = NIL(Escape->:x, StmtId:sid, int32:depth, List<int32>-
         }
         pass NIL;
     }
+    // The same shapes as `collect_gives_refs` (DEF-337, landing 168): `stmt_then`, and every loop kind.
     if (s.kind == StmtKind.StmtIfStmt) {
-        drop collect_gives_roots(x, raw stmt_body(x.ast, s), depth - 1i32, out);
+        drop collect_gives_roots(x, raw stmt_then(s), depth - 1i32, out);
         drop collect_gives_roots(x, raw stmt_else(s), depth - 1i32, out);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtWhileStmt) { drop collect_gives_roots(x, raw stmt_body(x.ast, s), depth - 1i32, out); pass NIL; }
+    if (s.kind == StmtKind.StmtWhenStmt) {
+        drop collect_gives_roots(x, raw stmt_when_body(x.ast, s), depth - 1i32, out);
+        drop collect_gives_roots(x, raw stmt_when_then(x.ast, s), depth - 1i32, out);
+        drop collect_gives_roots(x, raw stmt_when_end(x.ast, s), depth - 1i32, out);
+        pass NIL;
+    }
+    if (s.kind == StmtKind.StmtForStmt) { drop collect_gives_roots(x, raw stmt_for_body(x.ast, s), depth - 1i32, out); pass NIL; }
+    if ((s.kind == StmtKind.StmtLoopStmt) || (s.kind == StmtKind.StmtTillStmt)) {
+        drop collect_gives_roots(x, raw stmt_counted_body(s), depth - 1i32, out);
         pass NIL;
     }
     if (s.kind == StmtKind.StmtPickStmt) {
@@ -5418,10 +5459,21 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
     if (n.kind == ExprKind.ExprDropExpr) {
         ExprId:sp_op = raw expr_operand(n);
         ExprNode:sp_n = raw ast_expr(x.ast, sp_op);
-        if (sp_n.kind == ExprKind.ExprCallExpr) {
-            if (raw callee_is_async(x, sp_n)) {
-                int32:sgc = raw expr_generic_count(sp_n);
-                drop escape_spawn_args(x, (raw expr_list_start(sp_n)) + sgc,
+        if ((sp_n.kind == ExprKind.ExprCallExpr) || (sp_n.kind == ExprKind.ExprMethodCallExpr)) {
+            if (raw callee_is_async(x, sp_op)) {
+                int32:sgc = 0i32;
+                int32:pos_base = 0i32;
+                if (sp_n.kind == ExprKind.ExprCallExpr) { sgc = raw expr_generic_count(sp_n); }
+                // THE RECEIVER IS THE IMPLICIT FIRST ARGUMENT (DEF-339, landing 168): `drop
+                // w.fill(@s)` hands the task `@w` as `drop fillw(@w, @s)` hands it, judged by
+                // the same rule (`escape_spawn_recv`); a module-qualified call has none.
+                if (sp_n.kind == ExprKind.ExprMethodCallExpr) {
+                    if ((raw exprtypes_ns_decl(x.etypes, sp_op)) == 0i32) {
+                        drop escape_spawn_recv(x, sp_op, raw expr_operand(sp_n), d);
+                        pos_base = 1i32;
+                    }
+                }
+                drop escape_spawn_args(x, sp_op, pos_base, (raw expr_list_start(sp_n)) + sgc,
                                        (raw expr_list_count(sp_n)) - sgc, d);
                 pass false;
             }
@@ -6593,8 +6645,25 @@ pub func:crossing_concurrent_method = bool(int32:kind, string:m) never fails {
     pass false;
 };
 
-// Does this call reach an `async` function? The spawn's whole identity.
-pub func:callee_is_async = bool(Escape->:x, ExprNode:n) never fails {
+// Does this call reach an `async` function? The spawn's whole identity. THE CALLEE IS
+// THE RECORDED ONE (DEF-339, landing 168): the call graph's edge names every resolved
+// callee -- an identifier, a METHOD (`drop w.fill(@s)`), a qualified spelling
+// (`drop Work.poke(j)`, `drop nested.idle()`) -- where until this landing an identifier
+// callee alone was read (and the two spawn arms asked for an `ExprCallExpr` first), so
+// an async method's spawn was no spawn to this pass or the aliasing pass: its
+// arguments' lend was never recorded and its receiver's crossing never checked (m1:
+// `drop w.fill(@s); s.destroy();`, the arena destroyed under the task, MachineFault at
+// both legs; m5: the receiver reassigned under the task). The identifier read stays as
+// the fallback for a call the graph has no edge for.
+pub func:callee_is_async = bool(Escape->:x, ExprId:call) never fails {
+    if (raw expr_is_none(call)) { pass false; }
+    int32:fc = raw call_callee_fn(x, call);
+    if (fc > 0i32) {
+        DeclNode:fdecl = raw ast_decl(x.ast, DeclId{ index: fc });   // not `fd`: a kernel-identifier TYPE keyword (D-042)
+        pass (raw decl_has(fdecl, raw DECL_ASYNC()));
+    }
+    ExprNode:n = raw ast_expr(x.ast, call);
+    if (n.kind != ExprKind.ExprCallExpr) { pass false; }
     ExprId:c = raw expr_callee(n);
     if (raw expr_is_none(c)) { pass false; }
     ExprNode:cn = raw ast_expr(x.ast, c);
@@ -6607,7 +6676,75 @@ pub func:callee_is_async = bool(Escape->:x, ExprNode:n) never fails {
     pass (raw decl_has(d, raw DECL_ASYNC()));
 };
 
-pub func:escape_spawn_args = NIL(Escape->:x, int32:start, int32:count, int32:depth) never fails {
+// THE RECEIVER OF A SPAWNED METHOD (DEF-339, landing 168): `drop w.fill(@s)` is
+// `drop fill(@w, @s)` to the task. A method's pointer receiver crosses the spawn as the
+// implicit `@recv`, and it is always a plain struct's: the sanctioned kinds (a Mutex, an
+// RwLock, a CondVar, a Barrier, a shared_arena) take no user method -- their method set
+// is fixed, `NITPICK-TYPE-007` at the call (type_members.npk; the probes m20-m23) -- so
+// the receiver is BORROW-004 exactly as `drop fillw(@w, …)` is (m4), the author told as
+// an FYI. A by-value receiver is a by-value argument (DEF-340's rule). An unknown callee
+// is read as a pointer receiver: the closed direction.
+func:escape_spawn_recv = NIL(Escape->:x, ExprId:call, ExprId:recv, int32:depth) never fails {
+    if (raw expr_is_none(recv)) { pass NIL; }
+    int32:rxt = raw exprtypes_get(x.etypes, recv);
+    if (rxt == 0i32) { pass NIL; }
+    ExprNode:rn = raw ast_expr(x.ast, recv);
+    bool:ptr_recv = true;
+    int32:ft = raw exprtypes_callee_ft(x.etypes, call);
+    if (ft != 0i32) {
+        ptr_recv = false;
+        if ((raw type_param_count_of(x.types, ft)) > 0i32) {
+            int32:p0 = raw type_param_at_of(x.ast, x.types, ft, 0i32);
+            if ((raw type_kind(x.types, p0)) == (raw TY_POINTER())) { ptr_recv = true; }
+        }
+    }
+    if (ptr_recv) {
+        drop escape_err(x, raw BORROW_SPAWNED(),
+            "the receiver of a spawned method crosses the spawn as `@recv` (DEF-339; D-180): a task holding a pointer to this value is a mutation the holder cannot see, at a suspension point it did not choose, and no Mutex, RwLock, CondVar, Barrier or shared_arena takes a user method -- write the task as a free function over a pointer to one of those, or give the method a by-value receiver",
+            rn.span);
+        pass NIL;
+    }
+    drop escape_spawn_byval(x, call, 0i32, recv, rxt, rn);
+    pass NIL;
+};
+
+// Is the callee's parameter at `idx` declared `move` (D-183)? The function TYPE cannot
+// answer it -- qualifiers live on the declaration (the checker's `param_is_move`, read
+// here off the recorded callee); 0 for an unknown callee, out of range answers no.
+func:spawn_param_is_move = bool(Escape->:x, ExprId:call, int32:idx) never fails {
+    int32:fc = raw call_callee_fn(x, call);
+    if (fc <= 0i32) { pass false; }
+    DeclNode:d = raw ast_decl(x.ast, DeclId{ index: fc });
+    if (idx < 0i32) { pass false; }
+    if (idx >= (raw fn_param_count(x.ast, d))) { pass false; }
+    DeclNode:pd = raw ast_decl(x.ast, raw fn_param(x.ast, d, idx));
+    pass (((raw param_quals(pd)) & (raw QUAL_MOVE())) != 0i32);
+};
+
+// A BY-VALUE OWNER CANNOT CROSS A SPAWN (DEF-340, landing 168): the child frame receives
+// a COPY of the argument's words -- for a `string`, a `List` or a struct holding one, the
+// HEADER -- while the owner's binding stays live, so the owner's write, move, destroy or
+// reallocation before the join frees what the task reads (m13: `drop peekstr(s); s = …;`
+// read the re-allocated block at both legs; m10, m11 a struct's string; m15 a `List`
+// grown). A by-value parameter is a read-only loan (TYPE-085), so the task is never the
+// writer; the copy is TYPE-046's forbidden copy of an owner, made by the spawn. A `move`
+// parameter OWNS what it is handed (`drop takestr(move(s))`, a temporary built in the
+// call: m14, m19), a Channel is the designed by-value crossing (D-181) and plain data
+// copies harmlessly (m7, m9): those cross. The PARAMETER's mode decides, never the
+// argument's spelling; direction (A) of the ruling of 2026-10-29, the permissive lend
+// (B) the author's to grant.
+func:escape_spawn_byval = NIL(Escape->:x, ExprId:call, int32:pos, ExprId:a, int32:aty, ExprNode:an) never fails {
+    if (aty == 0i32) { pass NIL; }
+    if ((raw type_kind(x.types, aty)) == (raw TY_CHANNEL())) { pass NIL; }
+    if (!(raw type_drops(x.tr, aty, x.scope, 64i32))) { pass NIL; }
+    if (raw spawn_param_is_move(x, call, pos)) { pass NIL; }
+    drop escape_err(x, raw BORROW_SPAWNED(),
+        "a by-value owner cannot cross a spawn (DEF-340; D-180, TYPE-046): the task receives a copy of this value's header while this binding keeps the storage, and a write, move, destroy or reallocation of it before the join frees what the task reads -- write `move(...)` and declare the parameter `move` to hand ownership to the task, `.clone()` first to hand a copy, or hand a Mutex, RwLock, CondVar, Barrier or shared_arena pointer",
+        an.span);
+    pass NIL;
+};
+
+pub func:escape_spawn_args = NIL(Escape->:x, ExprId:call, int32:pos_base, int32:start, int32:count, int32:depth) never fails {
     int32:i = 0i32;
     while (i < count) decreases count - i {
         ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
@@ -6649,6 +6786,8 @@ pub func:escape_spawn_args = NIL(Escape->:x, int32:start, int32:count, int32:dep
                     i = i + 1i32;
                     continue;
                 }
+            } else {
+                drop escape_spawn_byval(x, call, pos_base + i, a, aty, raw ast_expr(x.ast, a));
             }
         }
         if (raw escape_expr(x, a, depth)) {

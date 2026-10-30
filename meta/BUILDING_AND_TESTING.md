@@ -2297,3 +2297,40 @@ that carried them retired at the cycle close):
   written down in the build that introduces it (D-286's list), not found by the next review. The cost of the WHOLE readings (the
   summary's truncation at the cast, the caller's `any`-pointee erase): the round trip `any-> =>! H2->` writing a field disjoint from
   the view is refused (r4, the named `wk(ap)`, the sixth accepted over-refusal, 0 tree sites).
+- **A pick EXPRESSION's arm is a statement list to every prescan, a `give` is collected from every statement kind of the arm, a spawned
+  METHOD is a spawn with its receiver as the first argument, and a by-value owner crosses a spawn only by `move`** (DEF-327, DEF-337, DEF-339,
+  DEF-340, landing 168; alias.npk `prescan_stmt`/`prescan_expr_picks`/`prescan_pick_window`, escape.npk `collect_gives_refs`/`collect_gives_roots`,
+  `callee_is_async`, `escape_spawn_recv`, `spawn_param_is_move`, `escape_spawn_byval`, `escape_spawn_args`). Four readers each missed a SHAPE
+  of a construct they already handled: the aliasing prescan walked statements and never entered an expression, so a holder declared in a pick
+  EXPRESSION's arm had no party and a write of its root in the arm was unjudged (f3a: the arm's `give` read the freed bytes, 113 at both legs);
+  the escape pass's give collectors entered a block, an `if` by the WRONG accessor (`stmt_body`, a `while`'s slot, where an `if` keeps its
+  `then` in `stmt_then`) and a `pick`, and no loop at all; the spawn readers asked for an `ExprCallExpr` before `callee_is_async`, which read an
+  identifier callee only, so `drop w.fill(@s)` -- and `drop tasks.fillq(@s)`, the module-qualified spelling -- was no spawn to either pass; and
+  `escape_spawn_args` tested pointer arguments against D-180's five kinds and let a by-value OWNER through, whose header the child frame copies
+  while the owner's binding stays live (114 at both legs: the task read the re-allocated block). THE LESSONS. (1) A walker that dispatches on
+  `expr_shape` is not done at the shapes: `ExprCallExpr`, `ExprBuiltinExpr`, `ExprStructLiteralExpr` and `ExprPickExpr` are CUSTOM, and a
+  `pass NIL` on CUSTOM is a hole -- the first build of this landing bailed there, and a pick in a CALL ARGUMENT (p4) and in a STRUCT LITERAL's
+  field (p8) stayed silent 113/113 under it; write the four arms (a call's and a builtin's VALUE arguments stand after their generic ones, a
+  struct literal's window alternates NAME and VALUE) as `acc_expr` has them, and make CUSTOM and NONE an INTERNAL refusal, as `acc_expr` and
+  `escape_expr` do. (2) When a reader enumerates STATEMENT kinds, compare its list with `escape_stmt`'s and `prescan_stmt`'s: a `give` can stand
+  under `if` (both branches), `while`, `for`, `loop`, `till`, a `when`'s body, `then` and `end`, a block and a pick arm; `defer` is TYPE-094.
+  A `when`'s `then` and `end` contribute nothing to the flow analysis's `must` (D-027), so a test arm that gives inside a `when` ends in a
+  trailing `give` or it is NITPICK-FLOW-001. AND A KIND IS NOT ITS SLOTS: the third build of this landing found `prescan_stmt` naming every
+  statement kind and walking only the BODY slots of six of them -- a pick in a `for` iterable, a counted argument, a `when` condition, a
+  pick's selector, an arm's `where` guard or an assignment's TARGET kept its arm's holders unregistered (q1-q8, 113/113) -- and the escape
+  pass's `for` arm walking the iterable only under `if (for_binding_can_carry(…))`, a type question, so a pick in a range bound was never
+  entered at all (q1 silent on 166 and 167 alike). The mechanical check is the SLOT TABLE of `meta/roadmap/1.6/tools/kindtable167.py`: per
+  statement walker and kind, each expression accessor's value `walked`, `walked under if (…)`, or `READ` only -- run it on the tree before
+  and after, and read every `under` and every `READ` of an expression slot by hand (a body slot is READ by design: it is walked as a
+  statement). (3) Read a callee off the CALL GRAPH (`call_callee_fn`) before the callee expression's kind: the
+  graph names a method, a qualified spelling and an identifier alike, and the identifier read is the fallback for a call the graph has no edge
+  for. (4) The spawn rule's test is the PARAMETER's mode: a by-value owner crosses only into a `move` parameter (`drop takestr(move(s))`), a
+  `Channel` by value is D-181's crossing, plain data copies harmlessly; whether or not the owner writes, the copy is refused (direction (A),
+  management 2026-10-29 08:25:55; the permissive lend (B) the author's to grant). (5) A method's receiver is a crossing: a pointer receiver is
+  BORROW-004 for every plain struct (no sanctioned kind takes a user method, TYPE-007), so DEF-149's legal spelling -- a NIL method on a pointer
+  receiver spawned with `drop` -- stays legal at the type level and is BORROW-004 under D-180's crossing rule, as the free-function spelling
+  already is (`async_method_bare.npk`'s control `tick` is a by-value inherent method now; a by-value `Self` in a TRAIT makes it TYPE-015 under
+  `dyn`). (6) A spawn's site reports TWICE where two rules meet it at two lines (the receiver's crossing at the spawn, the lend at the destroy):
+  D-332's one-report-per-site holds per LINE, and the header generator lists both. The cells: `wt/51a/.internal/probes/t168/`, `cells168/`, `cells168m/` and `cells168q/` (the
+  spawn cells re-cut without the `dyn` trio, whose spawn inside `spawn_dyn` had contaminated every cell's verdict -- a shared preamble's own
+  refusal is read as the cell's: keep a refusing helper in the one cell that needs it).

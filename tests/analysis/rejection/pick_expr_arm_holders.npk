@@ -1,0 +1,564 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 91:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 106:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 120:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 135:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 149:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 163:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 177:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 191:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 207:21
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 224:13
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 239:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 258:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 274:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 289:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 303:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 318:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 333:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 349:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 365:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 381:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 394:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 411:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 427:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 442:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 458:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 472:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 490:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 509:17
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 526:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 540:13
+// DEF-327 + DEF-337 (landing 168): A HOLDER DECLARED IN A PICK EXPRESSION'S ARM HAS A PARTY WHEREVER THE
+// PICK STANDS, AND A `give` INSIDE A NESTED STATEMENT OF THE ARM CARRIES ITS VIEW OUT OF THE PICK.
+//
+// Until this landing the aliasing pass's prescan walked STATEMENTS and never entered an expression, so a
+// holder declared in a pick EXPRESSION's arm (`fixed uint8[]:v = string_bytes(d);`) had no party and a
+// write of the viewed root inside the arm was unjudged (DEF-327); and the escape pass's reader of a pick
+// expression's `give`s entered a block, an `if`'s branches and a `pick` but no loop body, so a view given
+// from inside a `for`, a `while`, a `loop`, a `till` or a `when` left the pick with no ref, and the root
+// written after the pick was unjudged (DEF-337). Sites 1-12 are DEF-327's, one per expression slot the
+// pick can stand in: an initialiser, an assigned value, `discard(...)`, a `pass` operand, an `if` and a
+// `while` condition, a call argument, a binary operand, a nested pick's arm, a struct literal's field,
+// a `$$m` claim in the arm (site 12, NITPICK-BORROW-013: the bare-block twin's code), and the `exit`
+// operand in `main` (site 9, the one slot only `main` has). Sites 13-21 are DEF-337's, one per statement
+// kind the give may be nested in: `for`, `while`, `if`-then, `if`-then with an else, `loop`, `till`, a
+// `when`'s body, its `then` and its `end`. Every other site is NITPICK-BORROW-015 at the write of the
+// viewed root. Landing 167's checker reports NONE of them: each ran and read the freed, re-used bytes
+// (113 at both legs; `wt/51a/.internal/probes/t168/`). The legal half is
+// tests/backend/programs/pick_expr_arm_holders_ok.npk.
+mod:pick_expr_arm_holders;
+error:E1;
+struct:H2 = { string:o; int64:k; };
+func:idi = int32(int32:x) never fails { pass x; };
+
+// --- DEF-327: THE ARM'S HOLDER, THE ROOT WRITTEN IN THE ARM -------------------------------------------
+// 1. an initialiser's pick (f3a)
+func:init_pick = int32() never fails {
+    string:d = string_concat("hello", " world");
+    int32:r = pick (1i32) {
+        (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            string:junk = string_concat("qqqqqqqq", "qqq");
+            give (v[0i64] => int32);
+        }
+    };
+    pass r;
+};
+
+// 2. an assigned value's pick (p1)
+func:assign_pick = int32() never fails {
+    string:d = string_concat("hello", " world");
+    int32:r = 0i32;
+    r = pick (1i32) {
+        (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            string:junk = string_concat("qqqqqqqq", "qqq");
+            give (v[0i64] => int32);
+        }
+    };
+    pass r;
+};
+
+// 3. `discard(pick ...)` (h7a)
+func:discard_pick = int32() never fails {
+    string:d = string_concat("hello", " world");
+    discard(pick (1i32) {
+        (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            string:junk = string_concat("qqqqqqqq", "qqq");
+            if (v[0i64] != 104u8) { pass (v[0i64] => int32); }
+            give 0i32;
+        }
+    });
+    pass 0i32;
+};
+
+// 4. `pass pick ...` (h7b)
+func:pass_pick = int32() never fails {
+    string:d = string_concat("hello", " world");
+    pass pick (1i32) {
+        (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            string:junk = string_concat("qqqqqqqq", "qqq");
+            if (v[0i64] != 104u8) { give (v[0i64] => int32); }
+            give 0i32;
+        }
+    };
+};
+
+// 5. an `if` condition's pick (p2)
+func:if_cond_pick = int32() never fails {
+    string:d = string_concat("hello", " world");
+    if ((pick (1i32) {
+        (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            string:junk = string_concat("qqqqqqqq", "qqq");
+            give (v[0i64] => int32);
+        }
+    }) != 104i32) { pass 113i32; }
+    pass 0i32;
+};
+
+// 6. a `while` condition's pick (p3)
+func:while_cond_pick = int32() never fails {
+    string:d = string_concat("hello", " world");
+    while ((pick (1i32) {
+        (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            string:junk = string_concat("qqqqqqqq", "qqq");
+            give (v[0i64] => int32);
+        }
+    }) != 104i32) unbounded { pass 113i32; }
+    pass 0i32;
+};
+
+// 7. a call argument's pick (p4; the custom shapes, the second build)
+func:call_arg_pick = int32() never fails {
+    string:d = string_concat("hello", " world");
+    int32:r = raw idi(pick (1i32) {
+        (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            string:junk = string_concat("qqqqqqqq", "qqq");
+            give (v[0i64] => int32);
+        }
+    });
+    pass r;
+};
+
+// 8. a binary operand's pick (p5)
+func:binary_operand_pick = int32() never fails {
+    string:d = string_concat("hello", " world");
+    int32:r = 0i32 + pick (1i32) {
+        (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            string:junk = string_concat("qqqqqqqq", "qqq");
+            give (v[0i64] => int32);
+        }
+    };
+    pass r;
+};
+
+// 10. a pick INSIDE a pick expression's arm, the inner arm declaring the view and writing the root (p7)
+func:nested_pick = int32() never fails {
+    string:d = string_concat("hello", " world");
+    int32:r = pick (1i32) {
+        (*) {
+            int32:q = pick (2i32) {
+                (*) {
+                    fixed uint8[]:v = string_bytes(d);
+                    d = string_concat("xyzzy", "!");
+                    string:junk = string_concat("qqqqqqqq", "qqq");
+                    give (v[0i64] => int32);
+                }
+            };
+            give q;
+        }
+    };
+    pass r;
+};
+
+// 11. a struct literal field's pick (p8; the custom shapes, the second build)
+func:struct_field_pick = int32() never fails {
+    string:d = string_concat("hello", " world");
+    H2:h = H2{ o: string_concat("a", "b"), k: (pick (1i32) {
+        (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            string:junk = string_concat("qqqqqqqq", "qqq");
+            give (v[0i64] => int64);
+        }
+    }) };
+    if (h.k != 104i64) { pass 5i32; }
+    pass 0i32;
+};
+
+// 12. a `$$m` claim declared in the arm, the root written in the arm (f3b): NITPICK-BORROW-013, as in a bare block (f3f)
+func:claim_in_arm = int32() never fails {
+    string:d = string_concat("hello", " world");
+    int32:r = pick (1i32) {
+        (*) {
+            string->:pm = $$m d;
+            d = string_concat("xyzzy", "!");
+            if (pm.len == 999i64) { give 7i32; }
+            give 1i32;
+        }
+    };
+    pass r;
+};
+
+// --- DEF-337: THE GIVE INSIDE A NESTED STATEMENT OF THE ARM, THE ROOT WRITTEN AFTER THE PICK ---------
+// 13. the give inside a `for` in the arm (g1)
+func:give_in_for = int32() never fails {
+    string:d = string_concat("hello", " world");
+    fixed uint8[]:v = pick (1i32) {
+        (*) {
+            string:e = string_concat("ee", "ee");
+            for (int32:i in 0i32...1i32) { give string_bytes(d); }
+            give string_bytes(e);
+        }
+    };
+    d = string_concat("xyzzy", "!");
+    string:junk = string_concat("qqqqqqqq", "qqq");
+    pass (v[0i64] => int32);
+};
+
+// 14. the give inside a `while` in the arm (g2)
+func:give_in_while = int32() never fails {
+    string:d = string_concat("hello", " world");
+    fixed uint8[]:v = pick (1i32) {
+        (*) {
+            string:e = string_concat("ee", "ee");
+            int32:i = 0i32;
+            while (i < 1i32) decreases 1i32 - i { give string_bytes(d); }
+            give string_bytes(e);
+        }
+    };
+    d = string_concat("xyzzy", "!");
+    string:junk = string_concat("qqqqqqqq", "qqq");
+    pass (v[0i64] => int32);
+};
+
+// 15. the give in an `if`'s then-branch, no else (g2b)
+func:give_in_if_then = int32() never fails {
+    string:d = string_concat("hello", " world");
+    fixed uint8[]:v = pick (1i32) {
+        (*) {
+            string:e = string_concat("ee", "ee");
+            if (d.len > 0i64) { give string_bytes(d); }
+            give string_bytes(e);
+        }
+    };
+    d = string_concat("xyzzy", "!");
+    string:junk = string_concat("qqqqqqqq", "qqq");
+    pass (v[0i64] => int32);
+};
+
+// 16. the give in an `if`'s then-branch, the else giving another string (g2d)
+func:give_in_if_then_else = int32() never fails {
+    string:d = string_concat("hello", " world");
+    fixed uint8[]:v = pick (1i32) {
+        (*) {
+            string:e = string_concat("ee", "ee");
+            if (d.len > 0i64) { give string_bytes(d); } else { give string_bytes(e); }
+        }
+    };
+    d = string_concat("xyzzy", "!");
+    string:junk = string_concat("qqqqqqqq", "qqq");
+    pass (v[0i64] => int32);
+};
+
+// 17. the give inside a counted `loop` in the arm (g10)
+func:give_in_loop = int32() never fails {
+    string:d = string_concat("hello", " world");
+    fixed uint8[]:v = pick (1i32) {
+        (*) {
+            string:e = string_concat("ee", "ee");
+            loop (0i64, 1i64, 1i64) { give string_bytes(d); }
+            give string_bytes(e);
+        }
+    };
+    d = string_concat("xyzzy", "!");
+    string:junk = string_concat("qqqqqqqq", "qqq");
+    pass (v[0i64] => int32);
+};
+
+// 18. the give inside a `till` in the arm (g11)
+func:give_in_till = int32() never fails {
+    string:d = string_concat("hello", " world");
+    fixed uint8[]:v = pick (1i32) {
+        (*) {
+            string:e = string_concat("ee", "ee");
+            till (1i64, 1i64) { give string_bytes(d); }
+            give string_bytes(e);
+        }
+    };
+    d = string_concat("xyzzy", "!");
+    string:junk = string_concat("qqqqqqqq", "qqq");
+    pass (v[0i64] => int32);
+};
+
+// 19. the give inside a `when`'s BODY in the arm (g12)
+func:give_in_when_body = int32() never fails {
+    string:d = string_concat("hello", " world");
+    fixed uint8[]:v = pick (1i32) {
+        (*) {
+            string:e = string_concat("ee", "ee");
+            int64:n = 1i64;
+            when (n > 0i64) decreases n { n = n - 1i64; give string_bytes(d); } then { give string_bytes(e); } end { give string_bytes(e); }
+            give string_bytes(e);
+        }
+    };
+    d = string_concat("xyzzy", "!");
+    string:junk = string_concat("qqqqqqqq", "qqq");
+    pass (v[0i64] => int32);
+};
+
+// 20. the give in a `when`'s THEN clause -- the body ran (g13)
+func:give_in_when_then = int32() never fails {
+    string:d = string_concat("hello", " world");
+    fixed uint8[]:v = pick (1i32) {
+        (*) {
+            string:e = string_concat("ee", "ee");
+            int64:n = 1i64;
+            when (n > 0i64) decreases n { n = n - 1i64; } then { give string_bytes(d); } end { give string_bytes(e); }
+            give string_bytes(e);
+        }
+    };
+    d = string_concat("xyzzy", "!");
+    string:junk = string_concat("qqqqqqqq", "qqq");
+    pass (v[0i64] => int32);
+};
+
+// 21. the give in a `when`'s END clause -- the body never ran (g14)
+func:give_in_when_end = int32() never fails {
+    string:d = string_concat("hello", " world");
+    fixed uint8[]:v = pick (1i32) {
+        (*) {
+            string:e = string_concat("ee", "ee");
+            int64:n = 0i64;
+            when (n > 0i64) decreases n { n = n - 1i64; } then { give string_bytes(e); } end { give string_bytes(d); }
+            give string_bytes(e);
+        }
+    };
+    d = string_concat("xyzzy", "!");
+    string:junk = string_concat("qqqqqqqq", "qqq");
+    pass (v[0i64] => int32);
+};
+
+// 22. the pick in a `for` ITERABLE's range bound (q1; the third build: `prescan_stmt` walked the loop's BODY alone,
+//     and the escape pass walked the iterable only when the binding could carry a borrow)
+func:for_iter_bound_pick = int32() never fails {
+    string:d = string_concat("hello", " world");
+    int32:acc = 0i32;
+    for (int32:i in 0i32...(pick (1i32) {
+        (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            string:junk = string_concat("qqqqqqqq", "qqq");
+            give (v[0i64] => int32);
+        }
+    })) { acc = acc + 1i32; }
+    pass acc;
+};
+
+// 23. the pick AS the `for` iterable, giving an array (q1c)
+func:for_iter_array_pick = int32() never fails {
+    string:d = string_concat("hello", " world");
+    int32[2]:arr = [1i32, 2i32];
+    int32[2]:brr = [5i32, 6i32];
+    int32:acc = 0i32;
+    for (int32:e in (pick (1i32) {
+        (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            string:junk = string_concat("qqqqqqqq", "qqq");
+            if (v[0i64] == 104u8) { give arr; }
+            give brr;
+        }
+    })) { acc = acc + e; }
+    pass acc;
+};
+
+// 24. the pick in a counted `loop`'s END argument (q2)
+func:loop_arg_pick = int32() never fails {
+    string:d = string_concat("hello", " world");
+    int32:acc = 0i32;
+    loop (0i64, (pick (1i32) {
+        (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            string:junk = string_concat("qqqqqqqq", "qqq");
+            give (v[0i64] => int64);
+        }
+    }), 1i64) { acc = acc + 1i32; }
+    pass acc;
+};
+
+// 25. the pick in a `till`'s argument (the counted loop's twin spelling)
+func:till_arg_pick = int32() never fails {
+    string:d = string_concat("hello", " world");
+    int32:acc = 0i32;
+    till ((pick (1i32) {
+        (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            string:junk = string_concat("qqqqqqqq", "qqq");
+            give (v[0i64] => int64);
+        }
+    }), 1i64) { acc = acc + 1i32; }
+    pass acc;
+};
+
+// 26. the pick in a `when`'s CONDITION (q3)
+func:when_cond_pick = int32() never fails {
+    string:d = string_concat("hello", " world");
+    int64:n = 1i64;
+    int32:r = 0i32;
+    when (((pick (1i32) {
+        (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            string:junk = string_concat("qqqqqqqq", "qqq");
+            give (v[0i64] => int32);
+        }
+    }) == 104i32) && (n > 0i64)) decreases n { n = n - 1i64; r = r + 1i32; } then { pass r; } end { pass 113i32; }
+    pass 5i32;
+};
+
+// 27. the pick as a statement pick's SELECTOR, the arm giving a plain value (q7; a given VIEW is NITPICK-BORROW-009 already, q4)
+func:pick_stmt_selector_pick = int32() never fails {
+    string:d = string_concat("hello", " world");
+    pick (pick (1i32) {
+        (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            string:junk = string_concat("qqqqqqqq", "qqq");
+            if (v[0i64] == 104u8) { give 1i32; }
+            give 2i32;
+        }
+    }) {
+        (1i32) { pass 0i32; },
+        (*) { pass 113i32; }
+    }
+    pass 5i32;
+};
+
+// 28. the pick as a pick EXPRESSION's selector, the arm giving a plain value (q8)
+func:pick_expr_selector_pick = int32() never fails {
+    string:d = string_concat("hello", " world");
+    int32:r = pick (pick (1i32) {
+        (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            string:junk = string_concat("qqqqqqqq", "qqq");
+            if (v[0i64] == 104u8) { give 1i32; }
+            give 2i32;
+        }
+    }) {
+        (1i32) { give 0i32; },
+        (*) { give 113i32; }
+    };
+    pass r;
+};
+
+// 29. the pick inside a pick arm's `where` GUARD (q6)
+func:arm_guard_pick = int32() never fails {
+    string:d = string_concat("hello", " world");
+    int32:r = pick (1i32) {
+        (1i32) where ((pick (2i32) {
+            (*) {
+                fixed uint8[]:v = string_bytes(d);
+                d = string_concat("xyzzy", "!");
+                string:junk = string_concat("qqqqqqqq", "qqq");
+                give (v[0i64] => int32);
+            }
+        }) == 104i32) { give 0i32; },
+        (*) { give 113i32; }
+    };
+    pass r;
+};
+
+// 30. the pick in an assignment TARGET's index (q5: the freed byte indexes out of bounds, the intact one lands on arr[0])
+func:assign_target_index_pick = int32() never fails {
+    string:d = string_concat("hello", " world");
+    int32[2]:arr = [0i32, 0i32];
+    arr[((pick (1i32) {
+        (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            string:junk = string_concat("qqqqqqqq", "qqq");
+            give (v[0i64] => int64);
+        }
+    }) - 104i64)] = 7i32;
+    pass arr[0i64];
+};
+
+// 9. the `exit` operand's pick (p6): the one slot only `main` has
+func:main = int32(cstring[]:_~argv) {
+    string:d = string_concat("hello", " world");
+    exit (pick (1i32) {
+        (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            string:junk = string_concat("qqqqqqqq", "qqq");
+            give ((v[0i64] => int32) - 104i32);
+        }
+    });
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,222 @@
+// expect-exit: 0
+// stress: 40
+// explore: 1000
+//
+// THE LEGAL HALF OF DEF-339 + DEF-340 (landing 168): plain data by value across a spawn -- an argument, a
+// receiver -- with the owner writing under the task (a copy of plain data is harmless); an owner MOVED into
+// a `move` parameter (`drop takestr(move(s))`, `drop takess(move(w))`), a call result handed to one; a
+// by-value plain-data receiver whose lent arena argument is destroyed AFTER the block joins the task; a
+// Channel by value (D-181); a module-qualified spawn whose lend ends before the destroy. Each must stay
+// clean under this compiler AND landing 167's; exit 0 at both legs, each control failing at its own exit.
+// The refusals of the same shapes are tests/analysis/rejection/spawn_method_byval.npk.
+mod:spawn_method_byval_ok;
+error:E1;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+struct:W = { int64:k; };
+struct:SS = { string:s; int64:k; };
+impl:W = {
+    thread async func:fill = NIL(W->:self, shared_arena<int64>->:s) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        Handle<int64>:h = s.alloc(424242i64);
+        int64:v = s.get(h) ?! E1;
+        if (v != 424242i64) { fail E1; }
+        pass NIL;
+    };
+    thread async func:tickw = NIL(W->:self) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        if (self.k == 999i64) { fail E1; }
+        pass NIL;
+    };
+    thread async func:fillv = NIL(W:self, shared_arena<int64>->:s) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        if (self.k == 999i64) { fail E1; }
+        Handle<int64>:h = s.alloc(424242i64);
+        int64:v = s.get(h) ?! E1;
+        if (v != 424242i64) { fail E1; }
+        pass NIL;
+    };
+    thread async func:look = NIL(W:self) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        if (self.k != 1i64) { fail E1; }
+        pass NIL;
+    };
+};
+impl:SS = {
+    thread async func:looks = NIL(SS:self) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        fixed uint8[]:xb = string_bytes(self.s);
+        if (xb[0i64] != 97u8) { fail E1; }
+        pass NIL;
+    };
+};
+thread async func:peek = NIL(W:x) joins J2 {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    if (x.k != 1i64) { fail E1; }
+    pass NIL;
+};
+thread async func:peeks = NIL(SS:x) joins J2 {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    fixed uint8[]:xb = string_bytes(x.s);
+    if (xb[0i64] != 97u8) { fail E1; }
+    if (x.s.len != 3i64) { fail E1; }
+    pass NIL;
+};
+thread async func:peekstr = NIL(string:x) joins J2 {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    fixed uint8[]:xb = string_bytes(x);
+    if (xb[0i64] != 97u8) { fail E1; }
+    pass NIL;
+};
+thread async func:peeklist = NIL(List<int64>:x) joins J2 {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    if (x[0i64] != 7i64) { fail E1; }
+    pass NIL;
+};
+thread async func:takestr = NIL(move string:x) joins J2 {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    fixed uint8[]:xb = string_bytes(x);
+    if (xb[0i64] != 97u8) { fail E1; }
+    pass NIL;
+};
+thread async func:takess = NIL(move SS:x) joins J2 {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    fixed uint8[]:xb = string_bytes(x.s);
+    if (xb[0i64] != 97u8) { fail E1; }
+    pass NIL;
+};
+async func:chw = NIL(Channel<int32, 3i32, 64i64>:ch, Channel<int32, 3i32, 64i64>:done) {
+    int32:got = await ch.recv(raw duration_ms(2000i64)) ?! E1;
+    await done.send(got, raw duration_ms(2000i64)) ?! E1;
+    pass NIL;
+};
+thread async func:takestrd = NIL(move string:x, Channel<int32, 3i32, 64i64>:done) joins J2 {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    fixed uint8[]:xb = string_bytes(x);
+    await done.send((xb[0i64] => int32), raw duration_ms(2000i64)) ?! E1;
+    pass NIL;
+};
+thread async func:takessd = NIL(move SS:x, Channel<int32, 3i32, 64i64>:done) joins J2 {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    fixed uint8[]:xb = string_bytes(x.s);
+    int32:k32 = 0i32;
+    if (x.k == 1i64) { k32 = 1i32; }
+    await done.send((xb[0i64] => int32) + k32, raw duration_ms(2000i64)) ?! E1;
+    pass NIL;
+};
+mod:tasks = {
+    fixed Duration:J2m = Duration{ ns: 2000000000i64 };
+    pub thread async func:fillq = NIL(shared_arena<int64>->:s) joins J2m {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        Handle<int64>:h = s.alloc(424242i64);
+        int64:v = s.get(h) ?| 0i64;
+        if (v != 424242i64) { pass NIL; }
+        pass NIL;
+    };
+};
+async func:main = int32(cstring[]:_~argv) {
+    Channel<int32, 3i32, 64i64>:done = channel() ?! E1;
+    // 1. (m7) plain data by value, the owner writing under the task
+    {
+        W:w = W{ k: 1i64 };
+        {
+            drop peek(w);
+            w = W{ k: 2i64 };
+        }
+        if (w.k != 2i64) { exit 11i32; }
+    }
+    // 2. (m8) a by-value plain-data RECEIVER, the owner writing under the task
+    {
+        W:w = W{ k: 1i64 };
+        {
+            drop w.look();
+            w = W{ k: 2i64 };
+        }
+        if (w.k != 2i64) { exit 12i32; }
+    }
+    // 3. (m9) plain data by value, nothing written
+    {
+        W:w = W{ k: 1i64 };
+        {
+            drop peek(w);
+        }
+        if (w.k != 1i64) { exit 13i32; }
+    }
+    // 4. (m14) a string MOVED into a `move` parameter: the task owns it, and reports the byte it read
+    {
+        string:s = string_concat("ab", "c");
+        {
+            drop takestrd(move(s), done);
+        }
+        int32:got4 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got4 != 97i32) { exit 14i32; }
+    }
+    // 5. (m19) a call result handed to a `move` parameter
+    {
+        {
+            drop takestrd(string_concat("bc", "d"), done);
+            string:junk = string_concat("zz", "z");
+        }
+        int32:got5 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got5 != 98i32) { exit 15i32; }
+    }
+    // 6. (m25) a by-value receiver's lent arena destroyed AFTER the block joins the task
+    {
+        W:w = W{ k: 1i64 };
+        shared_arena<int64>:s = shared_arena_make(8i64);
+        {
+            drop w.fillv(@s);
+        }
+        Handle<int64>:h0 = s.alloc(7i64);
+        if ((s.get(h0) ?! E1) != 7i64) { exit 16i32; }
+        s.destroy();
+    }
+    // 7. (m28) a Channel by value: the designed crossing (D-181); the task relays what it receives
+    {
+        Channel<int32, 3i32, 64i64>:ch = channel() ?! E1;
+        {
+            drop chw(ch, done);
+            await ch.send(5i32, raw duration_ms(2000i64)) ?! E1;
+        }
+        int32:got7 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got7 != 5i32) { exit 17i32; }
+    }
+    // 8. (m29) an owner struct moved into a `move SS:x` parameter; the task reports the byte and the count it read
+    {
+        SS:w = SS{ s: string_concat("ab", "c"), k: 1i64 };
+        {
+            drop takessd(move(w), done);
+        }
+        int32:got8 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got8 != 98i32) { exit 18i32; }
+    }
+    // 9. (m31n) a module-qualified spawn, the destroy after the block's join
+    {
+        shared_arena<int64>:s = shared_arena_make(8i64);
+        {
+            drop tasks.fillq(@s);
+        }
+        Handle<int64>:h1 = s.alloc(9i64);
+        if ((s.get(h1) ?! E1) != 9i64) { exit 19i32; }
+        s.destroy();
+    }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};
