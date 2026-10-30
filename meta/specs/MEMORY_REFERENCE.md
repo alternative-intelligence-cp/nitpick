@@ -151,7 +151,7 @@ first. A method whose receiver is `move Self:self` takes its receiver as a
 leaves the pointee VACANT (above). A copy of PLAIN DATA through any of these is
 harmless and stays legal.
 
-**`pass v` and `return Result{value: v}` are ONE road (DEF-371; 1.6.1e landing 171).** A
+**`pass v` and `return Result{value: v}` are ONE road (DEF-371; 1.6.1e landing 171).** [SCOPED 2026-10-30: one road in the typer and the emitter; the escape analysis's return summaries still read the two apart -- DEF-383, landing 172.] A
 `return`'s literal hands its value out of the frame exactly as `pass` hands its operand:
 the same transfer (the place vacated, above), the same refusals -- a borrowed value, a
 binding the frame was lent or a pointee's owning part (TYPE-047), an owning part of a

@@ -2427,3 +2427,11 @@ that carried them retired at the cycle close):
   `fits`, and `SLOT_SITE_PAIRS` named `check_pass` and `emit_pass` after both calls had moved into the shared functions -- the chain
   runs no in-process check, so run `inproc_checks.py` on the final tree before the texts, not only after the squash. The cells:
   `wt/51a/.internal/probes/t171/` (`twin371/`, `both/`, `p372/`, `p372b/`, `b171/`, `census371/`, `census171/`) and `t170/rev170/`.
+  (8) [ADDED 2026-10-30, the review of 224d907] ONE ROAD IS ONE ROAD IN EVERY READER OF THE CONSTRUCT: the typer and the emitter
+  take `pass`'s road for the long form, but the escape analysis's return summary (`escape_return_value` -> `record_summary`,
+  escape.npk:3892) still reads the literal by the general walk where `pass` gets the moved-place reading, so the twin table, run
+  through the escape summaries, finds a use-after-free (13/13, the `pass` twin BORROW-015) and two over-refusals (DEF-383, landing
+  172): a twin table runs through every pass that reads the construct. And a FIELD of a `Result` is two more roads into its states:
+  `r.err = E1` over a value (DEF-380, a leak), a zero `Error` read off a success and failed (DEF-381, a success holding NULL -- D-069's
+  trap at a computed `fail` was never built), `r.is_error = false` (DEF-382, EMIT-002); and an exhaustive `pick` over a valued enum's
+  vacant value takes no arm and falls off the function into a fabricated success (DEF-385). The cells: `wt/51a/.internal/probes/t171/rev171/`.

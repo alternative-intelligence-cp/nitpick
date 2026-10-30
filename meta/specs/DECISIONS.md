@@ -14074,7 +14074,7 @@ out. A named receiver is never consumed implicitly (the closed direction,
 management_6 2026-10-30 00:48; the permissive reading is the author's to grant).
 
 *[2026-10-30, 1.6.1e landing 171 — a dated note (DEF-371, DEF-372; the gives transit).]*
-`pass v` and `return Result{value: v}` are ONE road. `check_leaving_value` (type_stmt.npk) types
+`pass v` and `return Result{value: v}` are ONE road [SCOPED 2026-10-30, after the commit (management_7, 2026-10-30 09:08:19, from management's diff review of 224d907 (`credits/out/compiler-171-diff-review-2026-10-30.md`, its SCOPE item) and this seat's probes (msg c7a94663, 09:05:00; `wt/51a/.internal/probes/t171/rev171/esc/`)): in the typer and the emitter -- the escape analysis's summaries still read the two spellings apart, `escape_return_value` handing `record_summary` the whole literal where `pass` gets the moved-place reading (DEF-383, OPEN HIGH, landing 172)]. `check_leaving_value` (type_stmt.npk) types
 `pass`'s operand and a `return` literal's value alike -- this decision's implicit move, the move-only
 rule, the borrowed, lent, pointee, `limit`, `fixed` and `sealed` refusals and the mismatch report --,
 and `emit_leaving_value` (ir_stmt.npk) lowers both. The long form had COPIED a named owner into the
