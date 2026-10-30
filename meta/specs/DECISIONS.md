@@ -13275,6 +13275,8 @@ a spawned thread held it, the thread allocating in freed memory — is the shape
 
 *[2026-10-30, 1.6.1e landing 170 — a dated note (DEF-360 relaxed, DEF-363).]* A by-value receiver reached THROUGH A POINTER crosses a spawn as a COPY OF THE POINTEE -- the child frame loads it at the seed (DEF-363) -- and is judged by the pointee's type: an owner is `NITPICK-BORROW-004` (the task would hold its header while the pointee keeps the storage; the transfer is `(move(<-p)).m()` into a `move` receiver), a pointee whose type holds an ADDRESS is `-004` as a borrow crossing the spawn (`H{ p: @d }` behind the pointer: the copy carries the address), plain data crosses. Landing 169's blanket refusal of the spelling is gone. The by-name receiver holding a borrow (DEF-364) and a `T` inside a generic type (DEF-365) stay open, landing 171.
 
+*[2026-10-30, 1.6.1e landing 172 — a dated note (DEF-364, DEF-365, DEF-362's hardening, DEF-378).]* The rule's receiver side is the argument side's twin now: a by-value receiver whose walk answers that it holds a borrow is `NITPICK-BORROW-004` at the receiver, as an argument is (`escape_spawn_recv` keeps the verdict it computed and dropped; DEF-364: `H{ p: @d }` as `self` read the owner's rewritten string, 114/114 at both legs on 169, 170 and 171; the no-write receivers refused as the no-write argument is). A value whose type holds a type parameter, `Self` or an associated type BY VALUE -- `T?`, `T[n]`, `Result<T>`, a generic struct's or enum's instance -- is an owner at a spawn and crosses only into a `move` parameter, as a bare `T` has since landing 169 (`spawn_type_holds_param`, DEF-365; the `T: Copy` relaxation is unreadable there too). A spawned method's operand before the dot with no recorded type that is not a trait's name is `NITPICK-BORROW-008`, the closed direction (DEF-362's hardening; 0 sites). And the walk's verdicts these rules read are narrower (DEF-378): a part whose type holds no address holds no borrow, and a dereference answers by the pointer's TARGET, read where the pointer is written, in a function that hands no borrow to a call -- so a plain struct built from a view's byte crosses by value, and an owning pointee moved through a pointer whose target holds no borrow crosses into a `move` receiver, in a function that hands no borrow to a call (the delta review of ee62e5b, its D-2; management_5, 2026-10-30 16:12:12).
+
 ## D-181 — Threads: the `thread` modifier, the per-thread executor, and the lexical join — **SETTLED**
 
 C-9's thread half, ratified from `meta/roadmap/1.1/C9_THREAD_STUDY.md`. It
@@ -14091,6 +14093,18 @@ TYPE-007 at the call, identical on 170 and 171), so a `gives` function cannot ha
 channels in any spelling -- the closed direction. Classified so, a note and not a defect (management_7
 2026-10-30 06:03 (4); `wt/51a/.internal/probes/t171/gives/README.md`); whether the transit should be
 reachable is a relaxation for the author.
+
+*[2026-10-30, 1.6.1e landing 172 — a dated note (DEF-383; DEF-389).]*
+The ONE road of landing 171's note reaches the escape analysis's SUMMARY: `escape_return_value`
+(escape.npk) hands `record_summary` the long form's value -- its error, for `Result{err: e}` -- so
+`return Result{value: h.v};` leaves `pass h.v;`'s summary, the moved-place reading (DEF-383: a view
+the body stored into a `move` parameter's field went unread, and the caller's re-assignment of the
+viewed string while the result was live read a re-allocated block, 13/13 at both legs on 170 and
+171; two over-refusals gone). The VERDICT's road is not one yet: the long form's verdict still reads
+the whole literal, so a parameter-rooted address handed back long (`return Result{value: @hq.k};`)
+is BORROW-001 where `pass @hq.k;` travels up -- an over-refusal on the safe side (DEF-389, LOW),
+unified after DEF-384's fix, since unifying it first would open the getters' long forms to that
+row's hazard.
 
 ## D-184 — The reactor: epoll without timerfd; the task-identity rule for every wait — **SETTLED at 1.1.12a; B-3a closed**
 
@@ -17665,6 +17679,20 @@ already held, `lexer_init` returns its literal directly, and `npkg`'s
 > — `string_concat("", string_from_bytes(k.buf.ptr, k.buf.len))` — hands back an owned copy the
 > caller may return; a view-maker's own verdict is unchanged (the `Views` column).
 
+> **[2026-10-30, landing 172, R1's commit (management_7, 14:31:25), and the replacement's (management_5, 16:12:12).]**
+> The `Views` column is the whole of a builtin's VIEW-making, and `record_dest_refs` reads it as the whole of a
+> builtin's aliasing -- "a bare builtin stores no view of one argument into another", and a builtin method nothing. That
+> does not hold for every builtin as a STORE: an atomic's `store` writes its argument into the receiver's storage (z9:
+> `sp.a.store(@x)` over an `atomic<int64->>` field), and by its shape `swap` and `compare_exchange`; `mcpy` copies
+> through its pointer arguments (z10: a struct holding `@x` copied over the target), and by its shape `mmov`. So face
+> 2's lending rule counts every call: a call, a method call, a `#` or bare builtin, and the two calls the language makes
+> with no call node -- a `for` over an `Iterator` (`next(@it)`) and a template (`to_string`). A SPAWN of an `async`
+> callee does not mark, because `escape_spawn_args` refuses every argument that carries a borrow of this frame except a
+> sanctioned `Mutex`/`shared_arena` pointer, whose interior is read only through a builtin method call, which lends. A
+> pipe is PARSE-014 (D-362). (OPEN_DECISIONS, DEF-378's notes; the calls with no call node, the delta review of ee62e5b,
+> its D-1, management_5, 2026-10-30 16:12:12); the atomic's own store and load are DEF-391; a copy through `=>! wild
+> any->` is the unchecked cast, D-019's road, the programmer's by design (z10p). The column's VIEW rule is unchanged.
+
 ## D-250 — derived comparisons over NAMED types and payload enums — **SETTLED (user decision, 2026-09-03: "ratify S-23 as recommended"; 1.5.1b step 3b)**
 
 The workbench's DEF-4 (their O-N10): `#[derive(Ord)]` on an enum with a payload
@@ -19622,6 +19650,16 @@ DEF-302's k302a. The new walk that recognises a `List` element (`place_is_list_e
 > 0/0. NOT added to this list (management_6, 23:02): landing 169's refusal of a `T: Copy` instance handed to a spawn by value
 > (`spawn_review_faces.npk` site 9) -- a limitation with a fix (the typer's BoundTable is not reachable from the escape pass), recorded in
 > DEF-361's row, 0 tree sites by the sweep.
+> *Note 2026-10-30 (landing 172, DEF-378; management_7's rulings (3) and (4) of 11:42:38):* ONE MORE ACCEPTED OVER-REFUSAL, the sixteenth by
+> nitpick-libs_33's reckoning (15 = 7 + 5 + 3, its note of 11:34:14) -- d5m: a dereference of a pointer local whose target is given a frame
+> borrow AFTER the read, on a path the read never reaches (`if ((<-ext) == 5i64) { pass (<-sp); } v = PS{ p: @x, k: 3i64 };`), SAFE at run
+> time and refused `NITPICK-BORROW-001` at the read, as on landing 171: landing 172's `deref_targets_hold` asks the target's own mark, and
+> `holds` is a WHOLE-FUNCTION mark (the escape analysis is flow-insensitive by design), so a borrow the target takes anywhere in the
+> function answers for every path (`tests/analysis/rejection/escape_verdicts.npk` site 11; 0 tree sites by the sweep). Narrow it later by a
+> flow-sensitive mark, never by the pointer's chain (a chain does not name every target: DEF-386). THIS LIST holds over-refusals ACCEPTED BY
+> DESIGN and nothing else: DEF-369 and DEF-370 (defects with fixes owed), landing 169's site 9 (`T: Copy` by value at a spawn, a limitation
+> with a fix -- DEF-361's and DEF-365's rows) and DEF-372's plain-data `NITPICK-TYPE-100` (one typer rule with no type test -- DEF-372's
+> row) are not on it, each kept in its own row (nitpick-libs_33's note (1) of 11:34:14, answered by ruling (3); no separate reply owed).
 
 ## D-287 — a `fixed` binding has no address — **SETTLED (user decision, 2026-09-11: s60 to s-62 look fine to me. I read them a couple times to be sure i was understanding and I can't find anything wrong with it. consider them ratified.; OPEN_DECISIONS S-62; DEF-43; lands at 1.5.5 step 1)**
 

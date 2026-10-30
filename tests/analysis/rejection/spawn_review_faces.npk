@@ -1,35 +1,55 @@
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 162:13
+// expect-error-at: 212:13
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 175:13
+// expect-error-at: 225:13
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 189:13
+// expect-error-at: 239:13
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 203:14
+// expect-error-at: 253:14
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 213:15
+// expect-error-at: 263:15
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 224:14
+// expect-error-at: 274:14
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 235:25
+// expect-error-at: 285:25
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 244:25
+// expect-error-at: 294:25
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 253:25
+// expect-error-at: 303:25
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 263:19
+// expect-error-at: 313:19
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 272:19
+// expect-error-at: 322:19
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 284:21
+// expect-error-at: 334:21
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 295:20
+// expect-error-at: 345:20
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 309:14
+// expect-error-at: 359:14
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 321:14
+// expect-error-at: 371:14
 // expect-error: NITPICK-BORROW-004
-// expect-error-at: 331:15
+// expect-error-at: 381:15
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 393:14
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 403:15
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 414:14
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 423:15
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 433:25
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 443:25
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 453:25
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 463:25
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 473:25
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 483:25
 // DEF-359 + DEF-360 + DEF-361 + DEF-362 (landing 169): THE FOUR FACES OF THE SPAWN READERS THAT MANAGEMENT'S
 // REVIEW OF LANDING 168 FOUND, each a hole on landing 167 and landing 168 alike.
 //
@@ -77,6 +97,25 @@
 // silent 114/114 at both legs under the relaxation's first cut, which judged ownership alone (DEF-364's shape
 // reached through a pointer; wt/51a/.internal/probes/t170/pre8/ x1-x3); the AWAIT of it is the legal half's
 // control 27.
+// LANDING 172 (2026-10-30): the review of 321f31f's two faces. A by-value RECEIVER that holds a borrow -- `H{ p: @d }`
+// as `self` -- crossed a spawn unrefused, where the argument twin `drop rdf(h)` was `-004`: `escape_spawn_recv` ran
+// the receiver's walk and threw its verdict away (DEF-364; f1a, f1b: the task read the owner's rewritten string,
+// 114/114 at both legs on 169, 170 and 171). Now the walk's verdict is judged as an argument's is (sites 17-20, named and
+// inline, with `d` rewritten and with nothing written: NITPICK-BORROW-004 at the receiver). And DEF-361 read the
+// TOP-LEVEL kind alone, so a type that holds a type parameter by value -- `T?`, a generic struct's instance `Bx<T>`,
+// `T[2]`, `Result<T>`, a generic enum's instance `Op2<T>`, `Bx<T>?` -- crossed a spawn by value from a generic body
+// instantiated at `string` (DEF-365); now `spawn_type_holds_param` answers YES for a `T`, `Self` or associated type
+// held in storage, through an element, a payload or a type argument, and the by-value rule refuses it unless the
+// parameter is `move` (sites 21-26: `-004` at the argument). No wrong value was measured for DEF-365 (its cells ran
+// 0/0 at both legs on 170, wt/51a/.internal/probes/t171/def365/): the closed rule's gap. The `Self` and
+// associated-type faces are tests/analysis/rejection/spawn_self_assoc_byval.npk, alone in their file because each
+// waits on a frontend change (DEF-376, DEF-377); site 25's generic enum instance cannot be BUILT yet (DEF-375, the
+// emitter), and this file is the checker's. Landing 171's checker reports none of sites 17-26. Site 2 keeps its one
+// report, the -015: the walk gives the byte read through the live view `v` the verdict of the byte's TYPE, which holds
+// no address (DEF-378's first face, fixed in this landing), so DEF-364 does not refuse the receiver. Landing 171's
+// build 2 judged the walk's verdict before that type gate and refused the receiver here too, as it refused the legal
+// receivers of wt/51a/.internal/probes/t171/p364/ o1, o2, o7 and o8, whose ARGUMENT twins o1a, o2a, o7a and o8a
+// landing 170 and landing 171 refuse -- each legal now (tests/backend/programs/escape_verdicts_ok.npk).
 mod:spawn_review_faces;
 error:E1;
 fixed Duration:J2 = Duration{ ns: 2000000000i64 };
@@ -84,6 +123,8 @@ struct:W = { int64:k; };
 struct:SS = { string:s; int64:k; };
 struct:PD = { int64:k; };
 struct:H = { string->:p; };
+struct:Bx<T> = { T:v; };
+enum:Op2<T> = { Some(T); None; };
 impl:W = {
     thread async func:look = NIL(W:self) joins J2 {
         await sleep(raw duration_ms(1i64)) ?| NIL;
@@ -123,6 +164,15 @@ thread async func:filler = NIL(shared_arena<int64>->:s) joins J2 {
 };
 thread async func:peekg<T> = NIL(T:x) joins J2 { await sleep(raw duration_ms(1i64)) ?| NIL; pass NIL; };
 thread async func:peekc<T: Copy> = NIL(T:x) joins J2 { await sleep(raw duration_ms(1i64)) ?| NIL; pass NIL; };
+thread async func:peeko<T> = NIL(T?:x) joins J2 { await sleep(raw duration_ms(1i64)) ?| NIL; pass NIL; };
+thread async func:peekb<T> = NIL(Bx<T>:x) joins J2 { await sleep(raw duration_ms(1i64)) ?| NIL; pass NIL; };
+thread async func:peeka<T> = NIL(T[2]:x) joins J2 { await sleep(raw duration_ms(1i64)) ?| NIL; pass NIL; };
+thread async func:peekr<T> = NIL(Result<T>:x) joins J2 { await sleep(raw duration_ms(1i64)) ?| NIL; pass NIL; };
+thread async func:peekn<T> = NIL(Op2<T>:x) joins J2 { await sleep(raw duration_ms(1i64)) ?| NIL; pass NIL; };
+thread async func:peekq<T> = NIL(Bx<T>?:x) joins J2 { await sleep(raw duration_ms(1i64)) ?| NIL; pass NIL; };
+func:mkres<T> = T(move T:a) {
+    return Result{value: move(a)};
+};
 trait:Tr = { async func:m = NIL(Self:self, move int64:n); };
 impl:SS:Tr = {
     thread async func:m = NIL(SS:self, move int64:n) joins J2 {
@@ -334,6 +384,108 @@ async func:holds_address_through_address = NIL() {
     pass NIL;
 };
 
+// --- LANDING 172: A RECEIVER THAT HOLDS A BORROW (DEF-364) ------------------------------------------------
+// 17. a by-value receiver HOLDING A BORROW, by name: `H{ p: @d }` as `self`, `d` rewritten under the task (f1a)
+async func:recv_holds_named = NIL() {
+    string:d = string_concat("hello", " world");
+    H:h = H{ p: @d };
+    {
+        drop h.rd();
+        d = string_concat("xyzzy", "!");
+    }
+    pass NIL;
+};
+
+// 18. the same receiver INLINE, a struct literal (f1b)
+async func:recv_holds_inline = NIL() {
+    string:d = string_concat("hello", " world");
+    {
+        drop (H{ p: @d }).rd();
+        d = string_concat("xyzzy", "!");
+    }
+    pass NIL;
+};
+
+// 19. by name with NOTHING written: a borrow crossing is refused whatever the owner does (f1d)
+async func:recv_holds_named_no_write = NIL() {
+    string:d = string_concat("hello", " world");
+    H:h = H{ p: @d };
+    {
+        drop h.rd();
+    }
+    pass NIL;
+};
+
+// 20. inline with nothing written (f1f)
+async func:recv_holds_inline_no_write = NIL() {
+    string:d = string_concat("hello", " world");
+    {
+        drop (H{ p: @d }).rd();
+    }
+    pass NIL;
+};
+
+// --- LANDING 172: A TYPE THAT HOLDS A TYPE PARAMETER BY VALUE (DEF-365) ----------------------------------------
+// 21. `T?`, the owner re-assigned under the task (f2a)
+async func:generic_opt_byval<T> = NIL(move T:a, move T:c) {
+    T?:o = move(a);
+    {
+        drop peeko::<T>(o);
+        o = move(c);
+    }
+    pass NIL;
+};
+
+// 22. a generic struct's instance, `Bx<T>` (f2d)
+async func:generic_box_byval<T> = NIL(move T:a, move T:c) {
+    Bx<T>:b = Bx{ v: move(a) };
+    {
+        drop peekb::<T>(b);
+        b = Bx{ v: move(c) };
+    }
+    pass NIL;
+};
+
+// 23. an array, `T[2]` (t171/def365/f2f)
+async func:generic_array_byval<T> = NIL(move T:a, move T:b, move T:c, move T:d) {
+    T[2]:o = [move(a), move(b)];
+    {
+        drop peeka::<T>(o);
+        o = [move(c), move(d)];
+    }
+    pass NIL;
+};
+
+// 24. a `Result<T>` (f2g)
+async func:generic_result_byval<T> = NIL(move T:a, move T:c) {
+    Result<T>:o = mkres::<T>(move(a));
+    {
+        drop peekr::<T>(o);
+        o = mkres::<T>(move(c));
+    }
+    pass NIL;
+};
+
+// 25. a generic enum's instance, `Op2<T>` (f2j; DEF-375: the emitter cannot build it in a generic body yet)
+async func:generic_enum_byval<T> = NIL(move T:a, move T:c) {
+    Op2<T>:o = Op2.Some(move(a));
+    {
+        drop peekn::<T>(o);
+        o = Op2.Some(move(c));
+    }
+    pass NIL;
+};
+
+// 26. nested, `Bx<T>?` (f2k)
+async func:generic_nested_byval<T> = NIL(move T:a, move T:c) {
+    Bx<T>?:o = Bx{ v: move(a) };
+    {
+        drop peekq::<T>(o);
+        o = Bx{ v: move(c) };
+    }
+    pass NIL;
+};
+
 async func:main = int32(cstring[]:_~argv) {
     await recv_is_pick() ?| NIL;
     await recv_struct_literal_pick() ?| NIL;
@@ -351,6 +503,17 @@ async func:main = int32(cstring[]:_~argv) {
     await holds_address_through_pointer() ?| NIL;
     await holds_address_through_pointer_no_write() ?| NIL;
     await holds_address_through_address() ?| NIL;
+    await recv_holds_named() ?| NIL;
+    await recv_holds_inline() ?| NIL;
+    await recv_holds_named_no_write() ?| NIL;
+    await recv_holds_inline_no_write() ?| NIL;
+    await generic_opt_byval::<string>(string_concat("ab", "c"), string_concat("de", "f")) ?| NIL;
+    await generic_box_byval::<string>(string_concat("ab", "c"), string_concat("de", "f")) ?| NIL;
+    await generic_array_byval::<string>(string_concat("ab", "c"), string_concat("de", "f"), string_concat("gh", "i"),
+        string_concat("jk", "l")) ?| NIL;
+    await generic_result_byval::<string>(string_concat("ab", "c"), string_concat("de", "f")) ?| NIL;
+    await generic_enum_byval::<string>(string_concat("ab", "c"), string_concat("de", "f")) ?| NIL;
+    await generic_nested_byval::<string>(string_concat("ab", "c"), string_concat("de", "f")) ?| NIL;
     exit 0i32;
 };
 func:failsafe = int32(Error:e) {

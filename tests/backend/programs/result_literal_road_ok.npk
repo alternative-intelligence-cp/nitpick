@@ -4,18 +4,46 @@
 // road, so what `pass` moves the long form moves -- a named owner, a field of one (the aggregate left with its
 // vacant field, S-26), a pointer parameter's whole pointee (left VACANT, D-225) -- where landings 169 and 170 COPIED
 // each (95/95 at both legs: wt/51a/.internal/probes/t171/twin371/, ra3 and ra6 of t170/rev170/); every refusal of
-// tests/types/rejection/result_literal_road.npk has its transfer here -- `move(...)` at the place inside each
+// tests/types/rejection/result_literal_road.npk has its transfer here [not so of sites 25 and 28-33, nor of site 29's
+// two remedies, until landing 172 -- management's review of 224d907, its F3: see below] -- `move(...)` at the place inside each
 // operator (a ternary's arms, nested, `??`, `??!`, `?!`, `?|`, `relay`, a cast, a `dyn` cast, a pick's `give`), a
 // temporary's part BOUND FIRST and moved out of the binding, or cloned; plain data copied, which no rule refuses (a
 // pointer parameter's pointee's PLAIN part among it); and the literal writing ONE field, `value` or `err` (DEF-373).
 // Each control is a function that RETURNS, so its scope's drops run -- a second owner would trap in the allocator's
 // double-free check (95) --, and each fails at its own exit. Exit 0 at both legs.
+// LANDING 172 (2026-10-30; management's review of 224d907, its F2 and F3): controls 27-30 move a named owner into a
+// literal OUTSIDE a `return` -- an initialiser, an assignment's value, a call's argument, a struct literal's field
+// (the rejection file's sites 38-41 copy it) --, and controls 31-37 hold the transfer each remaining refusal NAMES: a
+// part read through a call's pointer, cloned (site 25); the parameter declared `move` (site 28); a pointer parameter's
+// pointee's owning part cloned, or handed back as a VIEW of the caller's bytes (site 29; the plain part and the whole
+// pointee were controls 25 and 13); a limited binding's part copied, or the whole binding moved (site 30); a `fixed`
+// binding cloned (site 31); the sealing module's own function handing the field on (site 32); a `never fails`
+// function filling the `never fails` slot (site 33). Controls 27-30's literals stand in functions returning PS, the
+// literal's `T` (DEF-388, OPEN HIGH: a literal outside a `return` is typed by the enclosing function's success type
+// and wild context, never by its slot). Exit 0 at both legs under this compiler and landing 171's.
 mod:result_literal_road_ok;
 error:E1;
 struct:PS = { string:s; int64:k; };
 trait:Tl = { func:ln = int64(Self:self) never fails; };
 impl:PS:Tl = { func:ln = int64(PS:self) never fails { pass self.s.len; }; };
 struct:HU = { PS:u; int64:j; };
+struct:WR = { Result<PS>:ra; };
+#[derive(Clone)]
+struct:PC = { string:s; int64:k; };
+struct:Named = { string:name; int32:v; };
+Rules<Named>:r_named = { $.v > 0i32 };
+mod:bank = {
+    pub struct:Vault = { sealed string:name; };
+    pub func:vault_of = Vault(move string:s) never fails {
+        Vault:n = Vault{ name: move(s) };
+        pass n;
+    };
+    // site 32's remedy: the module that seals the field hands it on, the long form moving it out inside the module
+    pub func:name_of = string(move Vault:v) {
+        return Result{value: v.name};
+    };
+};
+use bank.*;
 func:mk = PS() never fails {
     pass PS{ s: string_concat("ab", "cd"), k: 1i64 };
 };
@@ -212,6 +240,136 @@ func:c_err = int64() {
     pass x.s.len;
 };
 
+// --- landing 172 (F2): a `Result` literal's value OUTSIDE a `return`, MOVED ------------------------------------------
+// Each literal stands in a function returning PS, the literal's `T` (DEF-388: a literal outside a `return` is typed
+// by the enclosing function's success type, never by its slot).
+func:takes_r = int64(move Result<PS>:r) never fails {
+    PS:x = move(r) ?| raw mk();
+    pass x.s.len;
+};
+func:lr_lit_init = PS() {
+    PS:a = raw mk6();
+    Result<PS>:r = Result{value: move(a)};
+    PS:x = move(r) ?| raw mk();
+    pass x;
+};
+func:c_lit_init = int64() {
+    PS:x = lr_lit_init() ?| raw mk();
+    pass x.s.len;
+};
+func:lr_lit_assign = PS() {
+    PS:a = raw mk6();
+    Result<PS>:r = Result{value: raw mk()};
+    r = Result{value: move(a)};
+    PS:x = move(r) ?| raw mk();
+    pass x;
+};
+func:c_lit_assign = int64() {
+    PS:x = lr_lit_assign() ?| raw mk();
+    pass x.s.len;
+};
+func:lr_lit_arg = PS() {
+    PS:a = raw mk6();
+    int64:n = raw takes_r(Result{value: move(a)});
+    pass PS{ s: string_concat("", ""), k: n };
+};
+func:c_lit_arg = int64() {
+    PS:x = lr_lit_arg() ?| raw mk();
+    pass x.k;
+};
+func:lr_lit_field = PS() {
+    PS:a = raw mk6();
+    WR:w = WR{ ra: Result{value: move(a)} };
+    PS:x = move(w.ra) ?| raw mk();
+    pass x;
+};
+func:c_lit_field = int64() {
+    PS:x = lr_lit_field() ?| raw mk();
+    pass x.s.len;
+};
+
+// --- landing 172 (F3): the transfer each remaining refusal names --------------------------------------------------
+func:getp = PS->(PS->:q) never fails {
+    pass q;
+};
+// site 25's: the part read through a call's pointer, cloned
+func:lr_cptr_clone = string() {
+    PS:ps = raw mk6();
+    return Result{value: (raw getp(@ps)).s.clone() ?! E1};
+};
+func:c_cptr_clone = int64() {
+    string:a = lr_cptr_clone() ?| string_concat("", "");
+    pass a.len;
+};
+// site 28's: the parameter declared `move`
+func:lr_move_param = PS(move PS:p) {
+    return Result{value: p};
+};
+func:c_move_param = int64() {
+    PS:b = lr_move_param(raw mk6()) ?| raw mk();
+    pass b.s.len;
+};
+// site 29's: the pointee's owning part cloned, or handed back as a VIEW of the caller's bytes
+func:lr_pointee_clone = string(PS->:q) {
+    return Result{value: q.s.clone() ?! E1};
+};
+func:lr_pointee_view = string(PS->:q) {
+    fixed uint8[]:b = string_bytes(q.s);
+    return Result{value: string_from_bytes(b.ptr, b.len)};
+};
+func:c_pointee = int64() {
+    PS:z = raw mk6();
+    string:c = lr_pointee_clone(@z) ?| string_concat("", "");
+    string:d = lr_pointee_view(@z) ?| string_concat("", "");
+    fixed uint8[]:db = string_bytes(d);
+    if (db[5i64] != 102u8) { pass 0i64; }
+    pass c.len + d.len + z.s.len;
+};
+// site 30's: the limited binding's part copied, or the whole binding moved
+func:lr_limited_clone = string() {
+    limit<r_named> Named:n = Named{ name: string_concat("abc", "def"), v: 1i32 };
+    return Result{value: n.name.clone() ?! E1};
+};
+func:lr_limited_whole = Named() {
+    limit<r_named> Named:n = Named{ name: string_concat("abc", "def"), v: 1i32 };
+    return Result{value: n};
+};
+func:c_limited = int64() {
+    string:e = lr_limited_clone() ?| string_concat("", "");
+    Named:f = lr_limited_whole() ?| Named{ name: string_concat("", ""), v: 1i32 };
+    pass e.len + f.name.len;
+};
+// site 31's: the `fixed` binding cloned
+func:lr_fixed_clone = PC() {
+    fixed PC:f = PC{ s: string_concat("abc", "def"), k: 2i64 };
+    return Result{value: f.clone() ?! E1};
+};
+func:c_fixed_clone = int64() {
+    PC:g = lr_fixed_clone() ?| PC{ s: string_concat("", ""), k: 0i64 };
+    pass g.s.len;
+};
+// site 32's: the sealing module's own function hands the field on
+func:lr_sealed_module = string() {
+    Vault:n = raw vault_of(string_concat("abc", "def"));
+    return Result{value: name_of(move(n)) ?! E1};
+};
+func:c_sealed_module = int64() {
+    string:h = lr_sealed_module() ?| string_concat("", "");
+    pass h.len;
+};
+// site 33's: a `never fails` function fills the `never fails` slot
+func:nf = int32(int32:v) never fails {
+    pass v + 1i32;
+};
+func:lr_nf_slot = func int32(int32) never fails () {
+    return Result{value: nf};
+};
+func:c_nf_slot = int64() {
+    func int32(int32) never fails:g33 = lr_nf_slot() ?! E1;
+    int32:y = raw g33(5i32);
+    pass (y => int64);
+};
+
 func:main = int32(cstring[]:_~argv) {
     if ((c_named() ?| 0i64) != 4i64) { exit 11i32; }
     if ((c_field() ?| 0i64) != 4i64) { exit 12i32; }
@@ -229,6 +387,17 @@ func:main = int32(cstring[]:_~argv) {
     if ((c_parts() ?| 0i64) != 28i64) { exit 24i32; }
     if ((c_clean() ?| 0i64) != 23i64) { exit 25i32; }
     if ((c_err() ?| 0i64) != 6i64) { exit 26i32; }
+    if ((c_lit_init() ?| 0i64) != 6i64) { exit 27i32; }
+    if ((c_lit_assign() ?| 0i64) != 6i64) { exit 28i32; }
+    if ((c_lit_arg() ?| 0i64) != 6i64) { exit 29i32; }
+    if ((c_lit_field() ?| 0i64) != 6i64) { exit 30i32; }
+    if ((c_cptr_clone() ?| 0i64) != 6i64) { exit 31i32; }
+    if ((c_move_param() ?| 0i64) != 6i64) { exit 32i32; }
+    if ((c_pointee() ?| 0i64) != 18i64) { exit 33i32; }
+    if ((c_limited() ?| 0i64) != 12i64) { exit 34i32; }
+    if ((c_fixed_clone() ?| 0i64) != 6i64) { exit 35i32; }
+    if ((c_sealed_module() ?| 0i64) != 6i64) { exit 36i32; }
+    if ((c_nf_slot() ?| 0i64) != 6i64) { exit 37i32; }
     exit 0i32;
 };
 func:failsafe = int32(Error:e) {

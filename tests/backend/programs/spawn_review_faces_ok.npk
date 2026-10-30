@@ -12,7 +12,8 @@
 // DEF-363's AWAIT face -- the same child-frame builder -- and reads an address, 114 at both legs on 168 and
 // 169; refused by nothing yet, so the legal half does not spell it); a generic `T` MOVED into a `move T:x`; a pick
 // expression as the receiver and inside a sanctioned argument whose arm views `d` and writes ANOTHER string,
-// and the root written AFTER the block's join. Each control fails at its own exit; exit 0 at both legs under
+// and the root written AFTER the block's join. Each control fails at its own exit [true of every control only
+// from landing 172 on: see its paragraph below]; exit 0 at both legs under
 // this compiler; landing 168's checker refuses control 1 alone (the over-refusal it introduced) and accepts
 // every other. The refusals of the same shapes are tests/analysis/rejection/spawn_review_faces.npk.
 // LANDING 170 (2026-10-30): the child-frame seed loads the pointee (DEF-363) and a by-value receiver through a
@@ -27,7 +28,31 @@
 // was not true of a control whose TASK checks what it read -- 1-5, 7-9, 21-23, 25 and 28 failed inside the task
 // (`fail E1`), the join relaying it as 114 -- and control 29 compared a LENGTH, 3 for the clone and the rewrite
 // alike. Controls 21-23, 25 and 29 now have the task REPORT what it read on `done` (`lookpd`, `lookqd`, `takecd`)
-// and `main` compare at the control's own exit, 29 the byte; 1-5, 7-9 and 28 keep their check inside the task.
+// and `main` compare at the control's own exit, 29 the byte; 1-5, 7-9 and 28 keep their check inside the task [until
+// landing 172: see below].
+// LANDING 172 (2026-10-30): DEF-364 refuses a by-value receiver that holds a borrow, DEF-365 a type that holds a type
+// parameter by value (tests/analysis/rejection/spawn_review_faces.npk sites 17-26). Controls 30-34 hold what stays
+// legal: the task handed the VALUE it reads, a plain struct built from `d`'s byte, while the owner rewrites `d` (30,
+// DEF-364's remedy); a receiver HOLDING a borrow AWAITED by name, the caller suspended (31; 27 is the same through a
+// pointer); a generic struct's CONCRETE instance of plain data by value (32); a `T?` and a `T[2]` at `string` MOVED into
+// the task's `move` parameter (33, 34). Controls 35-37 are the ARGUMENT spellings of controls 7, 8 and 28 -- the pick
+// expression handed to a by-value `W` parameter, its arm viewing `d` and writing another string or `d` written after
+// the join, and the owning pointee transferred into a `move SC` parameter -- which landing 171's checker refuses
+// (NITPICK-BORROW-004: the walk answered YES for the byte read through the live view and for the moved pointee,
+// whatever the value's type, DEF-378) and this one admits (wt/51a/.internal/probes/t172/twins/ c7a, c8a, c28a). And
+// management's review of 224d907 (its F4): line 15's claim was qualified by the paragraph above, not made true -- now
+// controls 1-5, 7-9 and 28 have the task report what it read on `done` (`m3`, `mm`, `lookpd`, `lookd`, `fillerd`,
+// `takecd`) and `main` compare at the control's own exit, so EVERY control fails at its own exit; the owner's write
+// under the task in controls 1 and 2 writes a DIFFERENT value now, 2, so the report tells the copy from the owner.
+// Exit 0 at both legs under this compiler; landing 171's checker refuses controls 35, 36 and 37.
+// R1'S COMMIT (landing 172, after management's review of its first build, 99f83e7): a dereference of a pointer answers
+// YES in a function that LENDS -- some call, a builtin's included, handed a borrow of the frame -- since a callee's
+// store the store matrix does not attribute to the target (DEF-390), an atomic's `store` and `mcpy` leave no mark the
+// first build read. `main` lends, so controls 28 and 37, the pointee transferred through the pointer as a receiver and
+// as an argument, are refused there (NITPICK-BORROW-004) and stand in functions of their own that lend nothing,
+// `pointee_moved_recv` and `pointee_moved_arg`; `main` compares what each reports at the control's own exit. Control
+// 29's clone stays in `main`, legal there. The rule is a stopgap until DEF-390's fix narrows it to the stores no
+// matrix attributes.
 mod:spawn_review_faces_ok;
 error:E1;
 fixed Duration:J2 = Duration{ ns: 2000000000i64 };
@@ -36,23 +61,20 @@ struct:SS = { string:s; int64:k; };
 struct:PD = { int64:k; };
 struct:H = { string->:p; };
 impl:W = {
-    thread async func:look = NIL(W:self) joins J2 {
+    // Landing 172 (F4): controls 7 and 8 spawn this, and the task REPORTS what it read.
+    thread async func:lookd = NIL(W:self, Channel<int64, 3i32, 64i64>:done) joins J2 {
         await sleep(raw duration_ms(1i64)) ?| NIL;
-        if (self.k != 104i64) { fail E1; }
+        await done.send(self.k, raw duration_ms(2000i64)) ?! E1;
         pass NIL;
     };
 };
 impl:PD = {
-    thread async func:lookp = NIL(PD:self) joins J2 {
-        await sleep(raw duration_ms(1i64)) ?| NIL;
-        if (self.k != 1i64) { fail E1; }
-        pass NIL;
-    };
     async func:peekk = int64(PD:self) {
         await sleep(raw duration_ms(1i64)) ?| NIL;
         pass self.k;
     };
-    // Landing 171 (test item C): controls 21-23 and 25 spawn these, and the task REPORTS what it read.
+    // Landing 171 (test item C): controls 21-23 and 25 spawn these, and the task REPORTS what it read; landing 172
+    // (F4): controls 4 and 5 spawn `lookpd` too.
     thread async func:lookpd = NIL(PD:self, Channel<int64, 3i32, 64i64>:done) joins J2 {
         await sleep(raw duration_ms(1i64)) ?| NIL;
         await done.send(self.k, raw duration_ms(2000i64)) ?! E1;
@@ -64,30 +86,32 @@ impl:PD = {
         pass NIL;
     };
 };
-thread async func:filler = NIL(shared_arena<int64>->:s) joins J2 {
+// Landing 172 (F4): control 9 spawns this, and the task REPORTS the value it read back.
+thread async func:fillerd = NIL(shared_arena<int64>->:s, Channel<int64, 3i32, 64i64>:done) joins J2 {
     await sleep(raw duration_ms(1i64)) ?| NIL;
     Handle<int64>:h = s.alloc(424242i64);
     int64:v = s.get(h) ?! E1;
-    if (v != 424242i64) { fail E1; }
+    await done.send(v, raw duration_ms(2000i64)) ?! E1;
     pass NIL;
 };
 thread async func:takeg<T> = NIL(move T:x) joins J2 { await sleep(raw duration_ms(1i64)) ?| NIL; pass NIL; };
-trait:Tr3 = { async func:m3 = NIL(Self:self, move string:n); };
+// Landing 172 (F4): the tasks of controls 1-3 REPORT what they read -- `m3` its copy's `k` and the string's length,
+// 100 * k + len (103), `mm` the moved string's first byte and `n`, 100 * byte + n (9705); a send takes the channel's
+// level, so each trait declares `acquires <= 3i32` (NITPICK-LOCK-002 otherwise).
+trait:Tr3 = { async func:m3 = NIL(Self:self, move string:n, Channel<int64, 3i32, 64i64>:done) acquires <= 3i32; };
 impl:PD:Tr3 = {
-    thread async func:m3 = NIL(PD:self, move string:n) joins J2 {
+    thread async func:m3 = NIL(PD:self, move string:n, Channel<int64, 3i32, 64i64>:done) joins J2 {
         await sleep(raw duration_ms(1i64)) ?| NIL;
-        if (self.k != 1i64) { fail E1; }
-        if (n.len != 3i64) { fail E1; }
+        await done.send(self.k * 100i64 + n.len, raw duration_ms(2000i64)) ?! E1;
         pass NIL;
     };
 };
-trait:Tm = { async func:mm = NIL(move Self:self, move int64:n); };
+trait:Tm = { async func:mm = NIL(move Self:self, move int64:n, Channel<int64, 3i32, 64i64>:done) acquires <= 3i32; };
 impl:SS:Tm = {
-    thread async func:mm = NIL(move SS:self, move int64:n) joins J2 {
+    thread async func:mm = NIL(move SS:self, move int64:n, Channel<int64, 3i32, 64i64>:done) joins J2 {
         await sleep(raw duration_ms(1i64)) ?| NIL;
         fixed uint8[]:xb = string_bytes(self.s);
-        if (xb[0i64] != 97u8) { fail E1; }
-        if (n != 5i64) { fail E1; }
+        await done.send((xb[0i64] => int64) * 100i64 + n, raw duration_ms(2000i64)) ?! E1;
         pass NIL;
     };
 };
@@ -117,28 +141,34 @@ async func:main = int32(cstring[]:_~argv) {
         PD:pd = PD{ k: 1i64 };
         string:s2 = string_concat("ab", "c");
         {
-            drop Tr3.m3(pd, move(s2));
-            pd = PD{ k: 1i64 };
+            drop Tr3.m3(pd, move(s2), done);
+            pd = PD{ k: 2i64 };
         }
-        if (pd.k != 1i64) { exit 11i32; }
+        int64:got1 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got1 != 103i64) { exit 11i32; }
+        if (pd.k != 2i64) { exit 11i32; }
     }
     // 2. (f4e) the same spawn spelled as a method call
     {
         PD:pd = PD{ k: 1i64 };
         string:s2 = string_concat("ab", "c");
         {
-            drop pd.m3(move(s2));
-            pd = PD{ k: 1i64 };
+            drop pd.m3(move(s2), done);
+            pd = PD{ k: 2i64 };
         }
-        if (pd.k != 1i64) { exit 12i32; }
+        int64:got2 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got2 != 103i64) { exit 12i32; }
+        if (pd.k != 2i64) { exit 12i32; }
     }
     // 3. an owner MOVED through the trait-qualified spelling into a `move Self:self`
     {
         SS:w = SS{ s: string_concat("ab", "c"), k: 1i64 };
         int64:n = 5i64;
         {
-            drop Tm.mm(move(w), move(n));
+            drop Tm.mm(move(w), move(n), done);
         }
+        int64:got3 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got3 != 9705i64) { exit 13i32; }
         string:after3 = string_concat("a", "b");
         if (after3.len != 2i64) { exit 13i32; }
     }
@@ -148,9 +178,11 @@ async func:main = int32(cstring[]:_~argv) {
         PD:pd = PD{ k: 1i64 };
         PD->:pp = @pd;
         {
-            drop (<-pp).lookp();
+            drop (<-pp).lookpd(done);
             pp.k = 2i64;
         }
+        int64:got4 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got4 != 1i64) { exit 14i32; }
         if (pd.k != 2i64) { exit 14i32; }
     }
     // 5. (r7) the pointee copied into a local first, the owner writing through the pointer under the task
@@ -159,9 +191,11 @@ async func:main = int32(cstring[]:_~argv) {
         PD->:pp = @pd;
         PD:c = <-pp;
         {
-            drop c.lookp();
+            drop c.lookpd(done);
             pp.k = 3i64;
         }
+        int64:got5 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got5 != 1i64) { exit 15i32; }
         if (pd.k != 3i64) { exit 15i32; }
     }
     // 6. a generic `T` MOVED into a `move T:x` parameter, at `string`
@@ -178,8 +212,10 @@ async func:main = int32(cstring[]:_~argv) {
             drop (pick (1i32) { (*) {
                 fixed uint8[]:v = string_bytes(d);
                 o = string_concat("xyzzy", "!");
-                give W{ k: (v[0i64] => int64) }; } }).look();
+                give W{ k: (v[0i64] => int64) }; } }).lookd(done);
         }
+        int64:got7 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got7 != 104i64) { exit 17i32; }
         if (o.len != 6i64) { exit 17i32; }
     }
     // 8. a pick expression as the receiver, the root written AFTER the block's join
@@ -188,9 +224,11 @@ async func:main = int32(cstring[]:_~argv) {
         {
             drop (pick (1i32) { (*) {
                 fixed uint8[]:v = string_bytes(d);
-                give W{ k: (v[0i64] => int64) }; } }).look();
+                give W{ k: (v[0i64] => int64) }; } }).lookd(done);
         }
         d = string_concat("xyzzy", "!");
+        int64:got8 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got8 != 104i64) { exit 18i32; }
         if (d.len != 6i64) { exit 18i32; }
     }
     // 9. a pick expression inside a sanctioned argument, its arm viewing `d` and writing another string
@@ -200,12 +238,14 @@ async func:main = int32(cstring[]:_~argv) {
         string:d = string_concat("hello", " world");
         string:o = string_concat("ab", "c");
         {
-            drop filler(pick (1i32) { (*) {
+            drop fillerd(pick (1i32) { (*) {
                 fixed uint8[]:v = string_bytes(d);
                 o = string_concat("xyzzy", "!");
                 if (v[0i64] != 104u8) { o = string_concat("bad", "!"); }
-                give sp; } });
+                give sp; } }, done);
         }
+        int64:got9 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got9 != 424242i64) { exit 19i32; }
         if (o.len != 6i64) { exit 19i32; }
         s.destroy();
     }
@@ -298,15 +338,14 @@ async func:main = int32(cstring[]:_~argv) {
         if (b != 104u8) { exit 27i32; }
     }
     // 28. the owning pointee TRANSFERRED into a `move` receiver through the pointer, `(move(<-sp)).takec()` -- the
-    //     first transfer the spawn rule's owner message names; the pointee is left VACANT and assigned before a read
+    //     transfer the spawn rule's owner message names, in a function that hands no borrow to a call; the pointee is
+    //     left VACANT and assigned before a read (landing 172, F4: the task REPORTS the first byte it read, 97, as
+    //     `takecd`). In a function of its own, `pointee_moved_recv`, since R1's commit: see the note above it
     {
-        SC:w = SC{ s: string_concat("ab", "c"), k: 1i64 };
-        SC->:sp = @w;
-        {
-            drop (move(<-sp)).takec();
-        }
-        w = SC{ s: string_concat("de", "f"), k: 2i64 };
-        if (w.s.len != 3i64) { exit 28i32; }
+        int64:bad28 = await pointee_moved_recv(done) ?! E1;
+        int64:got28 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got28 != 97i64) { exit 28i32; }
+        if (bad28 != 0i64) { exit 28i32; }
     }
     // 29. a CLONE of the owning pointee into a `move` receiver, `((<-sp).clone() ?! E1).takec()` -- the second
     //     transfer the message names (`.clone()` is fallible); the owner writes the pointee under the task, and
@@ -323,6 +362,98 @@ async func:main = int32(cstring[]:_~argv) {
         if (got29 != 97i64) { exit 29i32; }
         fixed uint8[]:wb = string_bytes(w.s);
         if (wb[0i64] != 122u8) { exit 29i32; }
+    }
+    // 30. DEF-364's remedy: the task is handed the VALUE it reads, never the address -- a plain struct built from
+    //     `d`'s first byte crosses by value while the owner rewrites `d` under the task, which reports 104
+    {
+        string:d = string_concat("hello", " world");
+        int64:b0 = 0i64;
+        {
+            fixed uint8[]:db = string_bytes(d);
+            b0 = (db[0i64] => int64);
+        }
+        HV:hv = HV{ b: b0 };
+        {
+            drop hv.rdvd(done);
+            d = string_concat("xyzzy", "!");
+        }
+        int64:got30 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got30 != 104i64) { exit 30i32; }
+    }
+    // 31. a by-value receiver HOLDING A BORROW, `H{ p: @d }`, AWAITED by name, `await h.rdb()`: the caller is suspended
+    //     until the child ends (D-177), so nothing writes `d` while the child reads it -- 104 (its spawn is the
+    //     rejection file's site 17; control 27 awaits the same through a pointer)
+    {
+        string:d = string_concat("hello", " world");
+        H:h = H{ p: @d };
+        uint8:b = await h.rdb() ?! E1;
+        d = string_concat("xyzzy", "!");
+        if (b != 104u8) { exit 31i32; }
+    }
+    // 32. DEF-365's concrete control: a generic struct's instance of PLAIN data, `Bx<int64>`, by value -- the owner
+    //     rewrites it under the task, which reports the 5 it was handed
+    {
+        Bx<int64>:o = Bx{ v: 5i64 };
+        {
+            drop peekbd(o, done);
+            o = Bx{ v: 6i64 };
+        }
+        int64:got32 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got32 != 5i64) { exit 32i32; }
+        if (o.v != 6i64) { exit 32i32; }
+    }
+    // 33. DEF-365's transfer: a `T?` at `string` MOVED into the task's `move T?` parameter, which owns it and reports
+    //     its first byte -- 97
+    {
+        await gen_opt_moved::<string>(string_concat("ab", "c"), done) ?! E1;
+        int64:got33 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got33 != 97i64) { exit 33i32; }
+    }
+    // 34. the same for `T[2]` (wt/51a/.internal/probes/t171/def365/c2b), the task reporting element 1's first byte -- 100
+    {
+        await gen_arr_moved::<string>(string_concat("ab", "c"), string_concat("de", "f"), done) ?! E1;
+        int64:got34 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got34 != 100i64) { exit 34i32; }
+    }
+    // 35. (c7a) control 7's ARGUMENT spelling: the pick expression handed to a by-value `W` parameter, its arm viewing
+    //     `d` and writing ANOTHER string -- refused NITPICK-BORROW-004 by landing 171 (the walk answered YES for the
+    //     byte read through the live view `v`, whatever its type, DEF-378), legal here; the task reports 104
+    {
+        string:d = string_concat("hello", " world");
+        string:o = string_concat("ab", "c");
+        {
+            drop lookwd(pick (1i32) { (*) {
+                fixed uint8[]:v = string_bytes(d);
+                o = string_concat("xyzzy", "!");
+                give W{ k: (v[0i64] => int64) }; } }, done);
+        }
+        int64:got35 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got35 != 104i64) { exit 35i32; }
+        if (o.len != 6i64) { exit 35i32; }
+    }
+    // 36. (c8a) control 8's argument spelling: the root written AFTER the block's join
+    {
+        string:d = string_concat("hello", " world");
+        {
+            drop lookwd(pick (1i32) { (*) {
+                fixed uint8[]:v = string_bytes(d);
+                give W{ k: (v[0i64] => int64) }; } }, done);
+        }
+        d = string_concat("xyzzy", "!");
+        int64:got36 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got36 != 104i64) { exit 36i32; }
+        if (d.len != 6i64) { exit 36i32; }
+    }
+    // 37. (c28a; t171/p364/ u1) control 28's argument spelling: the owning pointee TRANSFERRED into a `move SC`
+    //     parameter through the pointer, `takecfd(move(<-sp), done)` -- refused NITPICK-BORROW-004 by landing 171 (the
+    //     walk answered YES for the pointee whatever its type, DEF-378), legal here in a function that hands no borrow
+    //     to a call; the pointee is left VACANT and assigned before a read; the task reports 97. In a function of its
+    //     own, `pointee_moved_arg`, since R1's commit
+    {
+        int64:bad37 = await pointee_moved_arg(done) ?! E1;
+        int64:got37 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got37 != 97i64) { exit 37i32; }
+        if (bad37 != 0i64) { exit 37i32; }
     }
     exit 0i32;
 };
@@ -348,17 +479,97 @@ func:failsafe = int32(Error:e) {
 #[derive(Clone)]
 struct:SC = { string:s; int64:k; };
 impl:SC = {
-    thread async func:takec = NIL(move SC:self) joins J2 {
-        await sleep(raw duration_ms(1i64)) ?| NIL;
-        fixed uint8[]:xb = string_bytes(self.s);
-        if (xb[0i64] != 97u8) { fail E1; }
-        pass NIL;
-    };
-    // Landing 171 (test item C): control 29 spawns this, and the task REPORTS the byte it read.
+    // Landing 171 (test item C): control 29 spawns this, and the task REPORTS the byte it read; landing 172 (F4):
+    // control 28 too.
     thread async func:takecd = NIL(move SC:self, Channel<int64, 3i32, 64i64>:done) joins J2 {
         await sleep(raw duration_ms(1i64)) ?| NIL;
         fixed uint8[]:xb = string_bytes(self.s);
         await done.send((xb[0i64] => int64), raw duration_ms(2000i64)) ?! E1;
         pass NIL;
     };
+};
+// Landing 172: controls 30-34's receivers and tasks.
+struct:HV = { int64:b; };
+impl:HV = {
+    thread async func:rdvd = NIL(HV:self, Channel<int64, 3i32, 64i64>:done) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        await done.send(self.b, raw duration_ms(2000i64)) ?! E1;
+        pass NIL;
+    };
+};
+struct:Bx<T> = { T:v; };
+thread async func:peekbd = NIL(Bx<int64>:x, Channel<int64, 3i32, 64i64>:done) joins J2 {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    await done.send(x.v, raw duration_ms(2000i64)) ?! E1;
+    pass NIL;
+};
+trait:Fb = { func:fb = int64(Self:self) never fails; };
+impl:string:Fb = {
+    func:fb = int64(string:self) never fails {
+        fixed uint8[]:b = string_bytes(self);
+        if (b.len == 0i64) { pass 0i64; }
+        pass (b[0i64] => int64);
+    };
+};
+thread async func:takeod<T: Fb> = NIL(move T?:x, Channel<int64, 3i32, 64i64>:done) joins J2 {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    T:v = move(x) ??! E1;
+    await done.send(raw v.fb(), raw duration_ms(2000i64)) ?! E1;
+    pass NIL;
+};
+async func:gen_opt_moved<T: Fb> = NIL(move T:a, Channel<int64, 3i32, 64i64>:done) {
+    T?:o = move(a);
+    {
+        drop takeod::<T>(move(o), done);
+    }
+    pass NIL;
+};
+thread async func:takead<T: Fb> = NIL(move T[2]:x, Channel<int64, 3i32, 64i64>:done) joins J2 {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    await done.send(raw x[1i64].fb(), raw duration_ms(2000i64)) ?! E1;
+    pass NIL;
+};
+async func:gen_arr_moved<T: Fb> = NIL(move T:a, move T:b, Channel<int64, 3i32, 64i64>:done) {
+    T[2]:o = [move(a), move(b)];
+    {
+        drop takead::<T>(move(o), done);
+    }
+    pass NIL;
+};
+// Landing 172: controls 35-37's tasks, each REPORTING what it read.
+thread async func:lookwd = NIL(W:w, Channel<int64, 3i32, 64i64>:done) joins J2 {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    await done.send(w.k, raw duration_ms(2000i64)) ?! E1;
+    pass NIL;
+};
+thread async func:takecfd = NIL(move SC:x, Channel<int64, 3i32, 64i64>:done) joins J2 {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    fixed uint8[]:xb = string_bytes(x.s);
+    await done.send((xb[0i64] => int64), raw duration_ms(2000i64)) ?! E1;
+    pass NIL;
+};
+// R1's commit (landing 172; management's review of the first build, 99f83e7): a dereference of a pointer answers YES
+// in a function that LENDS -- some call, a builtin's included, handed a borrow of the frame -- because a callee or a
+// builtin may store a borrow into the target where no mark records it (DEF-390). `main` lends (its other controls hand
+// borrows to calls), so controls 28 and 37 stand here, in functions that lend nothing; each answers 1 if the vacant
+// pointee was not assigned, and `main` compares at the control's own exit.
+async func:pointee_moved_recv = int64(Channel<int64, 3i32, 64i64>:done) {
+    SC:w = SC{ s: string_concat("ab", "c"), k: 1i64 };
+    SC->:sp = @w;
+    {
+        drop (move(<-sp)).takecd(done);
+    }
+    w = SC{ s: string_concat("de", "f"), k: 2i64 };
+    if (w.s.len != 3i64) { pass 1i64; }
+    pass 0i64;
+};
+async func:pointee_moved_arg = int64(Channel<int64, 3i32, 64i64>:done) {
+    SC:w = SC{ s: string_concat("ab", "c"), k: 1i64 };
+    SC->:sp = @w;
+    {
+        drop takecfd(move(<-sp), done);
+    }
+    w = SC{ s: string_concat("de", "f"), k: 2i64 };
+    if (w.s.len != 3i64) { pass 1i64; }
+    pass 0i64;
 };

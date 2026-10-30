@@ -1,0 +1,348 @@
+// expect-exit: 0
+// stress: 40
+// explore: 1000
+//
+// THE LEGAL HALF OF DEF-378 + DEF-383 (landing 172): what landing 171's escape verdicts refused and this landing
+// admits. Face (2), a dereference judged by its TARGET where the pointer is written: a pointer local at a target that
+// holds the CALLER's pointer, its copy handed back (11), the same through the automatic dereference (12), and a by-value
+// PARAMETER's target with nothing stored (13) -- each NITPICK-BORROW-001 on landing 171; each a function that RETURNS
+// here, the caller reading 5 through the copy after a call that overwrites the dead frames. Face (1), a read answered by
+// its TYPE: a plain struct built from a byte read through a view, handed to a spawn by value -- the byte given by a pick
+// expression's arm (14), the same with `d` written after the join (15), the byte read through a live named view (16),
+// a length read through it (17) -- each NITPICK-BORROW-004 on landing 171; their RECEIVER spellings (18-21), legal on
+// landing 171 and refused by its build 2, which judged the receiver walk's verdict before the type gate (DEF-364 built
+// first); and a pointee's owning PART moved through the pointer into a `move string` parameter, by the automatic
+// dereference and by the explicit one (22, 23), NITPICK-BORROW-004 on landing 171. And DEF-383's two over-refusals of
+// the long form, gone with `pass`'s summary: a `move` parameter whose sibling field holds an ADDRESS of the caller's
+// local, its owning field handed up by `return Result{value: self.s};` (24, NITPICK-BORROW-001 on landing 171), and one
+// whose sibling field holds a VIEW of the caller's array, written while the result is live (25, NITPICK-BORROW-002 and
+// NITPICK-BORROW-015 on landing 171). And the calls the language makes with NO CALL NODE where the function does not
+// lend (management's delta review of ee62e5b, 2026-10-30): a `for` over a range and over an array, indexed, beside the
+// read (26); a `for` over an `Iterator` by value in a helper the reading function hands only its own parameter (27); a
+// template whose items carry no borrow of the frame, an integer and a holder of the caller's pointers (28); a `for`
+// over an `Iterator` reached through a pointer parameter (29) -- each NITPICK-BORROW-001 on landing 171 (its type
+// rule). Each task reports what it read on `done`, and `main` compares at the control's own exit; exit 0 at both legs
+// under this compiler; landing 171's checker refuses controls 11-17, 22-29. The refusals of
+// the neighbouring shapes are tests/analysis/rejection/escape_verdicts.npk. The cells: wt/51a/.internal/probes/t172/
+// (deref/ d5, extra/ d5x, deref3/ d18, twins/ t1a and t1x), t171/p364/ (o1, o2, o7 and o8 and their argument twins o1a,
+// o2a, o7a and o8a), t171/rev171/esc/ (e1_meth_addr_l, e2b_func_view_l) and t172/rev172b/ (impl/, cond2/).
+mod:escape_verdicts_ok;
+error:E1;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+struct:PS = { int64->:p; int64:k; };
+struct:W = { int64:k; };
+struct:SC = { string:s; int64:k; };
+struct:HA = { string:s; int64->:p; };
+struct:HV = { string:s; int64[]:v; };
+impl:W = {
+    thread async func:lookd = NIL(W:self, Channel<int64, 3i32, 64i64>:done) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        await done.send(self.k, raw duration_ms(2000i64)) ?! E1;
+        pass NIL;
+    };
+};
+thread async func:lookwd = NIL(W:w, Channel<int64, 3i32, 64i64>:done) joins J2 {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    await done.send(w.k, raw duration_ms(2000i64)) ?! E1;
+    pass NIL;
+};
+thread async func:takesd = NIL(move string:x, Channel<int64, 3i32, 64i64>:done) joins J2 {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    fixed uint8[]:xb = string_bytes(x);
+    await done.send((xb[0i64] => int64), raw duration_ms(2000i64)) ?! E1;
+    pass NIL;
+};
+// 11. (d5) `sp` points at `v`, which holds the caller's pointer `ext`, beside `w`, which holds a frame borrow: the
+//     copy handed back carries `ext`
+func:target_caller_ptr = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:w = PS{ p: @x, k: 1i64 };
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @v;
+    pass (<-sp);
+};
+// 12. (d5x) the same through the automatic dereference, `sp.p`
+func:target_caller_ptr_member = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:w = PS{ p: @x, k: 1i64 };
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @v;
+    pass PS{ p: sp.p, k: 1i64 };
+};
+// 13. (d18) a by-value PARAMETER's target with nothing stored: the parameter's own pointer is the caller's
+func:param_target = PS(PS:v) never fails {
+    int64:x = 41i64;
+    if (x == 0i64) { pass v; }
+    PS->:sp = @v;
+    pass (<-sp);
+};
+func:param_target_outer = PS(int64->:ext) never fails {
+    PS:v0 = PS{ p: ext, k: 2i64 };
+    pass (raw param_target(v0));
+};
+// 26-29: the calls the language makes with NO CALL NODE, where the function does not lend. `IT`'s `next` stores
+// `@(self.k)` into `self.p`; `PT`'s `to_string` stores `self.src` into `self.dst.p`.
+struct:IT = { int64->:p; int64:k; };
+impl:IT:Iterator = {
+    assoc:Item = int64;
+    func:next = int64?(IT->:self) never fails {
+        self.p = @(self.k);
+        if (self.k >= 3i64) { pass NIL; }
+        self.k = self.k + 1i64;
+        pass self.k;
+    };
+};
+struct:PT = { PS->:dst; int64->:src; };
+impl:PT:ToString = {
+    func:to_string = string(PT:self) never fails {
+        self.dst.p = self.src;
+        pass "t";
+    };
+};
+// 26. a `for` over a RANGE and over an ARRAY -- indexed, calling nothing -- beside control 11's read
+func:loop_indexed = PS(int64->:ext) never fails {
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @v;
+    int64[3]:arr = [1i64, 2i64, 3i64];
+    int64:s = 0i64;
+    for (int64:i in 0i64...3i64) { s = s + i; }
+    for (int64:a in arr) { s = s + a; }
+    if (s != 9i64) { pass PS{ p: ext, k: 0i64 }; }
+    pass (<-sp);
+};
+// 27. a `for` over an `Iterator` by value in a HELPER: its `next(@it)` lends the helper's frame, and the caller,
+//     which hands the helper only its own parameter, reads its target
+func:sum_it = int64(int64->:ext) never fails {
+    IT:it = IT{ p: ext, k: 0i64 };
+    int64:s = 0i64;
+    for (int64:v in it) { s = s + v; }
+    pass s;
+};
+func:loop_apart = PS(int64->:ext) never fails {
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @v;
+    int64:s = raw sum_it(ext);
+    if (s != 6i64) { pass PS{ p: ext, k: 0i64 }; }
+    pass (<-sp);
+};
+// 28. a template whose items carry no borrow of this frame -- an integer, and a `PT` holding only the caller's
+//     pointers, whose `to_string` writes the caller's `PS` -- beside the read
+func:tmpl_no_borrow = PS(int64->:ext, PS->:pd) never fails {
+    int64:k = 7i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @v;
+    PT:h = PT{ dst: pd, src: ext };
+    string:t = `&{ k }&{ h }`;
+    if (t.len != 2i64) { pass PS{ p: ext, k: 0i64 }; }
+    pass (<-sp);
+};
+// 29. a `for` over an `Iterator` reached through a pointer PARAMETER -- `next` handed the caller's pointer itself --
+//     beside the read
+func:loop_through_param = PS(int64->:ext, IT->:ip) never fails {
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @v;
+    int64:s = 0i64;
+    for (int64:i in ip) { s = s + i; }
+    if (s != 6i64) { pass PS{ p: ext, k: 0i64 }; }
+    pass (<-sp);
+};
+func:clobber = int64(int64:a) never fails {
+    int64[16]:junk = [a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a];
+    int64:s = 0i64;
+    for (int64:i in 0i64...16i64) { s = s +% junk[i]; }
+    pass s;
+};
+func:read_through = int32() {
+    int64:e = 5i64;
+    PS:r11 = raw target_caller_ptr(@e);
+    PS:r12 = raw target_caller_ptr_member(@e);
+    PS:r13 = raw param_target_outer(@e);
+    PS:pd0 = PS{ p: @e, k: 0i64 };
+    IT:it0 = IT{ p: @e, k: 0i64 };
+    PS:r26 = raw loop_indexed(@e);
+    PS:r27 = raw loop_apart(@e);
+    PS:r28 = raw tmpl_no_borrow(@e, @pd0);
+    PS:r29 = raw loop_through_param(@e, @it0);
+    int64:c = raw clobber(7i64);
+    if (c == 0i64) { pass 10i32; }
+    if ((<-(r11.p)) != 5i64) { pass 11i32; }
+    if ((<-(r12.p)) != 5i64) { pass 12i32; }
+    if ((<-(r13.p)) != 5i64) { pass 13i32; }
+    if ((<-(r26.p)) != 5i64) { pass 26i32; }
+    if ((<-(r27.p)) != 5i64) { pass 27i32; }
+    if ((<-(r28.p)) != 5i64) { pass 28i32; }
+    if ((<-(pd0.p)) != 5i64) { pass 28i32; }
+    if ((<-(r29.p)) != 5i64) { pass 29i32; }
+    if (it0.k != 3i64) { pass 29i32; }
+    pass 0i32;
+};
+// 24. (e1_meth_addr_l) the long form over a `move` parameter whose sibling field holds an ADDRESS of the caller's
+//     local: the owning field is handed up two frames
+impl:HA = {
+    func:takes = string(move HA:self) {
+        return Result{value: self.s};
+    };
+};
+func:up = string() {
+    int64:d = 5i64;
+    HA:h = HA{ s: string_concat("ab", "cd"), p: @d };
+    string:t = (move(h)).takes() ?| string_concat("xy", "zw");
+    pass t;
+};
+// 25. (e2b_func_view_l) the long form over a `move` parameter whose sibling field holds a VIEW of the caller's array:
+//     the holder ends in an inner block and the array is written while the result is live
+func:takes_view = string(move HV:h) {
+    return Result{value: h.s};
+};
+func:sibling_view = int64() {
+    int64[4]:arr = [1i64, 2i64, 3i64, 4i64];
+    string:t = string_concat("q", "r");
+    {
+        HV:h = HV{ s: string_concat("ab", "cd"), v: arr[0i64...2i64] };
+        t = takes_view(move(h)) ?| string_concat("xy", "zw");
+    }
+    arr[0i64] = 9i64;
+    pass t.len;
+};
+async func:main = int32(cstring[]:_~argv) {
+    Channel<int64, 3i32, 64i64>:done = channel() ?! E1;
+    // 11-13 and 26-29. face (2)'s reads, in a function that returns
+    int32:r = read_through() ?! E1;
+    if (r != 0i32) { exit r; }
+    // 14. (o1a) a plain struct built from a byte a pick expression's arm reads through a view of `d`, handed to a
+    //     spawn by value
+    {
+        string:d = string_concat("hello", " world");
+        {
+            drop lookwd(W{ k: (pick (1i32) { (*) { fixed uint8[]:v = string_bytes(d); give (v[0i64] => int64); } }) }, done);
+        }
+        int64:got14 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got14 != 104i64) { exit 14i32; }
+    }
+    // 15. (o2a) the same with `d` written after the join
+    {
+        string:d = string_concat("hello", " world");
+        {
+            drop lookwd(W{ k: (pick (1i32) { (*) { fixed uint8[]:v = string_bytes(d); give (v[0i64] => int64); } }) }, done);
+        }
+        d = string_concat("xyzzy", "!");
+        int64:got15 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got15 != 104i64) { exit 15i32; }
+        if (d.len != 6i64) { exit 15i32; }
+    }
+    // 16. (o7a) the byte read through a LIVE named view
+    {
+        string:d = string_concat("hello", " world");
+        fixed uint8[]:v = string_bytes(d);
+        {
+            drop lookwd(W{ k: (v[0i64] => int64) }, done);
+        }
+        int64:got16 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got16 != 104i64) { exit 16i32; }
+    }
+    // 17. (o8a) a LENGTH read through it, 11 + 93
+    {
+        string:d = string_concat("hello", " world");
+        fixed uint8[]:v = string_bytes(d);
+        {
+            drop lookwd(W{ k: (v.len + 93i64) }, done);
+        }
+        int64:got17 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got17 != 104i64) { exit 17i32; }
+    }
+    // 18. (o1) control 14's RECEIVER spelling
+    {
+        string:d = string_concat("hello", " world");
+        {
+            drop (W{ k: (pick (1i32) { (*) { fixed uint8[]:v = string_bytes(d); give (v[0i64] => int64); } }) }).lookd(done);
+        }
+        int64:got18 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got18 != 104i64) { exit 18i32; }
+    }
+    // 19. (o2) control 15's
+    {
+        string:d = string_concat("hello", " world");
+        {
+            drop (W{ k: (pick (1i32) { (*) { fixed uint8[]:v = string_bytes(d); give (v[0i64] => int64); } }) }).lookd(done);
+        }
+        d = string_concat("xyzzy", "!");
+        int64:got19 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got19 != 104i64) { exit 19i32; }
+        if (d.len != 6i64) { exit 19i32; }
+    }
+    // 20. (o7) control 16's
+    {
+        string:d = string_concat("hello", " world");
+        fixed uint8[]:v = string_bytes(d);
+        {
+            drop (W{ k: (v[0i64] => int64) }).lookd(done);
+        }
+        int64:got20 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got20 != 104i64) { exit 20i32; }
+    }
+    // 21. (o8) control 17's
+    {
+        string:d = string_concat("hello", " world");
+        fixed uint8[]:v = string_bytes(d);
+        {
+            drop (W{ k: (v.len + 93i64) }).lookd(done);
+        }
+        int64:got21 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got21 != 104i64) { exit 21i32; }
+    }
+    // 22. (t1a) a pointee's owning PART moved through the pointer by the automatic dereference, `move(sp.s)`, into a
+    //     `move string` parameter; the part is VACANT and assigned before a read
+    {
+        SC:w = SC{ s: string_concat("ab", "c"), k: 1i64 };
+        SC->:sp = @w;
+        {
+            drop takesd(move(sp.s), done);
+        }
+        int64:got22 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got22 != 97i64) { exit 22i32; }
+        w.s = string_concat("de", "f");
+        if (w.s.len != 3i64) { exit 22i32; }
+    }
+    // 23. (t1x) the same by the explicit dereference, `move((<-sp).s)`
+    {
+        SC:w = SC{ s: string_concat("ab", "c"), k: 1i64 };
+        SC->:sp = @w;
+        {
+            drop takesd(move((<-sp).s), done);
+        }
+        int64:got23 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got23 != 97i64) { exit 23i32; }
+        w.s = string_concat("de", "f");
+        if (w.s.len != 3i64) { exit 23i32; }
+    }
+    // 24. DEF-383's address face (above `main`)
+    {
+        string:u = up() ?| string_concat("q", "r");
+        if (u.len != 4i64) { exit 24i32; }
+    }
+    // 25. DEF-383's view face (above `main`)
+    {
+        int64:n25 = sibling_view() ?| 0i64;
+        if (n25 != 4i64) { exit 25i32; }
+    }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

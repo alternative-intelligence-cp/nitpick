@@ -1,77 +1,85 @@
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 136:12
+// expect-error-at: 156:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 142:12
+// expect-error-at: 162:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 150:12
+// expect-error-at: 170:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 157:12
+// expect-error-at: 177:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 163:12
+// expect-error-at: 183:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 169:12
+// expect-error-at: 189:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 175:12
+// expect-error-at: 195:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 181:12
+// expect-error-at: 201:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 187:12
+// expect-error-at: 207:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 193:12
+// expect-error-at: 213:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 199:12
+// expect-error-at: 219:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 205:12
+// expect-error-at: 225:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 211:12
+// expect-error-at: 231:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 217:12
+// expect-error-at: 237:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 223:12
+// expect-error-at: 243:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 229:12
+// expect-error-at: 249:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 235:12
+// expect-error-at: 255:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 241:12
+// expect-error-at: 261:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 248:26
+// expect-error-at: 268:26
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 254:26
+// expect-error-at: 274:26
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 260:12
+// expect-error-at: 280:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 265:12
+// expect-error-at: 285:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 271:12
+// expect-error-at: 291:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 276:12
+// expect-error-at: 296:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 282:12
+// expect-error-at: 302:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 287:12
+// expect-error-at: 307:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 293:12
+// expect-error-at: 313:12
 // expect-error: NITPICK-TYPE-047
-// expect-error-at: 299:12
+// expect-error-at: 319:12
 // expect-error: NITPICK-TYPE-047
-// expect-error-at: 304:12
+// expect-error-at: 324:12
 // expect-error: NITPICK-TYPE-063
-// expect-error-at: 310:12
+// expect-error-at: 330:12
 // expect-error: NITPICK-TYPE-084
-// expect-error-at: 316:12
+// expect-error-at: 336:12
 // expect-error: NITPICK-TYPE-079
-// expect-error-at: 322:12
+// expect-error-at: 342:12
 // expect-error: NITPICK-TYPE-038
-// expect-error-at: 327:12
+// expect-error-at: 347:12
 // expect-error: NITPICK-TYPE-101
-// expect-error-at: 333:12
+// expect-error-at: 353:12
 // expect-error: NITPICK-TYPE-101
-// expect-error-at: 339:12
+// expect-error-at: 359:12
 // expect-error: NITPICK-TYPE-101
-// expect-error-at: 344:12
+// expect-error-at: 364:12
 // expect-error: NITPICK-TYPE-101
-// expect-error-at: 349:23
+// expect-error-at: 369:23
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 378:34
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 387:23
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 395:41
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 402:34
 // DEF-371 + DEF-373 (landing 171): A `return` STATEMENT'S `Result{value: v}` IS `pass v;` WRITTEN LONG, AND A
 // `Result` LITERAL WRITES ONE FIELD. `pass v;` is defined as `return Result{value: v};` (D-183), and until this
 // landing the two took different roads: `check_pass` asked every rule of a leaving value -- D-183's implicit move of
@@ -89,6 +97,14 @@
 // by nobody on the error path. Each site is one function and one report; landing 170's checker reports only sites 19
 // and 20 (a pick's `give` of a place, refused at the `give` before this landing) and site 33 (TYPE-007, the mismatch,
 // where `pass`'s TYPE-038 names the rule now).
+// LANDING 172 (2026-10-30; management's review of 224d907, its F2): the literal's value in every slot but a `return`
+// is a MOVE SLOT since landing 171 (`type_result_literal` asks `require_move_if_owning`), and no site pinned it: sites
+// 38-41 copy a named owner into a literal standing as an initialiser, an assignment's value, a call's argument and a
+// struct literal's field -- NITPICK-TYPE-046 at the value, as landing 171's checker reports each; their `move(...)`
+// twins are the legal half's controls 27-30. Each of the four stands in a function whose success type is PS, the
+// literal's own `T`: a literal outside a `return` is typed by the ENCLOSING function's success type and wild context,
+// never by its slot (DEF-388, OPEN HIGH, pre-existing; `type_result_literal`'s `want = e.fn_success`), so a site in a
+// function of another success type would answer TYPE-007 twice beside the TYPE-046 under test.
 mod:result_literal_road;
 error:E1;
 struct:PS = { string:s; int64:k; };
@@ -126,6 +142,10 @@ func:getp = PS->(PS->:q) never fails {
 };
 func:mayf = int32(int32:v) {
     pass v;
+};
+func:takes_r = int64(move Result<PS>:r) never fails {
+    PS:x = move(r) ?| raw mk();
+    pass x.k;
 };
 
 // --- DEF-371: AN OPERATOR HANDING BACK A PLACE'S OWN VALUE (landing 170's DEF-367 at `pass`) ------------------------
@@ -348,6 +368,40 @@ func:both_plain = int32() {
 func:both_init = int32() {
     Result<int32>:r = Result{value: 2i32, err: E1};
     pass r ?| 0i32;
+};
+
+// --- DEF-371: A `Result` LITERAL'S VALUE OUTSIDE A `return` IS A MOVE SLOT (landing 172; the review's F2) ----------
+// Each site's function returns PS, the literal's `T` (DEF-388: the literal is typed by the enclosing function).
+// 38. an initialiser
+func:lit_init = PS() {
+    PS:a = raw mk();
+    Result<PS>:r = Result{value: a};
+    PS:x = move(r) ?| raw mk();
+    pass x;
+};
+
+// 39. an assignment's value
+func:lit_assign = PS() {
+    PS:a = raw mk();
+    Result<PS>:r = Result{value: raw mk()};
+    r = Result{value: a};
+    PS:x = move(r) ?| raw mk();
+    pass x;
+};
+
+// 40. a call's argument
+func:lit_arg = PS() {
+    PS:a = raw mk();
+    int64:n = raw takes_r(Result{value: a});
+    pass PS{ s: string_concat("", ""), k: n };
+};
+
+// 41. a struct literal's field
+func:lit_field = PS() {
+    PS:a = raw mk();
+    WR:w = WR{ ra: Result{value: a} };
+    PS:x = move(w.ra) ?| raw mk();
+    pass x;
 };
 
 func:main = int32(cstring[]:_~argv) {

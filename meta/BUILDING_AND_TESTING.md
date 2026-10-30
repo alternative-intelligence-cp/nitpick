@@ -2435,3 +2435,45 @@ that carried them retired at the cycle close):
   `r.err = E1` over a value (DEF-380, a leak), a zero `Error` read off a success and failed (DEF-381, a success holding NULL -- D-069's
   trap at a computed `fail` was never built), `r.is_error = false` (DEF-382, EMIT-002); and an exhaustive `pick` over a valued enum's
   vacant value takes no arm and falls off the function into a fabricated success (DEF-385). The cells: `wt/51a/.internal/probes/t171/rev171/`.
+- **A dereference's verdict asks its TARGET, read where the pointer is WRITTEN, and answers YES in a function that lends; a walk's
+  verdict is judged on every road that runs it; a kind test recurses through every kind that stores the kind** (DEF-364, DEF-365,
+  DEF-378, DEF-383, R1, the delta review of ee62e5b; landing 172; escape.npk `deref_targets_hold`, `lends`, `escape_mark_lends`,
+  `for_iter_lends`, the `for` and template arms, `escape_mark_redef`, `escape_expr`'s member, `?.`, index and dereference arms,
+  `escape_spawn_recv`, `spawn_type_holds_param`, `escape_spawn_byval`, `operand_names_trait`, `escape_return_value`). Four faces of one
+  shape: an analysis answered a question for the wrong object. `escape_spawn_recv` ran the receiver's walk and threw its verdict away,
+  where `escape_spawn_args` refuses an argument whose walk answers yes (DEF-364: the task read the owner's rewritten string, 114/114);
+  DEF-361's owner test asked the top-level kind alone, so `T?`, `T[2]`, `Result<T>` and a generic instance crossed (DEF-365); the
+  member, `?.` and index arms handed on the view's verdict whatever the part's type, and the dereference arm answered by the pointee's
+  TYPE whatever the pointer pointed at (DEF-378: over-refusals); `escape_return_value` read the long form's whole literal where `pass`
+  gets the moved-place reading (DEF-383: a use-after-free, 13/13). THE LESSONS. (1) A POINTER'S CHAIN DOES NOT NAME EVERY TARGET: an
+  address whose place has no named root -- `@(<-(raw idp(@w)))` -- records nothing (`push_view_ref_at` at root 0; DEF-386, DEF-387), so
+  a rule that relaxes by the chain's targets opens where the chain is open (face 2's first cut let the cell d1 through). Read the target
+  where the pointer is WRITTEN -- an inline `@place`, or the declaration of a pointer local never redefined (`redef`, set at every
+  assignment, `@` and `$$` of it) -- and answer YES for everything else. (2) CUT THE CELLS THAT MUST STAY REFUSED BEFORE THE RELAXATION:
+  `deref/`, `deref2/` and `deref3/` were cut to stay refused under any dereference rule (re-pointed through a call result, a callee, a
+  claim, a loop's back edge, a `defer`), and they are what caught build 1. (3) A WHOLE-FUNCTION MARK ANSWERS FOR EVERY PATH: `holds` is
+  flow-insensitive, so a target given a borrow on a path the read never reaches stays refused (d5m) -- an over-refusal on D-286's list,
+  narrowed later by a flow-sensitive mark, never by the chain. (4) A VERDICT COMPUTED AND DROPPED IS A HOLE: every road that runs a walk
+  judges its verdict -- the receiver as the argument (DEF-364), the summary and the verdict of a `return` each (DEF-383 unified the
+  SUMMARY; the verdict still reads the whole literal, DEF-389, and unifying it first would have opened DEF-384's hazard: check each road
+  separately, and order the fixes by what each one opens). (5) A KIND TEST RECURSES THROUGH EVERY KIND THAT STORES THE KIND BY VALUE (an
+  array's element, an Optional's, a Result's, an atomic's, a generic struct's or enum's type arguments), fuel-bounded and YES past the
+  fuel. (6) A SWEEP BASE IS PINNED: a fresher corpus is read as a SUPPLEMENTARY one, read-only, its path list's sha256 recorded, never
+  by moving the pinned copy inside a landing. (7) A RELAXATION THAT READS A MARK IS AS SOUND AS THE MARK'S WRITERS: `holds` records the
+  frame's own stores of a borrow, which D-004 rule 3 keeps sound (BORROW-002 at a store through another alias), and NOT a callee's store
+  that the store matrix does not attribute to the target (DEF-390: a pointer field, a call's result, an array element, a by-value
+  holder, a destination two levels down, a copy of the pointer handed in a holder) nor a builtin's (an atomic's `store`, `mcpy`: D-249's
+  "a builtin stores nothing through an argument" does not hold; DEF-391) -- the first build's face 2 let fourteen roads through that
+  landing 171 refused (R1 of management's review of 99f83e7). So face 2 answers YES in a function that LENDS (`lends`,
+  `escape_mark_lends`), a stopgap until DEF-390's and DEF-392's attribution narrows it, and EVERY CALL COUNTS: a call, a method call, a
+  `#` or bare builtin, and the two calls the language makes with no call node, a `for` over an `Iterator` (`next(@it)`, D-166) and a
+  template (`to_string`, D-168). A SPAWN of an `async` callee does not mark, because `escape_spawn_args` refuses every argument that
+  carries a borrow of this frame but a sanctioned `Mutex`/`shared_arena` pointer, whose interior is read only through a builtin method
+  call, which lends. A pipe is PARSE-014 (D-362). Before a relaxation reads a mark, list every writer of the mark and cut a cell for
+  each one the mark does not see, and run the relaxed build against every cell the closed rule refused. (8) A RULE KEYED TO A SYNTAX
+  NODE MISSES THE CALLS THE LANGUAGE MAKES WITHOUT ONE: the second build marked `lends` where `escape_call_like` walks a call node, and
+  a `for` over an `Iterator` and a template lent unseen (f1n, f1i, t1n, t1i: silent 13/13 where landing 171 refused; management's delta
+  review of ee62e5b) -- list a language's calls from the EMITTER, every `mangled_fn_sym(` site (`emit_for_iterator`'s `next`,
+  `emit_tostring`'s `to_string`), not from the parser's call kinds. The cells: `wt/51a/.internal/probes/t172/` (`deref/`, `deref2/`,
+  `deref3/`, `extra/`, `twins/`, `chaingap/`, `census386/`, `rlslot/`, `verdict383/`, `supp/`, `mx/`, `rev172/`, `rev172b/`) and
+  `t171/p364/`, `t171/def365/`, `t171/rev171/esc/`, `t169/rev169/`.

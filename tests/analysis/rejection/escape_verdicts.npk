@@ -1,0 +1,790 @@
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 199:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 208:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 219:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 227:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 237:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 247:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 257:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 267:32
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 280:32
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 293:32
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 307:34
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 318:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 327:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 335:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 343:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 351:11
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 360:6
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 370:5
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 380:11
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 392:15
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 404:19
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 419:15
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 434:19
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 449:15
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 464:19
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 477:15
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 490:19
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 503:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 514:5
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 532:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 542:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 553:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 563:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 573:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 582:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 592:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 602:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 612:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 622:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 632:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 642:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 652:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 662:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 690:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 697:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 708:11
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 718:11
+// DEF-378 + DEF-383 (landing 172): THE ESCAPE WALK'S VERDICTS AND A `return`'s SUMMARY -- what stays refused now that
+// the walk answers a read by the value's TYPE and a dereference by its TARGET. Landing 171 registered two over-refusals
+// of `escape_expr`'s verdicts (DEF-378, management_7 2026-10-30 06:47): a member, an element or a `?.` read through a
+// live view answered YES whatever the value's type (face 1: `drop lookw(W{ k: (v[0i64] => int64) })`, a plain struct
+// built from a byte, was NITPICK-BORROW-004), and a dereference of a pointer whose pointee's TYPE holds an address
+// answered YES whatever the pointer points at (face 2: `PS->:sp = @v; pass (<-sp);`, `v` holding the CALLER's pointer,
+// was NITPICK-BORROW-001). Now those reads answer by their type (`verdict_borrowy`), and a dereference -- explicit, or
+// the automatic one under a member access -- asks the TARGET where the pointer is WRITTEN (`deref_targets_hold`): an
+// inline `@place`, or the declaration of a pointer local never re-pointed, whose root's `holds` mark (a local's or a
+// by-value parameter's) says whether it holds a frame borrow; anything else answers YES -- a root the collector cannot
+// name, a pointer re-pointed after its declaration or whose address is taken or claimed (`escape_mark_redef`), a name
+// that is not a local's, a declaration that is not a `VarDecl`, the fuel -- and, in a function that LENDS (some call, a
+// builtin's included, handed a borrow of the frame), YES whatever the target: R1 of management's review of the first
+// build, 99f83e7, whose callee stores the store matrix does not attribute to the target (DEF-390) and whose builtin
+// stores (an atomic's `store`, `mcpy`) no mark records were read as an unmarked target. The pointer's CHAIN is not asked
+// (an address with no root is no target on it: DEF-386, and the census of 2026-10-30, wt/51a/.internal/probes/t172/census386/).
+// This file holds what must stay refused. Sites 1-16: a dereference of a pointer whose target holds a frame borrow,
+// handed back (NITPICK-BORROW-001 at the read) -- the target marked by its declaration (1) and through the AUTOMATIC
+// dereference (2); the pointer re-pointed at it through a call result's dereference, a place with no root (3), the same
+// inline (4), by a call result (5), by a callee handed its address (6) or a claim (7), after the read inside a loop (8)
+// and inside a `defer` of the loop body (9); the target given a frame borrow after the read inside a loop (10) and on a
+// path the read does not reach (11: SAFE at run time, refused because `holds` is a WHOLE-FUNCTION mark -- an
+// over-refusal accepted under D-286, refused on landing 171 alike); a borrow stored into the target by a callee (12,
+// rule B) or through a claim (13); a by-value PARAMETER target given a frame borrow by name, by a callee and through a
+// claim (14-16). Sites 17-19 store a frame borrow into the target through ANOTHER alias -- a pointer local, the whole
+// pointee, a pointer field --, refused by D-004 rule 3 at the store (NITPICK-BORROW-002), which is what keeps the
+// target's mark sound without the chain: landing 171 reported BORROW-001 at the read beside each, one report more.
+// Sites 20-27 move a pointee that HOLDS A BORROW, `H{ p: @d }` behind a pointer, out at a spawn while `d` is rewritten
+// under the task, as a `move` receiver and as a `move` argument -- through the pointer's declaration (20, 21), the
+// pointer re-pointed (22, 23), re-pointed by a callee handed its address (24, 25), through a copy of the pointer (26,
+// 27): NITPICK-BORROW-004 at the moved value; the receivers 20, 22, 24 and 26 were SILENT on landing 171, 114 at both
+// legs (the task read the rewritten string: DEF-364's face through a pointer), their argument twins refused there.
+// Sites 28 and 29 are DEF-383: a `return`'s `Result` literal leaves the escape summary `pass` leaves -- a callee stores
+// a view of its pointer parameter's pointee into a `move` parameter's field and hands the field back, and the caller
+// rewrites the viewed string while the result is live: the long form (28) was silent on landing 171, 13 at both legs
+// (freed bytes read), where `pass` (29) was refused; NITPICK-BORROW-015 at the write, both. Sites 30-43 read the target
+// through a pointer in a function that LENDS, after a callee or a builtin stored `@x` into it where no mark records the
+// store: through a holder's pointer FIELD (30, a function; 31, a method; 32, the automatic dereference), a call's result
+// (33), an array element (34), an inline dereference (35), a BY-VALUE holder (36), a destination two levels down (37, a
+// function; 38, a method), the COPY ROAD -- `@v` written once and a copy of the pointer carried in a holder -- (39, 40,
+// 41), an atomic's `store` (42) and `mcpy` (43): NITPICK-BORROW-001 at the read (32's at the `pass` of the value the
+// automatic dereference gave, the line after the read); each refused on landing 171 and SILENT on the first build of
+// landing 172 (99f83e7), 13 at both legs (the caller read the dead `x`). Sites 44-47 lend through a call the language
+// makes with NO CALL NODE: a `for` over an `Iterator` by value, whose `next(@it)` stores `@(self.k)` into `self.p`, the
+// iterator's copy handed back named (44) and inline (45), and a template `&{ h }`, whose by-value `to_string` stores
+// `self.src` into `self.dst.p`, named (46) and inline (47): NITPICK-BORROW-001 at the read; each refused on landing 171
+// and SILENT on the second build (ee62e5b), 13 at both legs (management's delta review of ee62e5b, 2026-10-30). Landing
+// 171's checker reports every site but 20, 22, 24, 26 and 28, with two reports at 17-19 (BORROW-001 at the read beside
+// the store's BORROW-002) and one at every other; 99f83e7's reports every site but 30-47, ee62e5b's every site but
+// 44-47. The legal half is
+// tests/backend/programs/escape_verdicts_ok.npk. The cells: wt/51a/.internal/probes/t172/ deref/ (d1-d5), deref2/
+// (r1-r4, d5m, d5n), deref3/ (d6-d18), extra/ (d4x, d5x, h3r, h4r), twins/ (h1-h4), rev172/ (cells/, cells_b/, cells_c/,
+// cells_d/: R1's roads and z9, z10), rev172b/impl/ (f1n, f1i, t1n, t1i: the calls with no call node), and
+// t171/rev171/esc/ (DEF-383).
+mod:escape_verdicts;
+error:E1;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+struct:PS = { int64->:p; int64:k; };
+struct:HP = { PS->:ptr; int64:n; };
+struct:H = { string->:p; };
+struct:HB = { string:v; int64:n; };
+func:idp = PS->(PS->:q) never fails { pass q; };
+func:repoint = NIL(PS->->:pp, PS->:q) never fails { <-pp = q; pass NIL; };
+func:setpp = NIL(PS->:dst, int64->:a) never fails { dst.p = a; pass NIL; };
+func:setp = NIL(H->->:pp, H->:q) never fails { <-pp = q; pass NIL; };
+struct:PA = { atomic<int64->>:a; int64:k; };
+func:ptr_of = PS->(HP->:h) never fails { pass h.ptr; };
+func:setps = NIL(HP:h, int64->:q) never fails { h.ptr.p = q; pass NIL; };
+func:setph = NIL(HP->:h, int64->:q) never fails { h.ptr.p = q; pass NIL; };
+impl:PS = { func:setq = NIL(Self->:self, int64->:q) never fails { self.p = q; pass NIL; }; };
+impl:HP = { func:seth = NIL(Self->:self, int64->:q) never fails { self.ptr.p = q; pass NIL; }; };
+impl:H = {
+    thread async func:rdm = NIL(move H:self) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        fixed uint8[]:xb = string_bytes(<-self.p);
+        if (xb[0i64] != 104u8) { fail E1; }
+        pass NIL;
+    };
+};
+thread async func:rdmf = NIL(move H:h) joins J2 {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    fixed uint8[]:xb = string_bytes(<-h.p);
+    if (xb[0i64] != 104u8) { fail E1; }
+    pass NIL;
+};
+func:takev_long = string(move HB:h, string->:pw) {
+    fixed uint8[]:bs = string_bytes(<-pw);
+    h.v = string_from_bytes(bs.ptr, 2i64);
+    return Result{value: h.v};
+};
+func:takev_pass = string(move HB:h, string->:pw) {
+    fixed uint8[]:bs = string_bytes(<-pw);
+    h.v = string_from_bytes(bs.ptr, 2i64);
+    pass h.v;
+};
+
+// --- A DEREFERENCE OF A POINTER WHOSE TARGET HOLDS A FRAME BORROW, HANDED BACK (NITPICK-BORROW-001 at the read) ---
+// 1. (d4) the target marked by its declaration: `w` holds `@x`, `sp` points at `w`, and the copy handed back carries
+//    x's address out of the frame
+func:marked_target = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:w = PS{ p: @x, k: 1i64 };
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @w;
+    pass (<-sp);
+};
+
+// 2. (d4x) the same through the AUTOMATIC dereference: `sp.p` reads the target's `p`
+func:marked_target_member = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:w = PS{ p: @x, k: 1i64 };
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @w;
+    pass PS{ p: sp.p, k: 1i64 };
+};
+
+// 3. (d1) the pointer re-pointed at `w` through a call result's dereference -- a place with no root, which the
+//    collector cannot name (DEF-386's drop): the re-pointing answers YES
+func:repointed_rootless = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:w = PS{ p: @x, k: 1i64 };
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @v;
+    sp = @(<-(raw idp(@w)));
+    pass (<-sp);
+};
+
+// 4. (d2) the same inline
+func:rootless_inline = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:w = PS{ p: @x, k: 1i64 };
+    PS:v = PS{ p: ext, k: 2i64 };
+    pass (<-(@(<-(raw idp(@w)))));
+};
+
+// 5. (d3) re-pointed by a call result
+func:repointed_by_call = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:w = PS{ p: @x, k: 1i64 };
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @v;
+    sp = raw idp(@w);
+    pass (<-sp);
+};
+
+// 6. (r1) re-pointed by a callee handed the pointer's address
+func:repointed_by_callee = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:w = PS{ p: @x, k: 1i64 };
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @v;
+    drop repoint(@sp, @w);
+    pass (<-sp);
+};
+
+// 7. (r4) the same through a claim
+func:repointed_by_claim = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:w = PS{ p: @x, k: 1i64 };
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @v;
+    drop repoint($$m sp, @w);
+    pass (<-sp);
+};
+
+// 8. (r2) re-pointed AFTER the read in program order, inside a loop: only the back edge carries it
+func:repointed_back_edge = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:w = PS{ p: @x, k: 1i64 };
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @v;
+    for (int32:i in 0i32...2i32) {
+        if (i == 1i32) { pass (<-sp); }
+        sp = @w;
+    }
+    pass v;
+};
+
+// 9. (r3) the same inside a `defer` of the loop body
+func:repointed_in_defer = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:w = PS{ p: @x, k: 1i64 };
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @v;
+    for (int32:i in 0i32...2i32) {
+        if (i == 1i32) { pass (<-sp); }
+        defer { sp = @w; }
+    }
+    pass v;
+};
+
+// 10. (d5n) the TARGET given a frame borrow after the read, inside a loop: the back edge
+func:target_back_edge = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:w = PS{ p: @x, k: 1i64 };
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @v;
+    for (int32:i in 0i32...2i32) {
+        if (i == 1i32) { pass (<-sp); }
+        v = PS{ p: @x, k: 3i64 };
+    }
+    pass PS{ p: ext, k: 0i64 };
+};
+
+// 11. (d5m) the target given a frame borrow after the read, on a path the read does not reach: SAFE at run time,
+//     refused because `holds` is a WHOLE-FUNCTION mark (the analysis's design: an over-refusal accepted under
+//     D-286; refused on landing 171 alike)
+func:target_later = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:w = PS{ p: @x, k: 1i64 };
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @v;
+    if ((<-ext) == 5i64) { pass (<-sp); }
+    v = PS{ p: @x, k: 3i64 };
+    pass PS{ p: ext, k: 0i64 };
+};
+
+// 12. (d9) a frame borrow stored into the target by a callee (rule B)
+func:stored_by_callee = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    drop setpp(@v, @x);
+    PS->:sp = @v;
+    pass (<-sp);
+};
+
+// 13. (d10) the same through a claim
+func:stored_by_claim = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    drop setpp($$m v, @x);
+    PS->:sp = @v;
+    pass (<-sp);
+};
+
+// 14. (d15) a by-value PARAMETER target given a frame borrow by its own name
+func:param_stored_by_name = PS(PS:v) never fails {
+    int64:x = 41i64;
+    v.p = @x;
+    PS->:sp = @v;
+    pass (<-sp);
+};
+
+// 15. (d16) by a callee
+func:param_stored_by_callee = PS(PS:v) never fails {
+    int64:x = 41i64;
+    drop setpp(@v, @x);
+    PS->:sp = @v;
+    pass (<-sp);
+};
+
+// 16. (d17) through a claim
+func:param_stored_by_claim = PS(PS:v) never fails {
+    int64:x = 41i64;
+    drop setpp($$m v, @x);
+    PS->:sp = @v;
+    pass (<-sp);
+};
+
+// --- A FRAME BORROW STORED INTO THE TARGET THROUGH ANOTHER ALIAS (NITPICK-BORROW-002 at the store, D-004 rule 3) ---
+// 17. (d6) through a pointer local
+func:alias_store = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:q = @v;
+    q.p = @x;
+    PS->:sp = @v;
+    pass (<-sp);
+};
+
+// 18. (d8) the whole pointee
+func:alias_store_whole = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:q = @v;
+    <-q = PS{ p: @x, k: 3i64 };
+    PS->:sp = @v;
+    pass (<-sp);
+};
+
+// 19. (d11) through a pointer field
+func:alias_store_field = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    HP:hh = HP{ ptr: @v, n: 0i64 };
+    hh.ptr.p = @x;
+    PS->:sp = @v;
+    pass (<-sp);
+};
+
+// --- A POINTEE THAT HOLDS A BORROW, MOVED OUT AT A SPAWN (NITPICK-BORROW-004 at the moved value) ---
+// 20. (h1r) a `move` receiver through the pointer's declaration, `d` rewritten under the task
+async func:holds_recv = NIL() {
+    string:d = string_concat("hello", " world");
+    H:h = H{ p: @d };
+    H->:hp = @h;
+    {
+        drop (move(<-hp)).rdm();
+        d = string_concat("xyzzy", "!");
+    }
+    pass NIL;
+};
+
+// 21. (h1a) the argument twin
+async func:holds_arg = NIL() {
+    string:d = string_concat("hello", " world");
+    H:h = H{ p: @d };
+    H->:hp = @h;
+    {
+        drop rdmf(move(<-hp));
+        d = string_concat("xyzzy", "!");
+    }
+    pass NIL;
+};
+
+// 22. (h2r) the pointer re-pointed after its declaration
+async func:redef_recv = NIL() {
+    string:d = string_concat("hello", " world");
+    string:e = string_concat("hello", " there");
+    H:h = H{ p: @d };
+    H:g = H{ p: @e };
+    H->:hp = @g;
+    hp = @h;
+    {
+        drop (move(<-hp)).rdm();
+        d = string_concat("xyzzy", "!");
+    }
+    pass NIL;
+};
+
+// 23. (h2a) the argument twin
+async func:redef_arg = NIL() {
+    string:d = string_concat("hello", " world");
+    string:e = string_concat("hello", " there");
+    H:h = H{ p: @d };
+    H:g = H{ p: @e };
+    H->:hp = @g;
+    hp = @h;
+    {
+        drop rdmf(move(<-hp));
+        d = string_concat("xyzzy", "!");
+    }
+    pass NIL;
+};
+
+// 24. (h3r) re-pointed by a callee handed the pointer's address
+async func:addr_taken_recv = NIL() {
+    string:d = string_concat("hello", " world");
+    string:e = string_concat("hello", " there");
+    H:h = H{ p: @d };
+    H:g = H{ p: @e };
+    H->:hp = @g;
+    drop setp(@hp, @h);
+    {
+        drop (move(<-hp)).rdm();
+        d = string_concat("xyzzy", "!");
+    }
+    pass NIL;
+};
+
+// 25. (h3a) the argument twin
+async func:addr_taken_arg = NIL() {
+    string:d = string_concat("hello", " world");
+    string:e = string_concat("hello", " there");
+    H:h = H{ p: @d };
+    H:g = H{ p: @e };
+    H->:hp = @g;
+    drop setp(@hp, @h);
+    {
+        drop rdmf(move(<-hp));
+        d = string_concat("xyzzy", "!");
+    }
+    pass NIL;
+};
+
+// 26. (h4r) through a COPY of the pointer
+async func:copy_recv = NIL() {
+    string:d = string_concat("hello", " world");
+    H:h = H{ p: @d };
+    H->:hp = @h;
+    H->:hq = hp;
+    {
+        drop (move(<-hq)).rdm();
+        d = string_concat("xyzzy", "!");
+    }
+    pass NIL;
+};
+
+// 27. (h4a) the argument twin
+async func:copy_arg = NIL() {
+    string:d = string_concat("hello", " world");
+    H:h = H{ p: @d };
+    H->:hp = @h;
+    H->:hq = hp;
+    {
+        drop rdmf(move(<-hq));
+        d = string_concat("xyzzy", "!");
+    }
+    pass NIL;
+};
+
+// --- DEF-383: A `return`'s `Result` LITERAL LEAVES `pass`'s SUMMARY (NITPICK-BORROW-015 at the write) ---
+// 28. (e3_func_heapb_l) the long form: `takev_long` hands back a view of the caller's `w` in a `move` parameter's field,
+//     and the caller rewrites `w` while the result is live (silent on landing 171, 13 at both legs)
+func:result_literal_view = int64() {
+    string:w = string_concat("hi", "jkl");
+    HB:hh = HB{ v: string_concat("ab", "cd"), n: 0i64 };
+    string:t = takev_long(move(hh), @w) ?| string_concat("xy", "zw");
+    w = string_concat("zz", "zzz");
+    fixed uint8[]:tb = string_bytes(t);
+    if (tb[0i64] != 104u8) { pass 3i64; }
+    pass 1i64;
+};
+
+// 29. (e3_func_heapb_p) the `pass` twin, refused on landing 171 as here
+func:pass_view = int64() {
+    string:w = string_concat("hi", "jkl");
+    HB:hh = HB{ v: string_concat("ab", "cd"), n: 0i64 };
+    string:t = takev_pass(move(hh), @w) ?| string_concat("xy", "zw");
+    w = string_concat("zz", "zzz");
+    fixed uint8[]:tb = string_bytes(t);
+    if (tb[0i64] != 104u8) { pass 3i64; }
+    pass 1i64;
+};
+
+// --- A DEREFERENCE IN A FUNCTION THAT LENDS (R1 of management's review of 99f83e7; NITPICK-BORROW-001 at the read) ---
+// A callee or a builtin handed a borrow of this frame stores it into the target where the target's mark does not record
+// it (DEF-390: the store matrix does not attribute the store to its target), so `deref_targets_hold` answers YES in any
+// function where some call -- a builtin's included -- is handed a borrow of the frame. Each was refused on landing 171
+// and silent on the first build of landing 172 (99f83e7), 13 at both legs: the caller read the dead `x`.
+// 30. (r1) a callee handed the target's pointer through a FIELD of a holder, `setpp(hh.ptr, @x)`
+func:lent_field_callee = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    HP:hh = HP{ ptr: @v, n: 0i64 };
+    drop setpp(hh.ptr, @x);
+    PS->:sp = @v;
+    pass (<-sp);
+};
+
+// 31. (r1m) the same by a method on the field, `hh.ptr.setq(@x)`
+func:lent_field_method = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    HP:hh = HP{ ptr: @v, n: 0i64 };
+    drop hh.ptr.setq(@x);
+    PS->:sp = @v;
+    pass (<-sp);
+};
+
+// 32. (r1s) the AUTOMATIC dereference, `sp.p` read after the callee's store
+func:lent_auto_deref = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    HP:hh = HP{ ptr: @v, n: 0i64 };
+    drop setpp(hh.ptr, @x);
+    PS->:sp = @v;
+    int64->:rp = sp.p;
+    pass PS{ p: rp, k: 3i64 };
+};
+
+// 33. (r1x1) the target's pointer handed to the callee as a CALL'S RESULT, `setpp(raw ptr_of(@hh), @x)`
+func:lent_call_result = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    HP:hh = HP{ ptr: @v, n: 0i64 };
+    drop setpp(raw ptr_of(@hh), @x);
+    PS->:sp = @v;
+    pass (<-sp);
+};
+
+// 34. (r1x2) the target's pointer handed to the callee as an ARRAY ELEMENT, `setpp(arr[0i64], @x)`
+func:lent_array_elem = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->[1]:arr = [@v];
+    drop setpp(arr[0i64], @x);
+    PS->:sp = @v;
+    pass (<-sp);
+};
+
+// 35. (r1y) the INLINE dereference, `pass (<-(@v))`, after the field road's store
+func:lent_inline_deref = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    HP:hh = HP{ ptr: @v, n: 0i64 };
+    drop setpp(hh.ptr, @x);
+    pass (<-(@v));
+};
+
+// 36. (y1) a BY-VALUE holder, `setps(hh, @x)` with `setps = NIL(HP:h, int64->:q) { h.ptr.p = q; }`
+func:lent_byval_holder = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    HP:hh = HP{ ptr: @v, n: 0i64 };
+    drop setps(hh, @x);
+    PS->:sp = @v;
+    pass (<-sp);
+};
+
+// 37. (y2) TWO LEVELS DOWN through a named destination, `setph(@hh, @x)` -- recorded on `hh`, not `v`
+func:lent_two_level = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    HP:hh = HP{ ptr: @v, n: 0i64 };
+    drop setph(@hh, @x);
+    PS->:sp = @v;
+    pass (<-sp);
+};
+
+// 38. (y4) an automatic-reference METHOD two levels down, `hh.seth(@x)` with `self.ptr.p = q`
+func:lent_method_two_level = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    HP:hh = HP{ ptr: @v, n: 0i64 };
+    drop hh.seth(@x);
+    PS->:sp = @v;
+    pass (<-sp);
+};
+
+// 39. (y3) THE COPY ROAD: `@v` written ONCE, into `sp`, and a COPY of the pointer carried to the callee in a holder
+func:lent_copy_road = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @v;
+    HP:hh = HP{ ptr: sp, n: 0i64 };
+    drop setpp(hh.ptr, @x);
+    pass (<-sp);
+};
+
+// 40. (y3m) the copy road by the method, `hh.seth(@x)`
+func:lent_copy_method = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @v;
+    HP:hh = HP{ ptr: sp, n: 0i64 };
+    drop hh.seth(@x);
+    pass (<-sp);
+};
+
+// 41. (y3pp) the copy road two levels down, `setph(@hh, @x)`
+func:lent_copy_two_level = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @v;
+    HP:hh = HP{ ptr: sp, n: 0i64 };
+    drop setph(@hh, @x);
+    pass (<-sp);
+};
+
+// 42. (z9) a BUILTIN METHOD storing its argument into the pointee: an atomic's `store`, `sp.a.store(@x)`, over an
+//     `atomic<int64->>` field -- D-249's "a builtin stores nothing through an argument" does not hold for it
+func:lent_builtin_method = PA(int64->:ext) never fails {
+    int64:x = 41i64;
+    PA:v = PA{ a: ext, k: 2i64 };
+    PA->:sp = @v;
+    sp.a.store(@x);
+    pass (<-sp);
+};
+
+// 43. (z10) a BARE BUILTIN storing through a pointer argument: `mcpy` of a struct holding `@x` over the target
+func:lent_bare_builtin = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS:w = PS{ p: @x, k: 1i64 };
+    PS->:sp = @v;
+    discard(mcpy(sp =>! wild any->, (@w) =>! wild any->, 16i64));
+    pass (<-sp);
+};
+
+// --- THE CALLS THE LANGUAGE MAKES WITH NO CALL NODE, in a function that therefore LENDS (NITPICK-BORROW-001 at the read) ---
+struct:IT = { int64->:p; int64:k; };
+impl:IT:Iterator = {
+    assoc:Item = int64;
+    func:next = int64?(IT->:self) never fails {
+        self.p = @(self.k);
+        if (self.k >= 3i64) { pass NIL; }
+        self.k = self.k + 1i64;
+        pass self.k;
+    };
+};
+struct:PT = { PS->:dst; int64->:src; };
+impl:PT:ToString = {
+    func:to_string = string(PT:self) never fails {
+        self.dst.p = self.src;
+        pass "t";
+    };
+};
+// 44. (f1n) a `for` over an `Iterator` BY VALUE calls `next(@it)`, and this `next` stores `@(self.k)` into `self.p`: the
+//     iterator's copy handed back through `sp = @it` carries the dead frame's address
+func:lent_for_named = IT(int64->:ext) never fails {
+    IT:it = IT{ p: ext, k: 0i64 };
+    IT->:sp = @it;
+    int64:s = 0i64;
+    for (int64:v in it) { s = s + v; }
+    pass (<-sp);
+};
+// 45. (f1i) the same, the read inline
+func:lent_for_inline = IT(int64->:ext) never fails {
+    IT:it = IT{ p: ext, k: 0i64 };
+    int64:s = 0i64;
+    for (int64:v in it) { s = s + v; }
+    pass (<-(@it));
+};
+// 46. (t1n) a template `&{ h }` calls `to_string(h)`, `h` BY VALUE, and this `to_string` stores `self.src` into
+//     `self.dst.p` (DEF-390's by-value holder): the copy of `v` handed back through `sp` carries `@x`
+func:lent_tmpl_named = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @v;
+    PT:h = PT{ dst: sp, src: @x };
+    string:t = `&{ h }`;
+    if (t.len == 0i64) { pass PS{ p: ext, k: 0i64 }; }
+    pass (<-sp);
+};
+// 47. (t1i) the same, the read inline
+func:lent_tmpl_inline = PS(int64->:ext) never fails {
+    int64:x = 41i64;
+    PS:v = PS{ p: ext, k: 2i64 };
+    PS->:sp = @v;
+    PT:h = PT{ dst: sp, src: @x };
+    string:t = `&{ h }`;
+    if (t.len == 0i64) { pass PS{ p: ext, k: 0i64 }; }
+    pass (<-(@v));
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int64:e = 5i64;
+    discard(raw marked_target(@e));
+    discard(raw marked_target_member(@e));
+    discard(raw repointed_rootless(@e));
+    discard(raw rootless_inline(@e));
+    discard(raw repointed_by_call(@e));
+    discard(raw repointed_by_callee(@e));
+    discard(raw repointed_by_claim(@e));
+    discard(raw repointed_back_edge(@e));
+    discard(raw repointed_in_defer(@e));
+    discard(raw target_back_edge(@e));
+    discard(raw target_later(@e));
+    discard(raw stored_by_callee(@e));
+    discard(raw stored_by_claim(@e));
+    discard(raw param_stored_by_name(PS{ p: @e, k: 2i64 }));
+    discard(raw param_stored_by_callee(PS{ p: @e, k: 2i64 }));
+    discard(raw param_stored_by_claim(PS{ p: @e, k: 2i64 }));
+    discard(raw alias_store(@e));
+    discard(raw alias_store_whole(@e));
+    discard(raw alias_store_field(@e));
+    await holds_recv() ?| NIL;
+    await holds_arg() ?| NIL;
+    await redef_recv() ?| NIL;
+    await redef_arg() ?| NIL;
+    await addr_taken_recv() ?| NIL;
+    await addr_taken_arg() ?| NIL;
+    await copy_recv() ?| NIL;
+    await copy_arg() ?| NIL;
+    discard(result_literal_view() ?| 0i64);
+    discard(pass_view() ?| 0i64);
+    discard(raw lent_field_callee(@e));
+    discard(raw lent_field_method(@e));
+    discard(raw lent_auto_deref(@e));
+    discard(raw lent_call_result(@e));
+    discard(raw lent_array_elem(@e));
+    discard(raw lent_inline_deref(@e));
+    discard(raw lent_byval_holder(@e));
+    discard(raw lent_two_level(@e));
+    discard(raw lent_method_two_level(@e));
+    discard(raw lent_copy_road(@e));
+    discard(raw lent_copy_method(@e));
+    discard(raw lent_copy_two_level(@e));
+    discard(raw lent_builtin_method(@e));
+    discard(raw lent_bare_builtin(@e));
+    discard(raw lent_for_named(@e));
+    discard(raw lent_for_inline(@e));
+    discard(raw lent_tmpl_named(@e));
+    discard(raw lent_tmpl_inline(@e));
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

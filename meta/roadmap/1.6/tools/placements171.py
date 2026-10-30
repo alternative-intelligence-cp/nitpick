@@ -22,7 +22,21 @@ CLAUDE.md's queue bullet (nitpick-libs_32's FYI of 2026-10-30); this reads both 
 --table base: the table of b122540's queue (2026-10-29's order, 171 first and 174 last), the rows check skipped, for a run
 against that tree's bullet (`--claude` a copy of b122540's CLAUDE.md): it fails on DEF-345 alone, mentioned inside landing
 174's segment ("implemented in 171") and placed at 171. --control: the table with DEF-357 moved from the old list's landing to
-DEF-333's landing -- it must fail (rows and queue alike). Exit 0 when every check holds, 1 otherwise."""
+DEF-333's landing -- it must fail (rows and queue alike). Exit 0 when every check holds, 1 otherwise.
+
+[2026-10-30, landing 172 (nitpick-compiler_50):] the table follows the queue past landing 172: DEF-364, DEF-365, DEF-378 and
+DEF-383 out of it (FIXED), DEF-386 and DEF-387 placed at DEF-312's landing (management_7, 11:42:38), DEF-388 at the Result-fields
+group's (12:05:42) and DEF-389 at DEF-333's (12:30:58). Run against b554096's bullet (`--claude` a copy of b554096's CLAUDE.md,
+the new table) it fails on DEF-386 to DEF-389 alone, the four rows landing 172 places, mentioned in no segment there.
+
+[2026-10-30, landing 172, R1's commit (nitpick-compiler_50):] the queue is NUMBERED again at landing 172's cut (management_7,
+14:05:38: "Renumber CLAUDE.md's queue as at 07:03") -- landing 173 the Result-fields group's, 174 the old list's, 175 DEF-333's,
+176 DEF-312's, 177 DEF-318's, the LOW three after 177 --, so the table's slots are those numbers and each row's last PLACED note
+names its number; DEF-390 and DEF-391 are placed at 176 (management_7, 14:13:20 and 14:31:25). The MARKERS stay, to read a
+bullet written by name; the control moves DEF-357 from 174 to 175.
+
+[2026-10-30, landing 172, the replacement's commit (nitpick-compiler_50):] DEF-392 is placed at 176 with
+DEF-390 and DEF-391 (management_5, 16:12:12)."""
 import os, re, sys
 
 W = sys.argv[1]
@@ -34,9 +48,9 @@ CONTROL = '--control' in ARGS
 # the named slots past landing 172 that cut the bullet (management_7, 2026-10-30 09:52:11 and 09:56:11)
 MARKERS = ["the Result-fields group's landing", "the old list's landing", "DEF-333's landing", "DEF-312's landing",
            "DEF-318's landing"]
-SLOTS = ['landing 171', 'landing 172', 'landing 173', 'landing 174', 'landing 175', 'LOW after landing 174',
-         'LOW after landing 175', 'unplaced', 'M3', 'after M3', 'after DEF-286', "step 3d's rest"] + MARKERS + [
-         "LOW after DEF-318's landing"]
+SLOTS = ['landing 171', 'landing 172', 'landing 173', 'landing 174', 'landing 175', 'landing 176', 'landing 177',
+         'LOW after landing 174', 'LOW after landing 175', 'LOW after landing 177', 'unplaced', 'M3', 'after M3',
+         'after DEF-286', "step 3d's rest"] + MARKERS + ["LOW after DEF-318's landing"]
 
 def table(spec):
     t = {}
@@ -46,15 +60,18 @@ def table(spec):
     return t
 
 # management_7's queue, 2026-10-30 06:59 (ruling (b)), confirmed 07:10; DEF-379 at 08:39:44, DEF-380 to DEF-384 at 09:08:19;
-# DEF-385, the Result-fields group's own landing and the queue past 172 keyed to the defects at 09:52:11 and 09:56:11.
+# DEF-385, the Result-fields group's own landing and the queue past 172 keyed to the defects at 09:52:11 and 09:56:11; landing
+# 172 LANDED (DEF-364, DEF-365, DEF-378, DEF-383); DEF-386 at 11:20:11 and DEF-387 at 11:42:38 (DEF-312's landing), DEF-388 at
+# 12:05:42 (the Result-fields group's), DEF-389 at 12:30:58 (DEF-333's, with DEF-384).
+# R1's commit: the slots numbered at landing 172's cut (management_7, 14:05:38), DEF-390 and DEF-391 at 176 (14:13:20, 14:31:25).
+# The replacement's commit: DEF-392 at 176 (management_5, 16:12:12).
 NEW = table([
-    ('landing 172', [364, 365, 378, 383]),
-    ("the Result-fields group's landing", [380, 381, 382, 385]),
-    ("the old list's landing", [344, 345, 347, 349, 353, 354, 355, 356, 357]),
-    ("DEF-333's landing", [333, 334, 335, 336, 384]),
-    ("DEF-312's landing", [312, 348, 350, 325]),
-    ("DEF-318's landing", [318, 319, 320, 321, 322, 323]),
-    ("LOW after DEF-318's landing", [351, 352, 358]),
+    ('landing 173', [380, 381, 382, 385, 388]),
+    ('landing 174', [344, 345, 347, 349, 353, 354, 355, 356, 357]),
+    ('landing 175', [333, 334, 335, 336, 384, 389]),
+    ('landing 176', [312, 348, 350, 325, 386, 387, 390, 391, 392]),
+    ('landing 177', [318, 319, 320, 321, 322, 323]),
+    ('LOW after landing 177', [351, 352, 358]),
     ('unplaced', [369, 370, 375, 376, 377, 379]),
     ('M3', [298, 299, 313]),
     ('after M3', [286]),
@@ -76,7 +93,7 @@ BASE = table([
 ])
 T = dict(BASE if MODE == 'base' else NEW)
 if CONTROL:
-    T[357] = "DEF-333's landing"
+    T[357] = 'landing 175'
 
 fails = []
 def fail(msg):

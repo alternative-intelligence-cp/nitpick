@@ -85,6 +85,12 @@ pub struct:Escape = {
     // and there is nothing to reset between them.
     wild bool->:holds;
     int32:holds_count;
+    // A POINTER LOCAL REDEFINED AFTER ITS DECLARATION (DEF-378, landing 172), keyed as `holds`
+    // is: assigned again, or its address taken (a store through `@p` may point it anywhere).
+    // A chain does not name every target -- the address of a call result's pointee has no
+    // root to record -- so `deref_targets_hold` follows only the declaration of a pointer
+    // local never redefined. Flipped once, a change to the fixpoint as a mark is.
+    wild bool->:redef;
 
     // MARKING RUNS TO A FIXPOINT BEFORE ANYTHING IS REPORTED, and these two are
     // what makes that possible.
@@ -233,6 +239,23 @@ pub struct:Escape = {
     // over a `move Stash:b` compiled, the returned struct pointing into the
     // dead frame (the direct store `b.p = @k` had been BORROW-002 all along).
     wild bool->:pholds;
+    // DOES THIS FUNCTION LEND (R1 of management's review of 99f83e7, landing 172)? Some call in
+    // its body is handed an argument or a receiver that carries a borrow of this frame. Such a
+    // callee may store a borrow of this frame into storage a pointer of this frame names, and its
+    // store matrix does not attribute every store to its target (a pointer field, a call's result,
+    // an array element, a by-value holder, a destination two levels down: DEF-390), so
+    // `deref_targets_hold` answers yes in a function that lends. EVERY CALL COUNTS -- a call, a method
+    // call, a `#` or bare builtin, and the two calls the language makes with no call node, a `for` over
+    // an `Iterator` (`next(@it)`, D-166) and a template (`to_string`, D-168) --, A BUILTIN'S
+    // INCLUDED: an atomic's `store` writes its argument into the receiver's storage (z9: `sp.a.store(@x)`
+    // over an `atomic<int64->>` field) and `mcpy` copies through its pointer arguments (z10), so D-249's
+    // "a builtin stores nothing through an argument", which `record_dest_refs` reads, does not hold here
+    // (by their shapes `swap`, `compare_exchange` and `mmov` too; an atomic's own store and load are
+    // DEF-391). A SPAWN of an `async` callee does not mark: `escape_spawn_args` refuses every argument
+    // that carries a borrow of this frame but a sanctioned `Mutex`/`shared_arena` pointer, whose interior
+    // is read only through a builtin method call, which lends. A pipe is PARSE-014 (D-362). Keyed by the
+    // function's declaration, as `pholds` is; flipped once, a change to the fixpoint as a mark is.
+    wild bool->:lends;
     int32:decl_count;
     int32:cur_fn;         // the function whose body is being walked, or -1
     List<int32>:unresolved;   // the slice nodes refused as UNRESOLVED (DEF-317's fuel, landing 166), read by the aliasing pass
@@ -251,6 +274,7 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
     int64:size = (raw ast_stmt_count(ast)) => int64;
     if (size < 1i64) { size = 1i64; }
     wild int8->:mem = alloc(size * #size_of<bool>());
+    wild int8->:rdmem = alloc(size * #size_of<bool>());
     wild int8->:hmem = alloc(size * #size_of<int32>());
     wild int8->:pmem = alloc(size * #size_of<bool>());
     int64:dsize = (raw ast_decl_count(ast)) => int64;
@@ -263,6 +287,7 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
     wild int8->:vpmem = alloc(dsize * #size_of<int32>());
     wild int8->:ovmem = alloc(dsize * #size_of<int32>());
     wild int8->:phmem = alloc(dsize * #size_of<bool>());
+    wild int8->:lnmem = alloc(dsize * #size_of<bool>());
     int64:esize = (raw ast_expr_count(ast)) => int64;
     if (esize < 1i64) { esize = 1i64; }
     wild int8->:pmmem = alloc(esize * #size_of<int32>());
@@ -272,7 +297,7 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
 
     Escape:x = Escape{ ast: ast, tab: tab, types: types, etypes: etypes,
                        diags: diags, tr: tr, holds: mem =>! wild bool->,
-                       holds_count: size =>! int32,
+                       holds_count: size =>! int32, redef: rdmem =>! wild bool->,
                        reporting: false, changed: false,
                        givex: raw list_init::<int32>(8i64),
                        vr_head: hmem =>! wild int32->, vr_ptr: pmem =>! wild bool->,
@@ -301,11 +326,12 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                        mu_path: raw list_init::<int32>(64i64),
                        mu_next: raw list_init::<int32>(64i64),
                        override_of: ovmem =>! wild int32->, impls: impls,
-                       pholds: phmem =>! wild bool->,
+                       pholds: phmem =>! wild bool->, lends: lnmem =>! wild bool->,
                        decl_count: dsize =>! int32, cur_fn: 0i32 - 1i32,
                        unresolved: raw list_init::<int32>(4i64) };
     for (int64:i in 0i64...size) {
         x.holds[i] = false;
+        x.redef[i] = false;
         x.vr_head[i] = 0i32 - 1i32;
         x.vr_ptr[i] = false;
     }
@@ -315,6 +341,7 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
         x.vp_head[j] = 0i32 - 1i32;
         x.override_of[j] = 0i32;
         x.pholds[j] = false;
+        x.lends[j] = false;
     }
     // EVERY IMPL METHOD'S TRAIT METHOD, from the impl table (the reach
     // analysis's walk inverted, DEF-86): an impl of a trait names the trait's
@@ -3537,6 +3564,38 @@ func:escape_mark = NIL(Escape->:x, int32:stmt_index) never fails {
     pass NIL;
 };
 
+// A POINTER LOCAL'S REDEFINITION (`redef`): flipped once, so `changed` is set as
+// `escape_mark` sets it -- a dereference read before the redefinition was walked answered
+// from the declaration, and the next round answers again. An untyped name is marked.
+func:escape_mark_redef = NIL(Escape->:x, ExprId:e) never fails {
+    ExprNode:n = raw ast_expr(x.ast, e);
+    if ((n.kind != ExprKind.ExprIdentifierExpr) || (n.a == 0i32)) { pass NIL; }
+    Symbol:s = raw symtab_get(x.tab, n.a);
+    if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
+    if ((s.origin < 0i32) || (s.origin >= x.holds_count)) { pass NIL; }
+    int32:t = raw exprtypes_get(x.etypes, e);
+    if (t != 0i32) { if ((raw type_kind(x.types, t)) != (raw TY_POINTER())) { pass NIL; } }
+    if (x.redef[s.origin => int64]) { pass NIL; }
+    x.redef[s.origin => int64] = true;
+    x.changed = true;
+    pass NIL;
+};
+
+// A FUNCTION THAT LENDS (`lends`, R1 of the review of 99f83e7): a call -- any call, a bare builtin and
+// a builtin method among them (z9, z10), and the two the language makes with no call node, a `for`'s
+// `next(@it)` and a template's `to_string` (the delta review of ee62e5b) -- is handed a borrow of this
+// frame; a spawn is not counted (the field says why). Flipped once, so `changed` is set as
+// `escape_mark` sets it: a dereference read before the call was walked answered from the target's
+// mark, and the next round answers again.
+func:escape_mark_lends = NIL(Escape->:x, ExprId:call) never fails {
+    if ((x.cur_fn < 0i32) || (x.cur_fn >= x.decl_count)) { pass NIL; }
+    if (raw expr_is_none(call)) { pass NIL; }
+    if (x.lends[x.cur_fn => int64]) { pass NIL; }
+    x.lends[x.cur_fn => int64] = true;
+    x.changed = true;
+    pass NIL;
+};
+
 // How many marking rounds before the analysis gives up and refuses.
 //
 // One round settles a program whose borrows are written before they are used; each
@@ -3804,6 +3863,14 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) never fails {
         // legs). The refusal below is unchanged: a borrow the binding could carry.
         ExprId:fit = raw stmt_for_iter(x.ast, s);
         bool:fb = raw escape_expr(x, fit, raw ESCAPE_DEPTH());
+        // THE LOOP CALLS `next(@it)` (D-166; management's delta review of ee62e5b, 2026-10-30): a `for` over
+        // an `Iterator` BY VALUE hands `next` the iterable's ADDRESS, a borrow of this frame, as the explicit
+        // `it.next()` hands its auto-ref receiver -- so the function LENDS (f1n, f1i: `next` storing
+        // `@(self.k)` into `self.p`, then `pass (<-sp)` over `sp = @it`, silent and 13 at both legs where
+        // the explicit spelling and landing 171 refuse it). A range, a slice and an array are indexed and
+        // call nothing; a pointer is handed as itself, judged by its own walk (`fb`, refused below when it
+        // carries a borrow). An untyped iterable lends: the closed direction.
+        if (raw for_iter_lends(x, fit)) { drop escape_mark_lends(x, fit); }
         if (fb && (raw for_binding_can_carry(x, fit))) {
             ExprNode:fnode = raw ast_expr(x.ast, fit);
             drop escape_err(x, raw BORROW_UNTRACKED(),
@@ -3889,7 +3956,22 @@ func:escape_return_value = NIL(Escape->:x, StmtNode:s) never fails {
     if (raw expr_is_none(v)) { pass NIL; }
     // THE FUNCTION'S SUMMARY (D-325) grows from what it hands back, whatever
     // the verdict below says of it.
-    drop record_summary(x, v);
+    // ... AND `return Result{value: v};` HANDS BACK `v`, as `pass v;` does (DEF-383, landing
+    // 172): the summary grows from the literal's value -- its error, for `Result{err: e}`, as
+    // `fail e;` -- so the long form gets `pass`'s summary, `record_summary`'s moved-place
+    // reading among it. Until this landing it read the whole literal: a store into a `move`
+    // parameter's view went unread (a use-after-free, 13 at both legs, where the `pass` twin
+    // is BORROW-015) and an address carried up was over-refused. The verdict below stays on
+    // the literal, where its report stands.
+    ExprId:sv = v;
+    if (s.kind == StmtKind.StmtReturnStmt) {
+        ExprNode:svn = raw ast_expr(x.ast, v);
+        if (svn.kind == ExprKind.ExprResultLiteralExpr) {
+            sv = raw expr_lhs(svn);
+            if (raw expr_is_none(sv)) { sv = raw expr_rhs(svn); }
+        }
+    }
+    drop record_summary(x, sv);
     if (raw verdict_borrowy(x, v, raw escape_expr(x, v, raw ESCAPE_DEPTH()))) {
         // A SECOND LOOK BEFORE REFUSING (0.8.1): a value whose borrows are all
         // rooted at PARAMETERS may travel up one frame — a parameter's target
@@ -4696,6 +4778,7 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
     // The target is walked too: `rec[raw f(@i)] = 0i32` can break a rule inside
     // an index expression that no rule about the assignment itself would catch.
     discard(raw escape_expr(x, tgt, raw ESCAPE_DEPTH()));
+    drop escape_mark_redef(x, tgt);
 
     if (raw expr_is_none(val)) { pass NIL; }
 
@@ -5395,10 +5478,12 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
     // to be a borrow.
     if (n.kind == ExprKind.ExprAddressOfExpr) {
         discard(raw escape_expr(x, raw expr_operand(n), d));
+        drop escape_mark_redef(x, raw expr_operand(n));
         pass true;
     }
     if (n.kind == ExprKind.ExprBorrowExpr) {
         discard(raw escape_expr(x, raw expr_operand(n), d));
+        drop escape_mark_redef(x, raw expr_operand(n));
         pass true;
     }
 
@@ -5410,11 +5495,24 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
     // REACHING INTO A BORROW YIELDS A BORROW OF THE SAME FRAME. `rec.field` and
     // `arr[i]` did not make anything live longer, so a `.` cannot launder
     // second-class into first-class.
+    // ... WHEN THE PART CAN HOLD AN ADDRESS (DEF-378, landing 172): `v[0i64]` and `v.len` read
+    // through a live view are a byte and a length, and a value whose type holds no address
+    // carries no borrow -- `verdict_borrowy`'s question, asked here of the part read. Until
+    // this landing the part took the view's verdict whatever its type, so `drop lookw(W{ k:
+    // (v[0i64] => int64) })` over plain data was refused at a spawn (o1a, o2a, o7a, o8a).
+    // THROUGH A POINTER the part is the POINTEE's (the auto-dereference, D-098) and asks what
+    // `<-` asks (`deref_targets_hold`, below): `sp.s` and `(<-sp).s` are one read.
     if (n.kind == ExprKind.ExprMemberAccessExpr) {
-        pass (raw escape_expr(x, raw expr_operand(n), d));
+        ExprId:mop = raw expr_operand(n);
+        bool:mv = raw escape_expr(x, mop, d);
+        int32:mt = raw exprtypes_get(x.etypes, mop);
+        if (mv && (mt != 0i32)) {
+            if ((raw type_kind(x.types, mt)) == (raw TY_POINTER())) { mv = raw deref_targets_hold(x, mop); }
+        }
+        pass (raw verdict_borrowy(x, id, mv));
     }
     if (n.kind == ExprKind.ExprSafeNavExpr) {
-        pass (raw escape_expr(x, raw expr_operand(n), d));
+        pass (raw verdict_borrowy(x, id, raw escape_expr(x, raw expr_operand(n), d)));
     }
     if (n.kind == ExprKind.ExprIndexExpr) {
         bool:base = raw escape_expr(x, raw expr_lhs(n), d);
@@ -5428,7 +5526,7 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
         if (!(raw expr_is_none(raw view_place(x, n)))) {
             if (raw view_verdict(x, raw expr_lhs(n), n.span)) { pass true; }
         }
-        pass base;
+        pass (raw verdict_borrowy(x, id, base));
     }
 
     // `<-` YIELDS THE POINTEE, WHICH IS A BORROW ONLY WHEN THE POINTEE IS ONE.
@@ -5443,11 +5541,17 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
     // a view of a local is the view itself, as `pass hp.s;` is; the arm asked for a
     // pointer TYPE alone, where `verdict_borrowy` asks `type_holds_pointer`, so the
     // explicit spelling returned the view of the dead frame (f1a, 113 at both legs).
+    // ... AND THE POINTER BEING A BORROW IS NOT THE POINTEE HOLDING ONE (DEF-378, landing 172):
+    // `SC->:sp = @w; … (move(<-sp)).takec()` copies `w`, which holds a borrow only if `w`'s
+    // own mark says so -- `type_holds_pointer` answers yes for a `string`, so for nearly every
+    // owner, and the remedy landing 170's owner message names was refused (u1, u2). The
+    // pointer's targets are asked (`deref_targets_hold`).
     if (n.kind == ExprKind.ExprDerefExpr) {
         if (!(raw escape_expr(x, raw expr_operand(n), d))) { pass false; }
         int32:ty = raw exprtypes_get(x.etypes, id);
         if (ty == 0i32) { pass true; }
-        pass (raw type_holds_pointer(x.types, ty, 8i32));
+        if (!(raw type_holds_pointer(x.types, ty, 8i32))) { pass false; }
+        pass (raw deref_targets_hold(x, raw expr_operand(n)));
     }
 
     // THE SPAWN (D-180, wired at 1.1.8): `drop f(…)` on an `async` callee
@@ -5474,10 +5578,18 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
                         // are the callee's parameters from position 0, `w` the by-value `Self:self`.
                         // With the name read as a receiver, `w` was judged by parameter 1's mode and the
                         // legal `move(n)` by a parameter that does not exist (f4c, f4d).
+                        // AND ONLY A TRAIT'S NAME IS A QUALIFIER (landing 172, DEF-362's hardening): any other
+                        // operand with no type fails CLOSED -- its crossing is judged by nobody otherwise.
                         ExprId:sp_rcv = raw expr_operand(sp_n);
                         if ((raw exprtypes_get(x.etypes, sp_rcv)) != 0i32) {
                             drop escape_spawn_recv(x, sp_op, sp_rcv, d);
                             pos_base = 1i32;
+                        } else {
+                            if (!(raw operand_names_trait(x, sp_rcv))) {
+                                drop escape_err(x, raw BORROW_INTERNAL(),
+                                    "this spawned method's operand before the dot has no recorded type and is not a trait's name, so its crossing cannot be judged (DEF-362's hardening): the closed direction -- report it with the construct at this position",
+                                    sp_n.span);
+                            }
                         }
                     }
                 }
@@ -5616,6 +5728,17 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
         pass ((raw list_pop(@x.givex)) != 0i32);
     }
 
+    // A TEMPLATE CALLS `to_string` ON EACH ITEM (D-168; management's delta review of ee62e5b, 2026-10-30),
+    // handing it BY VALUE as `h.to_string()` hands its receiver: an item that carries a borrow of this
+    // frame is a borrow handed to a call, so the function LENDS (t1n, t1i: a by-value `to_string` storing
+    // `self.src` into `self.dst.p`, then `pass (<-sp)`, silent and 13 at both legs where the explicit
+    // spelling and landing 171 refuse it). The items are walked as every other kind's slots are.
+    if (n.kind == ExprKind.ExprTemplateLiteral) {
+        bool:tb = raw escape_children(x, n, d);
+        if (tb) { drop escape_mark_lends(x, id); }
+        pass tb;
+    }
+
     // EVERYTHING ELSE IS DRIVEN BY `expr_shape`, for the reason `resolve_expr`
     // gives: walking slot `a` on the strength of a comment is how a literal's
     // width suffix came to be resolved as an expression.
@@ -5650,6 +5773,20 @@ func:for_binding_can_carry = bool(Escape->:x, ExprId:iter) never fails {
     if (k == (raw TY_RANGE())) { pass (raw type_holds_pointer(x.types, raw type_elem(x.types, t), raw CARRY_FUEL())); }
     if (k == (raw TY_SLICE())) { pass (raw type_holds_pointer(x.types, raw type_elem(x.types, t), raw CARRY_FUEL())); }
     if (k == (raw TY_ARRAY())) { pass (raw type_holds_pointer(x.types, raw type_elem(x.types, t), raw CARRY_FUEL())); }
+    pass true;
+};
+
+// Does a `for` over `iter` call `next` with the iterable's address (D-166)? An `Iterator` by value does;
+// a range, a slice and an array are indexed, and a pointer is handed as itself. Untyped answers yes.
+func:for_iter_lends = bool(Escape->:x, ExprId:iter) never fails {
+    if (raw expr_is_none(iter)) { pass false; }
+    int32:t = raw exprtypes_get(x.etypes, iter);
+    if (t == 0i32) { pass true; }
+    int32:k = raw type_kind(x.types, t);
+    if (k == (raw TY_RANGE())) { pass false; }
+    if (k == (raw TY_SLICE())) { pass false; }
+    if (k == (raw TY_ARRAY())) { pass false; }
+    if (k == (raw TY_POINTER())) { pass false; }
     pass true;
 };
 
@@ -5854,6 +5991,12 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
         }
     }
 
+    // A FUNCTION THAT LENDS (R1 of the review of 99f83e7, landing 172): a callee handed a borrow
+    // of this frame may store one where no mark of the target records it (DEF-390), and
+    // `deref_targets_hold` answers yes for the rest of the function's walk. The calls with no call
+    // node -- a `for`'s `next(@it)`, a template's `to_string` -- mark at their own arms.
+    if (borrowed > 0i32) { drop escape_mark_lends(x, id); }
+
     // WHAT THE CALL MAY HAVE STORED INTO EACH DESTINATION (D-325): the callee's
     // store matrix, argument by argument -- independent of rule B's type test,
     // which decides the MARKS (an escape question), not the views.
@@ -5879,6 +6022,50 @@ func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
     // walk its arguments as an unknown callee's.
     if (raw call_is_bare_builtin(x, id)) { pass true; }
     pass (raw call_result_holds(x, id, recv, start, count, depth));
+};
+
+// DOES THE STORAGE A FRAME POINTER NAMES HOLD A BORROW (DEF-378, landing 172)? `<-p` is a
+// copy of what `p` points at, so it holds a borrow of this frame exactly when the binding
+// `p`'s address names does -- `<-(@w)` is `w` to `escape_binding`. The address is read
+// where it is WRITTEN: inline, or as the declaration of a pointer local never redefined
+// (`redef`), through a local declared from another. Anything else -- a local assigned
+// again, a call's result, a cast, a binding of another kind, an address with no root --
+// answers yes, the closed direction. The chain is not asked: it does not name every target
+// (`sp = @(<-(raw idp(@w)));` records nothing, the cell d1).
+// ... AND A FUNCTION THAT LENDS answers yes (`lends`; R1 of management's review of 99f83e7): the
+// target's mark records the frame's own writes -- each store of a frame borrow through a pointer is
+// BORROW-002 -- but not every callee's store into it (DEF-390: a pointer field, a call's result, an
+// array element, a by-value holder, a destination two levels down, a copy of the pointer handed in
+// a holder) nor a builtin's (an atomic's `store`, `mcpy`), so `<-sp` over `sp = @v` read `v`'s unset
+// mark after `setp(hh.ptr, @x)` and handed back the dead `x` (13 at both legs) where landing 171
+// refused it. An unknown function answers yes. A STOPGAP: with DEF-390's fix the rule narrows to
+// the stores no matrix attributes; until then a lending function's dereference is refused even where
+// the callee stored the caller's own pointer (r1t, r1mt, r1x1t, r1x2t, y3t), as landing 171 refused it.
+func:deref_targets_hold = bool(Escape->:x, ExprId:pe) never fails {
+    if ((x.cur_fn < 0i32) || (x.cur_fn >= x.decl_count)) { pass true; }
+    if (x.lends[x.cur_fn => int64]) { pass true; }
+    ExprId:cur = pe;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass true; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if ((n.kind == ExprKind.ExprAddressOfExpr) || (n.kind == ExprKind.ExprBorrowExpr)) {
+            int32:r = raw root_symbol(x, raw expr_operand(n));
+            if (r == 0i32) { pass true; }
+            Symbol:rs = raw symtab_get(x.tab, r);
+            if (rs.origin_kind == (raw SYM_DECL())) { pass (raw escape_param_holds(x, rs.origin)); }
+            if (rs.origin_kind != (raw SYM_STMT())) { pass true; }
+            pass (raw escape_holds(x, rs.origin));
+        }
+        if ((n.kind != ExprKind.ExprIdentifierExpr) || (n.a == 0i32)) { pass true; }
+        Symbol:s = raw symtab_get(x.tab, n.a);
+        if (s.origin_kind != (raw SYM_STMT())) { pass true; }
+        if ((s.origin < 0i32) || (s.origin >= x.holds_count)) { pass true; }
+        if (x.redef[s.origin => int64]) { pass true; }
+        StmtNode:ds = raw ast_stmt(x.ast, StmtId{ index: s.origin });
+        if (ds.kind != StmtKind.StmtVarDeclStmt) { pass true; }
+        cur = raw stmt_decl_init(x.ast, ds);
+    }
+    pass true;
 };
 
 // DOES THIS CALL'S RESULT HOLD A BORROW OF THIS FRAME'S STORAGE (D-326)? The
@@ -6695,9 +6882,11 @@ pub func:callee_is_async = bool(Escape->:x, ExprId:call) never fails {
 func:escape_spawn_recv = NIL(Escape->:x, ExprId:call, ExprId:recv, int32:depth) never fails {
     if (raw expr_is_none(recv)) { pass NIL; }
     // THE RECEIVER IS WALKED (F1 of the review of landing 168, DEF-359): a pick expression standing
-    // here declares views in its arm, and nobody entered it -- the verdict is discarded, the
-    // receiver's CROSSING is judged below.
-    discard(raw escape_expr(x, recv, depth));
+    // here declares views in its arm, and nobody entered it -- the receiver's CROSSING is judged below,
+    // and the walk's VERDICT with it (DEF-364, landing 172: a by-value receiver that holds a borrow,
+    // `H{ p: @d }` as `self`, named or inline, crossed with the verdict thrown away where the argument
+    // twin `drop rdf(h)` is refused -- f1a, f1b: the task read the owner's rewritten string, 114/114).
+    bool:held = raw escape_expr(x, recv, depth);
     int32:rxt = raw exprtypes_get(x.etypes, recv);
     if (rxt == 0i32) { pass NIL; }
     ExprNode:rn = raw ast_expr(x.ast, recv);
@@ -6741,7 +6930,7 @@ func:escape_spawn_recv = NIL(Escape->:x, ExprId:call, ExprId:recv, int32:depth) 
         }
         if (owns) {
             drop escape_err(x, raw BORROW_SPAWNED(),
-                "a by-value receiver reached THROUGH A POINTER crosses the spawn as a copy of the pointee (DEF-360, DEF-363; D-180, TYPE-046): an owning pointee's header would be held by the task while the pointee keeps the storage, and a write, move, destroy or reallocation of it before the join frees what the task reads -- declare the receiver `move` and transfer the pointee, `(move(<-p)).m()`, or a clone of it, `((<-p).clone() ?! E).m()`",
+                "a by-value receiver reached THROUGH A POINTER crosses the spawn as a copy of the pointee (DEF-360, DEF-363; D-180, TYPE-046): an owning pointee's header would be held by the task while the pointee keeps the storage, and a write, move, destroy or reallocation of it before the join frees what the task reads -- declare the receiver `move` and hand it a clone of the pointee, `((<-p).clone() ?! E).m()`, or -- in a function that hands no borrow to a call -- transfer the pointee, `(move(<-p)).m()`",
                 rn.span);
             pass NIL;
         }
@@ -6753,7 +6942,23 @@ func:escape_spawn_recv = NIL(Escape->:x, ExprId:call, ExprId:recv, int32:depth) 
         pass NIL;
     }
     drop escape_spawn_byval(x, call, 0i32, recv, rxt, rn);
+    if (held) {
+        drop escape_err(x, raw BORROW_SPAWNED(),
+            "a by-value receiver that holds a borrow cannot cross a spawn (DEF-364; D-004 rule 4, narrowed by D-180): the task receives a copy of the receiver and reads through the address it holds while the owner writes, moves or frees what it points at, at a suspension point it did not choose -- hand the task the values it reads, or a sanctioned pointer",
+            rn.span);
+    }
     pass NIL;
+};
+
+// Is this operand a TRAIT's name, `Tr` of `drop Tr.m(w, n)` (D-172)? The one operand before a spawned method's dot
+// that has no recorded type.
+func:operand_names_trait = bool(Escape->:x, ExprId:op) never fails {
+    ExprNode:opn = raw ast_expr(x.ast, op);
+    if (opn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
+    if (opn.a == 0i32) { pass false; }
+    Symbol:s = raw symtab_get(x.tab, opn.a);
+    if (s.origin_kind != (raw SYM_DECL())) { pass false; }
+    pass ((raw ast_decl(x.ast, DeclId{ index: s.origin })).kind == DeclKind.DeclTraitDecl);
 };
 
 // Is the callee's parameter at `idx` declared `move` (D-183)? The function TYPE cannot
@@ -6767,6 +6972,32 @@ func:spawn_param_is_move = bool(Escape->:x, ExprId:call, int32:idx) never fails 
     if (idx >= (raw fn_param_count(x.ast, d))) { pass false; }
     DeclNode:pd = raw ast_decl(x.ast, raw fn_param(x.ast, d, idx));
     pass (((raw param_quals(pd)) & (raw QUAL_MOVE())) != 0i32);
+};
+
+// DOES THIS TYPE HOLD A TYPE PARAMETER BY VALUE (DEF-365, landing 172)? A `T`, `Self` or an associated type,
+// or a kind that keeps one in its storage: an array's element, an Optional's, a Result's, an atomic's, a generic
+// struct's or enum's type arguments. A pointer or a slice owns nothing it reaches. No other kind is walked, and
+// not because none holds a parameter (this comment said so until R1's commit; C2 of the review of 99f83e7): a
+// `range<T>` is refused by the typer (TYPE-008; c2r), an `arena<T>` by value is an owner to `type_drops` and
+// refused as one below (c2a), a Channel crosses by design (D-181), and an owner of any other kind is refused by
+// `type_drops` below. Local to the spawn rule: `type_drops_recorded` is read everywhere and keeps its answers.
+// Past the fuel the answer is YES, the closed reading (DEF-54).
+func:spawn_type_holds_param = bool(TypeTable->:t, Ast->:ast, int32:ty, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass true; }
+    if (ty == 0i32) { pass false; }
+    int32:k = raw type_kind(t, ty);
+    if ((k == (raw TY_PARAM())) || (k == (raw TY_SELF())) || (k == (raw TY_ASSOC()))) { pass true; }
+    if ((k == (raw TY_ARRAY())) || (k == (raw TY_OPTIONAL())) || (k == (raw TY_RESULT())) || (k == (raw TY_ATOMIC()))) {
+        pass (raw spawn_type_holds_param(t, ast, raw type_elem(t, ty), fuel - 1i32));
+    }
+    if ((k == (raw TY_STRUCT())) || (k == (raw TY_ENUM()))) {
+        int32:n = raw type_args_count_of(t, ty);
+        int32:s = raw type_args_start_of(t, ty);
+        for (int32:i in 0i32...n) {
+            if (raw spawn_type_holds_param(t, ast, raw ast_id_at(ast, s, i), fuel - 1i32)) { pass true; }
+        }
+    }
+    pass false;
 };
 
 // A BY-VALUE OWNER CANNOT CROSS A SPAWN (DEF-340, landing 168): the child frame receives
@@ -6786,8 +7017,10 @@ func:escape_spawn_byval = NIL(Escape->:x, ExprId:call, int32:pos, ExprId:a, int3
     if ((raw type_kind(x.types, aty)) == (raw TY_CHANNEL())) { pass NIL; }
     // A TYPE PARAMETER IS AN OWNER HERE (F3 of the review of landing 168, DEF-361): `type_drops`
     // has no answer for a `T`, and the instance at `string` is never asked -- the closed direction
-    // (DEF-54); a `T: Copy` bound is the relaxation if it is readable here.
-    if ((raw type_kind(x.types, aty)) != (raw TY_PARAM())) {
+    // (DEF-54); a `T: Copy` bound is the relaxation if it is readable here. AND SO IS A TYPE THAT HOLDS
+    // ONE BY VALUE (DEF-365, landing 172): DEF-361 read the top-level kind alone, so `T?`, `T[n]`,
+    // `Result<T>` and a generic struct's or enum's instance crossed (f2a, f2d; t171/def365/).
+    if (!(raw spawn_type_holds_param(x.types, x.ast, aty, 64i32))) {
         if (!(raw type_drops(x.tr, aty, x.scope, 64i32))) { pass NIL; }
     }
     if (raw spawn_param_is_move(x, call, pos)) { pass NIL; }

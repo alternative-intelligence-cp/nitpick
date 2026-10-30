@@ -1,0 +1,82 @@
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 38:32
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 51:25
+// DEF-365 (landing 172): the `Self` and associated-type faces of a type that holds a type parameter by value at a spawn
+// -- `type_drops_recorded` has no TY_PARAM, TY_SELF or TY_ASSOC case, and DEF-361 read the top-level kind alone,
+// testing TY_PARAM, so a `Self` or a `T.Item` handed to a spawn by value crossed (silent on 170 and 171;
+// nitpick-libs_32's note (2) of 2026-10-30 02:44 named them UNMEASURED). Now `spawn_type_holds_param` answers YES for a
+// `Self` and an associated type as for a `T`, and the by-value rule refuses each unless the parameter is `move`
+// (NITPICK-BORROW-004 at the argument). The faces' other shapes are sites 21-26 of spawn_review_faces.npk; these two
+// stand ALONE in their file because each waits on a frontend change that refuses or retypes it -- a refusal from the
+// type checker would silence every analysis site of the file it lands in: site 1, `Self` by value in a trait's DEFAULT
+// body, is accepted by the frontend although TRAITS_REFERENCE does not license it (DEF-376, OPEN LOW: npkc refuses it
+// as NITPICK-EMIT-002, the frontend's own refusal owed), and site 2, a `T.Item` parameter instantiated at a concrete
+// type, is refused by npkc's instantiation (NITPICK-TYPE-001, "projects from a concrete type", and EMIT-002 -- DEF-377,
+// OPEN MEDIUM); neither reaches an executable, and this file is the checker's. The cells:
+// wt/51a/.internal/probes/t171/def365/ f2i, f2h. Landing 171's checker reports neither site.
+mod:spawn_self_assoc_byval;
+error:E1;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+thread async func:peekt<T> = NIL(T:x) joins J2 { await sleep(raw duration_ms(1i64)) ?| NIL; pass NIL; };
+trait:Seq = {
+    assoc:Item;
+    func:item = Item(Self:self) never fails;
+};
+struct:Src = { int64:k; };
+impl:Src:Seq = {
+    assoc:Item = string;
+    func:item = string(Src:self) never fails { pass string_concat("ab", "c"); };
+};
+thread async func:peeki<T: Seq> = NIL(T.Item:x) joins J2 { await sleep(raw duration_ms(1i64)) ?| NIL; pass NIL; };
+
+// 1. `Self` by value in a trait's default body, handed to a spawn by value (f2i)
+trait:Sp = {
+    func:k = int64(Self:self) never fails;
+    async func:spawnme = NIL(Self:self) {
+        {
+            drop peekt::<Self>(self);
+        }
+        pass NIL;
+    };
+};
+struct:Cv = { string:s; };
+impl:Cv:Sp = {
+    func:k = int64(Cv:self) never fails { pass self.s.len; };
+};
+
+// 2. an associated type, `T.Item`, bound to `string` by the impl, the owner re-assigned under the task (f2h)
+async func:generic_assoc_byval<T: Seq> = NIL(T:src, move T.Item:c) {
+    {
+        drop peeki::<T>(c);
+        c = raw src.item();
+    }
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    Cv:cv = Cv{ s: string_concat("ab", "c") };
+    await cv.spawnme() ?| NIL;
+    Src:sr = Src{ k: 1i64 };
+    await generic_assoc_byval::<Src>(sr, string_concat("de", "f")) ?| NIL;
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};
