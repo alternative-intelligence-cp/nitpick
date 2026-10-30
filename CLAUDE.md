@@ -8,42 +8,57 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   listener's and the fuzzer's findings, safety before correctness before performance. Cycles 0.0–1.5 are complete
   (`meta/roadmap/done/`); 1.4 made the compiler self-hosting (D-202) and 1.5 made the verification leg (`npkg verify`, the floor's
   specification and models, the schedule explorer).
-- **main = landing 168** — DEF-327 + DEF-337 + DEF-339 + DEF-340 (a pick EXPRESSION's arm has its parties wherever the pick stands -- an
-  initialiser, an assigned value or its target, `discard(…)`, a `pass` or `exit` operand, a condition, a `for` iterable, a counted argument,
-  a selector, a guard, a call argument, a binary operand, a nested pick, a struct literal's field -- so a write of the viewed root in the
-  arm is `NITPICK-BORROW-015` and a `$$m` claim there `-013` (DEF-327); a `give` under `if`, `while`, `for`, `loop`, `till` or a `when`'s
-  three clauses carries its view out of the pick, the root written after it `-015` (DEF-337); `drop recv.m(args)` and `drop mod.f(args)` are
-  spawns to both passes, the pointer receiver `NITPICK-BORROW-004`, the arguments lent, `-016` under the lend (DEF-339;
-  `async_method_bare.npk`'s DEF-149 control respelt to a by-value inherent method as management words it); a `string`, a `List` or a struct
-  holding one handed to a spawn BY VALUE, as an argument or as a receiver, whether or not the owner writes, is `-004` at the spawn -- it
-  crosses only into a `move` parameter, direction (A) of 2026-10-29 08:25:55 (DEF-340): 59 of 457 measured cells silent on 167 are refused
-  now, 47 of them reading freed or re-allocated bytes at both legs, no cell refused on 167 silent, no safe shape refused, five refusals of
-  run-time-clean programs accepted by (A)'s design (D-286), DEF-358 registered LOW (the emitter refuses a pick expression as a `for`
-  iterable giving an array); the pick prescan's first build bailed on the CUSTOM shapes, so a pick in a call argument and in a struct
-  literal's field stayed silent under it -- the second build walks them and fails closed on an unknown shape; the third build found
-  `prescan_stmt` walking the BODY slots alone of six statement kinds and the escape pass's `for` arm walking the iterable only under a type
-  question -- every slot of the three statement walkers is walked unguarded now, the slot table of `kindtable167.py` the mechanical check).
-  Before it, landing 167's dated-correction `meta:` commit (baebe12, docs only: the review of build 16's DEF-356 and DEF-357 registered, the
-  seventh over-refusal, D-366 for DEF-345, the queue re-ruled). Every landing's full paragraph — the defect, what was measured first, the
-  rule now, the tests, the sweep, the emission comparison, the manifest — is at the top of `meta/STATUS_HISTORY.md`, newest first; the cycle
-  history 0.0–1.5 follows it there. Read the newest few before planning work.
-- **The queue** (management_6's split ruling of 2026-10-29 16:48; landing 168 landed 2026-10-29): landing 169 = DEF-344 + DEF-347 + DEF-349
-  + DEF-353 + DEF-354 + DEF-355 + DEF-356 + DEF-357 (the review groups, HIGH but DEF-353 MEDIUM: an address carried into a struct field, a
-  copy, a callee-built struct or a call result raises no plain party beside a claim (DEF-344); a copy of a parameter's pointer PART, `<-pp`
-  or `hh.p`, enters no summary (DEF-347, DEF-342's residual); `push_call_view_party_in` fails OPEN at fuel 0 (DEF-349: a whole-argument
-  party there); the pointer judges skip an unreadable step and `escape_type_holds` answers no for an unknown (DEF-353: a judge that meets
-  "unknown" answers YES); a pointee-changing cast INSIDE a getter's argument, `(<-(raw ids(ap =>! S->))).x = …`, is no target of the result
-  (DEF-354: a crossing flag out of `collect_view_refs`' cast arm); a view a getter returns through `(<-(q =>! S->)).x` from a NAMED `any->`
-  local does not freeze the owner (DEF-355: the reverse reader through an `any` pointer, read before it is sized); a view handed on or
-  STORED through a callee's CAST VALUE, `raw gety(q =>! S->)`, keeps the summary's field path, inline and named (DEF-356); a typed pointer
-  local MADE by a pointee-changing cast, `S->:sp = ap =>! S->`, has no target and its steps are never erased (DEF-357) -- the last two from
-  management's review of build 16, measured silent on 166 and 167 alike; 169 is measured and censused before it is cut, the 33 DEF-344 tree
-  candidates read first (0 sites, `t168/CENSUS_344_READ.md`); DEF-345 joins it, RULED by the author 2026-10-29 17:29 -- (b), the middle
-  road, D-366, two respellings; its test items: `cast_place_readers.npk`'s site 22 re-cut so the write below the result's dereference is
-  what is tested, inline legal-half controls of the caller rule with no view and with another struct's view, `q3 =>! wild int8->` as a
-  control of `pointer_retype_plain_ok.npk`), then landing 170 = DEF-333 + DEF-334 + DEF-335 + DEF-336 (HIGH: a temporary argument under a
-  transparent kind or a ternary, a by-value argument's view returned or carried out of the owning frame, a slice-storing callee's
-  destination spelled through a pointer field, a dereference, a call result, a cast, a move, a ternary or an unwrap, and a builtin
+- **main = landing 168 + its dated-correction `meta:` commit of 2026-10-29** (docs only: management's diff review of 1143343 -- DEF-359 to
+  DEF-362 registered OPEN HIGH, holes on 167 and 168 alike; f4d a KNOWN over-refusal of 168's own, 0 tree sites, the fix first in 169; the
+  "`.clone()` first" remedy corrected; F5's three over-refusals on D-286's list; the landing is 1143343) — DEF-327 + DEF-337 + DEF-339 +
+  DEF-340 (a pick EXPRESSION's arm has its parties wherever the pick stands -- an initialiser, an assigned value or its target,
+  `discard(…)`, a `pass` or `exit` operand, a condition, a `for` iterable, a counted argument, a selector, a guard, a call argument, a
+  binary operand, a nested pick, a struct literal's field -- so a write of the viewed root in the arm is `NITPICK-BORROW-015` and a `$$m`
+  claim there `-013` (DEF-327); a `give` under `if`, `while`, `for`, `loop`, `till` or a `when`'s three clauses carries its view out of the
+  pick, the root written after it `-015` (DEF-337); `drop recv.m(args)` and `drop mod.f(args)` are spawns to both passes, the pointer
+  receiver `NITPICK-BORROW-004`, the arguments lent, `-016` under the lend (DEF-339; `async_method_bare.npk`'s DEF-149 control respelt to a
+  by-value inherent method as management words it); a `string`, a `List` or a struct holding one handed to a spawn BY VALUE, as an argument
+  or as a receiver, whether or not the owner writes, is `-004` at the spawn -- it crosses only into a `move` parameter, direction (A) of
+  2026-10-29 08:25:55 (DEF-340): 59 of 457 measured cells silent on 167 are refused now, 47 of them reading freed or re-allocated bytes at
+  both legs, no cell refused on 167 silent, no safe shape refused, five refusals of run-time-clean programs accepted by (A)'s design
+  (D-286), DEF-358 registered LOW (the emitter refuses a pick expression as a `for` iterable giving an array); the pick prescan's first
+  build bailed on the CUSTOM shapes, so a pick in a call argument and in a struct literal's field stayed silent under it -- the second build
+  walks them and fails closed on an unknown shape; the third build found `prescan_stmt` walking the BODY slots alone of six statement kinds
+  and the escape pass's `for` arm walking the iterable only under a type question -- every slot of the three statement walkers is walked
+  unguarded now, the slot table of `kindtable167.py` the mechanical check). AFTER THE COMMIT, management's diff review of 1143343 registered
+  DEF-359 to DEF-362 (HIGH, 169 FIRST -- a pick expression in a spawned method's receiver or a sanctioned argument is entered by neither
+  spawn reader; a by-value `self` through a pointer; a generic `T` at an owner; the trait-qualified spawn `drop Tr.m(w, n)`, whose argument
+  shift admits the owner and REFUSES a legal `move` argument -- f4d, the one KNOWN over-refusal of this landing's own, 0 tree sites, its
+  +3/-1 fix measured in a scratch build), corrected the remedy "`.clone()` first" (a clone is a temporary owner and crosses only INTO a
+  `move` parameter; the message string changes in 169) and put F5's three over-refusals of (A) on D-286's list (a string literal, a by-value
+  parameter passed on, a `fixed` local; 0 sites); no cell refused on 167 is silent on 168. Before it, landing 167's dated-correction `meta:`
+  commit (baebe12, docs only: the review of build 16's DEF-356 and DEF-357 registered, the seventh over-refusal, D-366 for DEF-345, the
+  queue re-ruled). Every landing's full paragraph — the defect, what was measured first, the rule now, the tests, the sweep, the emission
+  comparison, the manifest — is at the top of `meta/STATUS_HISTORY.md`, newest first; the cycle history 0.0–1.5 follows it there. Read the
+  newest few before planning work.
+- **The queue** (management_6's split ruling of 2026-10-29 16:48; landing 168 landed 2026-10-29; its review's four defects placed FIRST in
+  169 by management_6's ruling (B) of 21:09): landing 169 = DEF-359 + DEF-360 + DEF-361 + DEF-362 FIRST (HIGH, the review of 168: a pick
+  expression in a spawned method's receiver or a sanctioned pointer argument entered by neither spawn reader -- `escape_expr(recv)` at the
+  top of `escape_spawn_recv` and before `escape_spawn_args`' sanctioned `continue`; a by-value `self` through a pointer -- `rxt` peeled to
+  the pointee; a generic `T` at an owner -- `TY_PARAM` an owner in `escape_spawn_byval`; the trait-qualified spawn's shifted arguments -- a
+  type-less method-call operand is a qualifier, `pos_base` 0; ~ +8/-1 code lines, the F4 fix measured in wt/51k; measured on
+  `t168/rev168/`'s cells with f4e the control before it is cut, a split at +210; the `-004` message's "`.clone()` first" respelt) + DEF-344
+  + DEF-347 + DEF-349 + DEF-353 + DEF-354 + DEF-355 + DEF-356 + DEF-357 (the review groups, HIGH but DEF-353 MEDIUM: an address carried into
+  a struct field, a copy, a callee-built struct or a call result raises no plain party beside a claim (DEF-344); a copy of a parameter's
+  pointer PART, `<-pp` or `hh.p`, enters no summary (DEF-347, DEF-342's residual); `push_call_view_party_in` fails OPEN at fuel 0 (DEF-349:
+  a whole-argument party there); the pointer judges skip an unreadable step and `escape_type_holds` answers no for an unknown (DEF-353: a
+  judge that meets "unknown" answers YES); a pointee-changing cast INSIDE a getter's argument, `(<-(raw ids(ap =>! S->))).x = …`, is no
+  target of the result (DEF-354: a crossing flag out of `collect_view_refs`' cast arm); a view a getter returns through `(<-(q =>! S->)).x`
+  from a NAMED `any->` local does not freeze the owner (DEF-355: the reverse reader through an `any` pointer, read before it is sized); a
+  view handed on or STORED through a callee's CAST VALUE, `raw gety(q =>! S->)`, keeps the summary's field path, inline and named (DEF-356);
+  a typed pointer local MADE by a pointee-changing cast, `S->:sp = ap =>! S->`, has no target and its steps are never erased (DEF-357) --
+  the last two from management's review of build 16, measured silent on 166 and 167 alike; 169 is measured and censused before it is cut,
+  the 33 DEF-344 tree candidates read first (0 sites, `t168/CENSUS_344_READ.md`); DEF-345 joins it, RULED by the author 2026-10-29 17:29 --
+  (b), the middle road, D-366, two respellings; its test items: `cast_place_readers.npk`'s site 22 re-cut so the write below the result's
+  dereference is what is tested, inline legal-half controls of the caller rule with no view and with another struct's view, `q3 =>! wild
+  int8->` as a control of `pointer_retype_plain_ok.npk`), then landing 170 = DEF-333 + DEF-334 + DEF-335 + DEF-336 (HIGH: a temporary
+  argument under a transparent kind or a ternary, a by-value argument's view returned or carried out of the owning frame, a slice-storing
+  callee's destination spelled through a pointer field, a dereference, a call result, a cast, a move, a ternary or an unwrap, and a builtin
   view-maker over `#ptr_add` recording no ref -- its six tree sites read, none a live hazard), then landing 171 = DEF-312 widened (HIGH: a
   pointer field of a call-result pointer's pointee written two levels down, F3a/F3b/a15) + DEF-348 + DEF-350 (HIGH, from the review of build
   14: a write through a pointer FIELD of a pointer parameter's pointee in every spelling -- `hh.p.o`, its explicit dereferences, the pointee

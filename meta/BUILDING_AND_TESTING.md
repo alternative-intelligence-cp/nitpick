@@ -2334,3 +2334,11 @@ that carried them retired at the cycle close):
   D-332's one-report-per-site holds per LINE, and the header generator lists both. The cells: `wt/51a/.internal/probes/t168/`, `cells168/`, `cells168m/` and `cells168q/` (the
   spawn cells re-cut without the `dyn` trio, whose spawn inside `spawn_dyn` had contaminated every cell's verdict -- a shared preamble's own
   refusal is read as the cell's: keep a refusing helper in the one cell that needs it).
+  *Dated note 2026-10-29 (after the commit; management's diff review of 1143343 (Opus, `credits/out/compiler-168-diff-review-2026-10-29.md`,
+  in at 20:54)):* (4)'s rule misses a by-value `self` reached THROUGH A POINTER (`drop p.looks()`, `drop (@w).looks()`: `rxt` is the
+  pointer's type -- DEF-360) and a generic `T` (no `TY_PARAM` case -- DEF-361); (3)'s call-graph read and (5)'s receiver rule miss the
+  TRAIT-QUALIFIED spelling `drop Tr.m(w, n)` (DEF-362: the trait's name is read as the receiver and every argument shifts to the next
+  parameter's mode -- the owner admitted, a legal `move` argument refused; a type-less method-call operand is a qualifier, the fix
+  measured); and the escape pass never enters a pick expression standing as the receiver or inside a sanctioned pointer argument (DEF-359).
+  The remedy "`.clone()` first" does not work alone -- a clone is a temporary owner, refused by (4) itself; `.clone()` INTO a `move`
+  parameter. Landing 169 opens on the four. Twin-spelling rule: a reader written for `recv.m(args)` is owed to `Tr.m(recv, args)`.

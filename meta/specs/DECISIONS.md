@@ -19495,6 +19495,17 @@ DEF-302's k302a. The new walk that recognises a `List` element (`place_is_list_e
 > the tree, the libraries, the applications or the fuzz corpus). m3 and mi7 -- a plain struct's pointer receiver with nothing written, or
 > the arena destroyed after the join -- are D-180's standing rule (`drop fillw(@w, @s)` is refused whatever `fillw` writes, m4), not this
 > landing's. (B), the permissive lend, stays the author's to grant; narrow these by it, never by weakening (A).
+> *Note 2026-10-29 (after landing 168's commit, compiler_51; management's diff review of 1143343 (Opus,
+> `credits/out/compiler-168-diff-review-2026-10-29.md`, in at 20:54), its F5; ruling (B) at 21:09):* THREE MORE OVER-REFUSALS OF DEF-340's
+> RULE, ACCEPTED AS (A)'s DESIGN -- a string LITERAL handed to a spawn by value (`drop takestr("abc")`: static storage nobody writes, f5a),
+> a by-value `string` PARAMETER passed on to a spawn inside the callee (`async func:relay1 = NIL(string:s) { { drop takestr(s); … } pass
+> NIL; }`: a read-only loan whose owner is suspended in the call, f5b) and a `fixed` string local (never written, f5c) -- each clean 0/0 and
+> silent on landing 167's compiler, `NITPICK-BORROW-004` at the spawn on 168's; the rule reads the PARAMETER's mode and not the argument's
+> spelling, so the three are refused as m17 and oi5 are. 0 tree sites (the landing's sweep over 5,331 files). NOT on this list: f4d, a LEGAL
+> trait-qualified spawn `drop Tr3.m3(pd, move(s2))` refused at `move(s2)` by DEF-362's argument shift -- a bug with a measured fix, first in
+> landing 169. And the remedy "`.clone()` first" that the record, F113 and the `-004` message name does not work alone: a clone is a
+> temporary owner, refused by this rule unless it goes INTO a `move` parameter (DEF-340's row, note (iv)); the message string changes in
+> 169.
 
 ## D-287 — a `fixed` binding has no address — **SETTLED (user decision, 2026-09-11: s60 to s-62 look fine to me. I read them a couple times to be sure i was understanding and I can't find anything wrong with it. consider them ratified.; OPEN_DECISIONS S-62; DEF-43; lands at 1.5.5 step 1)**
 
