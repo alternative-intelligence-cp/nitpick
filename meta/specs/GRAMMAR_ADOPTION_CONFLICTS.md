@@ -346,7 +346,7 @@ taking deliberately rather than inheriting work-stealing by default.
 - **No `spawn` / `go` keyword**, keeping the thread model out of the language core
   so bare-metal and embedded targets are not forced to carry it.
 - **No `sync` keyword** — explicitly rejected by the compiler.
-- **`await` restricted to `async func`** (`NITPICK-040`).
+- **`await` restricted to `async func`** (`NITPICK-040`, the prototype's code; this language's is `NITPICK-TYPE-043` -- noted 2026-10-30, landing 171's stale-example census).
 - `atomic<T>` methods use **UFCS** — another independent confirmation of D-006.
 
 ---

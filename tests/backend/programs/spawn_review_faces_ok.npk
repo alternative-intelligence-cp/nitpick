@@ -23,6 +23,11 @@
 // ADDRESS, `H{ p: @d }`, the same way, reporting the byte it read (its spawn is the rejection file's sites 14-16).
 // Landing 169's checker refuses controls 21, 22, 23 and 25 (DEF-360's blanket rule), so this file's 169 leg cannot
 // run; its 168 leg could not either (control 1). Controls 28 and 29 spell the owning pointee's two transfers.
+// CORRECTED 2026-10-30 (landing 171, test item C; management_7 04:21): "each control fails at its own exit" above
+// was not true of a control whose TASK checks what it read -- 1-5, 7-9, 21-23, 25 and 28 failed inside the task
+// (`fail E1`), the join relaying it as 114 -- and control 29 compared a LENGTH, 3 for the clone and the rewrite
+// alike. Controls 21-23, 25 and 29 now have the task REPORT what it read on `done` (`lookpd`, `lookqd`, `takecd`)
+// and `main` compare at the control's own exit, 29 the byte; 1-5, 7-9 and 28 keep their check inside the task.
 mod:spawn_review_faces_ok;
 error:E1;
 fixed Duration:J2 = Duration{ ns: 2000000000i64 };
@@ -47,9 +52,15 @@ impl:PD = {
         await sleep(raw duration_ms(1i64)) ?| NIL;
         pass self.k;
     };
-    async func:lookq = NIL(PD:self) {
+    // Landing 171 (test item C): controls 21-23 and 25 spawn these, and the task REPORTS what it read.
+    thread async func:lookpd = NIL(PD:self, Channel<int64, 3i32, 64i64>:done) joins J2 {
         await sleep(raw duration_ms(1i64)) ?| NIL;
-        if (self.k != 1i64) { fail E1; }
+        await done.send(self.k, raw duration_ms(2000i64)) ?! E1;
+        pass NIL;
+    };
+    async func:lookqd = NIL(PD:self, Channel<int64, 3i32, 64i64>:done) {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        await done.send(self.k, raw duration_ms(2000i64)) ?! E1;
         pass NIL;
     };
 };
@@ -100,6 +111,7 @@ async func:generic_moved<T> = NIL(move T:a) {
     pass NIL;
 };
 async func:main = int32(cstring[]:_~argv) {
+    Channel<int64, 3i32, 64i64>:done = channel() ?! E1;
     // 1. (f4d) the trait-qualified spawn: plain data by value as `Self:self`, a `move string` argument
     {
         PD:pd = PD{ k: 1i64 };
@@ -210,14 +222,17 @@ async func:main = int32(cstring[]:_~argv) {
     }
     // 21. (r1; landing 169's refusal site 14) plain data through a pointer local, `drop pp.lookp()`, the owner
     //     writing under the task: the seed copies the POINTEE into the task's frame (DEF-363), so the task reads
-    //     1 (`lookp` fails otherwise, and the join relays it), never the write and never the pointer's words
+    //     1, never the write and never the pointer's words -- and reports it (landing 171, test item C: until then
+    //     `lookp` checked inside the task, a failure exiting 114 by the join's relay, not 21)
     {
         PD:pd = PD{ k: 1i64 };
         PD->:pp = @pd;
         {
-            drop pp.lookp();
+            drop pp.lookpd(done);
             pp.k = 2i64;
         }
+        int64:got21 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got21 != 1i64) { exit 21i32; }
         if (pd.k != 2i64) { exit 21i32; }
     }
     // 22. (r8; site 15) the same with nothing written
@@ -225,17 +240,21 @@ async func:main = int32(cstring[]:_~argv) {
         PD:pd = PD{ k: 1i64 };
         PD->:pp = @pd;
         {
-            drop pp.lookp();
+            drop pp.lookpd(done);
         }
+        int64:got22 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got22 != 1i64) { exit 22i32; }
         if (pd.k != 1i64) { exit 22i32; }
     }
     // 23. (r2; site 16) through an inline address, `drop (@pd).lookp()`, the owner writing under the task
     {
         PD:pd = PD{ k: 1i64 };
         {
-            drop (@pd).lookp();
+            drop (@pd).lookpd(done);
             pd.k = 3i64;
         }
+        int64:got23 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got23 != 1i64) { exit 23i32; }
         if (pd.k != 3i64) { exit 23i32; }
     }
     // 24. (r10b) the by-value method AWAITED through the AUTO-DEREFERENCE, `await pp.peekk()`, reporting the value
@@ -246,13 +265,15 @@ async func:main = int32(cstring[]:_~argv) {
         int64:got = await pp.peekk() ?! E1;
         if (got != 1i64) { exit 24i32; }
     }
-    // 25. (r12) a plain `async` by-value method SPAWNED through a pointer, `drop pp.lookq()`, nothing written
+    // 25. (r12) a plain `async` by-value method SPAWNED through a pointer, `drop pp.lookqd(done)`, nothing written
     {
         PD:pd = PD{ k: 1i64 };
         PD->:pp = @pd;
         {
-            drop pp.lookq();
+            drop pp.lookqd(done);
         }
+        int64:got25 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got25 != 1i64) { exit 25i32; }
         if (pd.k != 1i64) { exit 25i32; }
     }
     // 26. an OWNING pointee AWAITED through a pointer by a by-value (not `move`) receiver, `await sp.slen()`: the
@@ -288,15 +309,20 @@ async func:main = int32(cstring[]:_~argv) {
         if (w.s.len != 3i64) { exit 28i32; }
     }
     // 29. a CLONE of the owning pointee into a `move` receiver, `((<-sp).clone() ?! E1).takec()` -- the second
-    //     transfer the message names (`.clone()` is fallible); the owner writes the pointee under the task
+    //     transfer the message names (`.clone()` is fallible); the owner writes the pointee under the task, and
+    //     the task reports the first BYTE it read -- 97, the clone's, never the owner's rewrite (landing 171, test
+    //     item C: until then the control compared the LENGTH, 3 for both strings)
     {
         SC:w = SC{ s: string_concat("ab", "c"), k: 1i64 };
         SC->:sp = @w;
         {
-            drop ((<-sp).clone() ?! E1).takec();
+            drop ((<-sp).clone() ?! E1).takecd(done);
             sp.s = string_concat("zz", "z");
         }
-        if (w.s.len != 3i64) { exit 29i32; }
+        int64:got29 = await done.recv(raw duration_ms(2000i64)) ?! E1;
+        if (got29 != 97i64) { exit 29i32; }
+        fixed uint8[]:wb = string_bytes(w.s);
+        if (wb[0i64] != 122u8) { exit 29i32; }
     }
     exit 0i32;
 };
@@ -326,6 +352,13 @@ impl:SC = {
         await sleep(raw duration_ms(1i64)) ?| NIL;
         fixed uint8[]:xb = string_bytes(self.s);
         if (xb[0i64] != 97u8) { fail E1; }
+        pass NIL;
+    };
+    // Landing 171 (test item C): control 29 spawns this, and the task REPORTS the byte it read.
+    thread async func:takecd = NIL(move SC:self, Channel<int64, 3i32, 64i64>:done) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        fixed uint8[]:xb = string_bytes(self.s);
+        await done.send((xb[0i64] => int64), raw duration_ms(2000i64)) ?! E1;
         pass NIL;
     };
 };

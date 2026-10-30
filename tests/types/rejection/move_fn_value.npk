@@ -1,0 +1,166 @@
+// expect-error: NITPICK-TYPE-100
+// expect-error-at: 69:40
+// expect-error: NITPICK-TYPE-100
+// expect-error-at: 77:9
+// expect-error: NITPICK-TYPE-100
+// expect-error-at: 85:20
+// expect-error: NITPICK-TYPE-100
+// expect-error-at: 90:10
+// expect-error: NITPICK-TYPE-100
+// expect-error-at: 95:26
+// expect-error: NITPICK-TYPE-100
+// expect-error-at: 100:19
+// expect-error: NITPICK-TYPE-100
+// expect-error-at: 107:45
+// expect-error: NITPICK-TYPE-100
+// expect-error-at: 114:49
+// expect-error: NITPICK-TYPE-100
+// expect-error-at: 121:42
+// expect-error: NITPICK-TYPE-100
+// expect-error-at: 129:22
+// expect-error: NITPICK-TYPE-100
+// expect-error-at: 134:39
+// expect-error: NITPICK-TYPE-100
+// expect-error-at: 140:47
+// DEF-372 (landing 171): A FUNCTION WITH A `move` PARAMETER IS NOT A VALUE (NITPICK-TYPE-100). A function type
+// carries no `move` -- `func int32(string) never fails` names a function whose parameter BORROWS its argument --, so a
+// function declared `takes = int32(move string:s)` stood wherever that type stood, and a call through the value
+// handed the caller's string to a parameter that drops it at the callee's exit while the caller's binding dropped it
+// again at its own (95/95 at both legs on landing 170: t170/rev170/rl2a, rl2c, rl2e; t171/p372/p5; t171/census371/
+// i1, i5; t171/p372b/q2-q5); the direct call `takes(s)` was TYPE-046 and `takes(move(s))` the transfer. Now the name
+// of such a function is refused wherever it is a VALUE -- an initialiser, an assignment, an argument, `pass`, a
+// returned `Result` literal, a struct literal's field, an array literal's element, a ternary's arm, a module member
+// (`tm.takes`) --, and the callee of a call is not a value: `takes(move(s))` and `tm.takes(move(s))` stay legal. The
+// rule asks every `move` parameter, plain data included (management_7, 2026-10-30 06:11): site 11's `move int64`
+// is a KNOWN over-refusal, the copy of an `int64` being harmless. The remedy is a wrapper whose parameter is not
+// `move` (the legal half, tests/backend/programs/move_fn_value_ok.npk); function types that carry `move` are a
+// grammar change, the author's (DEF-286's neighbourhood). Each site is one function and one report; landing 170's
+// checker reports none.
+mod:move_fn_value;
+error:E1;
+mod:tm = {
+    pub func:takes = int32(move string:s) never fails {
+        fixed uint8[]:b = string_bytes(s);
+        pass (b.len =>! int32);
+    };
+};
+func:takes = int32(move string:s) never fails {
+    fixed uint8[]:b = string_bytes(s);
+    pass (b.len =>! int32);
+};
+func:takes2nd = int32(int32:n, move string:s) never fails {
+    fixed uint8[]:b = string_bytes(s);
+    pass (b.len =>! int32) + n;
+};
+func:views = int32(string:s) never fails {
+    fixed uint8[]:b = string_bytes(s);
+    pass (b.len =>! int32);
+};
+func:tk = int64(move int64:x) never fails {
+    pass x;
+};
+struct:HF = { func int32(string) never fails:f; int64:k; };
+func:apply = int32(func int32(string) never fails:f, string:x) never fails {
+    pass raw f(x);
+};
+
+// 1. an initialiser
+func:fv_init = int32() never fails {
+    func int32(string) never fails:g = takes;
+    string:s = string_concat("ab", "cd");
+    pass raw g(s);
+};
+
+// 2. an assignment
+func:fv_assign = int32() never fails {
+    func int32(string) never fails:g = views;
+    g = takes;
+    string:s = string_concat("ab", "cd");
+    pass raw g(s);
+};
+
+// 3. an argument to a function-typed parameter
+func:fv_argument = int32() never fails {
+    string:s = string_concat("ab", "cd");
+    pass raw apply(takes, s);
+};
+
+// 4. `pass`: a function value handed back
+func:fv_pass = func int32(string) never fails () never fails {
+    pass takes;
+};
+
+// 5. a `return` statement's `Result` literal
+func:fv_return_literal = func int32(string) never fails () {
+    return Result{value: takes};
+};
+
+// 6. a struct literal's field
+func:fv_struct_field = int32() never fails {
+    HF:h = HF{ f: takes, k: 1i64 };
+    string:s = string_concat("ab", "cd");
+    pass raw h.f(s);
+};
+
+// 7. an array literal's element
+func:fv_array_elem = int32() never fails {
+    func int32(string) never fails[1]:fs = [takes];
+    string:s = string_concat("ab", "cd");
+    pass raw fs[0i64](s);
+};
+
+// 8. a ternary's arm (the other arm, `views`, borrows: one report)
+func:fv_ternary = int32(bool:c) never fails {
+    func int32(string) never fails:g = is (c) : takes : views;
+    string:s = string_concat("ab", "cd");
+    pass raw g(s);
+};
+
+// 9. a module member, in an initialiser
+func:fv_member_init = int32() never fails {
+    func int32(string) never fails:g = tm.takes;
+    string:s = string_concat("ab", "cd");
+    pass raw g(s);
+};
+
+// 10. a module member, as an argument
+func:fv_member_argument = int32() never fails {
+    string:s = string_concat("ab", "cd");
+    pass raw apply(tm.takes, s);
+};
+
+// 11. a `move` parameter of plain data -- the KNOWN over-refusal (one rule, no type test)
+func:fv_plain = int64() never fails {
+    func int64(int64) never fails:h = tk;
+    pass raw h(3i64);
+};
+
+// 12. a `move` parameter that is not the first (the message names parameter 1)
+func:fv_second_param = int32() never fails {
+    func int32(int32, string) never fails:g = takes2nd;
+    string:s = string_concat("ab", "cd");
+    pass raw g(1i32, s);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

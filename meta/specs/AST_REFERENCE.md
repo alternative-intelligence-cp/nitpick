@@ -103,7 +103,8 @@ GenericParam
   would not. **Reading a discarded parameter is an error**, because an unchecked
   claim is decoration.
 - **`main` has a fixed signature: `func:main = int32(cstring[]:argv)`** (D-089; checked as `NITPICK-TYPE-083` since 1.6.0 step 3c — the arity, the parameter's type and the `int32` return; `failsafe`'s shape is `NITPICK-TYPE-044`).
-  One parameter, always — `failsafe` sets the same precedent with `tbb32:err`, so
+  One parameter, always — `failsafe` sets the same precedent with `Error:e` (written `tbb32:err`, from before D-179
+  typed the error, until 2026-10-30, landing 171's stale-example census), so
   entry-point signatures are fixed and `_~` covers the unused case. There is no
   `argc`: a slice carries its length (D-070), and a second copy of that fact is
   the C bug where a loop trusts `argc` past the end of `argv`.
@@ -331,7 +332,7 @@ names neither the construct nor the rule it broke.
 | `TernaryExpr` | `cond`, `then_expr`, `else_expr` | `is (c) : a : b` |
 | `MoveExpr` | `place` | **`move(place)`** — transfers ownership and invalidates the source (D-065) |
 | **`IsErrExpr`** | `operand` | **`is_err(tbbValue)`** — tests a `tbb` for ERR **without trapping** (D-008, D-096) |
-| **`ResultLiteralExpr`** | `value`, `error` | **`Result{value: v, err: e}`** — the only way to construct a `Result`, and the only legal operand of `return` (D-097) |
+| **`ResultLiteralExpr`** | `value`, `error` | **`Result{value: v}`**, **`Result{err: e}`** — the only way to construct a `Result`, and the only legal operand of `return` (D-097); it writes ONE field, `NITPICK-TYPE-101` for both (DEF-373; written `Result{value: v, err: e}` until 2026-10-30, landing 171, when the author retired the both form) |
 
 > **There is no `OptionalLiteralExpr`, deliberately (D-099).** An `Optional` is
 > built by writing the value and emptied by writing `NIL`, so there is no
@@ -343,7 +344,7 @@ names neither the construct nor the rule it broke.
 > because each is spelled with a KEYWORD and the parser only builds these forms
 > from an identifier.
 >
-> - **`Result{value: v, err: e}`** is the language's only constructor and, per
+> - **`Result{value: v}` / `Result{err: e}`** (one field since landing 171, DEF-373) is the language's only constructor and, per
 >   `ReturnStmt` in §2, the only legal operand of `return`. `TYPE_REFERENCE.md`
 >   §11 gives the full desugar table for `pass`/`fail` over it. The struct-literal
 >   path is gated on `TokenKind.Ident`, and `Result` is `KwResult`, so the real
@@ -476,7 +477,7 @@ nothing can refuse.
 | `StructLiteralExpr` | `type`, `fields` |
 | `ArrayLiteralExpr` | `elements` |
 | `VectorCtorExpr` | `type`, `components` — `vec3(1.0, 2.0, 3.0)` |
-| `AwaitExpr` | `operand` — legal only inside `async func` (`NITPICK-040`) |
+| `AwaitExpr` | `operand` — legal only inside `async func` (`NITPICK-TYPE-043`; written `NITPICK-040`, the prototype's numbering, until 2026-10-30, landing 171's stale-example census) |
 | `IterationVarExpr` | — `$`, legal only inside `loop` / `till` |
 | `DynCastExpr` | `expr`, `traits: TypeNode[]`, `quals` — `dyn A & B` (D-029). **A `=>` whose target is a `dyn` type is this node, not a `CastExpr`** — building a fat pointer is not the same operation as a checked scalar conversion, and giving them one node would hide that at every use |
 | `PickExpr` | `selector: Expr`, `arms: PickArm[]` — a `pick` whose arms `give` (D-059) |

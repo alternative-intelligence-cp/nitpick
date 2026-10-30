@@ -1,67 +1,71 @@
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 134:14
+// expect-error-at: 138:14
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 140:15
+// expect-error-at: 144:15
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 147:14
+// expect-error-at: 151:14
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 154:15
+// expect-error-at: 158:15
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 160:14
+// expect-error-at: 164:14
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 165:14
+// expect-error-at: 169:14
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 171:11
+// expect-error-at: 175:11
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 179:14
+// expect-error-at: 183:14
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 188:15
+// expect-error-at: 192:15
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 196:5
+// expect-error-at: 200:5
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 205:5
+// expect-error-at: 209:5
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 212:5
+// expect-error-at: 216:5
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 219:5
+// expect-error-at: 223:5
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 226:5
+// expect-error-at: 230:5
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 233:5
+// expect-error-at: 237:5
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 240:5
+// expect-error-at: 244:5
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 247:5
+// expect-error-at: 251:5
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 254:5
+// expect-error-at: 258:5
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 261:5
+// expect-error-at: 265:5
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 268:5
+// expect-error-at: 272:5
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 275:5
+// expect-error-at: 279:5
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 284:5
+// expect-error-at: 288:5
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 292:5
+// expect-error-at: 296:5
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 299:12
+// expect-error-at: 303:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 307:20
+// expect-error-at: 311:20
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 314:12
+// expect-error-at: 318:12
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 322:17
+// expect-error-at: 326:17
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 329:5
+// expect-error-at: 333:5
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 335:5
+// expect-error-at: 339:5
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 342:5
+// expect-error-at: 346:5
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 349:5
+// expect-error-at: 353:5
 // expect-error: NITPICK-TYPE-046
-// expect-error-at: 355:5
+// expect-error-at: 359:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 369:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 376:5
 // DEF-366 + DEF-367 + DEF-368 (landing 170): AN OWNER REACHES A MOVE SLOT ONLY BY `move(...)`, WHATEVER STANDS
 // BETWEEN THE PLACE AND THE SLOT. TYPE-046 (D-183) refused a PLACE copied into a slot that takes ownership -- an
 // initialiser, an assignment, `give`, a `move` argument, a struct literal's field, an array literal's element --
@@ -354,6 +358,23 @@ func:part_call_pointer = int64() never fails {
 func:part_call_nested = int64() never fails {
     PS:q = (raw mkh()).u;
     pass q.k;
+};
+
+// --- THE TWIN SPELLING OF SITE 19's CAST: `=>!` (landing 171, test item B; management_7 2026-10-30 04:21) ---------
+// 95/95 at both legs on landing 169, refused since 170 (wt/51a/.internal/probes/t171/b171/ub1, ub2); the transfer
+// `(move(a)) =>! T` is the legal half's.
+// 33. `=>!` of an owning string
+func:op_cast_unchecked_string = int64() never fails {
+    string:a = string_concat("ab", "cd");
+    string:b = a =>! string;
+    pass b.len;
+};
+
+// 34. `=>!` of an owning struct
+func:op_cast_unchecked_struct = int64() never fails {
+    PS:a = raw mk();
+    PS:b = a =>! PS;
+    pass b.k;
 };
 
 func:main = int32(cstring[]:_~argv) { pass 0i32; };

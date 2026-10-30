@@ -1,0 +1,374 @@
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 136:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 142:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 150:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 157:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 163:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 169:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 175:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 181:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 187:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 193:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 199:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 205:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 211:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 217:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 223:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 229:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 235:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 241:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 248:26
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 254:26
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 260:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 265:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 271:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 276:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 282:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 287:12
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 293:12
+// expect-error: NITPICK-TYPE-047
+// expect-error-at: 299:12
+// expect-error: NITPICK-TYPE-047
+// expect-error-at: 304:12
+// expect-error: NITPICK-TYPE-063
+// expect-error-at: 310:12
+// expect-error: NITPICK-TYPE-084
+// expect-error-at: 316:12
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 322:12
+// expect-error: NITPICK-TYPE-038
+// expect-error-at: 327:12
+// expect-error: NITPICK-TYPE-101
+// expect-error-at: 333:12
+// expect-error: NITPICK-TYPE-101
+// expect-error-at: 339:12
+// expect-error: NITPICK-TYPE-101
+// expect-error-at: 344:12
+// expect-error: NITPICK-TYPE-101
+// expect-error-at: 349:23
+// DEF-371 + DEF-373 (landing 171): A `return` STATEMENT'S `Result{value: v}` IS `pass v;` WRITTEN LONG, AND A
+// `Result` LITERAL WRITES ONE FIELD. `pass v;` is defined as `return Result{value: v};` (D-183), and until this
+// landing the two took different roads: `check_pass` asked every rule of a leaving value -- D-183's implicit move of
+// a named owner, the move-slot rule of landings 170 and 169 (an operator handing back a place's value, a part of a
+// value no binding holds), a lent owning parameter (TYPE-047), a pointer parameter's pointee's part (TYPE-047), a
+// limited binding's field (TYPE-063), a `fixed` binding (TYPE-084), a `sealed` field from outside its module
+// (TYPE-079), a may-fail function into a `never fails` function slot (TYPE-038) -- and the long form asked NONE of
+// them, so every refused `pass` was a silent double free written as `return Result{value: …}` (95/95 at both legs on
+// landings 169 and 170: wt/51a/.internal/probes/t171/twin371/, 83 pairs) and `return Result{value: a};` of a named
+// owner copied `a` where `pass a;` moves it. DEF-371: the literal a `return` statement hands back takes `pass`'s road
+// (`check_leaving_value` in the typer, `emit_leaving_value` in the emitter), so each site below is refused with
+// `pass`'s own code and the named owner is moved (the legal half, tests/backend/programs/result_literal_road_ok.npk).
+// DEF-373: the both form -- `Result{value: v, err: e}` -- is RETIRED (NITPICK-TYPE-101): a value beside an error is
+// one no caller can read (`.value` after an error is TAINT-001, `raw` takes only a call) and an owner there is freed
+// by nobody on the error path. Each site is one function and one report; landing 170's checker reports only sites 19
+// and 20 (a pick's `give` of a place, refused at the `give` before this landing) and site 33 (TYPE-007, the mismatch,
+// where `pass`'s TYPE-038 names the rule now).
+mod:result_literal_road;
+error:E1;
+struct:PS = { string:s; int64:k; };
+trait:Tl = { func:ln = int64(Self:self) never fails; };
+impl:PS:Tl = { func:ln = int64(PS:self) never fails { pass self.s.len; }; };
+struct:HU = { PS:u; int64:j; };
+struct:WA = { PS:a; PS:b; };
+struct:WO = { PS?:oa; };
+struct:WR = { Result<PS>:ra; };
+struct:Named = { string:name; int32:v; };
+Rules<Named>:r_named = { $.v > 0i32 };
+mod:bank = {
+    pub struct:Vault = { sealed string:name; };
+    pub func:vault_of = Vault(move string:s) never fails {
+        Vault:n = Vault{ name: move(s) };
+        pass n;
+    };
+};
+use bank.*;
+func:mk = PS() never fails {
+    pass PS{ s: string_concat("ab", "cd"), k: 1i64 };
+};
+func:mkh = HU() never fails {
+    pass HU{ u: raw mk(), j: 2i64 };
+};
+func:mka = PS[2]() never fails {
+    pass [raw mk(), raw mk()];
+};
+func:mkr = PS(bool:c) {
+    if (!c) { fail E1; }
+    pass raw mk();
+};
+func:getp = PS->(PS->:q) never fails {
+    pass q;
+};
+func:mayf = int32(int32:v) {
+    pass v;
+};
+
+// --- DEF-371: AN OPERATOR HANDING BACK A PLACE'S OWN VALUE (landing 170's DEF-367 at `pass`) ------------------------
+// 1. a ternary's arm, named
+func:ret_tern_named = PS(bool:c) {
+    PS:a = raw mk();
+    PS:b = raw mk();
+    return Result{value: is (c) : a : b};
+};
+
+// 2. a ternary's arm, through a field
+func:ret_tern_inline = PS(bool:c) {
+    WA:w = WA{ a: raw mk(), b: raw mk() };
+    return Result{value: is (c) : w.a : w.b};
+};
+
+// 3. a nested ternary, named
+func:ret_nest_named = PS(bool:c, bool:d) {
+    PS:a = raw mk();
+    PS:b = raw mk();
+    PS:a2 = raw mk();
+    return Result{value: is (c) : (is (d) : a : b) : a2};
+};
+
+// 4. a nested ternary, through fields
+func:ret_nest_inline = PS(bool:c, bool:d) {
+    WA:w = WA{ a: raw mk(), b: raw mk() };
+    WA:v = WA{ a: raw mk(), b: raw mk() };
+    return Result{value: is (c) : (is (d) : w.a : w.b) : v.a};
+};
+
+// 5. `??`'s Optional, named
+func:ret_coal_named = PS() {
+    PS?:oa = raw mk();
+    return Result{value: oa ?? raw mk()};
+};
+
+// 6. `??`'s Optional, through a field
+func:ret_coal_inline = PS() {
+    WO:w = WO{ oa: raw mk() };
+    return Result{value: w.oa ?? raw mk()};
+};
+
+// 7. `??!`, named
+func:ret_ecoal_named = PS() {
+    PS?:oa = raw mk();
+    return Result{value: oa ??! E1};
+};
+
+// 8. `??!`, through a field
+func:ret_ecoal_inline = PS() {
+    WO:w = WO{ oa: raw mk() };
+    return Result{value: w.oa ??! E1};
+};
+
+// 9. `?!`, named
+func:ret_unwrap_named = PS(bool:c) {
+    Result<PS>:ra = mkr(c);
+    return Result{value: ra ?! E1};
+};
+
+// 10. `?!`, through a field
+func:ret_unwrap_inline = PS(bool:c) {
+    WR:w = WR{ ra: mkr(c) };
+    return Result{value: w.ra ?! E1};
+};
+
+// 11. `?|`'s Result, named
+func:ret_dflt_named = PS(bool:c) {
+    Result<PS>:ra = mkr(c);
+    return Result{value: ra ?| raw mk()};
+};
+
+// 12. `?|`'s Result, through a field
+func:ret_dflt_inline = PS(bool:c) {
+    WR:w = WR{ ra: mkr(c) };
+    return Result{value: w.ra ?| raw mk()};
+};
+
+// 13. `relay`, named
+func:ret_relay_named = PS(bool:c) {
+    Result<PS>:ra = mkr(c);
+    return Result{value: relay ra};
+};
+
+// 14. `relay`, through a field
+func:ret_relay_inline = PS(bool:c) {
+    WR:w = WR{ ra: mkr(c) };
+    return Result{value: relay w.ra};
+};
+
+// 15. a cast, named
+func:ret_cast_named = PS() {
+    PS:a = raw mk();
+    return Result{value: a => PS};
+};
+
+// 16. a cast, through a field
+func:ret_cast_inline = PS() {
+    WA:w = WA{ a: raw mk(), b: raw mk() };
+    return Result{value: w.a => PS};
+};
+
+// 17. a `dyn` cast of an owner, named
+func:ret_dyn_named = dyn Tl() {
+    PS:a = raw mk();
+    return Result{value: a => dyn Tl};
+};
+
+// 18. a `dyn` cast of an owner, through a field
+func:ret_dyn_inline = dyn Tl() {
+    WA:w = WA{ a: raw mk(), b: raw mk() };
+    return Result{value: w.a => dyn Tl};
+};
+
+// 19. a pick's `give` of a place, named
+func:ret_pgive_named = PS(bool:c) {
+    PS:a = raw mk();
+    PS:b = raw mk();
+    return Result{value: pick (c) { (true) { give a; }, (false) { give b; } }};
+};
+
+// 20. a pick's `give` of a place, through a field
+func:ret_pgive_inline = PS(bool:c) {
+    WA:w = WA{ a: raw mk(), b: raw mk() };
+    return Result{value: pick (c) { (true) { give w.a; }, (false) { give w.b; } }};
+};
+
+// --- DEF-371: AN OWNING PART OF A VALUE NO BINDING HOLDS (landing 170's DEF-368 at `pass`) --------------------------
+// 21. a call result's field
+func:ret_part_call = string() {
+    return Result{value: (raw mk()).s};
+};
+
+// 22. a struct literal's field
+func:ret_part_lit = string() {
+    return Result{value: (PS{ s: string_concat("ab", "cd"), k: 1i64 }).s};
+};
+
+// 23. a moved value's field
+func:ret_part_moved = string() {
+    PS:ps = raw mk();
+    return Result{value: (move(ps)).s};
+};
+
+// 24. a nested part of a call result
+func:ret_part_nest = string() {
+    return Result{value: (raw mkh()).u.s};
+};
+
+// 25. the pointee of a call's pointer (alone, BORROW-001 on landing 170: the escape pass's view of `ps`)
+func:ret_part_cptr = string() {
+    PS:ps = raw mk();
+    return Result{value: (raw getp(@ps)).s};
+};
+
+// 26. an element of a call result
+func:ret_part_elem = string() {
+    return Result{value: (raw mka())[0i64].s};
+};
+
+// 27. `?.`'s part
+func:ret_part_snav = string?() {
+    PS?:o = raw mk();
+    return Result{value: o?.s};
+};
+
+// --- DEF-371: `check_pass`'s OTHER RULES, asked of the long form (the five check_pass faces, management_7 06:03) ---
+// 28. a lent owning parameter handed back (TYPE-047)
+func:ret_lent_param = PS(PS:p) {
+    return Result{value: p};
+};
+
+// 29. a pointer parameter's pointee's owning part (TYPE-047)
+func:ret_pointee_part = string(PS->:q) {
+    return Result{value: q.s};
+};
+
+// 30. a limited binding's field (TYPE-063)
+func:ret_limited_field = string() {
+    limit<r_named> Named:n = Named{ name: string_concat("ab", "cd"), v: 1i32 };
+    return Result{value: n.name};
+};
+
+// 31. a `fixed` binding (TYPE-084)
+func:ret_fixed_binding = PS() {
+    fixed PS:f = raw mk();
+    return Result{value: f};
+};
+
+// 32. a `sealed` field from outside its module (TYPE-079)
+func:ret_sealed_field = string() {
+    Vault:n = raw vault_of(string_concat("ab", "cd"));
+    return Result{value: n.name};
+};
+
+// 33. a may-fail function into a `never fails` function slot (TYPE-038, `pass mayf;`'s code; TYPE-007 before)
+func:ret_never_fails_slot = func int32(int32) never fails () {
+    return Result{value: mayf};
+};
+
+// --- DEF-373: A `Result` LITERAL WRITES ONE FIELD (NITPICK-TYPE-101) ---------------------------------------------
+// 34. a fresh value beside an error
+func:both_fresh = PS() {
+    return Result{value: raw mk(), err: E1};
+};
+
+// 35. a named owner beside an error, the error first
+func:both_named = PS() {
+    PS:a = raw mk();
+    return Result{err: E1, value: a};
+};
+
+// 36. plain data beside an error
+func:both_plain = int32() {
+    return Result{value: 1i32, err: E1};
+};
+
+// 37. outside a `return`: an initialiser
+func:both_init = int32() {
+    Result<int32>:r = Result{value: 2i32, err: E1};
+    pass r ?| 0i32;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

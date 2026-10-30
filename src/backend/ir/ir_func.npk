@@ -137,6 +137,8 @@ pub struct:FnEmitter = {
     // by the statement that spawned it.
     bool:in_await_args;
     bool:spawn_args;
+    // DEF-371 (landing 171): the `return` statement's `Result{…}` literal, whose value leaves on `pass`'s road.
+    int32:return_lit;
     List<string>:tframe_lls;
     List<string>:tframe_flags;
     // The temporary count at each loop's entry, parallel to `loop_heads`: a
@@ -319,7 +321,7 @@ pub func:fnem_init = FnEmitter(IrWriter->:w, LlCtx->:ctx) never fails {
         trefs: raw list_init::<string>(16i64),
         tlive: raw list_init::<int32>(16i64),
         cur_tmark: 0i64,
-        in_await_args: false, spawn_args: false,
+        in_await_args: false, spawn_args: false, return_lit: 0i32,
         tframe_lls: raw list_init::<string>(8i64),
         tframe_flags: raw list_init::<string>(8i64),
         loop_tmarks: raw list_init::<int64>(8i64),

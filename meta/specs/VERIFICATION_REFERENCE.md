@@ -451,7 +451,7 @@ If a caller violates the precondition at runtime, the function immediately inter
 func:main = int32() {
     // Because `divide` has a `requires` contract, the call can fail, and
     // the failure is handled like any other -- here, trapped.
-    int32:y = divide(10i32, 2i32) ?! 7tbb32;
+    int32:y = divide(10i32, 2i32) ?! E7;   // `error:E7;` (written `?! 7tbb32` before D-179; corrected 2026-10-30, landing 171's stale-example census)
     
     exit 0i32;
 };

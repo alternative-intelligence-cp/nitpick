@@ -933,6 +933,15 @@ pub func:mark_root_taken = NIL(ExprEmitter->:x, ExprId:vid) never fails {
     pass NIL;
 };
 
+// THE VALUE LEAVING THE FRAME (D-183; DEF-371, landing 171): `pass v`'s operand and a `return`'s `Result{value: v}`
+// value alike -- moved out of its place (`emit_move_out`) and fitted to the declared success type (1.0.6e). ONE lowering
+// for both spellings, as `check_leaving_value` is one rule.
+pub func:emit_leaving_value = IrVal(ExprEmitter->:x, ExprId:val, int32:want, Span:at) never fails {
+    IrVal:v = raw emit_move_out(x, val);
+    if (!(raw iv_is_ok(v))) { pass v; }
+    pass (raw emit_fit(x, want, move(v), at));
+};
+
 // A VALUE LEAVING ITS PLACE, AND WHAT THE PLACE KEEPS (D-065; 1.5.1b step 5).
 // `move(place)` and `pass place` transfer the value out. For a WHOLE binding
 // the transfer is the drop flag (D-183, above): cleared, so the scope-exit
@@ -1980,11 +1989,9 @@ func:emit_pass = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
         // flag cleared, a field or element left VACANT (1.5.1b step 5), both
         // BEFORE the defers run, or the scope drop would release the returned
         // value.
-        IrVal:v = raw emit_move_out(x, val);
-        if (!(raw iv_is_ok(v))) { pass v; }
         // THE DECLARED `T` IS A SLOT (1.0.6e): `pass d;` from a function
         // returning `dyn Speaks` builds the fat pointer here.
-        v = raw emit_fit(x, x.fe.ret_type, move(v), s.span);
+        IrVal:v = raw emit_leaving_value(x, val, x.fe.ret_type, s.span);
         if (!(raw iv_is_ok(v))) { pass v; }
         vref = move(v.ref);
         drop temp_take(x, vref);   // a returned temporary leaves with it (D-246)
@@ -2091,7 +2098,13 @@ func:emit_trap = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
 // other), so the operand IS the whole Result and the `ret` takes it verbatim.
 // Value first, then defers, then the return: D-136's rule, the third time.
 func:emit_return = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
-    IrVal:v = raw emit_expr(x, raw stmt_operand(s));
+    // THE LITERAL'S VALUE LEAVES ON `pass`'S ROAD (DEF-371, landing 171): marked for `emit_result_lit`, which lowers it
+    // by `emit_leaving_value`; the literal itself is still produced and taken as before (D-246).
+    ExprId:ro = raw stmt_operand(s);
+    int32:rsaved = x.fe.return_lit;
+    x.fe.return_lit = ro.index;
+    IrVal:v = raw emit_expr(x, ro);
+    x.fe.return_lit = rsaved;
     if (!(raw iv_is_ok(v))) { pass v; }
     // THE POSTCONDITION OF THE LONG FORM (L-12): a success only -- the
     // aggregate's error field decides, its value field is `result`.

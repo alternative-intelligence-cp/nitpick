@@ -1,0 +1,252 @@
+// expect-exit: 0
+//
+// THE LEGAL HALF OF DEF-371 + DEF-373 (landing 171): a `return` statement's `Result{value: v}` takes `pass v;`'s
+// road, so what `pass` moves the long form moves -- a named owner, a field of one (the aggregate left with its
+// vacant field, S-26), a pointer parameter's whole pointee (left VACANT, D-225) -- where landings 169 and 170 COPIED
+// each (95/95 at both legs: wt/51a/.internal/probes/t171/twin371/, ra3 and ra6 of t170/rev170/); every refusal of
+// tests/types/rejection/result_literal_road.npk has its transfer here -- `move(...)` at the place inside each
+// operator (a ternary's arms, nested, `??`, `??!`, `?!`, `?|`, `relay`, a cast, a `dyn` cast, a pick's `give`), a
+// temporary's part BOUND FIRST and moved out of the binding, or cloned; plain data copied, which no rule refuses (a
+// pointer parameter's pointee's PLAIN part among it); and the literal writing ONE field, `value` or `err` (DEF-373).
+// Each control is a function that RETURNS, so its scope's drops run -- a second owner would trap in the allocator's
+// double-free check (95) --, and each fails at its own exit. Exit 0 at both legs.
+mod:result_literal_road_ok;
+error:E1;
+struct:PS = { string:s; int64:k; };
+trait:Tl = { func:ln = int64(Self:self) never fails; };
+impl:PS:Tl = { func:ln = int64(PS:self) never fails { pass self.s.len; }; };
+struct:HU = { PS:u; int64:j; };
+func:mk = PS() never fails {
+    pass PS{ s: string_concat("ab", "cd"), k: 1i64 };
+};
+func:mk6 = PS() never fails {
+    pass PS{ s: string_concat("abc", "def"), k: 2i64 };
+};
+func:mkh = HU() never fails {
+    pass HU{ u: raw mk(), j: 2i64 };
+};
+func:mka = PS[2]() never fails {
+    pass [raw mk(), raw mk6()];
+};
+func:mkr = PS(bool:c) {
+    if (!c) { fail E1; }
+    pass raw mk();
+};
+
+// --- `pass`'s implicit move (D-183), now the long form's ----------------------------------------------------------
+func:lr_named = PS() {
+    PS:a = raw mk();
+    PS:b = raw mk6();
+    return Result{value: a};
+};
+func:c_named = int64() {
+    PS:x = lr_named() ?| raw mk6();
+    pass x.s.len;
+};
+func:lr_field = PS() {
+    HU:h = HU{ u: raw mk(), j: 1i64 };
+    return Result{value: h.u};
+};
+func:c_field = int64() {
+    PS:x = lr_field() ?| raw mk6();
+    pass x.s.len;
+};
+func:lr_deref = PS(PS->:pa) {
+    return Result{value: <-pa};
+};
+func:c_deref = int64() {
+    PS:a = raw mk();
+    PS:x = lr_deref(@a) ?| raw mk6();
+    pass x.s.len + a.s.len;
+};
+
+// --- `move(...)` at the place inside the operator ---------------------------------------------------------------
+func:lr_tern = PS(bool:c) {
+    PS:a = raw mk();
+    PS:b = raw mk6();
+    return Result{value: is (c) : move(a) : move(b)};
+};
+func:c_tern = int64() {
+    PS:x = lr_tern(false) ?| raw mk();
+    pass x.s.len;
+};
+func:lr_nest = PS(bool:c, bool:d) {
+    PS:a = raw mk();
+    PS:b = raw mk6();
+    PS:a2 = raw mk();
+    return Result{value: is (c) : (is (d) : move(a) : move(b)) : move(a2)};
+};
+func:c_nest = int64() {
+    PS:x = lr_nest(true, false) ?| raw mk();
+    pass x.s.len;
+};
+func:lr_coal = PS() {
+    PS?:oa = raw mk6();
+    return Result{value: move(oa) ?? raw mk()};
+};
+func:c_coal = int64() {
+    PS:x = lr_coal() ?| raw mk();
+    pass x.s.len;
+};
+func:lr_ecoal = PS() {
+    PS?:oa = raw mk6();
+    return Result{value: move(oa) ??! E1};
+};
+func:c_ecoal = int64() {
+    PS:x = lr_ecoal() ?| raw mk();
+    pass x.s.len;
+};
+func:lr_unwrap = PS(bool:c) {
+    Result<PS>:ra = mkr(c);
+    return Result{value: move(ra) ?! E1};
+};
+func:c_unwrap = int64() {
+    PS:x = lr_unwrap(true) ?| raw mk6();
+    pass x.s.len;
+};
+func:lr_dflt = PS(bool:c) {
+    Result<PS>:ra = mkr(c);
+    return Result{value: move(ra) ?| raw mk6()};
+};
+func:c_dflt = int64() {
+    PS:x = lr_dflt(false) ?| raw mk();
+    pass x.s.len;
+};
+func:lr_relay = PS(bool:c) {
+    Result<PS>:ra = mkr(c);
+    return Result{value: relay move(ra)};
+};
+func:c_relay = int64() {
+    PS:x = lr_relay(true) ?| raw mk6();
+    PS:y = lr_relay(false) ?| raw mk6();
+    pass x.s.len + y.s.len;
+};
+func:lr_cast = PS() {
+    PS:a = raw mk6();
+    return Result{value: move(a) => PS};
+};
+func:c_cast = int64() {
+    PS:x = lr_cast() ?| raw mk();
+    pass x.s.len;
+};
+func:lr_dyn = dyn Tl() {
+    PS:a = raw mk6();
+    return Result{value: move(a) => dyn Tl};
+};
+func:c_dyn = int64() {
+    dyn Tl:x = lr_dyn() ?| (raw mk() => dyn Tl);
+    pass raw x.ln();
+};
+func:lr_pgive = PS(bool:c) {
+    PS:a = raw mk();
+    PS:b = raw mk6();
+    return Result{value: pick (c) { (true) { give move(a); }, (false) { give move(b); } }};
+};
+func:c_pgive = int64() {
+    PS:x = lr_pgive(false) ?| raw mk();
+    pass x.s.len;
+};
+
+// --- a temporary's part bound first and moved out of the binding, or cloned ---------------------------------------
+func:lr_part_bound = string() {
+    PS:t = raw mk6();
+    return Result{value: move(t.s)};
+};
+func:lr_part_clone = string() {
+    return Result{value: (raw mk6()).s.clone() ?! E1};
+};
+func:lr_part_nested = string() {
+    HU:t = raw mkh();
+    return Result{value: move(t.u.s)};
+};
+func:lr_part_elem = string() {
+    PS[2]:t = raw mka();
+    return Result{value: move(t[1i64].s)};
+};
+func:lr_part_snav = string() {
+    PS?:o = raw mk6();
+    PS:t = move(o) ?? raw mk();
+    return Result{value: move(t.s)};
+};
+func:c_parts = int64() {
+    string:a = lr_part_bound() ?| string_concat("", "");
+    string:b = lr_part_clone() ?| string_concat("", "");
+    string:c = lr_part_nested() ?| string_concat("", "");
+    string:d = lr_part_elem() ?| string_concat("", "");
+    string:e = lr_part_snav() ?| string_concat("", "");
+    pass a.len + b.len + c.len + d.len + e.len;
+};
+
+// --- a fresh value, a transfer, plain data (a pointer parameter's pointee's plain part among it) -------------------
+func:lr_fresh = PS() {
+    return Result{value: raw mk6()};
+};
+func:lr_moved = PS() {
+    PS:a = raw mk6();
+    return Result{value: move(a)};
+};
+func:lr_plain = int64() {
+    int64:k = 3i64;
+    return Result{value: k};
+};
+func:lr_plain_pointee = int64(PS->:q) {
+    return Result{value: q.k};
+};
+func:c_clean = int64() {
+    PS:x = lr_fresh() ?| raw mk();
+    PS:y = lr_moved() ?| raw mk();
+    PS:z = raw mk6();
+    int64:p = lr_plain_pointee(@z) ?| 0i64;
+    pass x.s.len + y.s.len + (lr_plain() ?| 0i64) + p + z.s.len;
+};
+
+// --- DEF-373: ONE field -----------------------------------------------------------------------------------------
+func:lr_err = PS() {
+    PS:a = raw mk();
+    return Result{err: E1};
+};
+func:c_err = int64() {
+    Result<PS>:r = lr_err();
+    if (!r.is_error) { pass 0i64; }
+    PS:x = lr_err() ?| raw mk6();
+    pass x.s.len;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((c_named() ?| 0i64) != 4i64) { exit 11i32; }
+    if ((c_field() ?| 0i64) != 4i64) { exit 12i32; }
+    if ((c_deref() ?| 0i64) != 4i64) { exit 13i32; }
+    if ((c_tern() ?| 0i64) != 6i64) { exit 14i32; }
+    if ((c_nest() ?| 0i64) != 6i64) { exit 15i32; }
+    if ((c_coal() ?| 0i64) != 6i64) { exit 16i32; }
+    if ((c_ecoal() ?| 0i64) != 6i64) { exit 17i32; }
+    if ((c_unwrap() ?| 0i64) != 4i64) { exit 18i32; }
+    if ((c_dflt() ?| 0i64) != 6i64) { exit 19i32; }
+    if ((c_relay() ?| 0i64) != 10i64) { exit 20i32; }
+    if ((c_cast() ?| 0i64) != 6i64) { exit 21i32; }
+    if ((c_dyn() ?| 0i64) != 6i64) { exit 22i32; }
+    if ((c_pgive() ?| 0i64) != 6i64) { exit 23i32; }
+    if ((c_parts() ?| 0i64) != 28i64) { exit 24i32; }
+    if ((c_clean() ?| 0i64) != 23i64) { exit 25i32; }
+    if ((c_err() ?| 0i64) != 6i64) { exit 26i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

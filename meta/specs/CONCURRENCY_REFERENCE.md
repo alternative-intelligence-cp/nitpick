@@ -59,11 +59,12 @@ construction. The honest spellings are the handling ones:
 ```nitpick
 string:payload = relay await fetch_data(url);         // propagate
 string:p2 = await fetch_data(url) ?| move(fallback);  // default (the fallback MOVED in: TYPE-046, DEF-367)
-string:p3 = await fetch_data(url) ?! 9tbb32;          // trap
+string:p3 = await fetch_data(url) ?! E9;              // trap (`error:E9;` -- written `?! 9tbb32` before D-179, corrected 2026-10-30, landing 171's stale-example census)
 ```
 
 > **`await` is valid only inside an `async func`.** Using it in a synchronous
-> function is a hard compile error, `NITPICK-040`.
+> function is a hard compile error, `NITPICK-TYPE-043` (written `NITPICK-040`, the prototype's numbering, until
+> 2026-10-30, landing 171's stale-example census).
 
 ### 2.2 Spawning a task
 

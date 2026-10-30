@@ -1982,7 +1982,7 @@ func:check_value_read = NIL(Assign->:x, AssignState:st, ExprNode:n) never fails 
     if (basen.kind != ExprKind.ExprIdentifierExpr) {
         if (raw place_rooted_at_ident(x, base)) {
             drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
-                "this `Result` lives behind a field or parameter path, which the taint discipline cannot track (F-4): bind it to a local, test `is_error` on that, or use `raw` to say the check is not wanted (D-007)",
+                "this `Result` lives behind a field or parameter path, which the taint discipline cannot track (F-4): bind it to a local and test `is_error` on that (D-007; `raw` takes only a call, D-163)",
                 n.span);
         }
         pass NIL;
@@ -1993,14 +1993,14 @@ func:check_value_read = NIL(Assign->:x, AssignState:st, ExprNode:n) never fails 
         // A bare identifier that is not a tracked local: a PARAMETER'S Result
         // — unwitnessable here, same conservative answer.
         drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
-            "this `Result` arrived through a parameter, which the taint discipline cannot track (F-4): bind it to a local, test `is_error` on that, or use `raw` to say the check is not wanted (D-007)",
+            "this `Result` arrived through a parameter, which the taint discipline cannot track (F-4): bind it to a local and test `is_error` on that (D-007; `raw` takes only a call, D-163)",
             n.span);
         pass NIL;
     }
     if (raw state_checked(st, slot)) { pass NIL; }
 
     drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
-        "this `Result` has not been checked for an error, so its `value` carries the `unknown` taint; test `is_error` first, or use `raw` to say the check is not wanted (D-007)",
+        "this `Result` is not known to hold a value here -- no `is_error` test guards the read, or the one on this path found an error -- so its `value` carries the `unknown` taint: read it where `is_error` is false, or unwrap the binding with `?!`, `?|` or `relay` (D-007; `raw` takes only a call, D-163)",
         n.span);
     pass NIL;
 };

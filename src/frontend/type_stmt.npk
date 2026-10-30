@@ -2729,8 +2729,10 @@ func:require_place = bool(ExprTyper->:e, ExprId:id, Span:at) never fails {
     pass false;
 };
 
-// `pass v;` desugars to `return Result{err: 0tbb32, value: v};` — so `v` is
+// `pass v;` is `return Result{value: v};` — so `v` is
 // checked against the function's SUCCESS type, not its `Result` type.
+// (Written `return Result{err: 0tbb32, value: v};` until landing 171: the both form DEF-373 retired, with a
+// pre-D-179 error.)
 func:check_pass = NIL(ExprTyper->:e, StmtNode:s) never fails {
     ExprId:v = raw stmt_operand(s);
     int32:want = e.fn_success;
@@ -2757,6 +2759,15 @@ func:check_pass = NIL(ExprTyper->:e, StmtNode:s) never fails {
         pass NIL;
     }
 
+    discard(raw check_leaving_value(e, v, want, s.span));
+    pass NIL;
+};
+
+// THE VALUE LEAVING THE FRAME (D-183; DEF-371, landing 171): `pass v`'s operand and a `return`'s `Result{value: v}`
+// value alike -- typed against the success type in the transit and wild contexts, then judged by every rule a value
+// leaving the frame answers to. ONE function for both spellings, so they cannot drift apart again; the type it
+// returns is the value's (0 when it has none).
+pub func:check_leaving_value = int32(ExprTyper->:e, ExprId:v, int32:want, Span:at) never fails {
     int32:saved = e.expected;
     e.expected = want;
     // THE TRANSIT POSITION (D-183, 1.2.6): in a `gives` function, a call to
@@ -2774,21 +2785,21 @@ func:check_pass = NIL(ExprTyper->:e, StmtNode:s) never fails {
     e.null_ctx = nsv;
     e.give_operand = gsaved;
     e.expected = saved;
-    if (got == 0i32) { pass NIL; }
-    if (raw type_is_invalid(e.types, got)) { pass NIL; }
-    if (want == 0i32) { pass NIL; }
+    if (got == 0i32) { pass 0i32; }
+    if (raw type_is_invalid(e.types, got)) { pass got; }
+    if (want == 0i32) { pass got; }
     // `pass` MOVES (D-183), and you cannot give what you were only lent: a
     // lent owning parameter passed back up hands the caller a header whose
     // body the CALLER'S caller still owns — `nio_normalize`'s unchanged path
     // did exactly this, and the first drop to run freed the returned value
     // out from under everyone. The same rule `move(p)` answers to, asked of
     // the implicit move.
-    drop refuse_move_of_borrowed(e, v, got, s.span);
+    drop refuse_move_of_borrowed(e, v, got, at);
     // THE IMPLICIT MOVE REACHES A PLACE, NEVER AN OPERATOR'S OPERAND (DEF-367, landing 170): `pass is (c) : a : b;`
     // copied the arm out while its binding still dropped (95/95), so an operator over a place answers to D-183's
     // rule as any slot's value does -- `move(...)` at the place inside it.
     if (!(raw expr_is_place(e.ast, v, raw BORROW_FUEL()))) {
-        drop require_move_if_owning(e, v, got, s.span);
+        drop require_move_if_owning(e, v, got, at);
     }
     // AND THE SAME AGAIN THROUGH A POINTER: `pass m.files[i].text` returns a
     // cap-carrying copy of a value the POINTEE owns, and the first flagged
@@ -2797,21 +2808,23 @@ func:check_pass = NIL(ExprTyper->:e, StmtNode:s) never fails {
     // spans, and the lexer. The pointer-root exemption on `move` is for
     // permuting WITHIN a container; `pass` LEAVES, so it gets no exemption.
     // The fix at the site is a view (`string_from_bytes`) or a clone.
-    drop refuse_pass_of_pointee_owned(e, v, got, s.span);
+    drop refuse_pass_of_pointee_owned(e, v, got, at);
     // AND OUT OF A LIMITED BINDING'S FIELD OR ELEMENT (1.5.2 step 1, D-251).
-    drop refuse_move_out_of_limited(e, v, got, s.span);
+    drop refuse_move_out_of_limited(e, v, got, at);
     // AND OUT OF A `fixed` BINDING WHEN THE VALUE OWNS (DEF-99, 1.6.0 step 3f).
-    drop refuse_move_out_of_fixed(e, v, got, s.span);
+    drop refuse_move_out_of_fixed(e, v, got, at);
     // AND OUT OF AN OWNING `sealed` FIELD FROM OUTSIDE ITS MODULE (D-313).
-    drop refuse_move_out_of_sealed(e, v, got, s.span);
+    drop refuse_move_out_of_sealed(e, v, got, at);
     if (!(raw fits(e, want, got))) {
-        drop te_assign_mismatch(e, want, got, s.span);
+        drop te_assign_mismatch(e, want, got, at);
     }
-    pass NIL;
+    pass got;
 };
 
-// `fail c;` desugars to `return Result{err: c, value: zero};` — so `c` is a
-// `tbb32`, the same type `Result.err` holds and the same one `failsafe` takes.
+// `fail c;` is `return Result{err: c};` — so `c` is an
+// `Error` (D-179), the type `Result.err` holds and the one `failsafe` takes.
+// (Written `return Result{err: c, value: zero};` and "a `tbb32`" until landing 171: the both form DEF-373 retired,
+// and the error before D-179.)
 //
 // `fail` IN `main` OR `failsafe` IS REFUSED for the reason `relay` is: there is
 // no `Result` to fail into, and an error leaving the program's last frame has
@@ -2891,7 +2904,11 @@ func:check_return = NIL(ExprTyper->:e, StmtNode:s) never fails {
             s.span));
         pass NIL;
     }
+    // THE LITERAL'S VALUE LEAVES THE FRAME ON `pass`'S ROAD (DEF-371, landing 171): marked for `type_result_literal`.
+    int32:rsaved = e.return_lit;
+    e.return_lit = v.index;
     discard(raw type_of_expr(e, v));
+    e.return_lit = rsaved;
     pass NIL;
 };
 
@@ -3114,7 +3131,8 @@ func:check_enum_values = NIL(ExprTyper->:e, DeclNode:d) never fails {
 // state first (a recorded call's caller 0 is "none" to the recursion analysis, the table's own initial value).
 func:module_level_context = NIL(ExprTyper->:e) never fails {
     e.fn_success = 0i32; e.fn_decl = 0i32; e.fn_terminal = false; e.fn_never_fails = false; e.in_defer = false;
-    e.fn_is_async = false; e.fn_gives = false; e.give_operand = 0i32; e.await_operand = 0i32;
+    e.fn_is_async = false; e.fn_gives = false; e.give_operand = 0i32; e.await_operand = 0i32; e.return_lit = 0i32;
+    e.callee_typing = 0i32;
     e.fn_pure = false; e.fn_comptime = false;
     pass NIL;
 };

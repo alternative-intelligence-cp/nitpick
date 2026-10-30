@@ -755,6 +755,12 @@ it independently.
 and meaningful — `failsafe` receives a tainted error code, i.e. "the failure code
 could not itself be computed." Do not reject it.
 
+*[2026-10-30, 1.6.1e landing 171 — a dated note (the stale-example census).]* The example and the
+signature above are this decision's era, before D-179 made errors a nominal type: the argument of
+`?!` is an `Error` now -- `int32:val = read_file() ?! E99;` with `error:E99;` declared -- and
+`failsafe` is `func:failsafe = int32(Error:e)`, its body a `pick` naming what can reach it. The rule
+this decision settles -- exactly one argument, handed to `failsafe` -- stands.
+
 ---
 
 ## D-010 — `tbb` default initialization — **SETTLED**
@@ -4852,6 +4858,12 @@ immediately; a type-varying one costs a new trait and a context-dependent readin
 > pattern binding under the move rules) until this landing, because the bindings analysis marked a local's and a
 > parameter's assignment and returned for the pattern symbol kind. The emitter needed nothing: the assignment drops
 > the old value under its flag and sets the flag, and the arm's end drops the new value (DEF-121).
+
+*[2026-10-30, 1.6.1e landing 171 — a dated note (the stale-example census).]* `NITPICK-019` above
+is the prototype's numbering: a read of a moved binding is `NITPICK-MOVE-001` in this compiler
+("this binding was moved out of and is invalid until it is assigned again (D-065)"), and the
+`malloc`/`free` example is the prototype's too (MEMORY_REFERENCE's copy is a row of DEF-239).
+
 ---
 
 ## D-066 — `opaque struct:Name;` is the one form, and is `extern`-only — **SETTLED; the C-pointer half is superseded by D-149** (there is no in-process C to point at — an `extern` block is a driver interface, and an opaque struct declared in one is a TYPED WIRE HANDLE the Bridge round-trips by value, never an address)
@@ -5130,6 +5142,16 @@ The `Result<NIL>` IR is given as `{ ptr undef, ptr null, i8 0 }`, which types th
 error field as a **pointer**. The canonical layout four sections earlier gives
 `{ T value, i32 error, i8 is_error }`. The `ptr null` form is wrong; under this
 decision `Result<NIL>` is `{ i8 undef, i32 0 }` — a `NIL` payload and a zero error.
+
+*[2026-10-30, 1.6.1e landing 171 — a dated note (DEF-373).]* "Returning a value *and* an error
+remains expressible" (the Consequences above) holds no longer. The author retired the both form on
+2026-10-30 (relayed by management_7 at 06:03): a `Result` literal writes `value` or `err`, never
+both, and `Result{value: retVal, err: errCode}` is `NITPICK-TYPE-101` at the literal. Its measured
+cost was this decision's own concern from the other side: the value sat beside an error no caller
+can read past (`.value` after an error is TAINT-001, `raw` TYPE-042), and an owner there was freed by
+nobody on every error road (peak_live 44 -> 4,004 at N = 1000, `wt/51a/.internal/probes/t171/both/`).
+The desugars read `pass(v)` -> `Result{value: v}` and `fail(e)` -> `Result{err: e}`; a success that
+carries a warning is a value with a field of its own for it.
 
 ---
 
@@ -5891,6 +5913,11 @@ universal `Result` rule, so the restriction needs no new concept.
    `raw a.eq(b)` binds to `a` or to the call, or whether `raw f() => int32` casts
    the `Result` or the value. See D-081.
 
+*[2026-10-30, 1.6.1e landing 171 — a dated note (DEF-373).]* The value `relay` returns above,
+`Result{ value: zero, err: <the same code, verbatim> }`, is the failed `Result` the literal
+`Result{err: <code>}` writes: the value slot is the zero by omission, and since landing 171 a literal
+names one field (`NITPICK-TYPE-101` for both).
+
 ---
 
 ## D-081 — The unary `Result` operators get a precedence level — **SETTLED**
@@ -6593,6 +6620,10 @@ compiled to a `define i32 @main(i32, { ptr, i64 })` whose `argc` read the argv p
 the library listener's finding). `main` is `NITPICK-TYPE-083` unless it is exactly `int32(cstring[]:argv)`;
 TYPE-044 covers `failsafe`'s `int32` return too. One rule, both of them, as §4 says.]**
 
+*[2026-10-30, 1.6.1e landing 171 — a dated note (the stale-example census).]* `failsafe`'s
+parameter is `Error:e` since D-179 (`func:failsafe = int32(Error:e)`); the `tbb32:err` above is this
+decision's era. The fixed one-parameter shape it settles stands (`NITPICK-TYPE-044`).
+
 ## D-090 — Nitpick is nominally typed, and types are interned — **SETTLED**
 
 `TYPE_REFERENCE.md` gives every type a layout and **no identity rule**. That is
@@ -7211,6 +7242,14 @@ error becomes a `tbb32` and `is_error` is derived as `error != 0`. A stored flag
 is a second source of truth about one fact, and two sources of truth eventually
 disagree. The literal therefore has **two fields and no `is_error` to write**.
 
+*[2026-10-30, 1.6.1e landing 171 — a dated note (DEF-373, DEF-371).]* §3's table loses its third row:
+a literal writes ONE field (`NITPICK-TYPE-101` for both, at the literal), so `pass(retVal)` is
+`return Result{value: retVal};` and `fail(errCode)` is `return Result{err: errCode};`, as
+TYPE_REFERENCE §11.2 now carries them. The fixed shape stays -- two slots, either written order,
+either omissible -- and the parser still forwards both fields; the typer refuses them. And a
+`return`'s literal hands its value out on `pass`'s road now (DEF-371; D-183's dated note): the same
+transfer and the same refusals, where the long form had COPIED a named owner.
+
 ---
 
 ## D-098 — Auto-dereference is one level, and only one
@@ -7283,6 +7322,12 @@ POINTEE (r10b, r16, r8: 114 at both legs on 168 and 169, 0 under 170). At a spaw
 at the seed, before the task runs; an owning pointee stays refused there (D-180's dated note), and a
 `move` receiver through a pointer is TYPE-046 at the call, the await and the spawn (D-183's dated
 note, DEF-366): its transfer is `(move(<-pp)).m()`, which vacates the pointee.
+
+*[2026-10-30, 1.6.1e landing 171 — a dated note (DEF-371).]* A pointee's owning part handed out of
+the frame -- `pass p.s` and `return Result{value: p.s}`, through this one-level dereference or
+`(<-p).s` alike -- is refused the same way now, `NITPICK-TYPE-047`: the long form COPIED it, and the
+caller's copy and the pointee's owner were two (95/95 at both legs on 169 and 170; the twin table's
+`C_pointee_part`, `wt/51a/.internal/probes/t171/twin371/`).
 
 ## D-099 — `NIL` is the empty `Optional`; `Some` and `Optional{…}` are both struck
 
@@ -14027,6 +14072,26 @@ the operator (`is (c) : move(a) : move(b)`, `move(o) ?? d`), `(move(x)).m()` and
 `(move(<-p)).m()` for a receiver, and a temporary bound before its part is moved
 out. A named receiver is never consumed implicitly (the closed direction,
 management_6 2026-10-30 00:48; the permissive reading is the author's to grant).
+
+*[2026-10-30, 1.6.1e landing 171 — a dated note (DEF-371, DEF-372; the gives transit).]*
+`pass v` and `return Result{value: v}` are ONE road. `check_leaving_value` (type_stmt.npk) types
+`pass`'s operand and a `return` literal's value alike -- this decision's implicit move, the move-only
+rule, the borrowed, lent, pointee, `limit`, `fixed` and `sealed` refusals and the mismatch report --,
+and `emit_leaving_value` (ir_stmt.npk) lowers both. The long form had COPIED a named owner into the
+`Result`, and the scope exit dropped it again (DEF-371: 95/95 at both legs on 169 and 170; the
+83-pair twin table, `wt/51a/.internal/probes/t171/twin371/`, every pair one verdict under 171). A
+`Result` literal anywhere else is a move slot like any other (a place there is TYPE-046). A function
+with a `move` parameter is not a VALUE (DEF-372, `NITPICK-TYPE-100` where it is named as one): a
+function type carries no `move`, so a call through the value handed the argument to a parameter that
+drops it while the caller still owned it (95/95). And the gives transit (1.2.6's `give_operand`) is
+UNREACHABLE, before this landing and after: `check_gives_call_position` exempts a `gives` call only
+as the direct operand of `pass` or `return`, a call is a `Result`, and every spelling that types puts
+an unwrap between (`pass raw g();`, `?!`, `relay`, the long form's `Result{value: raw g()}` -- each
+TYPE-007 at the call, identical on 170 and 171), so a `gives` function cannot hand on another's
+channels in any spelling -- the closed direction. Classified so, a note and not a defect (management_7
+2026-10-30 06:03 (4); `wt/51a/.internal/probes/t171/gives/README.md`); whether the transit should be
+reachable is a relaxation for the author.
+
 ## D-184 — The reactor: epoll without timerfd; the task-identity rule for every wait — **SETTLED at 1.1.12a; B-3a closed**
 
 **Mechanism.** The reactor is **epoll, and only epoll** — the proposal's

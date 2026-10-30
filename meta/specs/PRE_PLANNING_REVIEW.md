@@ -315,6 +315,9 @@ entire language grammar from Day 1" — and does not currently meet it:
   `return Result{ err: errCode, value: retVal, is_error: true }`, returning a
   value *and* an error simultaneously. Partial success has real safety semantics
   and is not discussed in `SAFETY_ARCHITECTURE.md`.
+  [2026-10-30, landing 171: answered by retirement. D-069 removed the `is_error` field, and the author
+  retired the both form itself on 2026-10-30 (DEF-373): a `Result` literal writes `value` or `err`, never
+  both -- `NITPICK-TYPE-101` --, and a partial success is a success value carrying its own warning field.]
 
 ---
 

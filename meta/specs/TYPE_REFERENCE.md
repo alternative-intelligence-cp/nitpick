@@ -1508,8 +1508,17 @@ struct<T>:Result = {
 | Syntax | Desugars to | Notes |
 |---|---|---|
 | `pass(retVal);` | `return Result{value: retVal};` | Success path (`err` omitted = the zero) |
-| `fail(errCode);` | `return Result{err: errCode, value: zero};` | Error path — `errCode` must be non-zero and non-ERR |
-| `return Result{err: errCode, value: retVal};` | (literal, no desugar) | Special: return both value AND error |
+| `fail(errCode);` | `return Result{err: errCode};` | Error path — `errCode` must be non-zero and non-ERR (`value` omitted = the zero) |
+
+> **A literal writes ONE field: the both form is retired (2026-10-30, landing 171, DEF-373).** A third row stood here,
+> `return Result{err: errCode, value: retVal};` -- "(literal, no desugar) | Special: return both value AND error" --, and the
+> `fail` row's desugar named both fields (`Result{err: errCode, value: zero}`). The author retired the both form on 2026-10-30
+> (relayed by management_7 at 06:03): a `Result` literal writes `value` or `err`, never both, and the long form stays only as the
+> literal spelling of `pass` and `fail`. A literal naming both is `NITPICK-TYPE-101` at the literal. What it did before: the value
+> was copied into a `Result` whose error no caller can read past (`NITPICK-TAINT-001`, `NITPICK-TYPE-042`) and which nothing
+> dropped -- a LEAK of an owner on every caller error road (peak_live 44 -> 4,004 at N = 1000 in a loop cell, `t171/both/`; no
+> trap, no wrong read), and a named value's copy there was DEF-371's dangling copy. The case it served, a fallback that carries
+> a notice, is a success value carrying its own warning field. The row is removed and the `fail` desugar respelt.
 
 > **The suffixes here read `0i32` in an earlier revision**, from before D-069
 > settled the field as a `tbb32`. The struct definition directly above already
@@ -1522,6 +1531,9 @@ is not a convenience: it is what makes the two desugars above expressible as
 literals, since `pass` writes only `value` and `fail` writes only `error`. **Field
 order is free** — the names are matched, so `Result{value: v, err: e}` and
 `Result{err: e, value: v}` are the same node.
+[2026-10-30, landing 171: a literal writes ONE field since DEF-373 retired the both form -- `NITPICK-TYPE-101`
+for `Result{value: v, err: e}` in either order --, so the order sentence describes the retired form; the parser still reads
+both fields in either order and forwards them, and the typer refuses them.]
 
 **There is no `is_error` field to write** (D-069). It is derived on every read.
 
@@ -2235,7 +2247,8 @@ Everything below follows from that one sentence, and nothing beyond it is part o
 - Represents "nothing" at the type level (like `void` in C, but as a value)
 - Return type annotation for functions that produce no meaningful value: `func:f = NIL(...)`
 - "void functions" DO NOT EXIST in Nitpick — they return `Result<NIL>` instead
-- `pass(NIL)` desugars to `return Result{ value: NIL, err: 0i32 }`
+- `pass(NIL)` desugars to `return Result{value: NIL}` [corrected 2026-10-30, landing 171: written `return Result{ value:
+  NIL, err: 0i32 }` -- the both form DEF-373 retired (`NITPICK-TYPE-101`), with a pre-D-179 integer error]
 - To call a NIL-returning function without checking: `drop(myFunc());`
 - **`NIL` is zero-sized** (D-084). Its only value carries no information, so it
   occupies nothing: a `NIL` struct field takes no space and `pass(NIL)` moves

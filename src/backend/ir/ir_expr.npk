@@ -7415,9 +7415,9 @@ func:emit_channel_await = IrVal(ExprEmitter->:x, ExprId:id, ExprId:cid,
         // ring took the transfer and the slot's bytes are a dead duplicate;
         // on ANY error — deadline, closed, stale — the move happened but
         // the transfer did not, and a callee that fails drops what it owns.
-        // (The long-form `Result{value, err}` — both halves filled — is the
-        // recorded road to HANDING the element back if a real need arrives;
-        // it inverts the taint rule, so it waits for a named design.)
+        // (The long form `Result{value, err}`, both halves filled, was the
+        // recorded road to HANDING the element back; DEF-373 retired it at
+        // landing 171, TYPE-101, so a hand-back waits for a named design.)
         if (raw type_drops_recorded(x.fe.ctx.types, elem, 64i32)) {
             string:sfb = raw irw_temp(x.fe.w);
             drop irw_line(x.fe.w, raw cat3(sfb, " = icmp ne i32 ",
@@ -11951,10 +11951,13 @@ func:emit_array_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails 
     pass (raw iv(move(all.text), move(acc), atid));
 };
 
-// `Result{ value: v, err: e }` — either field may be omitted and the omitted
-// one is ZERO, which is D-069's derivation rule made concrete: no error means
+// `Result{value: v}` or `Result{err: e}` (one field: TYPE-101, DEF-373) — the
+// omitted one is ZERO, which is D-069's derivation rule made concrete: no error means
 // `error == 0`, and a failed Result's value slot is the type's zero.
 func:emit_result_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails {
+    // A `return`'S LITERAL (DEF-371, landing 171): its value leaves the frame on `pass`'s road.
+    bool:leaves = (id.index == x.fe.return_lit);
+    if (leaves) { x.fe.return_lit = 0i32; }
     int32:rtid = raw exprtypes_get(x.et, id);
     LlType:rll = raw ll_type(x.fe.ctx, rtid);
     if (!(raw ll_is_ok(rll))) { pass (raw iv_from_ll_at(x, rll, rtid, n.span)); }
@@ -11980,10 +11983,14 @@ func:emit_result_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
     string:vref = raw ll_zero(ill);
     ExprId:ve = raw expr_lhs(n);
     if (!(raw expr_is_none(ve))) {
-        IrVal:vv = raw emit_expr(x, ve);
-        if (!(raw iv_is_ok(vv))) { pass vv; }
-        // THE VALUE HALF IS A SLOT (1.0.6e), of the Result's `T`.
-        vv = raw emit_fit(x, inner, move(vv), n.span);
+        IrVal:vv = raw iv_nil();
+        if (leaves) { vv = raw emit_leaving_value(x, ve, inner, n.span); }
+        else {
+            vv = raw emit_expr(x, ve);
+            if (!(raw iv_is_ok(vv))) { pass vv; }
+            // THE VALUE HALF IS A SLOT (1.0.6e), of the Result's `T`.
+            vv = raw emit_fit(x, inner, move(vv), n.span);
+        }
         if (raw iv_is_ok(vv)) { drop temp_take(x, vv.ref); }   // the literal keeps it (D-246)
         if (!(raw iv_is_ok(vv))) { pass vv; }
         vref = move(vv.ref);

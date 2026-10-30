@@ -2402,3 +2402,28 @@ that carried them retired at the cycle close):
   fuzz program cc0059) were reported before any respelling, and the respellings are the author's or management's to rule. The cells:
   `wt/51a/.internal/probes/t170/` (`pre/` to `pre8b/`, the matrix `gen_matrix170.py` -> `MATRIX_170i.txt`, DEF-368's
   `gen_def368.py` -> `DEF368_170i.txt`).
+- **`pass v;` and `return Result{value: v};` are ONE road, a `Result` literal writes one field, and a function with a `move`
+  parameter is not a value** (DEF-371, DEF-373, DEF-372, DEF-374; landing 171; type_stmt.npk `check_leaving_value`, `check_pass`,
+  `check_return`; type_expr.npk `type_result_literal`, `refuse_move_fn_ident`; type_members.npk `refuse_move_fn_value`, `type_call`;
+  ir_stmt.npk `emit_leaving_value`, `emit_pass`, `emit_return`; ir_expr.npk `emit_result_lit`; bindings.npk `check_value_read`).
+  `pass v;` is the literal's shorthand (D-183), but the two had separate typers and lowerings: every rule `check_pass` grew -- D-183's
+  implicit move, 170's DEF-367 and DEF-368, the lent-parameter, pointee, limited, `fixed` and `sealed` refusals -- was never asked of
+  `return Result{value: v};`, and `emit_result_lit` copied a named owner where `emit_pass` moved it (95/95 at both legs on 169 and
+  170); a call through a function VALUE has no declaration, so `param_is_move` answered false and a function with a `move` parameter
+  became a double free behind a function type, which records no mode. THE LESSONS. (1) A SHORTHAND AND ITS LONG FORM SHARE THE
+  FUNCTION THAT JUDGES THEM: put the rules in one function both spellings ask (`check_leaving_value`, `emit_leaving_value`), and
+  check the agreement mechanically -- a generated twin table, every cell spelt both ways, required SAME (83 pairs; the long-form
+  rows were identical on 169 and 170 while 25 `pass_` rows moved, which is how the drift reads in a table). (2) "EVERY" NAMES ITS
+  ENUMERATION: 170's "every operand by its own recorded type" held for the ten operator kinds `move_slot_source` steps, and F117's list
+  of move slots left out the literal's value; write the list a claim holds over, and the review reads the gap. (3) A MODE THE TYPE
+  DOES NOT CARRY IS CHECKED WHERE THE TYPE IS MADE: a call through a value has no declaration to read the mode from, so the rule
+  stands where the function becomes a value (TYPE-100 at the naming, the callee being typed exempt -- `e.callee_typing`), not at the
+  call. (4) A LEAK OF MANAGED STORAGE NEEDS A LOOP CELL: D-151 counts `wild` blocks only, so the both form's owner, freed by nobody on
+  the caller's error road, read exit 0 and clean; only peak_live at N = 10 against N = 1000 shows it (44 -> 4,004). (5) A CONTROL'S
+  CHECK STANDS IN THE FRAME WHOSE EXIT IT NAMES: a check inside a spawned task leaves by the join's relay (`failsafe`, 114), so the
+  task reports what it read on a `Channel` and `main` compares at the control's own exit (test item C). (6) A MESSAGE THAT SERVES TWO
+  ROADS NAMES BOTH: TAINT-001 said "has not been checked" on the road whose test found an error, with `raw` as a remedy `raw` cannot
+  be. (7) A CALL MOVED INTO A SHARED FUNCTION MOVES ITS PAIRING: `check_slot_sites_agree` keys a slot by the function that asks
+  `fits`, and `SLOT_SITE_PAIRS` named `check_pass` and `emit_pass` after both calls had moved into the shared functions -- the chain
+  runs no in-process check, so run `inproc_checks.py` on the final tree before the texts, not only after the squash. The cells:
+  `wt/51a/.internal/probes/t171/` (`twin371/`, `both/`, `p372/`, `p372b/`, `b171/`, `census371/`, `census171/`) and `t170/rev170/`.

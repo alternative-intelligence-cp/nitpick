@@ -95,7 +95,7 @@ is the mechanism the robotics path depends on.
 
 The ultimate safety net. If an unrecoverable state is reached, execution is trapped.
 
-*   **The `failsafe` function**: Every Nitpick **executable** must define a `func:failsafe = int32(tbb32:err)`. It acts as the global trap handler.
+*   **The `failsafe` function**: Every Nitpick **executable** must define a `func:failsafe = int32(Error:e)` (written `int32(tbb32:err)`, from before D-179 typed the error, until 2026-10-30, landing 171's stale-example census). It acts as the global trap handler.
 *   **Exactly one per program, supplied by the end user** (D-013). Libraries do **not** define one — there is no chaining, no ordering question, and no second claimant on `exit`. Libraries manage their own resources with `defer`, which is per-scope and composes; `failsafe` is whole-program emergency *policy*.
 *   **Triggers**: It is invoked via explicit developer commands (`!!! errCode`), emphatic unwraps (`?! errCode`; `??! errCode` on an `Optional`, D-360), comparison or branching on a `tbb` ERR value, or critical unrecoverable runtime panics (e.g., Out Of Memory).
 *   **`defer` does not run on a trap** (D-014). `!!!`, `?!` and `??!` transfer control directly, without unwinding. At trap time the state of the system is unknown — including how degraded it is — so no cleanup runs before the handler that understands the situation gets control. `failsafe` receives the allocation registry intact.

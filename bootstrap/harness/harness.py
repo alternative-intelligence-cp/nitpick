@@ -796,7 +796,9 @@ def check_identity_by_decl():
 SLOT_SITE_PAIRS = {
     "check_var_decl":      {"emit_vardecl"},
     "check_assign":        {"emit_assign"},
-    "check_pass":          {"emit_pass"},
+    # The value leaving the frame: `pass v`'s operand and a `return`'s `Result{value: v}` value, one rule and one lowering
+    # (DEF-371, landing 171; `check_pass` and `emit_pass` asked `fits` and called `emit_fit` themselves until then).
+    "check_leaving_value": {"emit_leaving_value"},
     "check_args":          {"emit_direct_call",       # `f(x)` and the qualified `m.f(x)`: the one direct-call emitter (D-273, 1.5.4c)
                             "emit_indirect_call", "emit_method_call",
                             "emit_qualified_call",    # `Trait.method(recv, …)` (D-172, 1.0.9b)

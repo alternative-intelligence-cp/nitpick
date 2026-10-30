@@ -132,6 +132,12 @@ pub struct:ExprTyper = {
     // with an `async` callee is a bare call, which has no frame to run the
     // machine in (D-058/D-177) and is refused by `type_call`.
     int32:await_operand;
+    // DEF-371 (landing 171): the `return` statement's `Result{…}` literal, whose value takes `pass`'s road
+    // (`check_leaving_value`); 0 everywhere else.
+    int32:return_lit;
+    // DEF-372 (landing 171): the callee of the call `type_call` is typing, the one place a function with a `move`
+    // parameter may be named (`refuse_move_fn_value`); 0 everywhere else.
+    int32:callee_typing;
     // INSIDE A `pick` ARM (DEF-233, landing 111): how many pick arms enclose the
     // statement being checked (`fall` is legal at a depth above 0), and how many
     // of those are a pick EXPRESSION's (`give` is legal at a depth above 0).
@@ -260,7 +266,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                                  ExprTypes->:expr_types) never fails {
     ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
                              diags: diags, expected: 0i32, expect_refused: false, null_ctx: 0i32, scope: scope,
-                             fn_success: 0i32, fn_decl: 0i32, fn_terminal: false, fn_never_fails: false, in_defer: false, fn_is_async: false, fn_gives: false, give_operand: 0i32, await_operand: 0i32, arm_depth: 0i32, givex_depth: 0i32,
+                             fn_success: 0i32, fn_decl: 0i32, fn_terminal: false, fn_never_fails: false, in_defer: false, fn_is_async: false, fn_gives: false, give_operand: 0i32, await_operand: 0i32, return_lit: 0i32, callee_typing: 0i32, arm_depth: 0i32, givex_depth: 0i32,
                              counted_depth: 0i32,
                              contract_ctx: 0i32, rules_subject: 0i32,
                              contract_raw_operand: 0i32, in_old: false,
@@ -2634,31 +2640,69 @@ func:type_is_err = int32(ExprTyper->:e, ExprNode:n) never fails {
     pass (e.types.t_bool);
 };
 
-// `Result{value: v, err: e}` — THE ONLY CONSTRUCTOR IN THE LANGUAGE.
+// `Result{value: v}` or `Result{err: e}` — THE ONLY CONSTRUCTOR IN THE LANGUAGE, one field at a time (DEF-373).
 //
 // `<T>` is never written: it comes from the enclosing function's declared success
-// type. That is what lets `pass(v)` and `fail(e)` be sugar over this form rather
+// type. That is what lets `pass v;` and `fail e;` be sugar over this form rather
 // than primitives of their own (TYPE_REFERENCE §11):
 //
-//     pass(retVal);   ->  return Result{err: 0i32, value: retVal};
-//     fail(errCode);  ->  return Result{err: errCode, value: zero};
+//     pass v;   ->  return Result{value: v};
+//     fail e;   ->  return Result{err: e};
 //
-// THERE IS NO `is_error` FIELD (D-069). It is derived as `error != 0` on every
+// (Written until landing 171 as `return Result{err: 0i32, value: retVal}` and `return Result{err: errCode, value:
+// zero}` -- the both form, which DEF-373 retired, with a pre-D-179 integer error.)
+//
+// THERE IS NO `is_error` FIELD (D-069). It is derived from `err` on every
 // read, so there is nothing for it to disagree with — a stored flag would be a
 // second source of truth about one fact, and two sources of truth eventually
 // differ. The prototype stored one; this is a deliberate departure.
-func:type_result_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
+func:type_result_literal = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     int32:want = e.fn_success;
-
+    // ONE ROAD FOR `pass v;` AND `return Result{value: v};` (DEF-371, landing 171). `pass v` IS this literal's shorthand
+    // (D-183), so a `return`'s value leaves the frame on `pass`'s road: typed and judged by `check_leaving_value`
+    // (type_stmt.npk), the one function both spellings ask. Until this landing the literal typed its value and asked
+    // no rule: a place, an operator over one, a temporary's part, a lent parameter, a pointee's part, a limited, `fixed`
+    // or `sealed` place each left two owners (95/95 at both legs) where `pass` moved or refused it. ANYWHERE ELSE the
+    // value is a move slot -- no frame is left, so a place copied in leaves two owners: TYPE-046, as at every move slot.
+    bool:leaves = (id.index == e.return_lit);
+    if (leaves) { e.return_lit = 0i32; }
+    // ONE FIELD, NEVER BOTH (DEF-373, landing 171): `value` -- `pass`'s literal spelling -- or `err` -- `fail`'s. A value
+    // beside an error is one no caller can read (`.value` after an error is TAINT-001, `raw` TYPE-042), and an owner
+    // there was freed by nobody on any error road; the author retired the form. Refused once, at the literal: each
+    // part is typed in its own slot's context for its own reports, and the literal is still the function's `Result`.
+    if ((!(raw expr_is_none(raw expr_lhs(n)))) && (!(raw expr_is_none(raw expr_rhs(n))))) {
+        discard(raw te_error(e, raw TYPE_RESULT_BOTH_FIELDS(),
+            "a `Result` literal writes one field -- `value`, the literal spelling of `pass v;`, or `err`, the literal spelling of `fail e;` -- and never both (DEF-373): a value beside an error is one no caller can read, and an owner there is freed by nobody. Write `fail e;` for the failure, `pass v;` for the success; a success that carries a warning is a value with a field of its own for it",
+            n.span));
+        int32:bsaved = e.expected;
+        e.expected = want;
+        int32:bvt = raw type_of_expr(e, raw expr_lhs(n));
+        e.expected = e.types.t_error;
+        discard(raw type_of_expr(e, raw expr_rhs(n)));
+        e.expected = bsaved;
+        int32:brt = want;
+        if (brt == 0i32) { brt = bvt; }
+        pass (raw tt_result(e.types, brt, raw type_size(e.types, brt), raw type_align(e.types, brt)));
+    }
+    ExprId:vid = raw expr_lhs(n);
+    bool:road = leaves && (!(raw expr_is_none(vid)));
     int32:saved = e.expected;
-    e.expected = want;
-    // THE VALUE IS THE FUNCTION'S RETURN SLOT (D-355): wild exactly where the return is.
-    int32:nsv = e.null_ctx;
-    e.null_ctx = 0i32;
-    if (raw fn_ret_wild(e)) { e.null_ctx = 1i32; }
-    int32:vt = raw type_of_expr(e, raw expr_lhs(n));
-    drop check_wild_into_plain(e, raw expr_lhs(n), want);   // D-361
-    e.null_ctx = nsv;
+    int32:vt = 0i32;
+    if (road) {
+        vt = raw check_leaving_value(e, vid, want, n.span);
+    } else {
+        e.expected = want;
+        // THE VALUE IS THE FUNCTION'S RETURN SLOT (D-355): wild exactly where the return is.
+        int32:nsv = e.null_ctx;
+        e.null_ctx = 0i32;
+        if (raw fn_ret_wild(e)) { e.null_ctx = 1i32; }
+        vt = raw type_of_expr(e, vid);
+        drop check_wild_into_plain(e, vid, want);   // D-361
+        e.null_ctx = nsv;
+        if (!(raw expr_is_none(vid))) {
+            drop require_move_if_owning(e, vid, vt, (raw ast_expr(e.ast, vid)).span);
+        }
+    }
     e.expected = e.types.t_error;
     int32:et = raw type_of_expr(e, raw expr_rhs(n));
     e.expected = saved;
@@ -2683,7 +2727,8 @@ func:type_result_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
                             raw type_size(e.types, vt),
                             raw type_align(e.types, vt)));
     }
-    if (!(raw fits(e, want, vt))) {
+    // The pass road asked `fits` (`te_assign_mismatch`, as `pass` reports it).
+    if ((!road) && (!(raw fits(e, want, vt)))) {
         if (!(raw type_is_invalid(e.types, vt))) {
             discard(raw te_mismatch(e, n.span, want, vt));
         }
@@ -2691,6 +2736,15 @@ func:type_result_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
     pass (raw tt_result(e.types, want,
                         raw type_size(e.types, want),
                         raw type_align(e.types, want)));
+};
+
+// An identifier naming a function, typed where it is not the callee of the call being typed (DEF-372).
+func:refuse_move_fn_ident = NIL(ExprTyper->:e, ExprNode:n, int32:ft) never fails {
+    if (n.a == 0i32) { pass NIL; }
+    Symbol:s = raw symtab_get(e.tab, n.a);
+    if (s.origin_kind != (raw SYM_DECL())) { pass NIL; }
+    drop refuse_move_fn_value(e, s.origin, ft, n.span);
+    pass NIL;
 };
 
 // AN IDENTIFIER'S TYPE IS ITS DECLARATION'S.
@@ -4852,11 +4906,13 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
     // second of these: `NIL` is its empty value and a bare `T` is its full one
     // (D-099), so there is nothing here for it.
     if (n.kind == ExprKind.ExprIsErrExpr)        { pass (raw type_is_err(e, n)); }
-    if (n.kind == ExprKind.ExprResultLiteralExpr) { pass (raw type_result_literal(e, n)); }
+    if (n.kind == ExprKind.ExprResultLiteralExpr) { pass (raw type_result_literal(e, id, n)); }
 
 
     if (n.kind == ExprKind.ExprIdentifierExpr) {
-        pass (raw type_ident(e, n));
+        int32:it = raw type_ident(e, n);
+        if (id.index != e.callee_typing) { drop refuse_move_fn_ident(e, n, it); }
+        pass it;
     }
 
     // Member access, indexing and calls live in `type_members.npk` — they are one

@@ -1,0 +1,122 @@
+// expect-exit: 0
+//
+// THE LEGAL HALF OF DEF-372 (landing 171): a function with a `move` parameter is not a value
+// (tests/types/rejection/move_fn_value.npk), and this file holds what stays legal: the CALL -- by name, through a
+// module member, of a generic instance, the argument transferred with `move(...)` --, the remedy the refusal names
+// (a WRAPPER whose parameter is not `move`, which owns a copy of what it is lent and hands that copy on), and a
+// function whose parameters borrow standing wherever a function type stands: an initialiser, an assignment, an
+// argument, `pass`, a returned `Result` literal, a struct literal's field, an array literal's element, a ternary's
+// arms, a module member. Each control is a function that RETURNS, so its scope's drops run -- a second owner would
+// trap in the allocator's double-free check (95) --, and each fails at its own exit. Exit 0 at both legs under this
+// compiler and landing 170's.
+mod:move_fn_value_ok;
+error:E1;
+mod:tm = {
+    pub func:takes = int32(move string:s) never fails {
+        fixed uint8[]:b = string_bytes(s);
+        pass (b.len =>! int32);
+    };
+    pub func:views = int32(string:s) never fails {
+        fixed uint8[]:b = string_bytes(s);
+        pass (b.len =>! int32) + 1i32;
+    };
+};
+func:takes = int32(move string:s) never fails {
+    fixed uint8[]:b = string_bytes(s);
+    pass (b.len =>! int32);
+};
+func:tg<T> = int32(move T:x) never fails {
+    T:y = move(x);
+    pass 4i32;
+};
+func:views = int32(string:s) never fails {
+    fixed uint8[]:b = string_bytes(s);
+    pass (b.len =>! int32);
+};
+func:views2 = int32(string:s) never fails {
+    fixed uint8[]:b = string_bytes(s);
+    pass (b.len =>! int32) + 2i32;
+};
+// THE REMEDY: a wrapper whose parameter is not `move` -- it is lent `s`, owns a copy, and transfers the copy
+func:takes_w = int32(string:s) never fails {
+    string:c = s.clone() ?| string_concat("", "");
+    pass raw takes(move(c));
+};
+struct:HF = { func int32(string) never fails:f; int64:k; };
+func:apply = int32(func int32(string) never fails:f, string:x) never fails {
+    pass raw f(x);
+};
+func:give_fn = func int32(string) never fails () never fails {
+    pass views;
+};
+func:give_fn_long = func int32(string) never fails () {
+    return Result{value: views2};
+};
+
+// --- the call: by name, through a module member, a generic instance ------------------------------------------------
+func:c_direct = int32() never fails {
+    string:a = string_concat("ab", "cd");
+    string:b = string_concat("abc", "def");
+    string:c = string_concat("a", "b");
+    pass (raw takes(move(a))) + (raw tm.takes(move(b))) + (raw tg::<string>(move(c)));
+};
+
+// --- the wrapper, as a value: the caller's string is lent, and dropped once, by the caller ---------------------------
+func:c_wrapper = int32() never fails {
+    func int32(string) never fails:g = takes_w;
+    string:s = string_concat("ab", "cd");
+    int32:v = raw g(s);
+    pass v + (s.len =>! int32);
+};
+
+// --- a function whose parameters borrow, wherever a function type stands --------------------------------------------
+func:c_values = int32(bool:c) never fails {
+    string:s = string_concat("ab", "cd");
+    func int32(string) never fails:g = views;
+    int32:v1 = raw g(s);
+    g = views2;
+    int32:v2 = raw g(s);
+    int32:v3 = raw apply(views, s);
+    HF:h = HF{ f: views2, k: 1i64 };
+    int32:v4 = raw h.f(s);
+    func int32(string) never fails[2]:fs = [views, views2];
+    int32:v5 = raw fs[1i64](s);
+    func int32(string) never fails:t = is (c) : views : views2;
+    int32:v6 = raw t(s);
+    func int32(string) never fails:m = tm.views;
+    int32:v7 = raw m(s);
+    pass v1 + v2 + v3 + v4 + v5 + v6 + v7;
+};
+func:c_returned = int32() {
+    string:s = string_concat("ab", "cd");
+    func int32(string) never fails:g = raw give_fn();
+    func int32(string) never fails:l = give_fn_long() ?! E1;
+    pass (raw g(s)) + (raw l(s));
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c_direct()) != 14i32) { exit 11i32; }
+    if ((raw c_wrapper()) != 8i32) { exit 12i32; }
+    if ((raw c_values(false)) != 37i32) { exit 13i32; }
+    if ((c_returned() ?| 0i32) != 10i32) { exit 14i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

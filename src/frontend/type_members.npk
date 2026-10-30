@@ -314,7 +314,9 @@ func:namespace_member = NsAccess(ExprTyper->:e, ExprId:id, ExprNode:n) never fai
         // record, never from a second walk of the path.
         drop exprtypes_set_ns_decl(e.expr_types, id, ms.origin);
         if (md.kind == DeclKind.DeclFunctionDecl) {
-            pass (raw ns_yes(raw fn_type(@r, mdid, ms.name, e.scope)));
+            int32:mft = raw fn_type(@r, mdid, ms.name, e.scope);
+            if (id.index != e.callee_typing) { drop refuse_move_fn_value(e, mdid.index, mft, n.span); }
+            pass (raw ns_yes(mft));
         }
         if (md.kind == DeclKind.DeclGlobalDecl) {
             // In the declaration's HOME scope (D-137; DEF-105, 1.6.0 step 3h),
@@ -1053,7 +1055,12 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
         }
     }
     int32:callee = 0i32;
-    if (!bare_builtin) { callee = raw type_of_expr(e, raw expr_callee(n)); }
+    if (!bare_builtin) {
+        int32:csaved = e.callee_typing;
+        e.callee_typing = (raw expr_callee(n)).index;
+        callee = raw type_of_expr(e, raw expr_callee(n));
+        e.callee_typing = csaved;
+    }
     int32:gcount = raw expr_generic_count(n);
     int32:start = (raw expr_list_start(n)) + gcount;
     int32:count = (raw expr_list_count(n)) - gcount;
@@ -2774,6 +2781,30 @@ func:param_is_wild = bool(ExprTyper->:e, int32:cdecl, int32:idx) never fails {
     if (idx >= (raw fn_param_count(e.ast, d))) { pass false; }
     DeclNode:pd = raw ast_decl(e.ast, raw fn_param(e.ast, d, idx));
     pass (((raw param_quals(pd)) & ((raw QUAL_WILD()) | (raw QUAL_WILDX()))) != 0i32);
+};
+
+// A FUNCTION WITH A `move` PARAMETER IS NOT A VALUE (DEF-372, landing 171). A function type carries no `move`, so
+// `func int32(string):g = takes;` over `takes = int32(move string:s)` admitted a call `g(s)` that hands `s` to a
+// parameter which drops it while the caller's binding drops it too (95/95 at both legs; the direct call `takes(s)` is
+// TYPE-046). Asked where a function is named as a VALUE -- the identifier arm and a module member's function arm, never
+// the callee of the call being typed (`e.callee_typing`) -- for every `move` parameter, plain data included: one rule
+// with no type test (management_7, 2026-10-30 06:11), a known over-refusal for a `move int64`. One report per site.
+pub func:refuse_move_fn_value = NIL(ExprTyper->:e, int32:did, int32:ft, Span:at) never fails {
+    if (did == 0i32) { pass NIL; }
+    if (ft == 0i32) { pass NIL; }
+    if (raw type_is_invalid(e.types, ft)) { pass NIL; }
+    DeclNode:d = raw ast_decl(e.ast, DeclId{ index: did });
+    if (d.kind != DeclKind.DeclFunctionDecl) { pass NIL; }
+    int32:np = raw fn_param_count(e.ast, d);
+    for (int32:i in 0i32...np) {
+        if (raw param_is_move(e, did, i)) {
+            string:m1 = string_concat("a function with a `move` parameter (here its parameter ", int_to_string(i => int64));
+            string:m2 = string_concat(m1, ") is not a value (DEF-372): a function type carries no `move`, so a call through the value would hand the argument to a parameter that drops it while the caller drops it too. Call the function by name, or wrap it in a function whose parameter is not `move` and pass that");
+            discard(raw te_error(e, raw TYPE_MOVE_FN_VALUE(), move(m2), at));
+            pass NIL;
+        }
+    }
+    pass NIL;
 };
 
 func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,

@@ -12,7 +12,8 @@
 // cloned; and plain data copied through an operator, which no rule refuses (a copy of plain data is harmless:
 // the operand's own type decides). Each control is a function that RETURNS, so its scope's drops run -- a
 // second owner would trap in the allocator's double-free check (95) --, and each fails at its own exit. Exit 0
-// at both legs under this compiler and landing 169's.
+// at both legs under this compiler and landing 169's. (Landing 171 added control 43, `(move(a)) =>! T`, the `=>!`
+// twin of control 28's cast -- test item B, management_7 2026-10-30 04:21.)
 mod:move_slot_sources_ok;
 error:E1;
 fixed Duration:J2 = Duration{ ns: 2000000000i64 };
@@ -157,6 +158,13 @@ func:c_cast = int64() never fails {
     PS:r = move(a) => PS;
     pass r.s.len;
 };
+func:c_cast_unchecked = int64() never fails {
+    string:a = string_concat("abc", "def");
+    string:b = (move(a)) =>! string;
+    PS:p = raw mk3();
+    PS:q = (move(p)) =>! PS;
+    pass b.len + q.s.len;
+};
 func:c_dyn_cast = int64() never fails {
     PS:a = raw mk3();
     dyn Tl:d = move(a) => dyn Tl;
@@ -278,6 +286,7 @@ async func:main = int32(cstring[]:_~argv) {
     if ((raw c_part_nested_bound()) != 4i64) { exit 40i32; }
     if ((raw c_plain_ternary(true)) != 14i64) { exit 41i32; }
     if ((raw c_plain_dyn()) != 18i64) { exit 42i32; }
+    if ((raw c_cast_unchecked()) != 12i64) { exit 43i32; }
     exit 0i32;
 };
 func:failsafe = int32(Error:e) {

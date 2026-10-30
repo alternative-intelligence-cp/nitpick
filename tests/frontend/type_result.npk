@@ -336,9 +336,17 @@ func:main = int32(cstring[]:_~argv) {
     Rx:cl5 = raw rx("Result{value: true }", false, @it);
     if (raw errs(@cl5) != 1i64)                                { exit 116i32; }
 
-    // …and the error is a `tbb32`, never an arbitrary integer.
-    Rx:cl6 = raw rx("Result{value: 1i32, err: true}", false, @it);
+    // …and the error is an `Error` (D-179), never a `bool`. (The literal wrote a value beside it until landing 171,
+    // when a literal naming both fields became TYPE-101 -- the error alone keeps this the mismatch it tests.)
+    Rx:cl6 = raw rx("Result{err: true}", false, @it);
     if (raw errs(@cl6) != 1i64)                                { exit 117i32; }
+
+    // ONE FIELD, NEVER BOTH (DEF-373, landing 171): the both form is retired -- a value beside an error is one no
+    // caller can read, and an owner there is freed by nobody. ONE report, at the literal; the parts are typed for
+    // their own reports and nothing more is asked of them.
+    Rx:cl6b = raw rx("Result{value: 1i32, err: E5}", false, @it);
+    if (raw errs(@cl6b) != 1i64)                               { exit 124i32; }
+    if (!(raw string_eq(raw code0(@cl6b), raw TYPE_RESULT_BOTH_FIELDS()))) { exit 125i32; }
 
     // THERE IS NO `is_error` FIELD (D-069). The prototype stored one as an `i8`
     // third field; it is derived here, so a literal naming it is naming nothing.

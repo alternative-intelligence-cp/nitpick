@@ -713,3 +713,18 @@ pub func:TYPE_COMPTIME_ONLY = string() never fails { pass "NITPICK-TYPE-098"; };
 // must be the tree's own. Reported once at the impl; the entry stays in the table so a call through it
 // reports nothing more (D-240), and the coherence and completeness walks skip it.
 pub func:TYPE_ORPHAN_IMPL = string() never fails { pass "NITPICK-TYPE-099"; };
+
+// A FUNCTION WITH A `move` PARAMETER IS NOT A VALUE (DEF-372, 1.6.1e landing 171). A function type carries no `move`
+// (`func int32(string)` is the type of `takes = int32(move string:s)` too), so a call through the value hands the argument
+// to a parameter that drops it while the caller's binding drops it as well -- two owners, 95/95 at both legs where the
+// direct call `takes(s)` is TYPE-046. Reported once where the function is named as a value -- an identifier or a module
+// member that is not the callee of the call being typed --, for EVERY `move` parameter, plain data included (a known
+// over-refusal: no type test, and relaxing it later only accepts more programs). The remedy is a wrapper whose parameter
+// is not `move`; function types that carry `move` are a grammar question, tied to DEF-286.
+pub func:TYPE_MOVE_FN_VALUE = string() never fails { pass "NITPICK-TYPE-100"; };
+
+// A `Result` LITERAL WRITES ONE FIELD (DEF-373, 1.6.1e landing 171): `value` -- the literal spelling of `pass` -- or
+// `err` -- the literal spelling of `fail` --, never both. The both form left a value no caller can read (`.value` after
+// an error is TAINT-001, `raw` TYPE-042) and an owner nobody frees on every error road; the author retired it
+// (2026-10-30). Reported once at the literal; the parts are typed for their own reports and nothing more is asked of them.
+pub func:TYPE_RESULT_BOTH_FIELDS = string() never fails { pass "NITPICK-TYPE-101"; };

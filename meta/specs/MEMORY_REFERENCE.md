@@ -151,6 +151,28 @@ first. A method whose receiver is `move Self:self` takes its receiver as a
 leaves the pointee VACANT (above). A copy of PLAIN DATA through any of these is
 harmless and stays legal.
 
+**`pass v` and `return Result{value: v}` are ONE road (DEF-371; 1.6.1e landing 171).** A
+`return`'s literal hands its value out of the frame exactly as `pass` hands its operand:
+the same transfer (the place vacated, above), the same refusals -- a borrowed value, a
+binding the frame was lent or a pointee's owning part (TYPE-047), an owning part of a
+`limit<Rules>` binding (TYPE-063), a `fixed` binding (TYPE-084), a `sealed` field outside
+its module (TYPE-079) -- and the same mismatch report. Until landing 171 the long form
+COPIED a named owner into the `Result`, and the frame's scope exit dropped it again (a
+double free, 95/95 at both legs). A `Result` literal anywhere else -- an initialiser, an
+argument, a field -- is a move slot like any other: a place there is TYPE-046. A literal
+writes ONE field, `value` or `err` (NITPICK-TYPE-101, DEF-373; TYPE_REFERENCE.md §11.2).
+
+**A function with a `move` parameter is not a VALUE (DEF-372; landing 171).** A function
+type carries no `move` -- `func int32(string)` is the type of `takes = int32(move
+string:s)` too --, so a call through the value handed the argument to a parameter that
+drops it while the caller's binding still owned it (95/95). Naming such a function
+anywhere but as the callee of its own call -- an initialiser, an argument, a struct
+field, `pass takes;`, a module member `m.takes` -- is `NITPICK-TYPE-100` at the name,
+for EVERY `move` parameter, plain data included (a known over-refusal: no type test, and
+relaxing it later only accepts more programs). Call the function by name, or wrap it in
+a function whose parameter is not `move` and name that; a function type that carries
+`move` is a grammar question, tied to DEF-286.
+
 ### 1.1d The four store shapes, and what each drops (D-186, DEF-120)
 
 Assigning over an owning value releases the old one first, after the right-hand
