@@ -1,0 +1,204 @@
+// expect-exit: 0
+// stress: 40
+// explore: 1000
+//
+// THE LEGAL HALF OF DEF-359 + DEF-360 + DEF-361 + DEF-362 (landing 169): the trait-qualified spawn with plain
+// data by value and a `move string` argument (f4d -- CLEAN on landing 167, REFUSED at `move(s2)` by landing
+// 168's shifted reading, clean again here), its method spelling (f4e), an owner MOVED through the trait-
+// qualified spelling into a `move Self:self`; a by-value plain-data receiver spelled `(<-pp).lookp()` -- the
+// EXPLICIT dereference, which copies the pointee at the spawn (the auto-dereferenced `pp.lookp()` hands the
+// task the pointer's words, DEF-363, and is refused) -- and copied into a local first; a by-value method AWAITED
+// through the EXPLICIT dereference, reporting the value it read (the auto-dereferenced `await pp.peekk()` is
+// DEF-363's AWAIT face -- the same child-frame builder -- and reads an address, 114 at both legs on 168 and
+// 169; refused by nothing yet, so the legal half does not spell it); a generic `T` MOVED into a `move T:x`; a pick
+// expression as the receiver and inside a sanctioned argument whose arm views `d` and writes ANOTHER string,
+// and the root written AFTER the block's join. Each control fails at its own exit; exit 0 at both legs under
+// this compiler; landing 168's checker refuses control 1 alone (the over-refusal it introduced) and accepts
+// every other. The refusals of the same shapes are tests/analysis/rejection/spawn_review_faces.npk.
+mod:spawn_review_faces_ok;
+error:E1;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+struct:W = { int64:k; };
+struct:SS = { string:s; int64:k; };
+struct:PD = { int64:k; };
+impl:W = {
+    thread async func:look = NIL(W:self) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        if (self.k != 104i64) { fail E1; }
+        pass NIL;
+    };
+};
+impl:PD = {
+    thread async func:lookp = NIL(PD:self) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        if (self.k != 1i64) { fail E1; }
+        pass NIL;
+    };
+    async func:peekk = int64(PD:self) {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        pass self.k;
+    };
+};
+thread async func:filler = NIL(shared_arena<int64>->:s) joins J2 {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    Handle<int64>:h = s.alloc(424242i64);
+    int64:v = s.get(h) ?! E1;
+    if (v != 424242i64) { fail E1; }
+    pass NIL;
+};
+thread async func:takeg<T> = NIL(move T:x) joins J2 { await sleep(raw duration_ms(1i64)) ?| NIL; pass NIL; };
+trait:Tr3 = { async func:m3 = NIL(Self:self, move string:n); };
+impl:PD:Tr3 = {
+    thread async func:m3 = NIL(PD:self, move string:n) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        if (self.k != 1i64) { fail E1; }
+        if (n.len != 3i64) { fail E1; }
+        pass NIL;
+    };
+};
+trait:Tm = { async func:mm = NIL(move Self:self, move int64:n); };
+impl:SS:Tm = {
+    thread async func:mm = NIL(move SS:self, move int64:n) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        fixed uint8[]:xb = string_bytes(self.s);
+        if (xb[0i64] != 97u8) { fail E1; }
+        if (n != 5i64) { fail E1; }
+        pass NIL;
+    };
+};
+async func:generic_moved<T> = NIL(move T:a) {
+    {
+        drop takeg::<T>(move(a));
+    }
+    pass NIL;
+};
+async func:main = int32(cstring[]:_~argv) {
+    // 1. (f4d) the trait-qualified spawn: plain data by value as `Self:self`, a `move string` argument
+    {
+        PD:pd = PD{ k: 1i64 };
+        string:s2 = string_concat("ab", "c");
+        {
+            drop Tr3.m3(pd, move(s2));
+            pd = PD{ k: 1i64 };
+        }
+        if (pd.k != 1i64) { exit 11i32; }
+    }
+    // 2. (f4e) the same spawn spelled as a method call
+    {
+        PD:pd = PD{ k: 1i64 };
+        string:s2 = string_concat("ab", "c");
+        {
+            drop pd.m3(move(s2));
+            pd = PD{ k: 1i64 };
+        }
+        if (pd.k != 1i64) { exit 12i32; }
+    }
+    // 3. an owner MOVED through the trait-qualified spelling into a `move Self:self`
+    {
+        SS:w = SS{ s: string_concat("ab", "c"), k: 1i64 };
+        int64:n = 5i64;
+        {
+            drop Tm.mm(move(w), move(n));
+        }
+        string:after3 = string_concat("a", "b");
+        if (after3.len != 2i64) { exit 13i32; }
+    }
+    // 4. (r3) a by-value plain-data receiver through an EXPLICIT dereference, `(<-pp).lookp()`: the pointee is
+    //    copied at the spawn, and the owner's write under the task is not what the task reads
+    {
+        PD:pd = PD{ k: 1i64 };
+        PD->:pp = @pd;
+        {
+            drop (<-pp).lookp();
+            pp.k = 2i64;
+        }
+        if (pd.k != 2i64) { exit 14i32; }
+    }
+    // 5. (r7) the pointee copied into a local first, the owner writing through the pointer under the task
+    {
+        PD:pd = PD{ k: 1i64 };
+        PD->:pp = @pd;
+        PD:c = <-pp;
+        {
+            drop c.lookp();
+            pp.k = 3i64;
+        }
+        if (pd.k != 3i64) { exit 15i32; }
+    }
+    // 6. a generic `T` MOVED into a `move T:x` parameter, at `string`
+    {
+        await generic_moved::<string>(string_concat("ab", "c")) ?| NIL;
+        string:after = string_concat("d", "e");
+        if (after.len != 2i64) { exit 16i32; }
+    }
+    // 7. a pick expression as the receiver, its arm viewing `d` and writing ANOTHER string
+    {
+        string:d = string_concat("hello", " world");
+        string:o = string_concat("ab", "c");
+        {
+            drop (pick (1i32) { (*) {
+                fixed uint8[]:v = string_bytes(d);
+                o = string_concat("xyzzy", "!");
+                give W{ k: (v[0i64] => int64) }; } }).look();
+        }
+        if (o.len != 6i64) { exit 17i32; }
+    }
+    // 8. a pick expression as the receiver, the root written AFTER the block's join
+    {
+        string:d = string_concat("hello", " world");
+        {
+            drop (pick (1i32) { (*) {
+                fixed uint8[]:v = string_bytes(d);
+                give W{ k: (v[0i64] => int64) }; } }).look();
+        }
+        d = string_concat("xyzzy", "!");
+        if (d.len != 6i64) { exit 18i32; }
+    }
+    // 9. a pick expression inside a sanctioned argument, its arm viewing `d` and writing another string
+    {
+        shared_arena<int64>:s = shared_arena_make(8i64);
+        shared_arena<int64>->:sp = @s;
+        string:d = string_concat("hello", " world");
+        string:o = string_concat("ab", "c");
+        {
+            drop filler(pick (1i32) { (*) {
+                fixed uint8[]:v = string_bytes(d);
+                o = string_concat("xyzzy", "!");
+                if (v[0i64] != 104u8) { o = string_concat("bad", "!"); }
+                give sp; } });
+        }
+        if (o.len != 6i64) { exit 19i32; }
+        s.destroy();
+    }
+    // 10. (r11b) the by-value method AWAITED through the EXPLICIT dereference, `(<-pp).peekk()`: the pointee is copied
+    //     into the child frame and the task reports the value it read. (The auto-dereferenced `await pp.peekk()` is
+    //     DEF-363's AWAIT face: the frame is built from the POINTER's words, `self.k` an address, 114 at both legs on
+    //     168 and 169 -- r10b; the first cut of this control, `await pp.lookp() ?| NIL`, swallowed that failure and
+    //     tested nothing.)
+    {
+        PD:pd = PD{ k: 1i64 };
+        PD->:pp = @pd;
+        int64:got = await (<-pp).peekk() ?! E1;
+        if (got != 1i64) { exit 20i32; }
+    }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

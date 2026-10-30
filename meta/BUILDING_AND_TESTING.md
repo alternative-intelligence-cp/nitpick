@@ -2342,3 +2342,33 @@ that carried them retired at the cycle close):
   measured); and the escape pass never enters a pick expression standing as the receiver or inside a sanctioned pointer argument (DEF-359).
   The remedy "`.clone()` first" does not work alone -- a clone is a temporary owner, refused by (4) itself; `.clone()` INTO a `move`
   parameter. Landing 169 opens on the four. Twin-spelling rule: a reader written for `recv.m(args)` is owed to `Tr.m(recv, args)`.
+- **A spawn's receiver and its sanctioned arguments are WALKED before their crossing is judged, a by-value receiver reached through a
+  pointer crosses a spawn AS THAT POINTER, a generic `T` is an owner at a spawn, and a name before the dot with no type is a QUALIFIER** (DEF-359,
+  DEF-360, DEF-361, DEF-362, landing 169; escape.npk `escape_spawn_recv`, `escape_spawn_args`, `escape_spawn_byval`, the spawn arm of
+  `escape_expr`; DEF-363 registered). Four readers of landing 168's spawn rule each missed a face management's diff review found the same
+  evening: `escape_spawn_recv` JUDGED the receiver's crossing and never WALKED it, and `escape_spawn_args` skipped `escape_expr` on its
+  sanctioned `continue`, so a pick expression standing in either place declared views nobody recorded (113/114 at both legs); the receiver
+  reader handed `rxt`, the POINTER's type, to the by-value rule, where a pointer drops nothing; `type_drops` has no `TY_PARAM` case, so a `T`
+  at `string` crossed by value; and the trait-qualified `drop Tr.m(w, n)` put the trait's NAME where a receiver stands, shifting every
+  argument to the next parameter's mode (the owner admitted, a legal `move` argument refused -- the one over-refusal 168 introduced). THE
+  LESSONS. (1) A reader that CONSUMES an expression -- judges its crossing, reads its type -- without recursing into it is a hole for every
+  construct that declares something inside an expression (a pick expression's arm, DEF-327's class): grep a walker for `continue` and `pass`
+  that skip `escape_expr`/`acc_expr`, and `discard(raw escape_expr(…))` first (not `drop …`: TYPE-042, a value discarded). (2) THE EMITTER IS A
+  PARTY TO THE ANALYSIS'S MODEL. The scratch fix peeled `rxt` to the pointee because D-098 says a by-value `self` through a pointer IS the
+  pointee -- and the child-frame builder (`emit_child_frame`, shared by `await` and both spawns) stores the POINTER's words there: `drop
+  pp.lookp()` and `await pp.lookp()` with NOTHING written read an address as `self.k`, 114 at both legs on 168 and 169 (r8, r10b, r16;
+  DEF-134's load reached `emit_method_call` alone). A rule about what CROSSES is checked against what the emitter STORES in the frame --
+  read the frame builder before writing a crossing rule -- and until the emitter is fixed (DEF-363, landing 170) the spelling is refused
+  whatever the pointee, the closed direction. (3) Ask every generic predicate used as an EXEMPTION what it answers for a `T`: `type_drops`
+  answers "no" by having no case, and "no" exempts. The closed reading is "an owner"; the bound (`T: Copy`) is the relaxation, and it
+  needs the typer's BoundTable, which the escape pass does not hold -- say so in the row as a KNOWN over-refusal, not on D-286's list.
+  (4) A method-call node's operand is not always a receiver: the trait- and type-qualified spellings (`Tr.m(w, n)`, `Tp.mp(@w)`) carry a
+  NAME there with no type (`exprtypes_get == 0`; the module-qualified one carries `ns_decl`), and a reader that takes the operand as
+  parameter 0 shifts every argument by one -- the twin-spelling rule of the 168 gotcha, now a test (`spawn_review_faces.npk` sites 10-13).
+  (5) A CELL THAT SWALLOWS THE FAILURE IT TESTS FOR PROVES NOTHING: r10 and r11 wrote `await pp.lookp() ?| NIL` and read 0/0 -- the task's
+  `fail E1` was discarded -- and the legal half's first control 10 did the same while its comment said "right"; a hazard cell routes the
+  wrong value to an exit (`?! E`, a channel, a compared result), and its control OBSERVES the right value, not the owner's write. (6) A face
+  only the EMITTER reaches is censused through the CHECKER: a scratch-only refusal in a scratch worktree (`CENSUS363` in `escape_expr`'s
+  await arm, wt/51n, never landed) swept over the corpus with `sweep.sh` and a parallel `census_one.sh` over the fuzz seat's full checkout --
+  the command and the count in the record. The cells: `wt/51a/.internal/probes/t169/`, `cells_r/`, `cells_r2/`, `cells_r3/`, `cells_r3b/`, the review's
+  `t168/rev168/cells_all4/`; the matrix `t169/MATRIX_169b.txt`.

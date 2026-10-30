@@ -5469,8 +5469,16 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
                 // the same rule (`escape_spawn_recv`); a module-qualified call has none.
                 if (sp_n.kind == ExprKind.ExprMethodCallExpr) {
                     if ((raw exprtypes_ns_decl(x.etypes, sp_op)) == 0i32) {
-                        drop escape_spawn_recv(x, sp_op, raw expr_operand(sp_n), d);
-                        pos_base = 1i32;
+                        // A QUALIFIER IS NO RECEIVER (F4 of the review of landing 168): `drop Tr.m(w, n)`
+                        // names the trait before the dot, and the name has no type; the call's arguments
+                        // are the callee's parameters from position 0, `w` the by-value `Self:self`.
+                        // With the name read as a receiver, `w` was judged by parameter 1's mode and the
+                        // legal `move(n)` by a parameter that does not exist (f4c, f4d).
+                        ExprId:sp_rcv = raw expr_operand(sp_n);
+                        if ((raw exprtypes_get(x.etypes, sp_rcv)) != 0i32) {
+                            drop escape_spawn_recv(x, sp_op, sp_rcv, d);
+                            pos_base = 1i32;
+                        }
                     }
                 }
                 drop escape_spawn_args(x, sp_op, pos_base, (raw expr_list_start(sp_n)) + sgc,
@@ -6686,6 +6694,10 @@ pub func:callee_is_async = bool(Escape->:x, ExprId:call) never fails {
 // is read as a pointer receiver: the closed direction.
 func:escape_spawn_recv = NIL(Escape->:x, ExprId:call, ExprId:recv, int32:depth) never fails {
     if (raw expr_is_none(recv)) { pass NIL; }
+    // THE RECEIVER IS WALKED (F1 of the review of landing 168, DEF-359): a pick expression standing
+    // here declares views in its arm, and nobody entered it -- the verdict is discarded, the
+    // receiver's CROSSING is judged below.
+    discard(raw escape_expr(x, recv, depth));
     int32:rxt = raw exprtypes_get(x.etypes, recv);
     if (rxt == 0i32) { pass NIL; }
     ExprNode:rn = raw ast_expr(x.ast, recv);
@@ -6701,6 +6713,21 @@ func:escape_spawn_recv = NIL(Escape->:x, ExprId:call, ExprId:recv, int32:depth) 
     if (ptr_recv) {
         drop escape_err(x, raw BORROW_SPAWNED(),
             "the receiver of a spawned method crosses the spawn as `@recv` (DEF-339; D-180): a task holding a pointer to this value is a mutation the holder cannot see, at a suspension point it did not choose, and no Mutex, RwLock, CondVar, Barrier or shared_arena takes a user method -- write the task as a free function over a pointer to one of those, or give the method a by-value receiver",
+            rn.span);
+        pass NIL;
+    }
+    // A BY-VALUE RECEIVER REACHED THROUGH A POINTER CROSSES AS THAT POINTER (F2 of the review of
+    // landing 168, DEF-360; the emitter's face DEF-363): `drop p.looks()` with `looks = NIL(SS:self)`
+    // builds the task's frame from the receiver EXPRESSION's words -- the POINTER's, not the
+    // pointee's (r8, `drop pp.lookp()` with NOTHING written, read `self.k` wrong at both legs on
+    // 168 and 169; the owner pointee of f2a read a garbage header, OutOfBounds 109) -- so the
+    // pointer is what crosses, and `rxt`, the pointer's type, drops nothing. `drop (<-p).looks()`
+    // and the by-name spelling copy the pointee at the spawn (r3, r6) and take the by-value rule
+    // below; this spelling is refused whatever the pointee's type -- the closed direction
+    // (DEF-54) -- until the child-frame builder dereferences the receiver (DEF-363).
+    if ((raw type_kind(x.types, rxt)) == (raw TY_POINTER())) {
+        drop escape_err(x, raw BORROW_SPAWNED(),
+            "the receiver of a spawned by-value method reached THROUGH A POINTER crosses the spawn as that pointer (DEF-360, DEF-363; D-180): the task's frame is built from the pointer's words, not the pointee's, and the task reads a wrong value -- write `(<-p).m()` to copy the pointee at the spawn, or copy it into a local first",
             rn.span);
         pass NIL;
     }
@@ -6736,10 +6763,15 @@ func:spawn_param_is_move = bool(Escape->:x, ExprId:call, int32:idx) never fails 
 func:escape_spawn_byval = NIL(Escape->:x, ExprId:call, int32:pos, ExprId:a, int32:aty, ExprNode:an) never fails {
     if (aty == 0i32) { pass NIL; }
     if ((raw type_kind(x.types, aty)) == (raw TY_CHANNEL())) { pass NIL; }
-    if (!(raw type_drops(x.tr, aty, x.scope, 64i32))) { pass NIL; }
+    // A TYPE PARAMETER IS AN OWNER HERE (F3 of the review of landing 168, DEF-361): `type_drops`
+    // has no answer for a `T`, and the instance at `string` is never asked -- the closed direction
+    // (DEF-54); a `T: Copy` bound is the relaxation if it is readable here.
+    if ((raw type_kind(x.types, aty)) != (raw TY_PARAM())) {
+        if (!(raw type_drops(x.tr, aty, x.scope, 64i32))) { pass NIL; }
+    }
     if (raw spawn_param_is_move(x, call, pos)) { pass NIL; }
     drop escape_err(x, raw BORROW_SPAWNED(),
-        "a by-value owner cannot cross a spawn (DEF-340; D-180, TYPE-046): the task receives a copy of this value's header while this binding keeps the storage, and a write, move, destroy or reallocation of it before the join frees what the task reads -- write `move(...)` and declare the parameter `move` to hand ownership to the task, `.clone()` first to hand a copy, or hand a Mutex, RwLock, CondVar, Barrier or shared_arena pointer",
+        "a by-value owner cannot cross a spawn (DEF-340; D-180, TYPE-046): the task receives a copy of this value's header while this binding keeps the storage, and a write, move, destroy or reallocation of it before the join frees what the task reads -- write `move(...)` and declare the parameter `move` to hand ownership to the task, hand `.clone()` to such a `move` parameter to keep this one (a clone handed BY VALUE is a temporary owner, refused by this rule), or hand a Mutex, RwLock, CondVar, Barrier or shared_arena pointer",
         an.span);
     pass NIL;
 };
@@ -6783,6 +6815,9 @@ pub func:escape_spawn_args = NIL(Escape->:x, ExprId:call, int32:pos_base, int32:
                 // every task that could hold it, which is the guarantee the
                 // four locks above ride.
                 if (sanctioned) {
+                    // WALKED BEFORE IT CROSSES (F1 of the review of landing 168, DEF-359): a pick
+                    // expression giving the sanctioned pointer declares views in its arm.
+                    discard(raw escape_expr(x, a, depth));
                     i = i + 1i32;
                     continue;
                 }

@@ -7267,6 +7267,15 @@ callee's store, write, view or move through one went unrecorded: a use-after-fre
 (F-050, exit 170 at both legs). `place_root` itself still stops there: the bindings analysis, the
 suspend walk and the emitter read `<-p` as the value it yields, which is right for them.
 
+*[2026-10-29, 1.6.1e landing 169 — a dated note (DEF-363).]* The one-level auto-dereference a
+by-value `self` method gets through a pointer receiver -- `q.peek()` with `Box->:q`, DEF-134's load
+in `emit_method_call` (1.6.1d step 1) -- is NOT made by the child-frame builder: `emit_child_frame`
+(ir_expr.npk), shared by `await` and the two spawns, stores the POINTER's words where the frame
+expects the struct, so `await pp.lookp()` and `drop pp.lookp()` read an address as `self.k` (114 at
+both legs on 168 and 169; `wt/51a/.internal/probes/t169/`, r8, r10b, r16). DEF-363, OPEN HIGH;
+landing 170 ports the load. Until then the spawn spelling is refused (landing 169's closed DEF-360
+rule) and the await spelling is a silent wrong value; `(<-pp).m()` is the faithful spelling of both.
+
 ## D-099 — `NIL` is the empty `Optional`; `Some` and `Optional{…}` are both struck
 
 **Settled in cycle 0.4.5.** `Result` gained its constructor in D-097 and the same
@@ -13206,6 +13215,8 @@ a spawned thread held it, the thread allocating in freed memory — is the shape
 *[2026-10-28, 1.6.1e landing 164 — a dated note (DEF-309, DEF-311).]* The lend is read through two more pointer spellings. A crossing REPLACED or MOVED at the DEREFERENCE of a call-result pointer (`(<-(raw idp(@s))) = shared_arena_make(4i64)`, `move(<-(raw idp(@s)))`, `replace(@(<-(raw idp(@s))))`, a pointee's arena field replaced `(<-(raw idw(@w))).a = …`) met no lend: `check_access_reported`'s call-result arm keyed on the written place ITSELF being a pointer, and here the place is the POINTEE. `rootless_deref_base` finds the rootless pointer below the place and the arm resolves it by rule A (D-326) with the steps between composed — `NITPICK-BORROW-016` at the write or the call (DEF-309). And a lend rooted at a pointer PARAMETER (`async func:f = NIL(shared_arena<int64>->:sp) { drop filler(sp); drop replace(raw idp(sp)); … }`, the reverse `drop filler(raw idp(sp)); drop replace(sp);`, and the task itself handed `raw idp(sp)` and storing over it) met nothing, because rule A's readers, asked from the aliasing pass, no longer knew `sp` as a parameter (the escape state's `cur_fn` restored to -1 after the escape pass's own walk); `alias_decl` sets it for the function it walks (DEF-311). Measured first by the kept matrix (`.internal/def306_matrix_kept/matrix306.py`, widened by the `param_call_result` and `two_level_call_result` paths: 1,080 cells, 192 REFUSED, 2 KNOWN-LIMIT, 0 OPEN, 13/13 controls), 0 tree sites. STILL OPEN in the class, HIGH: DEF-312 — a pointer FIELD of a call-result pointer's pointee written through below the dereference, two levels; its lend cell `m_lend_forward_replace_two_level_call_result` is KNOWN-LIMIT by exact id. DEF-309 and DEF-311 FIXED.
 
 *[2026-10-29, 1.6.1e landing 168 — a dated note (DEF-339, DEF-340).]* A spawned async METHOD's receiver crosses the spawn as the implicit `@recv` and is judged by this rule as a free function's pointer argument is -- `NITPICK-BORROW-004` for a plain struct's pointer, since no Mutex, RwLock, CondVar, Barrier or shared_arena takes a user method (TYPE-007); the method's arguments are lent as a free function's. And a BY-VALUE OWNER -- a `string`, a `List`, a struct holding one -- cannot cross a spawn at all: the child frame receives a copy of its header while the owner's binding stays live (TYPE-046's forbidden copy, made by the spawn), and the owner's write before the join frees what the task reads. It crosses only into a `move` parameter (D-183); a `Channel` (D-181) and plain data cross as before. Direction (A) of management's ruling of 2026-10-29 08:25:55 -- the PARAMETER's mode decides, never the argument's spelling; the permissive lend (B) is the author's to grant. D-180's five kinds are unchanged.
+
+*[2026-10-29, 1.6.1e landing 169 — a dated note (DEF-359 to DEF-362; DEF-363).]* A spawn's receiver and its sanctioned pointer arguments are WALKED before their crossing is judged -- a pick expression standing there declares views in its arm (DEF-359). A by-value receiver reached THROUGH A POINTER crosses the spawn AS THAT POINTER -- the child frame is built from the receiver expression's words (DEF-363) -- and is `NITPICK-BORROW-004` whatever the pointee's type, the closed direction until the emitter dereferences it; `(<-p).m()` copies the pointee at the spawn and takes the by-value rule (DEF-360). A generic `T` by value is an OWNER at a spawn and crosses only into a `move` parameter -- a `T: Copy` instance too, a known over-refusal until a BoundTable reaches the escape pass (DEF-361). And a trait's or a type's name before the dot is a QUALIFIER, not a receiver: `drop Tr.m(w, n)` judges `w` as parameter 0's by-value `Self:self` and `move(n)` by parameter 1 (DEF-362). The five kinds and direction (A) are unchanged.
 
 ## D-181 — Threads: the `thread` modifier, the per-thread executor, and the lexical join — **SETTLED**
 
@@ -19506,6 +19517,11 @@ DEF-302's k302a. The new walk that recognises a `List` element (`place_is_list_e
 > landing 169. And the remedy "`.clone()` first" that the record, F113 and the `-004` message name does not work alone: a clone is a
 > temporary owner, refused by this rule unless it goes INTO a `move` parameter (DEF-340's row, note (iv)); the message string changes in
 > 169.
+> *Note 2026-10-29 (landing 169, DEF-362):* f4d's over-refusal -- `drop Tr3.m3(pd, move(s2))` refused at `move(s2)` on 168 -- is GONE: a
+> type-less method-call operand is a qualifier and every argument is judged by its own parameter's mode; the legal half's control 1 runs it,
+> 0/0. NOT added to this list (management_6, 23:02): landing 169's refusal of a `T: Copy` instance handed to a spawn by value
+> (`spawn_review_faces.npk` site 9) -- a limitation with a fix (the typer's BoundTable is not reachable from the escape pass), recorded in
+> DEF-361's row, 0 tree sites by the sweep.
 
 ## D-287 — a `fixed` binding has no address — **SETTLED (user decision, 2026-09-11: s60 to s-62 look fine to me. I read them a couple times to be sure i was understanding and I can't find anything wrong with it. consider them ratified.; OPEN_DECISIONS S-62; DEF-43; lands at 1.5.5 step 1)**
 
@@ -22468,6 +22484,10 @@ the rule of 1.5.6b step 4).
 > compiler checks itself: the eleven hand impls pass the rule. `npkg verify --record` at this tree: 6,466 obligations — 3,116 discharged, 2,503 open, 0 budget, 842 unencoded, 5 checker — matching, the verified compiler rebuilding itself byte-identically, the floor's 388 unmoved; `nitpick.obligations` 6,199 rows before and after (no new row: `list_get`'s two raises are no guard and the checker's new loops are `for`s), 5,685 shared, ZERO verdicts moved among shared rows, ZERO (symbol, kind) discharged counts fell; the 514 rows that re-keyed are a MOVE of names (the same (symbol, kind, verdict) multiset on both sides — D-317's type-id field-function names shifted by the prelude's new trait and 94 impls, as at landing 71). The emission comparison (every program of the tree under 1.6.1b's compiler and this one): every emission's TEXT moves in two renumberings — the type-id-named symbols (`@"npk.drop.<id>"`, `@"npk.vacant.<id>"`: the prelude's trait and 94 impls shift every later type id) and D-179's site table's prelude line numbers (`@npk.site.lines`: the prelude grew by 22 lines before its guarded functions) — and in NOTHING ELSE: with both normalised, 490 of 490 identical, 0 different, 0 newly refused (the two base-refused files are the new programs); the plan's "no emission change" expectation was wrong by exactly these two renumberings, and F16 says so. The runner self-check green. The census at the landing
 > tree: no declaration of `Copy` or `list_get` anywhere in the tree or the listener's
 > repositories; F16 carried it. The record is `meta/roadmap/1.6/1.6.1c.md`.
+> *Note 2026-10-29 (landing 169, DEF-361):* the `Copy` bound licenses a copy at a CALL; at a SPAWN the escape pass cannot read it --
+> `param_is_copy` (type_expr.npk) answers off the typer's BoundTable, which the pass does not hold -- so a `T: Copy` instance handed to a
+> spawn by value is refused as an owner (`NITPICK-BORROW-004`, the closed direction), a KNOWN over-refusal with 0 tree sites; the relaxation
+> is owed when a BoundTable reaches the pass.
 
 ## D-328 — `cstring` is string-shaped and owns the block `to_cstring` makes; a literal and an `argv`/`environ()` element are borrowed at `cap == 0` — **SETTLED (user decision, 2026-09-26: "go with your recommendations on all four"; S-109, DEF-122)**
 

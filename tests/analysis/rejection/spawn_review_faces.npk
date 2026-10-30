@@ -1,0 +1,352 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 143:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 156:13
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 170:13
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 184:14
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 194:15
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 205:14
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 216:25
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 225:25
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 234:25
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 244:19
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 253:19
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 265:21
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 276:20
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 288:14
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 299:14
+// expect-error: NITPICK-BORROW-004
+// expect-error-at: 309:15
+// DEF-359 + DEF-360 + DEF-361 + DEF-362 (landing 169): THE FOUR FACES OF THE SPAWN READERS THAT MANAGEMENT'S
+// REVIEW OF LANDING 168 FOUND, each a hole on landing 167 and landing 168 alike.
+//
+// A pick EXPRESSION standing as a spawned method's RECEIVER, or inside a SANCTIONED pointer argument of a
+// spawn, was entered by neither spawn reader of the escape pass -- `escape_spawn_recv` judged the receiver's
+// crossing and never walked it, and `escape_spawn_args`' sanctioned `continue` skipped `escape_expr` -- so a
+// view its arm declared recorded no ref and the arm's write of the viewed root was silent (DEF-359; the task
+// read the freed bytes, 113/114 at both legs). A by-value `self` method spawned THROUGH A POINTER crossed
+// unrefused: `rxt` was the pointer's type, which drops nothing (DEF-360; 109/109) -- and the spawn's child frame
+// is built from the receiver EXPRESSION's words, the POINTER's, not the pointee's, so the task reads a WRONG
+// VALUE even where nothing is written (DEF-363, the emitter's face, which the AWAIT shares -- `emit_child_frame`
+// builds both frames: `drop pp.lookp()` and `await pp.lookp()` over plain data, nothing written, 114 at both legs
+// on 168 and 169; `(<-pp).lookp()`, spawned or awaited, and the by-name spelling copy the pointee and are right).
+// A generic `T` instantiated at an owner crossed by value: `type_drops` has no answer for a `TY_PARAM`, and the
+// instance at `string` is never asked (DEF-361; the copy is the hazard). And the TRAIT-QUALIFIED spawn
+// `drop Tr.m(w, n)` handed the trait's NAME to the receiver reader (its type 0: nothing judged) and set
+// `pos_base` to 1, so every argument was judged by the NEXT parameter's mode -- the owner `w` admitted, and a
+// legal `move` argument refused by a parameter that does not exist (DEF-362; f4c, and f4d the over-refusal
+// landing 168 introduced, its legal half control 11). NOW the receiver and the sanctioned argument are WALKED
+// before their crossing is judged (sites 1-3: NITPICK-BORROW-015 at the write inside the arm); a by-value
+// receiver reached THROUGH A POINTER crosses the spawn AS THAT POINTER and is refused whatever the pointee's
+// type, the closed direction (DEF-54) until the child-frame builder dereferences it (sites 4-6 the owner
+// pointee -- site 6 with nothing written --, sites 14-16 PLAIN DATA: a pointer local with the owner writing,
+// nothing written, an inline address; each NITPICK-BORROW-004 at the receiver; `drop (<-pp).lookp()` and a copy
+// into a local are the legal half's controls 4 and 5); a `TY_PARAM` argument is an
+// OWNER to the by-value rule, the closed direction (DEF-54), so it crosses only into a `move` parameter (sites
+// 7-8: `-004` at the argument; site 9 the `T: Copy` instance -- a licensed copy (D-327) refused here because the
+// escape pass reaches no bound table, KNOWN, 0 tree sites by the sweep, the relaxation owed with a bound table
+// reachable from the pass); and a method-call operand with NO type is a QUALIFIER -- no receiver, `pos_base` 0,
+// so `w` is parameter 0's by-value `Self:self` (sites 10-12: `-004` at `w`, at the temporary, and at `w` ALONE
+// where the `move` argument beside it is legal; site 13 a trait-qualified POINTER receiver, `drop Tp.mp(@w)`,
+// `-004` at the argument as `drop w.mp()` is at its receiver). Landing 168's checker reports exactly TWO sites of
+// this file -- site 12 at the WRONG argument, `move(s2)` (the shift), and site 13 at `@w` by the same rule and
+// text as here (the shift judged the address by parameter 1's mode, a pointer either way) -- and none of the
+// others; the legal half is tests/backend/programs/spawn_review_faces_ok.npk. The cells:
+// wt/51a/.internal/probes/t168/rev168/cells_all4/ (f1a-f1c, f2a-f2b, f3a, f3c, f4a-f4e) and t169/cells_r/,
+// cells_r2/ (r1-r14, the receiver's spellings at the spawn and under `await`).
+mod:spawn_review_faces;
+error:E1;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+struct:W = { int64:k; };
+struct:SS = { string:s; int64:k; };
+struct:PD = { int64:k; };
+impl:W = {
+    thread async func:look = NIL(W:self) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        if (self.k != 104i64) { fail E1; }
+        pass NIL;
+    };
+};
+impl:PD = {
+    thread async func:lookp = NIL(PD:self) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        if (self.k != 1i64) { fail E1; }
+        pass NIL;
+    };
+};
+impl:SS = {
+    thread async func:looks = NIL(SS:self) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        fixed uint8[]:xb = string_bytes(self.s);
+        if (xb[0i64] != 97u8) { fail E1; }
+        pass NIL;
+    };
+};
+thread async func:filler = NIL(shared_arena<int64>->:s) joins J2 {
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    Handle<int64>:h = s.alloc(424242i64);
+    int64:v = s.get(h) ?! E1;
+    if (v != 424242i64) { fail E1; }
+    pass NIL;
+};
+thread async func:peekg<T> = NIL(T:x) joins J2 { await sleep(raw duration_ms(1i64)) ?| NIL; pass NIL; };
+thread async func:peekc<T: Copy> = NIL(T:x) joins J2 { await sleep(raw duration_ms(1i64)) ?| NIL; pass NIL; };
+trait:Tr = { async func:m = NIL(Self:self, move int64:n); };
+impl:SS:Tr = {
+    thread async func:m = NIL(SS:self, move int64:n) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        fixed uint8[]:xb = string_bytes(self.s);
+        if (xb[0i64] != 97u8) { fail E1; }
+        if (n != 5i64) { fail E1; }
+        pass NIL;
+    };
+};
+trait:Tr2 = { async func:m2 = NIL(Self:self, move string:n); };
+impl:SS:Tr2 = {
+    thread async func:m2 = NIL(SS:self, move string:n) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        fixed uint8[]:xb = string_bytes(self.s);
+        if (xb[0i64] != 97u8) { fail E1; }
+        if (n.len != 3i64) { fail E1; }
+        pass NIL;
+    };
+};
+trait:Tp = { async func:mp = NIL(Self->:self); };
+impl:W:Tp = {
+    thread async func:mp = NIL(W->:self) joins J2 {
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        if (self.k == 999i64) { fail E1; }
+        pass NIL;
+    };
+};
+
+// --- DEF-359: THE RECEIVER AND THE SANCTIONED ARGUMENT ARE WALKED -----------------------------------
+// 1. the pick expression IS the spawned method's receiver; its arm views `d` and rewrites it (f1a)
+async func:recv_is_pick = NIL() {
+    string:d = string_concat("hello", " world");
+    {
+        drop (pick (1i32) { (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            if (v[0i64] != 104u8) { fail E1; }
+            give W{ k: 104i64 }; } }).look();
+    }
+    pass NIL;
+};
+
+// 2. the pick inside a struct-literal receiver, the viewed byte carried into the task (f1b)
+async func:recv_struct_literal_pick = NIL() {
+    string:d = string_concat("hello", " world");
+    {
+        drop (W{ k: (pick (1i32) { (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            give (v[0i64] => int64); } }) }).look();
+    }
+    pass NIL;
+};
+
+// 3. the pick inside a SANCTIONED pointer argument, a `shared_arena<int64>->` given out of the arm (f1c)
+async func:sanctioned_arg_pick = NIL() {
+    shared_arena<int64>:s = shared_arena_make(8i64);
+    shared_arena<int64>->:sp = @s;
+    string:d = string_concat("hello", " world");
+    {
+        drop filler(pick (1i32) { (*) {
+            fixed uint8[]:v = string_bytes(d);
+            d = string_concat("xyzzy", "!");
+            if (v[0i64] != 104u8) { fail E1; }
+            give sp; } });
+    }
+    s.destroy();
+    pass NIL;
+};
+
+// --- DEF-360: A BY-VALUE RECEIVER THROUGH A POINTER IS THE POINTEE ---------------------------------
+// 4. a by-value `self` method spawned through a POINTER local, the owner rewriting under the task (f2a)
+async func:byval_self_through_pointer = NIL() {
+    SS:w = SS{ s: string_concat("ab", "c"), k: 1i64 };
+    SS->:p = @w;
+    {
+        drop p.looks();
+        p.s = string_concat("zz", "z");
+    }
+    pass NIL;
+};
+
+// 5. the same through an inline address, `drop (@w).looks()` (f2b)
+async func:byval_self_through_address = NIL() {
+    SS:w = SS{ s: string_concat("ab", "c"), k: 1i64 };
+    {
+        drop (@w).looks();
+        w.s = string_concat("zz", "z");
+    }
+    pass NIL;
+};
+
+// 6. through the pointer, the owner writing NOTHING: the copy is the hazard (direction (A), as m12)
+async func:byval_self_through_pointer_no_write = NIL() {
+    SS:w = SS{ s: string_concat("ab", "c"), k: 1i64 };
+    SS->:p = @w;
+    {
+        drop p.looks();
+    }
+    if (w.k != 1i64) { fail E1; }
+    pass NIL;
+};
+
+// --- DEF-361: A TYPE PARAMETER IS AN OWNER TO THE BY-VALUE RULE -------------------------------------
+// 7. a generic `T` local handed to a by-value `T:x` parameter, the local re-assigned under the task (f3a)
+async func:generic_byval_named<T> = NIL(move T:a, move T:c) {
+    T:l = move(a);
+    {
+        drop peekg::<T>(l);
+        l = move(c);
+    }
+    pass NIL;
+};
+
+// 8. `move(a)` of a `move T` parameter into a BY-VALUE `T:x`: the parameter's mode decides, not the spelling (f3c)
+async func:generic_byval_moved<T> = NIL(move T:a) {
+    {
+        drop peekg::<T>(move(a));
+    }
+    pass NIL;
+};
+
+// 9. a `T: Copy` instance by value -- a licensed copy (D-327), refused here because the escape pass reaches no
+//    bound table: KNOWN, the relaxation owed (0 tree sites by the sweep)
+async func:generic_copy_byval<T: Copy> = NIL(T:a) {
+    {
+        drop peekc::<T>(a);
+    }
+    pass NIL;
+};
+
+// --- DEF-362: A QUALIFIER IS NO RECEIVER -------------------------------------------------------------
+// 10. `drop Tr.m(w, 5i64)`: `w` is parameter 0's by-value `Self:self`, the owner rewriting under the task (f4a)
+async func:trait_qualified_owner = NIL() {
+    SS:w = SS{ s: string_concat("ab", "c"), k: 1i64 };
+    {
+        drop Tr.m(w, 5i64);
+        w.s = string_concat("zz", "z");
+    }
+    pass NIL;
+};
+
+// 11. a TEMPORARY owner as the trait-qualified receiver, dead at the statement's end (f4b; oi5's class)
+async func:trait_qualified_temporary = NIL() {
+    {
+        drop Tr.m(SS{ s: string_concat("ab", "c"), k: 1i64 }, 5i64);
+        string:junk = string_concat("qq", "q");
+    }
+    pass NIL;
+};
+
+// 12. `drop Tr2.m2(w, move(s2))`: `w` refused ALONE -- the `move` argument beside it is legal (f4c; landing
+//     168 refused `move(s2)` and admitted `w`)
+async func:trait_qualified_both_faces = NIL() {
+    SS:w = SS{ s: string_concat("ab", "c"), k: 1i64 };
+    string:s2 = string_concat("ab", "c");
+    {
+        drop Tr2.m2(w, move(s2));
+        w.s = string_concat("zz", "z");
+    }
+    pass NIL;
+};
+
+// 13. a trait-qualified spawn with a POINTER receiver, `drop Tp.mp(@w)`: the address is argument 0 and crosses
+//     as `drop w.mp()`'s receiver does (D-180)
+async func:trait_qualified_pointer_receiver = NIL() {
+    W:w = W{ k: 1i64 };
+    {
+        drop Tp.mp(@w);
+        w = W{ k: 2i64 };
+    }
+    pass NIL;
+};
+
+// --- DEF-360 + DEF-363: THE PLAIN-DATA FACES -- THE POINTER'S WORDS ARE WHAT THE TASK RECEIVES ------------
+// 14. plain data through a pointer local, the owner writing under the task (r1: the task read `self.k` wrong)
+async func:plain_through_pointer_owner_writes = NIL() {
+    PD:pd = PD{ k: 1i64 };
+    PD->:pp = @pd;
+    {
+        drop pp.lookp();
+        pp.k = 2i64;
+    }
+    pass NIL;
+};
+
+// 15. plain data through a pointer local, NOTHING written: the value is wrong all the same (r8, 114 at both legs)
+async func:plain_through_pointer_no_write = NIL() {
+    PD:pd = PD{ k: 1i64 };
+    PD->:pp = @pd;
+    {
+        drop pp.lookp();
+    }
+    if (pd.k != 1i64) { fail E1; }
+    pass NIL;
+};
+
+// 16. plain data through an inline address, `drop (@pd).lookp()` (r2)
+async func:plain_through_address = NIL() {
+    PD:pd = PD{ k: 1i64 };
+    {
+        drop (@pd).lookp();
+        pd.k = 3i64;
+    }
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    await recv_is_pick() ?| NIL;
+    await recv_struct_literal_pick() ?| NIL;
+    await sanctioned_arg_pick() ?| NIL;
+    await byval_self_through_pointer() ?| NIL;
+    await byval_self_through_address() ?| NIL;
+    await byval_self_through_pointer_no_write() ?| NIL;
+    await generic_byval_named::<string>(string_concat("ab", "c"), string_concat("de", "f")) ?| NIL;
+    await generic_byval_moved::<string>(string_concat("ab", "c")) ?| NIL;
+    await generic_copy_byval::<int64>(7i64) ?| NIL;
+    await trait_qualified_owner() ?| NIL;
+    await trait_qualified_temporary() ?| NIL;
+    await trait_qualified_both_faces() ?| NIL;
+    await trait_qualified_pointer_receiver() ?| NIL;
+    await plain_through_pointer_owner_writes() ?| NIL;
+    await plain_through_pointer_no_write() ?| NIL;
+    await plain_through_address() ?| NIL;
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};
