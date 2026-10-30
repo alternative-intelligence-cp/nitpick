@@ -2362,7 +2362,7 @@ that carried them retired at the cycle close):
   whatever the pointee, the closed direction. (3) Ask every generic predicate used as an EXEMPTION what it answers for a `T`: `type_drops`
   answers "no" by having no case, and "no" exempts. The closed reading is "an owner"; the bound (`T: Copy`) is the relaxation, and it
   needs the typer's BoundTable, which the escape pass does not hold -- say so in the row as a KNOWN over-refusal, not on D-286's list.
-  (4) A method-call node's operand is not always a receiver: the trait- and type-qualified spellings (`Tr.m(w, n)`, `Tp.mp(@w)`) carry a
+  (4) A method-call node's operand is not always a receiver: the trait- and type-qualified spellings (`Tr.m(w, n)`, `Tp.mp(@w)`) [CORRECTED 2026-10-30, the review of 321f31f (F3): BOTH are TRAIT-qualified -- `Tp` is a trait, and the typer has no type-qualified call (`type_method_call` takes a module, a trait or an enum constructor; `PD.m(x)` is NITPICK-TYPE-007), so the qualifier rule is reached by trait names only] carry a
   NAME there with no type (`exprtypes_get == 0`; the module-qualified one carries `ns_decl`), and a reader that takes the operand as
   parameter 0 shifts every argument by one -- the twin-spelling rule of the 168 gotcha, now a test (`spawn_review_faces.npk` sites 10-13).
   (5) A CELL THAT SWALLOWS THE FAILURE IT TESTS FOR PROVES NOTHING: r10 and r11 wrote `await pp.lookp() ?| NIL` and read 0/0 -- the task's
@@ -2372,3 +2372,9 @@ that carried them retired at the cycle close):
   await arm, wt/51n, never landed) swept over the corpus with `sweep.sh` and a parallel `census_one.sh` over the fuzz seat's full checkout --
   the command and the count in the record. The cells: `wt/51a/.internal/probes/t169/`, `cells_r/`, `cells_r2/`, `cells_r3/`, `cells_r3b/`, the review's
   `t168/rev168/cells_all4/`; the matrix `t169/MATRIX_169b.txt`.
+  (6) [ADDED 2026-10-30, the review of 321f31f] A WALKED receiver's VERDICT is a judgment too: `escape_spawn_recv` runs `escape_expr` on the receiver (DEF-359)
+  and drops the answer, where `escape_spawn_args` refuses an argument whose walk answers true ("a borrow cannot cross a spawn") -- so a by-value
+  `self` HOLDING a borrow (`H{ p: @d }`) crosses where `drop rdf(h)` is refused, 114/114 at both legs (DEF-364, OPEN HIGH, landing 170); and a
+  kind test on a TYPE PARAMETER must be recursive: `type_drops_recorded` has no `TY_PARAM`, `TY_SELF` or `TY_ASSOC` case, so `T?`, `T[n]`,
+  `Result<T>` and a generic struct holding a `T` answer "owns nothing" and DEF-361's top-level test lets them cross (DEF-365, OPEN HIGH, landing
+  170). Both probed silent on 168 and 169 alike, named and inline, 0 tree and library sites: `wt/51a/.internal/probes/t169/rev169/`.
