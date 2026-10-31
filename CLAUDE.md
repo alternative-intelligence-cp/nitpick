@@ -48,7 +48,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   is cut, the 33 DEF-344 tree candidates read first (0 sites, `t168/CENSUS_344_READ.md`) -- and DEF-345 (HIGH: `$$m` of a binding declared
   without an initialiser reads the previous frame's bytes when the callee leaves it unwritten, nitpick-libs_29's report of 2026-10-29,
   measured 85/85 at both legs; RULED by the author 2026-10-29 17:29 -- (b), the middle road, D-366, two respellings: refused when the type
-  does not drop, a dropping type keeps D-225's vacant value, C#-style `out` rules a later relaxation -- implemented in landing 174; its test
+  does not drop, a dropping type keeps D-225's vacant value, C#-style `out` rules a later relaxation -- implemented in landing 175; its test
   items: `cast_place_readers.npk`'s site 22 re-cut so the write below the result's dereference is what is tested, inline legal-half controls
   of the caller rule with no view and with another struct's view, `q3 =>! wild int8->` as a control of `pointer_retype_plain_ok.npk`) --,
   then landing 176 = DEF-333's: DEF-333 + DEF-334 + DEF-335 + DEF-336 + DEF-384 + DEF-389 (HIGH but DEF-389 LOW: a temporary argument under

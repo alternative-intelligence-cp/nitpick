@@ -2492,7 +2492,7 @@ that carried them retired at the cycle close):
   (b)) — exactly as a `for`'s `next` and a template's `to_string` do (landing 172's gotcha 8). The lending list now has NO EXCLUSION among those call roads; the contract clauses and the `limit<Rules>` check's write
   points other than the binding's own initialiser are a separate category the escape analysis never walks, closed by
   D-221's purity gate (TYPE-060), not by the lending list (F1, landing 173's docs-only correction); only a pipe
-  (PARSE-014, D-362) reaches no analysis at all. (2) ESCAPE LEANS ON NOTHING ABOUT THE TYPER:
+  (PARSE-014, D-362) reaches no analysis at all. (2) 393(b)'S ESCAPE MARK LEANS ON NOTHING ABOUT THE TYPER:
   393(b) marks on a borrowy initialiser of a `limit<Rules>` binding WHETHER OR NOT DEF-394 refuses the template in the
   Rules clause at the typer — proved by a 393b-only build (INDEP_393b.md: the template-in-Rules is BORROW-001 in
   escape with DEF-394 absent). A soundness fix in one pass does not rely on a soundness fix in another. (3) AN
@@ -2510,9 +2510,13 @@ that carried them retired at the cycle close):
   operations, not an interpolation (F3, landing 173's docs-only correction). (5) PROVE THE LIST COMPLETE WITH A MECHANICAL
   CENSUS: enumerate EVERY road that runs code on the frame's operands — each call arm, the spawn, await, the implicit
   `next`/`to_string`, the `limit<Rules>` check, loop invariants, contracts, `failsafe`, `defer`/drop — and mark each
-  "marks `lends`" or "can't be handed a borrow", the latter with an ADVERSARIAL cell that tries a storing call and is
-  refused; `failsafe` (fixed signature, invoked from no caller frame) and auto-drop (called with `@value` alone) are
-  STRUCTURAL, no cell possible. No road may be "unmarked but closed by argument alone" (MECH_CENSUS.txt,
+  "marks `lends`" or "admitted but its storing call REFUSED by D-221's purity gate (TYPE-060)" — the latter (the
+  five contract clauses and the `Rules` predicate: escape never walks them, so `@x` of the frame IS admitted
+  there) with an ADVERSARIAL cell that tries a storing call and is refused; `failsafe` (fixed signature
+  `int32(Error:e)`, invoked from no caller frame, its `Error` a tbb32 tag carrying no frame pointer:
+  i5_err_payload, PARSE-001) and auto-drop (called with `@value` alone, its only user scope-exit hook a `defer`
+  body escape walks: i5_defer_leak, BORROW-002) are STRUCTURAL, shown ADVERSARIALLY. No road may be
+  "unmarked but merely safe by what its argument happens to be" (MECH_CENSUS.txt,
   MECH_CENSUS_FINAL.txt). (6) THE STOPGAP'S COST: face 2's lending rule over-refuses a spawn that stores the caller's
   OWN pointer (s1t/s2t: BORROW-001, back to 171) — a fix owed in DEF-378's row, narrowed when DEF-390/392's
   store-attribution lands, never a D-286 item. The deferred by-value face (`pass move(v)` of a lock a spawn stored
