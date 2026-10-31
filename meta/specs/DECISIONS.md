@@ -10373,17 +10373,21 @@ interim that forecloses neither answer.
 
 *[2026-10-31, 1.6.1e (landing 174, DEF-385) — a dated note.]* **A forged or vacant tag at an
 EXHAUSTIVE `pick` now TRAPS `(Unreachable)` (−4102); it does not "fall through".** DEF-385 built the
-trap D-069 had long specified: `emit_pick`'s switch default and `emit_pick_chain`'s `.none` path,
-reached only by a discriminant outside the enum's variants, call `npk_trap(-4102)` rather than
-falling to `done`/`ret zeroinitializer`. So the sentence above — "a forged tag makes every arm of a
+trap `management_7` ruled (2026-10-30 09:52:11, DEF-54's safe reading; the DEF-385 row in
+OPEN_DECISIONS): `emit_pick`'s switch default and `emit_pick_chain`'s `.none` path, reached only by a
+discriminant outside the enum's variants, call `npk_trap(-4102)` rather than falling to
+`done`/`ret zeroinitializer`. (D-069 specifies the zero-ERROR traps — at construction and at a
+computed return-taker, DEF-381(a) — not this no-arm path; its one `pick` line is about
+`pick(r.is_error)`.) So the sentence above — "a forged tag makes every arm of a
 proven `pick` miss and the statement fall through" — is SUPERSEDED for an exhaustive `pick`: the
 lie is caught at run time as a controlled trap, never a fabricated success. This is BEHAVIOUR-NEUTRAL
 on VALID values only (every in-range tag picks its arm as before); the sole change is that an invalid
 discriminant — forged by `intN =>! enum`, or a D-225 vacant valued-enum fill read before it is
 written — moves from a silent fall-through to a trap, strictly safer. The "88 sites" figure above is
-STALE: the R3 census over `src/` (landing 174) found **10** `=>! <enum>` sites, ALL targeting
-`TokenKind`, and **0** of the class that would reach the trap (a forged tag used as a `pick`
-discriminant) — 3 only `==`/`!=`-compare the forged value (no `pick`, no trap) and 6 read back a tag
+STALE: the R3 census over `src/` (landing 174) found **10** `=>! <enum>` hits — 9 code sites and 1
+comment — ALL targeting `TokenKind`, and **0** of the class that would reach the trap (a forged tag
+used as a `pick` discriminant): of the 9 code sites, 3 only `==`/`!=`-compare the forged value (no
+`pick`, no trap) and 6 read back a tag
 the compiler itself stored (`type_name_index` is `pass t.payload`, always a valid variant) — so the
 trap is DEAD at every `src/` site. The `type_cast.npk:438-446` comment still describing the
 fall-through is stale and corrected at landing 175.
