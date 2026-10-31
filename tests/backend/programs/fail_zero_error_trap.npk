@@ -1,0 +1,45 @@
+// expect-exit: 74
+//
+// FAILING WITH A ZERO `Error` TRAPS RATHER THAN FABRICATING A SUCCESS (DEF-381(a),
+// landing 174).
+//
+// A `Result`'s error road carries an `Error`, and a zero `Error` is the success
+// slot's sentinel: a `Result` whose `err` is 0 reads as a SUCCESS. So failing with a
+// zero `Error` -- `fail z;` or `return Result{err: z};` -- used to build a success
+// holding whatever the value slot happened to be, a NULL a caller dereferences
+// (DEF-381, MachineFault 107/107). After (b) the only Error that can be zero at run
+// time and still reach a taker is a VACANT one read out of an aggregate the compiler
+// cannot see is unwritten (DEF-385's class): `wn` is handed `s` and writes nothing,
+// so `s.e` is the vacant zero, computed (a `%`-register), at run time.
+//
+// Now the two RETURN takers (`fail`, `Result{err:}`) guard a COMPUTED error with
+// `icmp eq i32 %e, 0` and, on zero, `npk_trap(Unreachable)` (D-069, route -4102)
+// before the fabrication. A CONSTANT error needs no guard -- it is a nonzero numeric
+// literal (D-179). The RAISE takers (`!!!`, `?!`, `??!`) need no guard either: a zero
+// there is `npk_raise(0)` -> `npk_trap(0)` -> `failsafe (*)`, already controlled (see
+// Census B). This program fails with the vacant zero through `fail`; it traps,
+// `failsafe` names `Unreachable`, and its arm exits 74. The legal half is
+// `fail_zero_error_trap_ok.npk`.
+mod:fail_zero_error_trap;
+error:E5;
+struct:S = { Error:e; };
+func:wn = NIL(S->:out) never fails { pass NIL; };
+func:f = int64() { S:s; drop wn($$m s); fail s.e; };
+func:main = int32(cstring[]:_~argv) {
+    Result<int64>:r = f();
+    if (r.is_error) { exit 41i32; }
+    exit 70i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (E5)               { exit 55i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

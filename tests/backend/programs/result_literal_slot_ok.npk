@@ -1,0 +1,52 @@
+// expect-exit: 0
+//
+// THE LEGAL HALF OF DEF-388 (landing 174): what typing a non-return `Result` literal
+// by its SLOT keeps legal -- and newly accepts.
+//
+// The old rule typed every such literal by the ENCLOSING function's success type, so
+// a literal whose value matched its SLOT but not the function was OVER-REFUSED with
+// `TYPE-007` twice (once for the function's type, once for the slot's). Here each
+// function's success type (`int32`) differs from the slot's (`Result<int64>`), and the
+// value is an `int64` -- the slot's type. Typed by the slot, as it is now, these are
+// correct and accepted; the 173 compiler refuses all of them.
+//   - `cross_init`: the literal fills an initialiser slot of a different type than the
+//     function returns, and its value (5) is read back.
+//   - `cross_arg`:  the literal fills a call-argument slot of a different type.
+// The rejection half (NULL/wild in a plain slot) is
+// `tests/types/rejection/result_literal_slot.npk`.
+mod:result_literal_slot_ok;
+func:usei = NIL(Result<int64>:q) never fails {
+    if (q.is_error) { pass NIL; }
+    pass NIL;
+};
+
+func:cross_init = int32() never fails {
+    Result<int64>:r = Result{value: 5i64};
+    if (r.is_error) { pass 0i32; }
+    pass (r.value =>! int32);
+};
+
+func:cross_arg = int32() never fails {
+    drop usei(Result{value: 7i64});
+    pass 1i32;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    Result<int32>:a = cross_init();  if (a.is_error) { exit 11i32; }
+    if (a.value != 5i32)             { exit 12i32; }
+    Result<int32>:b = cross_arg();   if (b.is_error) { exit 13i32; }
+    if (b.value != 1i32)             { exit 14i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 95i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

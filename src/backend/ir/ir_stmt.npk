@@ -2016,6 +2016,10 @@ func:emit_pass = IrVal(ExprEmitter->:x, StmtNode:s, StmtId:sid) never fails {
 func:emit_fail = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     IrVal:v = raw emit_expr(x, raw stmt_operand(s));
     if (!(raw iv_is_ok(v))) { pass v; }
+    // DEF-381(a): a COMPUTED error fed to `fail` could be zero, and `fnem_ret_fail`
+    // would build a fabricated SUCCESS holding the value slot's zero -- trap it
+    // (`Unreachable`, D-069) before the errored `Result` is built.
+    drop emit_err_nonzero_guard(x, v.ref);
     // THE ORIGIN (D-179): a fresh failure restarts the chain here — before
     // the unwind now (D-207), so it still precedes the `npk_chain_push` a
     // scope join makes when it takes a child's error, which is the order the
@@ -2857,9 +2861,32 @@ func:emit_pick = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         }
         i = i + 1i32;
     }
+    // DEF-385 (landing 174): an EXHAUSTIVE pick with NO wildcard arm sends its switch
+    // default to a TRAP, not to `done`. The exhaustiveness analysis proves every VALID
+    // discriminant hits an arm (0.5), so the default is reached only by an INVALID one --
+    // D-225's vacant fill of a valued enum with no tag-0 variant (`E:e;` declared
+    // uninitialised), read before it is written. Until this landing the default was `done`,
+    // so such a value skipped every arm: a fallible function fell off into `fnem_close`'s
+    // `ret zeroinitializer` -- a fabricated success, exit 0 where only a real arm's value
+    // can be -- and a statement pick left its target local unwritten and then read (exit 0
+    // at -O0, UB at -O2). Now it is `npk_trap(Unreachable)` (D-069, D-061's route -4102, the
+    // `#unreachable()` trap), a controlled shutdown. A wildcard arm already set `default_l`
+    // to its own label and catches the invalid value itself, so this adds nothing there.
+    bool:no_wild = raw string_eq(default_l, done_l);
+    string:invalid_l = "";
+    if (no_wild) {
+        invalid_l = raw pk_named(seq, ".invalid");
+        default_l = string_concat(invalid_l, "");
+    }
     drop irw_line(x.fe.w, raw cat5("switch ", disc_ll, " ", disc,
                       raw cat5(", label %", default_l, " [ ", cases, " ]")));
     x.fe.terminated = true;
+    if (no_wild) {
+        drop s_start(x, invalid_l);
+        drop irw_line(x.fe.w, "call void @npk_trap(i32 -4102)");
+        drop irw_line(x.fe.w, "unreachable");
+        x.fe.terminated = true;
+    }
 
     // SECOND PASS: the bodies, each in its own scope, each ending at `done`.
     // The frame is what `fall` (and, in the expression form, `give`) resolve
@@ -2957,10 +2984,22 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
 
     string:first_t = raw pk_named(seq, ".t0");
     drop s_br(x, first_t);
+    // DEF-385 (landing 174): does any arm catch EVERY value? An unguarded
+    // wildcard or struct destructure is irrefutable (`hit = "true"` below), so
+    // it branches to its body unconditionally and the `.none` fall-through is
+    // genuinely unreachable. With none, `.none` is reached only by an INVALID
+    // discriminant (D-225's vacant fill of a valued enum with no tag-0 variant),
+    // and must TRAP rather than run off into whatever follows -- the switch
+    // path's twin at `emit_pick`'s default.
+    bool:saw_total = false;
     for (int32:i in 0i32...count) {
         StmtId:armid = raw pick_arm_at(x.ast, start, i);
         StmtNode:arm = raw ast_stmt(x.ast, armid);
         PatNode:pn = raw ast_pat(x.ast, raw arm_pattern(arm));
+        if (((pn.kind == PatKind.PatWildcard) || (pn.kind == PatKind.PatStructDestructure))
+                && (raw expr_is_none(raw arm_guard(arm)))) {
+            saw_total = true;
+        }
         string:test_l = raw pk_named(seq,
                             string_concat(".t", int_to_string(i => int64)));
         string:body_l = raw pk_label(seq, i);
@@ -3154,6 +3193,13 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
         drop s_br(x, done_l);
     }
     drop s_start(x, raw pk_named(seq, ".none"));
+    if (!saw_total) {
+        // An invalid discriminant reaches here (DEF-385). Trap it -- a controlled
+        // shutdown naming `Unreachable` (D-069, route -4102, the `#unreachable()`
+        // trap) -- rather than falling into a fabricated success or an undefined
+        // read, as `emit_pick`'s switch default does for the same case.
+        drop irw_line(x.fe.w, "call void @npk_trap(i32 -4102)");
+    }
     drop irw_line(x.fe.w, "unreachable");
     x.fe.terminated = true;
     drop fnem_pick_pop(x.fe);

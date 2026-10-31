@@ -1859,7 +1859,11 @@ func:check_refine_subject = NIL(ExprTyper->:e, VerifyId:ref, int32:subject) neve
 // holds a borrow of someone else's storage. Reassigning a local that HOLDS a
 // pointer is a local store (the address changes, nothing behind it does); a
 // store THROUGH it is the member, index or dereference arm's refusal.
-func:place_is_local = bool(ExprTyper->:e, ExprId:id, int32:fuel) never fails {
+//
+// `pub` since DEF-397 (1.6.1e, landing 174): the `move`-expression arm in
+// type_expr.npk asks this same predicate to gate a `pure` body's MOVE-OUT of a
+// place it does not own (`pass move(<-p)`), the twin of the store gate below.
+pub func:place_is_local = bool(ExprTyper->:e, ExprId:id, int32:fuel) never fails {
     if (fuel <= 0i32) { pass false; }
     if (raw expr_is_none(id)) { pass false; }
     ExprNode:n = raw ast_expr(e.ast, id);
@@ -2759,6 +2763,17 @@ func:require_place = bool(ExprTyper->:e, ExprId:id, Span:at) never fails {
     if (raw frac_member_target(e, id)) {
         discard(raw te_error(e, raw TYPE_NOT_A_PLACE(),
             "a `frac`'s `whole`, `num` and `denom` are read-only views of one value (D-198): a frac is written whole, by its arithmetic or a cast, never through a member",
+            at));
+        pass false;
+    }
+    // A `Result`'s `.err`/`.is_error` ARE READ-ONLY (DEF-380, DEF-382, landing 174): like a
+    // frac member, refused by name before the walk. `r.err = e;` walked to its root and
+    // passed -- a value-holding `Result` kept a value its drop frees only on the success
+    // road, a leak -- and `r.is_error = false;` reached the emitter (EMIT-002), `is_error`
+    // being derived (D-069) with no slot to store into.
+    if (raw result_member_target(e, id)) {
+        discard(raw te_error(e, raw TYPE_NOT_A_PLACE(),
+            "a `Result`'s `err` and `is_error` are read-only (D-069, D-179): `is_error` is derived from `err` on every read, and a `Result` is built by its literal with its error road `fail e;` (DEF-373), never a field store",
             at));
         pass false;
     }

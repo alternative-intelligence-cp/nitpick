@@ -87,14 +87,32 @@ func:two_reads_one_check = int32(bool:c) never fails {
     pass (a + b);
 };
 
-// --- `.err` is not tainted ------------------------------------------------------------
+// --- `.err` on the error road is not tainted (DEF-381, landing 174) -------------------
 //
-// The error field is what you read to FIND OUT whether the value is safe. Refusing
-// it would leave no way to ask the question.
+// `.err` is read to FIND OUT what went wrong, on the road where `is_error` is known
+// true. OFF that road a zero `Error` would fabricate a success (DEF-381), so the bare
+// `pass (r.err);` -- accepted until (b) -- is now `NITPICK-TAINT-001` in
+// `rejection/taint.npk`. These are the legal forms, symmetric to the `.value` reads
+// above: the error road reached by an `if`, by a `pick` true arm, and by the `else`
+// of a `!is_error` test (the author's ruling (b), relayed `management_7` 2026-10-30).
 
-func:reads_the_error = Error(bool:c) never fails {
+func:reads_err_if = Error(bool:c) never fails {
     Result<int32>:r = might_fail(c);
-    pass (r.err);
+    if (r.is_error) { pass (r.err); }
+    pass E5;
+};
+
+func:reads_err_pick = Error(bool:c) never fails {
+    Result<int32>:r = might_fail(c);
+    pick (r.is_error) {
+        (true)  { pass (r.err); },
+        (false) { pass E5; }
+    }
+};
+
+func:reads_err_else = Error(bool:c) never fails {
+    Result<int32>:r = might_fail(c);
+    if (!r.is_error) { pass E5; } else { pass (r.err); }
 };
 
 // --- the `pick` form's check leaves the `pick` (DEF-226, landing 110) -----------------

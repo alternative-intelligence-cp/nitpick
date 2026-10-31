@@ -1,0 +1,48 @@
+// expect-exit: 73
+//
+// AN EXHAUSTIVE `pick` OVER AN INVALID DISCRIMINANT TRAPS (DEF-385, landing 174).
+//
+// A valued enum with no tag-0 variant (`Col = { Red = 1; Blue = 2; }`) has a vacant
+// fill (D-225) whose discriminant, 0, is NOT one of its variants. An EXHAUSTIVE
+// `pick` -- every variant named, no `(*)` -- proved every VALID discriminant hits an
+// arm (the 0.5 exhaustiveness analysis), so until this landing its no-arm path ran
+// off the end: a `pick` EXPRESSION left its slot unwritten and the function fell into
+// `fnem_close`'s `ret zeroinitializer`, a FABRICATED SUCCESS (exit 0 where only a
+// real arm's value can be). `f` reads `s.c` from a struct a callee was handed but
+// left unwritten, so the discriminant is the vacant 0 at run time, and the compiler
+// cannot fold the pick away.
+//
+// Now the pick's no-arm path is `npk_trap(Unreachable)` (D-069, route -4102) at BOTH
+// lowerings -- the switch default (`emit_pick`) and the compare chain's `.none`
+// (`emit_pick_chain`, which every pick EXPRESSION takes). This program's pick is the
+// expression form, so it rides the chain; it traps, `failsafe` names `Unreachable`,
+// and its arm exits 73. The legal half is `vacant_pick_trap_ok.npk`.
+mod:vacant_pick_trap;
+enum:Col = { Red = 1i32; Blue = 2i32; };
+struct:SC = { Col:c; };
+func:wn = NIL(SC->:out) never fails { pass NIL; };
+func:f = int32() never fails {
+    SC:s; drop wn($$m s);
+    int32:v = pick (s.c) {
+        (Col.Red)  { give 10i32; },
+        (Col.Blue) { give 20i32; }
+    };
+    pass v;
+};
+func:main = int32(cstring[]:_~argv) {
+    Result<int32>:r = f();
+    if (r.is_error) { exit 41i32; }
+    exit (r.value => int32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 73i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

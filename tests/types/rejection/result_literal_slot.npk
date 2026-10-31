@@ -1,0 +1,60 @@
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 37:39
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 42:29
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 48:23
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 53:35
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 58:39
+// A `Result` literal OUTSIDE a `return` is typed by its SLOT, not by the enclosing
+// function (DEF-388, landing 174).
+//
+// `return Result{…}` is typed by the function's success type -- that is what it
+// builds. A literal anywhere else -- an initialiser, an argument, an assignment's
+// value, a struct field -- fills a SLOT, and until this landing it was typed by the
+// enclosing function's success type and its wild/NULL context all the same. So in a
+// function whose success type is `wild int64->`, a `Result{value: NULL}` written into
+// a PLAIN `Result<int64->>` slot was read in the function's wild context, where
+// `NULL` is a pointer, and slipped into the plain slot a caller then dereferenced --
+// a NULL read, MachineFault 107/107 (measured at both legs on 170, 171, 172). The
+// base compiler ACCEPTS every function below.
+//
+// Now the slot's own type is the context: `NULL` in a plain `Result<int64->>` is
+// `NITPICK-TYPE-096` (D-355 -- a plain `T->` always points at something) and a value
+// of wild provenance is `NITPICK-TYPE-097` (D-361 -- it crosses only through an
+// explicit `=>! T->`), in every slot position. The cross-type literals the old
+// function-typed rule OVER-REFUSED (`Result<int64>:r = Result{value: 5i64};` in a
+// `Result<string>` function, `TYPE-007` twice) are accepted now that the slot types
+// them -- the legal half, `tests/backend/programs/result_literal_slot_ok.npk`.
+mod:result_literal_slot;
+struct:Box = { Result<int64->>:r; };
+func:sink = NIL(Result<int64->>:r) never fails { pass NIL; };
+
+// an initialiser slot
+func:g_init = wild int64->() never fails {
+    Result<int64->>:r = Result{value: NULL};
+    pass NULL;
+};
+// an argument slot
+func:g_arg = wild int64->() never fails {
+    drop sink(Result{value: NULL});
+    pass NULL;
+};
+// an assignment's value slot
+func:g_asgn = wild int64->(wild int64->:w) never fails {
+    Result<int64->>:r = Result{value: (w =>! int64->)};
+    r = Result{value: NULL};
+    pass NULL;
+};
+// a struct field slot
+func:g_field = wild int64->() never fails {
+    Box:b = Box{ r: Result{value: NULL} };
+    pass NULL;
+};
+// a value of WILD provenance into a plain slot -- TYPE-097, not TYPE-096
+func:g_wild = wild int64->(wild int64->:w) never fails {
+    Result<int64->>:r = Result{value: w};
+    pass NULL;
+};

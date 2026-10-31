@@ -884,6 +884,41 @@ pub func:refuse_frac_member = bool(ExprTyper->:e, ExprId:id, string:what) never 
     pass true;
 };
 
+// IS `id` A MEMBER ACCESS ON A `Result` NAMING `.err` OR `.is_error` (DEF-380, DEF-382,
+// landing 174)? Both are READ-ONLY: `.is_error` is DERIVED from `err` on every read (D-069)
+// -- there is no stored field to write -- and `.err` is read to find out whether the value
+// is safe, never set; a `Result` is built only by its one-field literal (DEF-373), so its
+// error road is `fail e;`, never a field store. `.value` is NOT here: a write of it is its
+// own report (TAINT-001). The base's recorded type decides, as `frac_member_target` does.
+pub func:result_member_target = bool(ExprTyper->:e, ExprId:id) never fails {
+    ExprNode:n = raw ast_expr(e.ast, id);
+    if (n.kind != ExprKind.ExprMemberAccessExpr) { pass false; }
+    int32:bt = raw exprtypes_get(e.expr_types, raw expr_operand(n));
+    if (bt == 0i32) { pass false; }
+    if (raw type_is_invalid(e.types, bt)) { pass false; }
+    if ((raw type_kind(e.types, bt)) != (raw TY_RESULT())) { pass false; }
+    string:f = raw intern_get(e.interns, n.payload =>! int32);
+    if (raw string_eq(f, "err")) { pass true; }
+    if (raw string_eq(f, "is_error")) { pass true; }
+    pass false;
+};
+
+// REFUSE A `Result`'s `.err` OR `.is_error` STANDING WHERE A PLACE IS NEEDED (DEF-380,
+// DEF-382, landing 174): true after the report. The twin of `refuse_frac_member`, asked by
+// `require_place_operand` and the `@`, `$$i`/`$$m` and `move` typers (and inline by
+// `require_place` for an assignment target). Until this landing `r.err = e;` walked to its
+// root and passed -- a value-holding `Result` kept its value, which the drop frees only on
+// the success road, so the value leaked (DEF-380) -- and `r.is_error = false;` reached the
+// emitter (EMIT-002, DEF-382), since `is_error` is derived and has no slot to store into.
+pub func:refuse_result_member = bool(ExprTyper->:e, ExprId:id, string:what) never fails {
+    if (!(raw result_member_target(e, id))) { pass false; }
+    ExprNode:fn = raw ast_expr(e.ast, id);
+    discard(raw te_error(e, raw TYPE_NOT_A_PLACE(),
+        string_concat(string_concat("`", what), "` needs a place, and a `Result`'s `err` and `is_error` are read-only (D-069, D-179): `is_error` is derived from `err` on every read and `err` is read to find whether the value is safe; a `Result` is built by its literal and its error road is `fail e;`, never a field store"),
+        fn.span));
+    pass true;
+};
+
 // TRUE WHEN THE OPERAND IS A PLACE; false after the report (1.6.1e landing 103):
 // the callers stop at a value, so `@(raw f(v))[0i64]` over a read-only view is
 // one report, the value's, and not also TYPE-071's (D-240).
@@ -894,6 +929,10 @@ pub func:require_place_operand = bool(ExprTyper->:e, ExprId:id, string:what) nev
     // but a member access on a local walks to a root, so `@f.num` passed here and
     // the emitter died (EMIT-002). Refused by name before the walk.
     if (raw refuse_frac_member(e, id, what)) { pass false; }
+    // A `Result`'s `.err`/`.is_error` ARE READ-ONLY (DEF-380, DEF-382, landing 174):
+    // like a frac member, refused by name before the place walk, which would walk to
+    // the root and pass.
+    if (raw refuse_result_member(e, id, what)) { pass false; }
     if (raw expr_is_place(e.ast, id, raw BORROW_FUEL())) { pass true; }
     ExprNode:n = raw ast_expr(e.ast, id);
     string:m1 = string_concat("`", what);
@@ -2666,6 +2705,27 @@ func:type_result_literal = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fai
     // value is a move slot -- no frame is left, so a place copied in leaves two owners: TYPE-046, as at every move slot.
     bool:leaves = (id.index == e.return_lit);
     if (leaves) { e.return_lit = 0i32; }
+    // DEF-388 (landing 174): a `Result` literal OUTSIDE a `return` is typed by its
+    // SLOT -- the `Result<T>` the context (an initialiser, an assignment, an argument,
+    // a struct field) expects, held in `e.expected` -- not by the enclosing function's
+    // success type. Until this landing `want` was always `e.fn_success`: so a plain
+    // `Result<int64->>` slot in a function returning `wild int64->` took `Result{value:
+    // NULL}` unrefused (the function's wild return, not the slot, D-355) and dereferenced
+    // it (MachineFault 107/107), and a value of the slot's own `T` was held to the
+    // function's unrelated `T` (TYPE-007 twice). Only a `return`'s literal is the
+    // function's success value (D-355), so the success type comes from the slot here; the
+    // slot's wild qualifier rides in `e.null_ctx`, which the else branch below keeps for a
+    // non-return literal.
+    if (!leaves) {
+        int32:ctx = e.expected;
+        if (ctx != 0i32) {
+            if (!(raw type_is_invalid(e.types, ctx))) {
+                if ((raw type_kind(e.types, ctx)) == (raw TY_RESULT())) {
+                    want = raw type_elem(e.types, ctx);
+                }
+            }
+        }
+    }
     // ONE FIELD, NEVER BOTH (DEF-373, landing 171): `value` -- `pass`'s literal spelling -- or `err` -- `fail`'s. A value
     // beside an error is one no caller can read (`.value` after an error is TAINT-001, `raw` TYPE-042), and an owner
     // there was freed by nobody on any error road; the author retired the form. Refused once, at the literal: each
@@ -2692,10 +2752,17 @@ func:type_result_literal = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fai
         vt = raw check_leaving_value(e, vid, want, n.span);
     } else {
         e.expected = want;
-        // THE VALUE IS THE FUNCTION'S RETURN SLOT (D-355): wild exactly where the return is.
+        // THE VALUE'S WILD CONTEXT IS THE SLOT'S (D-355): an err-only `return` (leaves, no
+        // value) is the function's return slot -- wild exactly where the return is -- but a
+        // literal OUTSIDE a `return` keeps the caller's `e.null_ctx`, the slot's wild
+        // qualifier set by the initialiser, assignment, argument or field typer (DEF-388,
+        // landing 174). Reading `fn_ret_wild` for a non-return literal was the second half of
+        // DEF-388: it admitted NULL into a plain slot whenever the function's return was wild.
         int32:nsv = e.null_ctx;
-        e.null_ctx = 0i32;
-        if (raw fn_ret_wild(e)) { e.null_ctx = 1i32; }
+        if (leaves) {
+            e.null_ctx = 0i32;
+            if (raw fn_ret_wild(e)) { e.null_ctx = 1i32; }
+        }
         vt = raw type_of_expr(e, vid);
         drop check_wild_into_plain(e, vid, want);   // D-361
         e.null_ctx = nsv;
@@ -4836,6 +4903,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         if (t == 0i32) { pass 0i32; }
         // A `frac` MEMBER IS A VALUE (DEF-238 (a)): asked here, with the base typed.
         if (raw refuse_frac_member(e, raw expr_operand(n), "@")) { pass 0i32; }
+        if (raw refuse_result_member(e, raw expr_operand(n), "@")) { pass 0i32; }   // DEF-380/382
         // A `fixed` BINDING HAS NO ADDRESS (D-287, 1.5.5 step 1; DEF-43): the
         // pointer type carries no mutability, so `@` of an immutable is a
         // write path no rule sees -- a `fixed` module binding is read-only
@@ -4884,6 +4952,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         if (t == 0i32) { pass 0i32; }
         // A `frac` MEMBER IS A VALUE (DEF-238 (a)): asked here, with the base typed.
         if (raw refuse_frac_member(e, raw expr_operand(n), "a borrow")) { pass 0i32; }
+        if (raw refuse_result_member(e, raw expr_operand(n), "a borrow")) { pass 0i32; }   // DEF-380/382
         // A `fixed` BINDING HAS NO ADDRESS (D-287, 1.5.5 step 1): a claim of
         // either kind is an address, and a shared claim's read-only promise
         // is the aliasing analysis's, not the pointer type's.
@@ -4936,6 +5005,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         int32:mvt = raw type_of_expr(e, raw expr_operand(n));
         // A `frac` MEMBER IS A VALUE (DEF-238 (a)): asked here, with the base typed.
         if (raw refuse_frac_member(e, raw expr_operand(n), "move")) { pass 0i32; }
+        if (raw refuse_result_member(e, raw expr_operand(n), "move")) { pass 0i32; }   // DEF-380/382
         // A `move` OF A FROZEN SELECTOR OR ANY PART OF IT (D-266, 1.5.2h) --
         // the nested `pick (move(v))` included, whose selector is typed here.
         // A view's own `move` is the lent-binding rule's below (TYPE-047).
@@ -4944,6 +5014,23 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         drop refuse_move_out_of_limited(e, raw expr_operand(n), mvt, n.span);
         drop refuse_move_out_of_sealed(e, raw expr_operand(n), mvt, n.span);
         drop refuse_move_out_of_fixed(e, raw expr_operand(n), mvt, n.span);
+        // A `pure` BODY MOVES OUT OF ONLY ITS OWN LOCALS (D-221, DEF-397; 1.6.1e,
+        // landing 174): `move` of a place reached through a pointer, a borrow, a
+        // slice or a handle vacates memory the caller can see -- D-325 records
+        // `move(<-p)` as a write of the whole pointee -- the effect the caller
+        // observes. The assignment twin `(<-p) = …` is TYPE-061 already
+        // (`check_assign`, type_stmt.npk); this holds `move` to the SAME predicate
+        // (`place_is_local`), so every move slot -- a `pass`, an argument, a
+        // `pick (move(<-p))` selector, a receiver `(move(<-p)).m()` -- is gated at
+        // this one site. Asked after the operand is typed, as `check_assign` asks
+        // after the target is.
+        if (e.fn_pure) {
+            if (!(raw place_is_local(e, raw expr_operand(n), 64i32))) {
+                discard(raw te_error(e, raw TYPE_PURE_RULES(),
+                    "a `pure` body moves out of only its own locals (D-221): `move` of a place reached through a pointer, a borrow, a slice or a handle vacates memory the caller can see",
+                    n.span));
+            }
+        }
         pass mvt;
     }
 

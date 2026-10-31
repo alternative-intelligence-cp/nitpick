@@ -1,0 +1,39 @@
+// expect-exit: 0
+//
+// THE LEGAL HALF OF DEF-381(a) (landing 174): what the zero-Error guard keeps legal.
+// The guard traps only when the error is ZERO; an honest, nonzero error -- computed
+// or constant -- fails as it always did.
+//   - `f_computed` (control 1): the error is read from memory a callee wrote (`wn`
+//     with `w` true sets `s.e = E5`), so it is a COMPUTED `%`-register and the guard
+//     IS emitted -- but E5 is nonzero, so it passes the `icmp eq 0` and fails
+//     honestly. `main` sees the error and does not re-fail.
+//   - `f_const` (control 2): the error is the literal `E5`, a nonzero numeric literal
+//     (D-179), so NO guard is emitted at all -- the byte-for-byte old lowering.
+// Both are honest errors `main` catches, so the program exits 0 at both legs (this
+// compiler and 173's). The trapping shape is `fail_zero_error_trap.npk`.
+mod:fail_zero_error_trap_ok;
+error:E5;
+struct:S = { Error:e; };
+func:wn = NIL(S->:out, bool:w) never fails { if (w) { (<-out).e = E5; } pass NIL; };
+func:f_computed = int64() { S:s; drop wn($$m s, true); fail s.e; };
+func:f_const = int64() { fail E5; };
+func:main = int32(cstring[]:_~argv) {
+    Result<int64>:r1 = f_computed();
+    if (!r1.is_error) { exit 1i32; }
+    Result<int64>:r2 = f_const();
+    if (!r2.is_error) { exit 2i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E5)               { exit 55i32; },
+        (Unreachable)      { exit 74i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,55 @@
+// expect-exit: 0
+//
+// THE LEGAL HALF OF DEF-385 (landing 174): what the invalid-discriminant trap keeps
+// legal. The trap fires only on the no-arm path of an EXHAUSTIVE pick, reached only
+// by an invalid value; a valid value and a wildcard arm are untouched.
+//   - `valid` (control 1): a genuine `Col.Blue` picks its own arm and gives 20 -- the
+//     trap is on a path this never reaches.
+//   - `vacant_wild` (control 2): the SAME vacant-discriminant struct as the rejection
+//     program, but its pick has a `(*)` arm, so the wildcard catches the invalid value
+//     and gives 55 -- no trap, no fabrication. This is the discriminating control: the
+//     trap is conditional on there being NO total arm, not on the value being vacant.
+// Exit 0 at both legs under this compiler and under 173's (the trap path is new, but
+// neither control reaches it). The trapping shape is `vacant_pick_trap.npk`.
+mod:vacant_pick_trap_ok;
+enum:Col = { Red = 1i32; Blue = 2i32; };
+struct:SC = { Col:c; };
+func:wn = NIL(SC->:out) never fails { pass NIL; };
+
+func:valid = int32() never fails {
+    Col:c = Col.Blue;
+    int32:v = pick (c) {
+        (Col.Red)  { give 10i32; },
+        (Col.Blue) { give 20i32; }
+    };
+    pass v;
+};
+
+func:vacant_wild = int32() never fails {
+    SC:s; drop wn($$m s);
+    int32:v = pick (s.c) {
+        (Col.Red) { give 10i32; },
+        (*)       { give 55i32; }
+    };
+    pass v;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    Result<int32>:r1 = valid();        if (r1.is_error) { exit 1i32; }
+    if ((r1.value => int32) != 20i32)  { exit 2i32; }
+    Result<int32>:r2 = vacant_wild();  if (r2.is_error) { exit 3i32; }
+    if ((r2.value => int32) != 55i32)  { exit 4i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 73i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

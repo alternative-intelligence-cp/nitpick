@@ -104,3 +104,29 @@ func:pick_error_arm_falls_through = int32(bool:c) never fails {
     }
     pass (r.value + v);
 };
+
+// --- `.err` off the error road (DEF-381, landing 174) -----------------------------
+//
+// SYMMETRIC TO `.value`. A zero `Error` read off a success and handed to a return
+// taker (`fail`, `Result{err:}`) fabricates a success holding the slot's zero -- a
+// NULL value a caller dereferences (DEF-381, MachineFault 107/107). So `.err` is
+// tainted until the `Result` is known to hold an error, exactly as `.value` is
+// tainted until it is known to hold a value. The legal reads -- on the error road,
+// via `if (r.is_error)`, a `pick` true arm, or the `else` of `!is_error` -- are in
+// `tests/accept/taint.npk`. This reverses the pre-(b) pinned design, where the bare
+// read was accepted (the author's ruling (b), relayed `management_7` 2026-10-30).
+
+// off the error road: no `is_error` guard at all
+// expect-error: NITPICK-TAINT-001
+func:reads_err_bare = int32(bool:c) {
+    Result<int32>:r = might_fail(c);
+    fail r.err;
+};
+
+// off the error road: `.err` read on the SUCCESS side of an `is_error` guard
+// expect-error: NITPICK-TAINT-001
+func:reads_err_success_side = int32(bool:c) {
+    Result<int32>:r = might_fail(c);
+    if (r.is_error) { pass 0i32; }
+    fail r.err;
+};

@@ -122,6 +122,24 @@ pub struct:AssignState = {
     // happens on both paths.
     wild bool->:checked;
 
+    // HAS THIS `Result` BEEN ESTABLISHED TO HOLD AN ERROR? (DEF-381, landing 174.)
+    //
+    // The EXACT DUAL of `checked`. `checked` is set on the SUCCESS road, where
+    // `.value` is safe to read; `errchecked` is set on the ERROR road, where `.err`
+    // is safe to read. `r.is_error` being true means `error != 0` (D-069), so inside
+    // `if (r.is_error) { … }` and the `(true)` arm of `pick (r.is_error)` the error
+    // field is a genuine error, and `fail r.err` forwards a non-zero Error -- the
+    // idiom CONTROL_REFERENCE §`?!` documents and `?!` lowers to. OFF that road
+    // (`reads_the_error`'s `pass r.err` with no guard) the error field may be the
+    // success slot's zero, and `fail`-ing it fabricates a success holding a NULL
+    // value (DEF-381): `NITPICK-TAINT-001`, reversing `tests/accept/taint.npk:97`'s
+    // pinned design (the author's answer (b), relayed 2026-10-30 14:05:38).
+    //
+    // IT INTERSECTS AT A MERGE, like `checked` -- the read after the merge happens
+    // on both paths -- and is marked on the OPPOSITE branch to `checked`: the error
+    // road is where `checked` is not, and the reverse.
+    wild bool->:errchecked;
+
     // THE wildx SEAL STATE (0.10.5, D-155). Two columns because the two
     // prohibitions want opposite merges. A page sealed on ANY path may not be
     // written (`sealed`, UNIONS — a prohibition, like moved/freed); a page may
@@ -209,11 +227,13 @@ pub func:state_new = AssignState(int32:n) never fails {
     wild int8->:m5 = alloc(size * #size_of<bool>());
     wild int8->:m6 = alloc(size * #size_of<bool>());
     wild int8->:m7 = alloc(size * #size_of<bool>());
+    wild int8->:m8 = alloc(size * #size_of<bool>());
     AssignState:s = AssignState{ must: m1 =>! wild bool->,
                                  may: m2 =>! wild bool->,
                                  moved: m3 =>! wild bool->,
                                  freed: m4 =>! wild bool->,
                                  checked: m5 =>! wild bool->,
+                                 errchecked: m8 =>! wild bool->,
                                  sealed_any: m6 =>! wild bool->,
                                  sealed_firm: m7 =>! wild bool->,
                                  count: size =>! int32 };
@@ -223,6 +243,7 @@ pub func:state_new = AssignState(int32:n) never fails {
         s.moved[i] = false;
         s.freed[i] = false;
         s.checked[i] = false;
+        s.errchecked[i] = false;
         s.sealed_any[i] = false;
         s.sealed_firm[i] = false;
     }
@@ -238,6 +259,7 @@ func:state_copy = AssignState(AssignState:src) never fails {
         d.moved[i] = src.moved[i];
         d.freed[i] = src.freed[i];
         d.checked[i] = src.checked[i];
+        d.errchecked[i] = src.errchecked[i];
         d.sealed_any[i] = src.sealed_any[i];
         d.sealed_firm[i] = src.sealed_firm[i];
         i = i + 1i64;
@@ -253,6 +275,7 @@ func:state_overwrite = NIL(AssignState:dst, AssignState:src) never fails {
         dst.moved[i] = src.moved[i];
         dst.freed[i] = src.freed[i];
         dst.checked[i] = src.checked[i];
+        dst.errchecked[i] = src.errchecked[i];
         dst.sealed_any[i] = src.sealed_any[i];
         dst.sealed_firm[i] = src.sealed_firm[i];
         i = i + 1i64;
@@ -305,6 +328,7 @@ func:state_merge = NIL(AssignState:dst, AssignState:a, bool:a_exits,
         dst.moved[i] = a.moved[i] || b.moved[i];
         dst.freed[i] = a.freed[i] || b.freed[i];
         dst.checked[i] = a.checked[i] && b.checked[i];
+        dst.errchecked[i] = a.errchecked[i] && b.errchecked[i];
         dst.sealed_any[i] = a.sealed_any[i] || b.sealed_any[i];
         dst.sealed_firm[i] = a.sealed_firm[i] && b.sealed_firm[i];
         i = i + 1i64;
@@ -349,6 +373,9 @@ func:state_mark = NIL(AssignState:s, int32:slot) never fails {
     // A NEW VALUE IS A NEW `Result`, and nothing has checked it. Clearing this on
     // assignment is what stops one check licensing every later read of the name.
     s.checked[slot => int64] = false;
+    // A NEW VALUE IS ALSO A `Result` NOTHING HAS FOUND AN ERROR IN -- so reading
+    // its `.err` after a re-assignment needs a fresh `is_error` test (DEF-381).
+    s.errchecked[slot => int64] = false;
     pass NIL;
 };
 
@@ -363,6 +390,21 @@ func:state_checked = bool(AssignState:s, int32:slot) never fails {
     if (slot < 0i32)     { pass false; }
     if (slot >= s.count) { pass false; }
     pass (s.checked[slot => int64]);
+};
+
+// THE ERROR-ROAD TWINS of `state_mark_checked`/`state_checked` (DEF-381). Set on
+// the arm where `is_error` is true; read by `check_err_read` to license `.err`.
+func:state_mark_errchecked = NIL(AssignState:s, int32:slot) never fails {
+    if (slot < 0i32)     { pass NIL; }
+    if (slot >= s.count) { pass NIL; }
+    s.errchecked[slot => int64] = true;
+    pass NIL;
+};
+
+func:state_errchecked = bool(AssignState:s, int32:slot) never fails {
+    if (slot < 0i32)     { pass false; }
+    if (slot >= s.count) { pass false; }
+    pass (s.errchecked[slot => int64]);
 };
 
 func:state_mark_moved = NIL(AssignState:s, int32:slot) never fails {
@@ -852,13 +894,18 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
 
         AssignState:a = raw state_copy(st);
         if (et.found) {
+            // The THEN arm: value-safe where the test is true (`checked`), error-
+            // safe otherwise (`errchecked`, DEF-381) -- the two roads are dual.
             if (et.then_checked) { drop state_mark_checked(a, et.slot); }
+            else                 { drop state_mark_errchecked(a, et.slot); }
         }
         drop assign_stmt(x, a, then_id, d);
 
         AssignState:b = raw state_copy(st);
         if (et.found) {
+            // The ELSE arm: the opposite road to the THEN arm's.
             if (!et.then_checked) { drop state_mark_checked(b, et.slot); }
+            else                  { drop state_mark_errchecked(b, et.slot); }
         }
         drop assign_stmt(x, b, else_id, d);
 
@@ -1040,6 +1087,7 @@ func:state_intersect_must = NIL(AssignState:dst, AssignState:other) never fails 
         dst.moved[i] = dst.moved[i] || other.moved[i];
         dst.freed[i] = dst.freed[i] || other.freed[i];
         dst.checked[i] = dst.checked[i] && other.checked[i];
+        dst.errchecked[i] = dst.errchecked[i] && other.errchecked[i];
         dst.sealed_any[i] = dst.sealed_any[i] || other.sealed_any[i];
         dst.sealed_firm[i] = dst.sealed_firm[i] && other.sealed_firm[i];
         i = i + 1i64;
@@ -1063,6 +1111,10 @@ func:state_take_definite = NIL(AssignState:dst, AssignState:src) never fails {
     while (i < (dst.count => int64)) decreases (dst.count => int64) - i {
         dst.must[i] = src.must[i];
         dst.checked[i] = src.checked[i];
+        // `errchecked` follows `checked` (DEF-381): a total pick's arms are one the
+        // error road and one not, so this intersects to false in practice -- taken
+        // for symmetry, so no site treats the two permissions differently.
+        dst.errchecked[i] = src.errchecked[i];
         i = i + 1i64;
     }
     pass NIL;
@@ -1142,6 +1194,14 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) neve
             if (raw arm_covers_bool(x.ast, arm, want)) {
                 if (!(raw arm_covers_bool(x.ast, arm, other))) {
                     drop state_mark_checked(one, et.slot);
+                }
+            }
+            // THE ERROR ROAD is the arm covering the unsafe value and not the safe
+            // one -- the dual of the line above (DEF-381): `.err` is licensed where
+            // `is_error` matched true.
+            if (raw arm_covers_bool(x.ast, arm, other)) {
+                if (!(raw arm_covers_bool(x.ast, arm, want))) {
+                    drop state_mark_errchecked(one, et.slot);
                 }
             }
         }
@@ -1381,6 +1441,7 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) never
 
     if (n.kind == ExprKind.ExprMemberAccessExpr) {
         drop check_value_read(x, st, n);
+        drop check_err_read(x, st, n);
         drop assign_expr(x, st, raw expr_operand(n), d);
         pass NIL;
     }
@@ -2001,6 +2062,52 @@ func:check_value_read = NIL(Assign->:x, AssignState:st, ExprNode:n) never fails 
 
     drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
         "this `Result` is not known to hold a value here -- no `is_error` test guards the read, or the one on this path found an error -- so its `value` carries the `unknown` taint: read it where `is_error` is false, or unwrap the binding with `?!`, `?|` or `relay` (D-007; `raw` takes only a call, D-163)",
+        n.span);
+    pass NIL;
+};
+
+// READING `.err` OFF A `Result` THAT NOTHING HAS FOUND AN ERROR IN (DEF-381).
+//
+// The EXACT DUAL of `check_value_read`, and for the same reason. `.err` is the
+// Error the caller forwards -- `if (r.is_error) { fail r.err; }`, the idiom `?!`
+// lowers to (CONTROL_REFERENCE). On the error road that Error is genuine (`is_error`
+// is `error != 0`, D-069), so forwarding it is a real failure. OFF that road `.err`
+// is the success slot's zero, and `fail`-ing it fabricates a success holding a NULL
+// value, dereferenced to a MachineFault (DEF-381, 107/107): `NITPICK-TAINT-001`,
+// reversing `tests/accept/taint.npk:97` (the author's answer (b)). The structure is
+// `check_value_read`'s byte for byte, with `errchecked` where it reads `checked`.
+func:check_err_read = NIL(Assign->:x, AssignState:st, ExprNode:n) never fails {
+    string:f = raw intern_get(x.interns, (raw expr_name(n)) =>! int32);
+    if (!(raw string_eq(f, "err"))) { pass NIL; }
+
+    ExprId:base = raw expr_operand(n);
+    int32:ty = raw exprtypes_get(x.etypes, base);
+    if ((raw type_kind(x.types, ty)) != (raw TY_RESULT())) { pass NIL; }
+
+    // ONLY A BARE LOCAL IS TRACKABLE (0.9.8, F-4), as for `.value`: a field- or
+    // parameter-rooted `Result` the taint discipline cannot witness, so its `.err`
+    // refuses conservatively -- bind it to a local and test `is_error` on that.
+    ExprNode:basen = raw ast_expr(x.ast, base);
+    if (basen.kind != ExprKind.ExprIdentifierExpr) {
+        if (raw place_rooted_at_ident(x, base)) {
+            drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
+                "this `Result` lives behind a field or parameter path, which the taint discipline cannot track (F-4): bind it to a local and read `.err` where `is_error` is true (DEF-381; D-007)",
+                n.span);
+        }
+        pass NIL;
+    }
+
+    int32:slot = raw binding_slot(x, base);
+    if (slot < 0i32) {
+        drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
+            "this `Result` arrived through a parameter, which the taint discipline cannot track (F-4): bind it to a local and read `.err` where `is_error` is true (DEF-381; D-007)",
+            n.span);
+        pass NIL;
+    }
+    if (raw state_errchecked(st, slot)) { pass NIL; }
+
+    drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
+        "this `Result` is not known to hold an error here -- no `is_error` test guards the read -- so its `err` may be the success slot's zero, and failing with it fabricates a success holding a NULL value: read `.err` where `is_error` is true (`if (r.is_error) { fail r.err; }`), or forward the binding with `?!`, `?|` or `relay` (DEF-381; D-007)",
         n.span);
     pass NIL;
 };

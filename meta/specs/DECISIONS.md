@@ -5155,6 +5155,8 @@ carries a warning is a value with a field of its own for it.
 
 ---
 
+> *Note 2026-10-31 (landing 174, DEF-380 + DEF-381 + DEF-382; `nitpick-compiler_53`):* D-069's consequences for `.err`/`.is_error` are ENFORCED now. `.err` and `.is_error` are NO PLACES -- an assignment, `@`, `$$` or `move` of either is `NITPICK-TYPE-024` (a `Result` changes state by `pass`/`fail` or a whole assignment only), and `.is_error` is derived from `err` with no slot (DEF-380, DEF-382). `.err` is READABLE only where `is_error` is true -- off the success road it is `NITPICK-TAINT-001`, the dual of `.value`'s `checked`, reversing `tests/accept/taint.npk:97`'s pinned design (the author's ruling, relayed management_7 2026-10-30 14:05:38) (DEF-381(b)). And D-069's long-specified trap at a COMPUTED taker is BUILT now: a `fail e` or `return Result{err: e}` with a zero computed `Error` traps `(Unreachable)` (`npk_trap(-4102)`) before it can fabricate a success holding the value slot's zero (DEF-381(a)); a declared `Error` constant is non-zero (D-179) and emits unguarded. The RAISE takers' zero is a controlled `failsafe (*)` with code 0 today, to normalise to -4102 (DEF-398).
+
 ## D-070 — `T[]` is a slice: bounds live in the array type, not the pointer type — **SETTLED**
 
 Closing Part W required checking what carries bounds if pointers do not. Part W
@@ -16672,6 +16674,8 @@ declared without an initialiser and handed as `$$m` to a callee that leaves it u
 both legs). D-366 refuses that `$$m` (landing 169) and keeps this decision's vacant value for every dropping type -- the whole slot
 zero-filled, then the type's vacant body -- so the claim of a dropping binding stays legal.
 
+> *Note 2026-10-31 (landing 174, DEF-385; `nitpick-compiler_53`):* an exhaustive `pick` over a valued enum holding this decision's VACANT FILL (an enum with no tag-0 variant, read before it is written) takes no arm; it now TRAPS `(Unreachable)` (`npk_trap(-4102)`) at the no-arm path -- `emit_pick`'s switch default and `emit_pick_chain`'s `.none` (which emitted a bare `unreachable`, UB) -- instead of falling off the function into a fabricated success or reading an unwritten local (DEF-385). This guards the SYMPTOM; the invalid-discriminant ROOT (whether D-225's vacant fill for an enum with no zero variant should be producible at all) is this decision's next-look question, the author's.
+
 ## D-226 — the index type follows the count — **SETTLED (user decision, 2026-08-31; numbered 2026-08-31)**
 
 Ratified during 1.4.7 step 2 and recorded in the subcycle file; given a number
@@ -23799,6 +23803,8 @@ re-pin carrying landings 104-115.
 > `tests/backend/programs/optional_pointer.npk` (the idiom at both legs), `null_store_legs.npk` on a `wild` pointer (107/107),
 > `tests/frontend/type_access.npk`'s comparison cases. The emission of every program that compiles on both compilers is
 > byte-identical (a checker-only landing); no floor byte; no snapshot refresh.
+
+> *Note 2026-10-31 (landing 174, DEF-388; `nitpick-compiler_53`):* this decision's `NULL`/plain-pointer rule reaches a `Result` literal written OUTSIDE a `return` now. `type_result_literal` (type_expr.npk) typed a non-return `Result{...}` by the enclosing function's success type and a wild context, so a plain `Result<int64->>` slot accepted `Result{value: NULL}` or a wild value and dereferenced it (a MachineFault); it types the literal by its SLOT now, so `NULL` in a plain `Result<T->>` is `NITPICK-TYPE-096` and a wild-provenance value is `NITPICK-TYPE-097` (D-361), exactly as a bare `T->` slot refuses them. A value of the slot's own `T` is no longer over-refused against the function's unrelated `T` (DEF-388).
 
 ## D-356 — A PAYLOAD-LESS ENUM VARIANT IS A CONSTANT OUTSIDE THE EVALUATOR: A MODULE BINDING (A STRUCT'S OR AN ARRAY'S MEMBER TOO) MAY BE INITIALISED WITH ONE, AND `comptime(…)` MAY YIELD ONE — **SETTLED (user decision, 2026-10-15: "yes, pass those to compiler_37 too")**
 

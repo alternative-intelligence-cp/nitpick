@@ -1,36 +1,41 @@
 // expect-error: NITPICK-TYPE-061
-// expect-error-at: 36
+// expect-error-at: 41:1
 // expect-error: NITPICK-TYPE-061
-// expect-error-at: 37
+// expect-error-at: 42:21
 // expect-error: NITPICK-TYPE-061
-// expect-error-at: 38
+// expect-error-at: 43:53
 // expect-error: NITPICK-TYPE-061
-// expect-error-at: 39
+// expect-error-at: 44:57
 // expect-error: NITPICK-TYPE-061
-// expect-error-at: 40
+// expect-error-at: 45:85
 // expect-error: NITPICK-TYPE-061
-// expect-error-at: 41
+// expect-error-at: 46:74
 // expect-error: NITPICK-TYPE-061
-// expect-error-at: 42
+// expect-error-at: 47:37
 // expect-error: NITPICK-TYPE-061
-// expect-error-at: 43
+// expect-error-at: 48:38
 // expect-error: NITPICK-TYPE-061
-// expect-error-at: 44
+// expect-error-at: 49:40
 // expect-error: NITPICK-TYPE-061
-// expect-error-at: 45
+// expect-error-at: 50:40
 // expect-error: NITPICK-TYPE-061
-// expect-error-at: 46
+// expect-error-at: 51:49
 // expect-error: NITPICK-TYPE-061
-// expect-error-at: 49
+// expect-error-at: 52:52
 // expect-error: NITPICK-TYPE-061
-// expect-error-at: 50
+// expect-error-at: 54:48
+// expect-error: NITPICK-TYPE-061
+// expect-error-at: 57:19
+// expect-error: NITPICK-TYPE-061
+// expect-error-at: 58:1
 //
 // D-221 (1.5.1, S-15): a `pure` body is a function of its arguments and
 // nothing else. One line per rule, and the message names which: the header
 // (`async`, a `move` parameter, `main`), the callee (not `pure`, an effect
 // builtin, not named), a receiver whose methods read or change shared state,
-// manual memory, an owning local, a store the caller can see, a manufactured
-// view of memory, and an impl dropping its trait's word.
+// manual memory, an owning local, a store the caller can see, a move OUT of
+// memory the caller can see (DEF-397), a manufactured view of memory, and an
+// impl dropping its trait's word.
 mod:pure_rules;
 func:impure = int32(int32:v) never fails { pass v; };
 async func:p_async = int32(int32:a) pure { pass a; };
@@ -44,6 +49,9 @@ func:p_owner = int32(int32:a) pure { string:s = "x"; pass a; };
 func:p_store = int32(int32->:p) pure { <-p = 1i32; pass 1i32; };
 func:p_slice = int32(int32[]:s) pure { s[0i64] = 1i32; pass 1i32; };
 func:p_view = int32(int64:addr) pure { pass (<-(#wild_ptr<int32>(addr))); };
+func:p_move_deref = string(string->:p) pure { pass move(<-p); };
+struct:Hp = { string:s; };
+func:p_move_field = string(Hp->:h) pure { pass move((<-h).s); };
 trait:Shape = { func:area = int32(Self->:self) never fails pure; };
 struct:Sq = { int32:side; };
 impl:Sq:Shape = { func:area = int32(Sq->:self) never fails { pass self.side; }; };

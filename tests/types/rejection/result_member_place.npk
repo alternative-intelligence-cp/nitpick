@@ -1,0 +1,64 @@
+// expect-error: NITPICK-TYPE-024
+// expect-error-at: 34:5
+// expect-error: NITPICK-TYPE-024
+// expect-error-at: 39:5
+// expect-error: NITPICK-TYPE-024
+// expect-error-at: 44:19
+// expect-error: NITPICK-TYPE-024
+// expect-error-at: 49:18
+// expect-error: NITPICK-TYPE-024
+// expect-error-at: 54:18
+// expect-error: NITPICK-TYPE-024
+// expect-error-at: 59:21
+// A `Result`'s `err` and `is_error` are READ-ONLY — they are not places (D-069,
+// D-179; the author's ruling (c), relayed `management_7` 2026-10-30 14:05:38).
+//
+// DEF-380: `r.err = E1;` over a value-holding `Result` used to be ACCEPTED, and
+//   the value it displaced was freed by nobody — a `Result`'s drop frees
+//   `.value` only when `err` is 0, so the store leaked (peak_live 40 -> 4,000
+//   between N = 10 and N = 1000). DEF-382: `r.is_error = false;` used to pass the
+//   checker and reach `NITPICK-EMIT-002`.
+//
+// BOTH ARE ONE RULE NOW: `err` and `is_error` are no places, so a store, an
+// address, a claim or a move of either is `NITPICK-TYPE-024` at the typer,
+// before either old bug can happen. `is_error` is DERIVED from `err` on every
+// read, and a `Result` is built by its literal — its error road is `fail e;`
+// (DEF-373), never a field store. The legal READS are in
+// `tests/backend/programs/result_members.npk`.
+mod:result_member_place;
+error:E1;
+func:mk = int64() { fail E1; };
+
+func:w_err_assign = int32() never fails {
+    Result<int64>:r = mk();
+    r.err = E1;
+    pass 0i32;
+};
+func:w_iserr_assign = int32() never fails {
+    Result<int64>:r = mk();
+    r.is_error = false;
+    pass 0i32;
+};
+func:w_err_addr = int32() never fails {
+    Result<int64>:r = mk();
+    Error->:p = @r.err;
+    pass 0i32;
+};
+func:w_iserr_addr = int32() never fails {
+    Result<int64>:r = mk();
+    bool->:p = @r.is_error;
+    pass 0i32;
+};
+func:w_err_claim = int32() never fails {
+    Result<int64>:r = mk();
+    discard($$m r.err);
+    pass 0i32;
+};
+func:w_err_move = int32() never fails {
+    Result<int64>:r = mk();
+    Error:e = move(r.err);
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:_~argv) { pass 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };

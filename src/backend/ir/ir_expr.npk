@@ -11951,6 +11951,36 @@ func:emit_array_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails 
     pass (raw iv(move(all.text), move(acc), atid));
 };
 
+// DEF-381(a), landing 174 -- D-069's long-specified trap at a COMPUTED taker, built
+// at last. A RETURN taker -- `fail z` (`fnem_ret_fail`) and `return Result{err: z}`
+// (`emit_result_lit`) -- builds an errored `Result` holding the value slot's ZERO.
+// A declared error constant is non-zero (D-179), so a CONSTANT operand is safe; but
+// a COMPUTED error (a runtime value) may be zero, and a zero error is read by the
+// caller as a SUCCESS (`is_error` is `error != 0`, D-069) holding a NULL value,
+// dereferenced to a MachineFault (DEF-381, measured 107/107). Trap it as the author
+// ruled -- `Unreachable` (-4102), no new failsafe arm. A constant operand lowers to
+// a NUMERIC LITERAL ref; only a `%`-register (a value computed at run time) is
+// guarded, so a constant taker's emission does not move. (The RAISE takers `!!!`,
+// `?!` and `??!` need no guard: they lower to `npk_raise(code)` = `npk_trap(code)`,
+// noreturn, so a zero there is a controlled trap -- a wrong code, never a fabricated
+// success.)
+pub func:emit_err_nonzero_guard = NIL(ExprEmitter->:x, string:eref) never fails {
+    string:head = string_slice(eref, 0i64, 1i64) ?| "";
+    if (!(raw string_eq(head, "%"))) { pass NIL; }
+    string:isz = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(isz, " = icmp eq i32 ",
+                      string_concat(eref, ", 0")));
+    string:t_l = raw irw_new_label(x.fe.w, "fe.ztrap");
+    string:c_l = raw irw_new_label(x.fe.w, "fe.znz");
+    drop irw_line(x.fe.w, raw cat5("br i1 ", isz, ", label %", t_l,
+                      string_concat(", label %", c_l)));
+    drop irw_label(x.fe.w, t_l);
+    drop irw_line(x.fe.w, "call void @npk_trap(i32 -4102)");
+    drop irw_line(x.fe.w, "unreachable");
+    drop irw_label(x.fe.w, c_l);
+    pass NIL;
+};
+
 // `Result{value: v}` or `Result{err: e}` (one field: TYPE-101, DEF-373) — the
 // omitted one is ZERO, which is D-069's derivation rule made concrete: no error means
 // `error == 0`, and a failed Result's value slot is the type's zero.
@@ -11968,6 +11998,8 @@ func:emit_result_lit = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n) never fails
     if (!(raw expr_is_none(ee))) {
         IrVal:ev = raw emit_expr(x, ee);
         if (!(raw iv_is_ok(ev))) { pass ev; }
+        // DEF-381(a): a COMPUTED error could be zero -> a fabricated success.
+        drop emit_err_nonzero_guard(x, ev.ref);
         eref = move(ev.ref);
     }
 

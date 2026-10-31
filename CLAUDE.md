@@ -8,90 +8,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   listener's and the fuzzer's findings, safety before correctness before performance. Cycles 0.0–1.5 are complete
   (`meta/roadmap/done/`); 1.4 made the compiler self-hosting (D-202) and 1.5 made the verification leg (`npkg verify`, the floor's
   specification and models, the schedule explorer).
-- **main = landing 173** (2026-10-31; wt/53a, branch 53-r1size, on 2bbc59f) — DEF-393(a+b) + DEF-394 + DEF-396 (escape.npk +
-  type_expr.npk + type_stmt.npk, ~+73/−3 code lines): a spawn whose argument carries a borrow of this frame — a sanctioned
-  `Mutex`/`RwLock`/`CondVar`/`Barrier`/`shared_arena` pointer included — LENDS, closing a REGRESSION landing 172 opened, where its
-  relaxed dereference rule (face 2) trusted a target a spawned task may have poisoned (DEF-393(a): silent on 2bbc59f where 171 refused,
-  BORROW-001); a borrowy-initialised `limit<Rules>` binding lends (DEF-393(b), invisible in the combined build, proved alone); and the
-  typer's two IMPLICIT calls are held to D-221's purity rules as the explicit twins are — a template's `to_string` in a `pure` body or a
-  contract (DEF-394: TYPE-061 / TYPE-060) and a `for`'s `next(@it)` over an `Iterator` in a `pure` body (DEF-396: TYPE-061), each
-  pre-existing, a verification-soundness gap with no run-time face. The lending list now has NO EXCLUSION; only a pipe (PARSE-014) reaches
-  no analysis. The sweep 11 appeared and 0 vanished, all in the landing's own two new rejection tests; the emission comparison 631 of 631
-  byte-identical, 0 different, 0 newly refused; the manifest 7,658 obligations, 0 rows added, 186 re-keyed, 0 verdicts moved, the floor
-  unchanged. DEF-395 registered (OPEN → 177: a spawned task's store handed back by value, untracked). Every landing's full paragraph —
-  the defect, what was measured first, the rule now, the tests, the sweep, the emission comparison, the manifest — is at the top of
-  `meta/STATUS_HISTORY.md`, newest first; the cycle history 0.0–1.5 follows it there. Read the newest few before planning work.
-- **The queue** (management_10's rulings of 2026-10-31 -- 00:25, 00:33 (the queue RENUMBERED: DEF-388 stays in the Result-fields group
-  and DEF-389 in DEF-333's landing, NOT DEF-312's, correcting an earlier relay), 00:56 -- and management_7's and management_6's of
-  2026-10-30 and 2026-10-29 for what follows): landing 173 LANDED (DEF-393(a) + DEF-393(b) + DEF-394 + DEF-396, the status bullet); the
-  libraries' fuzz copy moved from d44dfe3 to d096b82 after landing 172's verification, this landing's sweep reading the new base; then
-  landing 174 = the Result-fields group (with DEF-397 at its HEAD, conditional on management's sizing ruling -- management_10 2026-10-31 03:46):
-  DEF-380 + DEF-381 + DEF-382 + DEF-385 + DEF-388 (registered after 171 and at 172, HIGH but DEF-380 MEDIUM and DEF-382 LOW: `r.err = E1`
-  over a value leaks it (DEF-380); a zero `Error` read off a success and failed makes a success holding the slot's zero, a NULL plain
-  pointer (DEF-381); `r.is_error = false` reaches EMIT-002 (DEF-382); an exhaustive `pick` over a valued enum's vacant value takes no arm --
-  a fabricated success, an undefined read (DEF-385); a `Result` literal outside a `return` typed by the enclosing function's success type
-  and wild context, never by its slot -- a NULL or wild value in a plain `Result<int64->>` slot dereferenced, 107/107, and TYPE-007 twice
-  wherever the two `T`s differ (DEF-388) -- its own landing, its emission comparison read alone; the author answered its two questions,
-  relayed by management_7 at 14:05:38: (a) the trap at a computed taker is `Unreachable`, D-069's, with no new failsafe arm; (b) `.err` read
-  off the error road is TAINT-001, reversing `tests/accept/taint.npk:97`; (c) approved, `.err` and `.is_error` no places; the `?!`/`??!`
-  constant census in its build; the censuses `t171/rev171/census381/` and DEF-388's textual one), then landing 175 = the old list: DEF-344 +
-  DEF-347 + DEF-349 + DEF-353 + DEF-354 + DEF-355 + DEF-356 + DEF-357 (the review groups, HIGH but DEF-353 MEDIUM: an address carried into a
-  struct field, a copy, a callee-built struct or a call result raises no plain party beside a claim (DEF-344); a copy of a parameter's
-  pointer PART, `<-pp` or `hh.p`, enters no summary (DEF-347, DEF-342's residual); `push_call_view_party_in` fails OPEN at fuel 0 (DEF-349:
-  a whole-argument party there); the pointer judges skip an unreadable step and `escape_type_holds` answers no for an unknown (DEF-353: a
-  judge that meets "unknown" answers YES); a pointee-changing cast INSIDE a getter's argument, `(<-(raw ids(ap =>! S->))).x = …`, is no
-  target of the result (DEF-354: a crossing flag out of `collect_view_refs`' cast arm); a view a getter returns through `(<-(q =>! S->)).x`
-  from a NAMED `any->` local does not freeze the owner (DEF-355: the reverse reader through an `any` pointer, read before it is sized); a
-  view handed on or STORED through a callee's CAST VALUE, `raw gety(q =>! S->)`, keeps the summary's field path, inline and named (DEF-356);
-  a typed pointer local MADE by a pointee-changing cast, `S->:sp = ap =>! S->`, has no target and its steps are never erased (DEF-357) --
-  the last two from management's review of build 16, measured silent on 166 and 167 alike; the old list is measured and censused before it
-  is cut, the 33 DEF-344 tree candidates read first (0 sites, `t168/CENSUS_344_READ.md`) -- and DEF-345 (HIGH: `$$m` of a binding declared
-  without an initialiser reads the previous frame's bytes when the callee leaves it unwritten, nitpick-libs_29's report of 2026-10-29,
-  measured 85/85 at both legs; RULED by the author 2026-10-29 17:29 -- (b), the middle road, D-366, two respellings: refused when the type
-  does not drop, a dropping type keeps D-225's vacant value, C#-style `out` rules a later relaxation -- implemented in landing 175; its test
-  items: `cast_place_readers.npk`'s site 22 re-cut so the write below the result's dereference is what is tested, inline legal-half controls
-  of the caller rule with no view and with another struct's view, `q3 =>! wild int8->` as a control of `pointer_retype_plain_ok.npk`) --,
-  then landing 176 = DEF-333's: DEF-333 + DEF-334 + DEF-335 + DEF-336 + DEF-384 + DEF-389 (HIGH but DEF-389 LOW: a temporary argument under
-  a transparent kind or a ternary, a by-value argument's view returned or carried out of the owning frame, a slice-storing callee's
-  destination spelled through a pointer field, a dereference, a call result, a cast, a move, a ternary or an unwrap, and a builtin
-  view-maker over `#ptr_add` recording no ref -- its six tree sites read, none a live hazard; a view-maker over an element address,
-  `string_from_bytes(@x[0i64], n)`, never frozen, 13/13 -- DEF-384, registered after 171, or in DEF-318's landing if its fix needs the
-  element-address party; and the escape VERDICT of the long form still reading the whole literal, `return Result{value: @hq.k};` BORROW-001
-  where `pass @hq.k;` travels up -- DEF-389, registered at 172, after DEF-384's fix, since unifying first opens the getters' long forms to
-  DEF-384's hazard), then landing 177 = DEF-312's: DEF-312 widened (HIGH: a pointer field of a call-result pointer's pointee written two
-  levels down, F3a/F3b/a15) + DEF-348 + DEF-350 (HIGH, from the review of build 14: a write through a pointer FIELD of a pointer parameter's
-  pointee in every spelling -- `hh.p.o`, its explicit dereferences, the pointee whole, a `Self->` method of a struct holding the pointer,
-  plain or through a `dyn` -- and a pointer VALUE handed out of a holder's field by a getter; one fix with DEF-312's, a composed path
-  re-resolved at each pointer-typed hop, not M3) + DEF-325 (LOW, while ≤ ~30 code lines) + DEF-386 + DEF-387 (HIGH, registered at 172: an
-  address whose place has no named root -- `@(<-(raw ids(@h)))` -- is no target on a pointer's chain, a write through it under a view of `h`
-  silent 13/13 and an arena destroyed under its task 107/107 (DEF-386), and no ref at a call argument, a view the result takes of it not
-  frozen and a frame address handed back not BORROW-001, 13/13 (DEF-387) -- one drop, `push_view_ref_at` recording nothing at root 0, one
-  fix at the drop considered first, the census `t172/census386/`) + DEF-390 + DEF-391 + DEF-392 + DEF-395 (HIGH, DEF-390 to DEF-392 registered at 172 and DEF-395 at 173: a callee's store
-  through an argument that the store matrix does not attribute to its target -- a pointer field, a call's result, an array element, a
-  by-value holder, a destination two levels down, a copy of the pointer handed in a holder -- leaves the target's `holds` unset, so `pass
-  v;` hands back a frame address, 13/13 (DEF-390; with its fix and DEF-392's, face 2's lending rule narrows to unattributed stores); an
-  atomic of a pointer type carries a frame address untracked, its `store` marking nothing and its `load` carrying nothing, 13/13 (DEF-391);
-  a `for` over an `Iterator` calls `next(@it)` through no call node, so the store matrix never reads what `next` stores into the iterator
-  and `pass it;` after the loop hands back a frame address, 13/13 (DEF-392: the iterable type's own `next` matrix applied as to an auto-ref
-  receiver, preferred if closed); and a spawned task's store of a frame borrow into caller storage handed back BY VALUE (`pass move(v)`) is untracked, DEF-393(a)'s mark bearing on a dereference and not a by-value move, so DEF-390's store-matrix mechanism rides onto the spawn path, 0 sites in our code (DEF-395) -- the family of stores the analysis does not see), then landing 178 = DEF-318's: DEF-318 to DEF-323 (HIGH:
-  the element-address party's six missed spellings; smallest first: 322, 323, 320, 319, 321, 318), all before M3 -- the fuzz seats' M16
-  targets the first binary after landing 178 --, and DEF-351 (the bare-builtin whole-write artefact behind probe10:151), DEF-352 (a
-  ternary's wild provenance, TYPE-032) and DEF-358 (the emitter's refusal of a pick expression as a `for` iterable giving an array,
-  registered at 168), LOW, after landing 178, and DEF-369 and DEF-370 (LOW, unplaced, registered at 170: a ternary's two arms moving two
-  fields of one struct are MOVE-001 where a pick's arms are not; a pick expression standing as a method call's receiver is typed under the
-  call's expected type, TYPE-007 at each `give`), DEF-376 (LOW, unplaced, registered at 171: `Self` by value in a trait's default body
-  reaches EMIT-002), DEF-379 (LOW, unplaced, registered after 171: `return Result{…}` in a `comptime func:` does not fold) and DEF-375 and
-  DEF-377 (MEDIUM, unplaced, registered at 171: a generic enum's instance inside a generic function has no type definition, and `llc`
-  refuses it; a `T.Item` parameter cannot be instantiated at a concrete type -- each refused at build time); then DEF-298 + DEF-299 (HIGH:
-  DEF-289's class's last two faces, with their pointer twins, s302k/s302l, the fuzz seat's (A) face q05 and DEF-313 -- a store through a
-  pointer PARAMETER into its pointee, recorded on no chain -- as M3, the store-matrix destination path, the census first), then DEF-286
-  (function types keyed by content; the libraries' next re-pin waits for it and carries every safety fix) -- management's order of
-  2026-10-29 (07:15:11, 07:52:03, 11:05:40, 16:48, 21:09, 23:02; 2026-10-30 00:42, 00:54, 01:01, 01:37, 06:11, 06:47, 06:53, 06:59, 07:10,
-  08:39:44, 09:08:19, 09:52:11, 09:56:11, 10:39:20, 11:20:11, 11:42:38, 12:05:42, 12:30:58, 14:05:38, 14:13:20, 14:31:25, 16:12:12), safety
-  before performance -- then DEF-292, DEF-293, DEF-294, DEF-291, DEF-295, D-358 (Fable's), step 3d's rest (DEF-239), step 4. The plan of
+- **main = landing 174** (2026-10-31; wt/53b, branch 53-r174, on 3b0043e) — DEF-397(head) + DEF-380 + DEF-381 + DEF-382 +
+  DEF-385 + DEF-388 (type_expr.npk + type_stmt.npk + analysis/bindings.npk + ir_stmt.npk + ir_expr.npk, +147/−3 code lines),
+  the Result-fields group: a `Result`'s `.err`/`.is_error` standing where a place is needed is TYPE-024 (DEF-380, DEF-382); a
+  `.err` read off the error road is TAINT-001 (DEF-381(b), the `errchecked` dual of `.value`'s `checked`, reversing
+  tests/accept/taint.npk:97); a zero `Error` at a RETURN taker traps `(Unreachable)` instead of fabricating a success
+  (DEF-381(a), D-069's long-specified trap, built); an exhaustive `pick` over a valued enum's vacant fill traps
+  `(Unreachable)` at its no-arm path (DEF-385); a `Result` literal outside a `return` is typed by its SLOT — NULL is TYPE-096,
+  wild is TYPE-097 (DEF-388); and a `pure` body moves out of only its own locals, TYPE-061 (DEF-397, the twin of the `(<-p) =
+  …` gate). 229 programs move emission (161 libs/apps + 68 tree), each a DEF-385 trap and/or a DEF-381(a) guard,
+  BEHAVIOR-NEUTRAL (the typer emission-neutral, cond3; 57/59 runnable backend keep identical exits, the two new trap programs
+  the exceptions); one new libs refusal (me0394, TAINT-001, EXPECTED). The sweep: 18 appeared and 6 vanished, all in this
+  landing's own test files plus me0394. The emission comparison: tree 636 (567 identical, 68 different, 0 newly refused, 1
+  base-only), libs/apps 4,112 (161 different, 1 newly refused). The manifest 7,659 obligations, 1 row added, 256 re-keyed, 0
+  verdicts moved, 0 discharged counts fell, the floor unchanged. peak_live 222,618,669 (1.42 % headroom; the ~1 % line stands
+  for 175–178). DEF-402 (HIGH, pre-existing) registered at 175's head (the `checked`/`errchecked` write-hole). Every landing's
+  full paragraph is at the top of `meta/STATUS_HISTORY.md`, newest first; read the newest few before planning work.
+- **The queue** (management_10's rulings of 2026-10-31; and management_7's/_6's of 2026-10-30/29 for what follows): landing
+  174 LANDED (DEF-397 + DEF-380 + DEF-381 + DEF-382 + DEF-385 + DEF-388, the status bullet); then landing 175 = DEF-402 at its
+  HEAD (HIGH, the `checked`/`errchecked` write-hole, sized first) + the old list with DEF-345 (DEF-344 + DEF-347 + DEF-349 +
+  DEF-353 + DEF-354 + DEF-355 + DEF-356 + DEF-357 + DEF-345), then landing 176 = DEF-333's (DEF-333 + DEF-334 + DEF-335 +
+  DEF-336 + DEF-384 + DEF-389), then landing 177 = DEF-312's (DEF-312 widened + DEF-348 + DEF-350 + DEF-325 + DEF-386 +
+  DEF-387 + DEF-390 + DEF-391 + DEF-392 + DEF-395), then landing 178 = DEF-318's (DEF-318 to DEF-323) — the fuzz seats' M16
+  targets the first binary after landing 178 —, then DEF-351, DEF-352, DEF-358 and the new DEF-398/DEF-399/DEF-400/DEF-401 LOW
+  after 178, DEF-369/DEF-370/DEF-376/DEF-379 LOW and DEF-375/DEF-377 MEDIUM unplaced; then M3 (DEF-298 + DEF-299 + DEF-313),
+  DEF-286, then DEF-292, DEF-293, DEF-294, DEF-291, DEF-295, D-358 (Fable's), step 3d's rest (DEF-239), step 4. The plan of
   record is `meta/roadmap/` (start at `ROADMAP.md`; cycle 1.6's map is `meta/roadmap/1.6/README.md`, its subcycle record
-  `meta/roadmap/1.6/1.6.1e.md`); every open defect and question is a row of `meta/roadmap/OPEN_DECISIONS.md`; the notice log to the library
-  seats is `meta/NOTICES.md`.
+  `meta/roadmap/1.6/1.6.1e.md`); every open defect and question is a row of `meta/roadmap/OPEN_DECISIONS.md`; the notice log
+  to the library seats is `meta/NOTICES.md`.
 - **The specification set is complete:** `meta/specs/` holds twenty-one documents and `DECISIONS.md` records 366 decisions, D-001
   through D-366. `meta/specs/` and `DECISIONS.md` are the authority on the language, never a summary of them.
 - **The live hand-off state** (the RESUME-HERE entries, what is in flight) is the tail of `.internal/handoff_35/STATE.md`, and the seats'
@@ -376,6 +320,7 @@ Five more, each a 1.4 debugging cycle:
 - Judge a shorthand and its long form by ONE function (`check_leaving_value`, `emit_leaving_value`) and check them with a generated twin table; a `Result` literal writes one field (TYPE-101); name a `move`-parameter function only as a callee (TYPE-100) — see "`pass v;` and `return Result{value: v};` are ONE road, a `Result` literal writes one field, and a function with a `move` parameter is not a value"
 - Judge a dereference by its TARGET read where the pointer is WRITTEN (`deref_targets_hold`, `redef`), YES in a function that lends (`lends`; a `for`'s `next(@it)` and a template's `to_string` lend too), never by its chain; judge a receiver's walk VERDICT as an argument's; recurse a kind test through every kind that stores it — see "A dereference's verdict asks its TARGET, read where the pointer is WRITTEN, and answers YES in a function that lends; a walk's verdict is judged on every road that runs it; a kind test recurses through every kind that stores the kind
 - Treat a template's `to_string`, a `for`'s `next`, a spawn and a `limit<Rules>` check as calls that lend/are purity-checked; prove the list complete with a census — see "An IMPLICIT call is a call, and a SPAWN and a `limit<Rules>` check LEND""
+- Build a `Result` by its literal; `.err`/`.is_error` are read-only (TYPE-024), a `.err` read needs an `is_error` guard (TAINT-001), a non-return literal is slot-typed (TYPE-096/097), a vacant enum and a zero taker TRAP — see "A `Result` is built by its literal, its `err`/`is_error` read-only, its `.err` read guarded, its non-return literal slot-typed, and a vacant discriminant traps"
 
 ### Reserved words that read like ordinary names
 
