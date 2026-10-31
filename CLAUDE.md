@@ -21,16 +21,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   the exceptions); one new libs refusal (me0394, TAINT-001, EXPECTED). The sweep: 18 appeared and 6 vanished, all in this
   landing's own test files plus me0394. The emission comparison: tree 636 (567 identical, 68 different, 0 newly refused, 1
   base-only), libs/apps 4,112 (161 different, 1 newly refused). The manifest 7,659 obligations, 1 row added, 256 re-keyed, 0
-  verdicts moved, 0 discharged counts fell, the floor unchanged. peak_live 222,618,669 (1.42 % headroom; the ~1 % line stands
-  for 175–178). DEF-402 (HIGH, pre-existing) registered at 175's head (the `checked`/`errchecked` write-hole). Every landing's
+  verdicts moved, 0 discharged counts fell, the floor unchanged. peak_live 222,618,984 (harness; 1.42 % headroom; the ~1 % line stands
+  for 175–178). The post-harness review registered DEF-402 + DEF-405 + DEF-406 (HIGH, pre-existing) at 175's head (the `checked`/`errchecked` write-hole, the defer road, the call-temporary `.value`/`.err` read) and DEF-403 + DEF-404 (LOW); DEF-399 widened to a ternary/`while`/`when` guard and both bits; R3's pick trap supersedes D-140 for a forged tag (next free DEF-407). Every landing's
   full paragraph is at the top of `meta/STATUS_HISTORY.md`, newest first; read the newest few before planning work.
 - **The queue** (management_10's rulings of 2026-10-31; and management_7's/_6's of 2026-10-30/29 for what follows): landing
-  174 LANDED (DEF-397 + DEF-380 + DEF-381 + DEF-382 + DEF-385 + DEF-388, the status bullet); then landing 175 = DEF-402 at its
-  HEAD (HIGH, the `checked`/`errchecked` write-hole, sized first) + the old list with DEF-345 (DEF-344 + DEF-347 + DEF-349 +
+  174 LANDED (DEF-397 + DEF-380 + DEF-381 + DEF-382 + DEF-385 + DEF-388, the status bullet); then landing 175 = DEF-402 + DEF-405 + DEF-406 at its
+  HEAD (HIGH, the `checked`/`errchecked` write-hole + the defer road + the call-temporary read, each sized first) + the old list with DEF-345 (DEF-344 + DEF-347 + DEF-349 +
   DEF-353 + DEF-354 + DEF-355 + DEF-356 + DEF-357 + DEF-345), then landing 176 = DEF-333's (DEF-333 + DEF-334 + DEF-335 +
   DEF-336 + DEF-384 + DEF-389), then landing 177 = DEF-312's (DEF-312 widened + DEF-348 + DEF-350 + DEF-325 + DEF-386 +
   DEF-387 + DEF-390 + DEF-391 + DEF-392 + DEF-395), then landing 178 = DEF-318's (DEF-318 to DEF-323) — the fuzz seats' M16
-  targets the first binary after landing 178 —, then DEF-351, DEF-352, DEF-358 and the new DEF-398/DEF-399/DEF-400/DEF-401 LOW
+  targets the first binary after landing 178 —, then DEF-351, DEF-352, DEF-358 and the new DEF-398/DEF-399/DEF-400/DEF-401/DEF-403/DEF-404 LOW
   after 178, DEF-369/DEF-370/DEF-376/DEF-379 LOW and DEF-375/DEF-377 MEDIUM unplaced; then M3 (DEF-298 + DEF-299 + DEF-313),
   DEF-286, then DEF-292, DEF-293, DEF-294, DEF-291, DEF-295, D-358 (Fable's), step 3d's rest (DEF-239), step 4. The plan of
   record is `meta/roadmap/` (start at `ROADMAP.md`; cycle 1.6's map is `meta/roadmap/1.6/README.md`, its subcycle record
