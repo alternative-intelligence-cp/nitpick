@@ -1,0 +1,94 @@
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 50:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 57:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 65:10
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 72:10
+mod:spawn_lends;
+error:E1;
+
+// A SPAWN LENDS THIS FRAME (DEF-393(a), landing 173). A spawn whose argument
+// carries a borrow of this frame -- a sanctioned `Mutex` / `RwLock` /
+// `CondVar` / `Barrier` / `shared_arena` pointer included -- marks the frame
+// `lends`, exactly as an ordinary call does, because the spawned task may
+// store a borrow of this frame through the lock's interior and
+// `escape_spawn_args` attributes no such store to its target. Here each `mk`
+// hands the task a pointer to its own frame-local `Mutex`/`RwLock` `v`, the
+// task stores the frame-local `Barrier` `@b` into `v`'s interior, and `mk`
+// then returns the lock by value with `pass move(<-sp)` -- a dereference out
+// of the frame whose target now holds a dangling borrow. Landing 172's relaxed
+// dereference rule (face 2) trusted that target; the spawn's `lends` mark makes
+// `deref_targets_hold` answer yes, so the dereference is NITPICK-BORROW-001 at
+// the read, as landing 171 refused it. Legal half (a factory with no spawn
+// returns the lock; a spawn whose frame does not dereference out):
+// tests/backend/programs/spawn_lends_ok.npk.
+
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+
+// The spawned task stores the caller's frame-local barrier `@b` (q) into the
+// lock's interior -- the dangling store the dereference-out would hand back.
+thread async func:stash_m = NIL(Mutex<Barrier<1i32, 5i32>->, 3i32>->:dst, Barrier<1i32, 5i32>->:q) joins J2 {
+    Guard<Barrier<1i32, 5i32>->>:g = await dst.acquire(raw duration_ms(500i64)) ?! E1;
+    g.value = q;
+    pass NIL;
+};
+thread async func:stash_r = NIL(RwLock<Barrier<1i32, 5i32>->, 3i32>->:dst, Barrier<1i32, 5i32>->:q) joins J2 {
+    Guard<Barrier<1i32, 5i32>->>:g = await dst.write(raw duration_ms(500i64)) ?! E1;
+    g.value = q;
+    pass NIL;
+};
+
+// 1. (s1n) a `Mutex` handed to a spawn through a named pointer, returned by
+//    `pass move(<-sp)` -- BORROW-001 at the dereference
+async func:mk_s1n = Mutex<Barrier<1i32, 5i32>->, 3i32>(Barrier<1i32, 5i32>->:ext) {
+    Barrier<1i32, 5i32>:b = barrier() ?! E1;
+    Mutex<Barrier<1i32, 5i32>->, 3i32>:v = mutex(ext) ?! E1;
+    Mutex<Barrier<1i32, 5i32>->, 3i32>->:sp = @v;
+    { drop stash_m(@v, @b); }
+    pass move(<-sp);
+};
+// 2. (s1i) the same with an inline dereference, `pass move(<-(@v))`
+async func:mk_s1i = Mutex<Barrier<1i32, 5i32>->, 3i32>(Barrier<1i32, 5i32>->:ext) {
+    Barrier<1i32, 5i32>:b = barrier() ?! E1;
+    Mutex<Barrier<1i32, 5i32>->, 3i32>:v = mutex(ext) ?! E1;
+    { drop stash_m(@v, @b); }
+    pass move(<-(@v));
+};
+// 3. (s2n) a `RwLock` through a named pointer
+async func:mk_s2n = RwLock<Barrier<1i32, 5i32>->, 3i32>(Barrier<1i32, 5i32>->:ext) {
+    Barrier<1i32, 5i32>:b = barrier() ?! E1;
+    RwLock<Barrier<1i32, 5i32>->, 3i32>:v = rwlock(ext) ?! E1;
+    RwLock<Barrier<1i32, 5i32>->, 3i32>->:sp = @v;
+    { drop stash_r(@v, @b); }
+    pass move(<-sp);
+};
+// 4. (s2i) a `RwLock` with an inline dereference
+async func:mk_s2i = RwLock<Barrier<1i32, 5i32>->, 3i32>(Barrier<1i32, 5i32>->:ext) {
+    Barrier<1i32, 5i32>:b = barrier() ?! E1;
+    RwLock<Barrier<1i32, 5i32>->, 3i32>:v = rwlock(ext) ?! E1;
+    { drop stash_r(@v, @b); }
+    pass move(<-(@v));
+};
+
+async func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

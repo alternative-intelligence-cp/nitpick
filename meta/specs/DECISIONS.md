@@ -13277,6 +13277,8 @@ a spawned thread held it, the thread allocating in freed memory — is the shape
 
 *[2026-10-30, 1.6.1e landing 172 — a dated note (DEF-364, DEF-365, DEF-362's hardening, DEF-378).]* The rule's receiver side is the argument side's twin now: a by-value receiver whose walk answers that it holds a borrow is `NITPICK-BORROW-004` at the receiver, as an argument is (`escape_spawn_recv` keeps the verdict it computed and dropped; DEF-364: `H{ p: @d }` as `self` read the owner's rewritten string, 114/114 at both legs on 169, 170 and 171; the no-write receivers refused as the no-write argument is). A value whose type holds a type parameter, `Self` or an associated type BY VALUE -- `T?`, `T[n]`, `Result<T>`, a generic struct's or enum's instance -- is an owner at a spawn and crosses only into a `move` parameter, as a bare `T` has since landing 169 (`spawn_type_holds_param`, DEF-365; the `T: Copy` relaxation is unreadable there too). A spawned method's operand before the dot with no recorded type that is not a trait's name is `NITPICK-BORROW-008`, the closed direction (DEF-362's hardening; 0 sites). And the walk's verdicts these rules read are narrower (DEF-378): a part whose type holds no address holds no borrow, and a dereference answers by the pointer's TARGET, read where the pointer is written, in a function that hands no borrow to a call -- so a plain struct built from a view's byte crosses by value, and an owning pointee moved through a pointer whose target holds no borrow crosses into a `move` receiver, in a function that hands no borrow to a call (the delta review of ee62e5b, its D-2; management_5, 2026-10-30 16:12:12).
 
+*[2026-10-31, 1.6.1e landing 173 — a dated note (DEF-393).]* The condition "in a function that hands no borrow to a call" in the note above now counts the SPAWN and the implicit `limit<Rules>` check among the calls. A spawn whose argument carries a borrow of this frame -- a sanctioned `Mutex`/`RwLock`/`CondVar`/`Barrier`/`shared_arena` pointer INCLUDED -- lends (DEF-393(a)), because the spawned task may store a borrow of this frame through the lock's interior and `escape_spawn_args` attributes no such store to its target; and a borrowy initialiser of a `limit<Rules>` binding lends (DEF-393(b)), so escape leans on nothing about the typer's purity gate (DEF-394). So a dereference out of an owning pointee (`pass move(<-sp)`) is legal only where the frame hands a borrow to NO road at all -- a call, a method, a `#` or bare builtin, the two calls with no call node (`next`/`to_string`), the spawn or the `limit<Rules>` check; the lending rule has no exclusion list (D-249's 2026-10-31 note). The regression this closed was silent on landing 172, `NITPICK-BORROW-001` on 171 and again now (tests/analysis/rejection/spawn_lends.npk, its legal half spawn_lends_ok.npk).
+
 ## D-181 — Threads: the `thread` modifier, the per-thread executor, and the lexical join — **SETTLED**
 
 C-9's thread half, ratified from `meta/roadmap/1.1/C9_THREAD_STUDY.md`. It
@@ -17692,6 +17694,20 @@ already held, `lexer_init` returns its literal directly, and `npkg`'s
 > pipe is PARSE-014 (D-362). (OPEN_DECISIONS, DEF-378's notes; the calls with no call node, the delta review of ee62e5b,
 > its D-1, management_5, 2026-10-30 16:12:12); the atomic's own store and load are DEF-391; a copy through `=>! wild
 > any->` is the unchecked cast, D-019's road, the programmer's by design (z10p). The column's VIEW rule is unchanged.
+>
+> **[2026-10-31, 1.6.1e landing 173, DEF-393 (management_10, 2026-10-31 00:25, item 5).]** The spawn
+> exclusion in the note above is WRONG, and landing 173 closes it. A SPAWN whose argument carries a
+> borrow of this frame -- a sanctioned `Mutex`/`RwLock`/`CondVar`/`Barrier`/`shared_arena` pointer
+> INCLUDED -- MARKS `lends` (DEF-393(a)), because the spawned task may store a borrow of this frame
+> through the lock's interior, which `pass move(<-sp)` then dereferences out, and `escape_spawn_args`
+> attributes no such store to its target (the regression was silent on landing 172, NITPICK-BORROW-001
+> on 171 and again now; tests/analysis/rejection/spawn_lends.npk, its legal half spawn_lends_ok.npk).
+> The implicit `limit<Rules>` check marks too, on a borrowy initialiser (DEF-393(b)), so the rule leans
+> on nothing about the typer's purity gate (DEF-394). So face 2's lending rule now has NO EXCLUSION
+> LIST: every call road that runs code on this frame's operands marks -- a call, a method call, a `#` or
+> bare builtin, the two calls with no call node (`next`/`to_string`), the spawn and the `limit<Rules>`
+> check. A pipe (PARSE-014, D-362) is the one road that reaches no analysis. The mechanical census of
+> every road is in landing 173's record.
 
 ## D-250 — derived comparisons over NAMED types and payload enums — **SETTLED (user decision, 2026-09-03: "ratify S-23 as recommended"; 1.5.1b step 3b)**
 

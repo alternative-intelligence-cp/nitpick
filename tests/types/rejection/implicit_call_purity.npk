@@ -1,0 +1,108 @@
+// expect-error: NITPICK-TYPE-061
+// expect-error-at: 61:56
+// expect-error: NITPICK-TYPE-061
+// expect-error-at: 63:57
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 66:49
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 68:47
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 70:57
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 74:38
+// expect-error: NITPICK-TYPE-060
+// expect-error-at: 79:26
+// expect-error: NITPICK-TYPE-061
+// expect-error-at: 87:5
+// expect-error: NITPICK-TYPE-061
+// expect-error-at: 93:19
+mod:implicit_call_purity;
+error:E1;
+
+// THE IMPLICIT CALLS A `pure` BODY AND A CONTRACT MAKE (DEF-394 + DEF-396,
+// 1.6.1e landing 173). Two calls the typer emits with no call node in the
+// source went unchecked for D-221's purity/contract rule:
+//   - a `&{ }` template renders each non-`string` part through `ToString`'s
+//     `to_string` (DEF-394);
+//   - a `for` over an `Iterator` calls `next(@it)` on each step (DEF-396).
+// Each is now held to the same rule as its explicit twin: in a contract,
+// `Rules` clause, loop invariant, `decreases` or `prove` a non-`string` type
+// cannot be rendered at all, because `to_string` returns a plain `string` and
+// a contract calls only `raw`-spelled `never fails` `pure` functions
+// (NITPICK-TYPE-060); in a `pure` body the resolved `to_string` / `next` must
+// itself be `pure` (NITPICK-TYPE-061). The explicit twins (`raw
+// w.to_string()`, `cc.next()`) were already refused -- each implicit form is
+// paired with its twin to show the rule is the SAME. The six-context census
+// (requires/ensures/invariant/Rules/prove/decreases, all TYPE-060, tmpl ==
+// twin) is in the record; the loop-invariant form is left out here because an
+// ill-typed invariant also trips the loop's measure check (TYPE-072), and this
+// file keeps one code per site. Legal half:
+// tests/backend/programs/implicit_call_purity_ok.npk.
+
+struct:W = { int64:k; };
+impl:W:ToString = {
+    func:to_string = string(W:self) never fails { pass "w"; };
+};
+
+struct:Counter = { int32:cur; int32:hi; };
+impl:Counter:Iterator = {
+    assoc:Item = int32;
+    func:next = int32?(Counter->:self) never fails {
+        if (self.cur >= self.hi) { pass NIL; }
+        int32:v = self.cur;
+        self.cur = self.cur + 1i32;
+        pass v;
+    };
+};
+
+// --- DEF-394: a `&{ }` TEMPLATE'S IMPLICIT `to_string` ---
+
+// 1. a pure body: `W`'s `to_string` is not `pure` -- TYPE-061
+func:p_tmpl = int64(W:w) pure never fails { pass ((`&{ w }`).len); };
+// 2. its explicit twin, already refused -- TYPE-061
+func:p_call = int64(W:w) pure never fails { pass ((raw w.to_string()).len); };
+
+// 3. a `requires` clause: a non-`string` rendered in a contract -- TYPE-060
+func:c_requires = int64(int64:v) requires ((`&{ v }`).len >= 0i64) never fails { pass v; };
+// 4. an `ensures` clause -- TYPE-060
+func:c_ensures = int64(int64:v) ensures ((`&{ v }`).len >= 0i64) never fails { pass v; };
+// 5. a `prove` statement -- TYPE-060
+func:c_prove = int64(int64:v) never fails { prove ((`&{ v }`).len >= 0i64); pass v; };
+// 6. a loop `decreases` measure -- TYPE-060
+func:c_decreases = int64(int64:v) never fails {
+    int64:i = 0i64;
+    while (i < 3i64) decreases ((`&{ v }`).len) { i = i + 1i64; }
+    pass v;
+};
+
+// 7. a `Rules` clause -- TYPE-060
+Rules<int64>:rr = { (`&{ $ }`).len >= 0i64 };
+func:c_rules = int64(limit<rr> int64:v) never fails { pass v; };
+
+// --- DEF-396: a `for` OVER AN `Iterator`'S IMPLICIT `next` IN A pure BODY ---
+
+// 8. a pure body: `Counter`'s `next` is not `pure` -- TYPE-061 at the `for`
+func:f_for = int32(Counter:c) pure never fails {
+    int32:sum = 0i32;
+    for (int32:x in c) { sum = sum + x; }
+    pass sum;
+};
+// 9. its explicit twin, already refused -- TYPE-061
+func:f_call = int32(Counter:c) pure never fails {
+    Counter:cc = c;
+    discard(raw cc.next());
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; },
+        (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (IntOverflow) { exit 108i32; }, (OutOfBounds) { exit 109i32; },
+        (LimitViolated) { exit 110i32; }, (DecreasesViolated) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

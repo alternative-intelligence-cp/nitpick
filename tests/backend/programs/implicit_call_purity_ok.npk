@@ -1,0 +1,89 @@
+// expect-exit: 0
+//
+// THE LEGAL HALF OF DEF-394 + DEF-396 (landing 173): what the implicit-call
+// purity check KEEPS legal. A `string` renders as itself in a `&{ }` template,
+// with no `to_string` call, so it is legal in a `pure` body (1), a `requires`
+// contract (2) and a `Rules` clause (3) -- the check fires only on a
+// non-`string` part. A `to_string` that IS declared `pure` passes in a `pure`
+// body (4). A non-`string` template in an ordinary body is untouched (5). A
+// `for` over a range (6) or an array (7) in a `pure` body makes no user call,
+// and a `for` over an `Iterator` outside a `pure` body is unrestricted (8).
+// Each is NITPICK-TYPE-060/061-free under this compiler and legal under 172's
+// (the check is new). The refusals of the neighbouring shapes are
+// tests/types/rejection/implicit_call_purity.npk.
+mod:implicit_call_purity_ok;
+error:E1;
+
+struct:W = { int64:k; };
+impl:W:ToString = {
+    func:to_string = string(W:self) never fails { pass "w"; };
+};
+struct:P = { int64:k; };
+impl:P:ToString = {
+    func:to_string = string(P:self) never fails pure { pass "p"; };
+};
+struct:Counter = { int32:cur; int32:hi; };
+impl:Counter:Iterator = {
+    assoc:Item = int32;
+    func:next = int32?(Counter->:self) never fails {
+        if (self.cur >= self.hi) { pass NIL; }
+        int32:v = self.cur;
+        self.cur = self.cur + 1i32;
+        pass v;
+    };
+};
+
+// 1. a string renders as itself in a pure template -- no `to_string`
+func:str_in_pure = int64(string:s) pure never fails { pass ((`&{ s }`).len); };
+// 2. a string in a `requires` contract
+func:str_in_req = int64(string:s) requires ((`&{ s }`).len >= 0i64) never fails { pass s.len; };
+// 3. a string in a `Rules` clause
+Rules<string>:sr = { (`&{ $ }`).len >= 0i64 };
+func:str_in_rules = int64(limit<sr> string:s) never fails { pass s.len; };
+// 4. a PURE `to_string` interpolated in a pure body
+func:pure_ts = int64(P:p) pure never fails { pass ((`&{ p }`).len); };
+// 5. a non-string template in a NON-pure body
+func:tmpl_impure = int64(W:w) never fails { pass ((`&{ w }`).len); };
+// 6. a `for` over a range in a pure body -- no user `next`
+func:for_range = int32() pure never fails {
+    int32:s = 0i32;
+    for (int32:x in 0i32...9i32) { s = s + x; }
+    pass s;
+};
+// 7. a `for` over an array in a pure body -- no user `next`
+func:for_array = int32(int32[4]:a) pure never fails {
+    int32:s = 0i32;
+    for (int32:x in a) { s = s + x; }
+    pass s;
+};
+// 8. a `for` over an `Iterator` in a NON-pure body
+func:for_iter_impure = int32(Counter:c) never fails {
+    int32:s = 0i32;
+    for (int32:x in c) { s = s + x; }
+    pass s;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw str_in_pure("hello")) != 5i64) { exit 11i32; }
+    if ((raw str_in_req("hi")) != 2i64) { exit 12i32; }
+    if ((raw str_in_rules("abc")) != 3i64) { exit 13i32; }
+    if ((raw pure_ts(P{ k: 1i64 })) != 1i64) { exit 14i32; }
+    if ((raw tmpl_impure(W{ k: 1i64 })) != 1i64) { exit 15i32; }
+    if ((raw for_range()) != 36i32) { exit 16i32; }
+    int32[4]:arr = [1i32, 2i32, 3i32, 4i32];
+    if ((raw for_array(arr)) != 10i32) { exit 17i32; }
+    if ((raw for_iter_impure(Counter{ cur: 0i32, hi: 9i32 })) != 36i32) { exit 18i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; },
+        (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (IntOverflow) { exit 108i32; }, (OutOfBounds) { exit 109i32; },
+        (LimitViolated) { exit 110i32; }, (DecreasesViolated) { exit 111i32; },
+        (RequiresViolated) { exit 115i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

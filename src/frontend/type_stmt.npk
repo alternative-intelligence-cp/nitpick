@@ -1436,6 +1436,7 @@ func:check_for = NIL(ExprTyper->:e, StmtNode:s) never fails {
     int32:k = raw type_kind(e.types, it1);
     TypeResolver:r = raw etyper_resolver(e);
     int32:elem = 0i32;
+    bool:is_iter = false;
     if (k == (raw TY_RANGE())) { elem = raw type_elem(e.types, it1); }
     if (k == (raw TY_SLICE())) { elem = raw type_elem(e.types, it1); }
     if (k == (raw TY_ARRAY())) { elem = raw type_elem(e.types, it1); }
@@ -1451,6 +1452,7 @@ func:check_for = NIL(ExprTyper->:e, StmtNode:s) never fails {
             if (isym.origin_kind == (raw SYM_DECL())) {
                 elem = raw assoc_binding_of(@r, e.impls, it1, isym.origin,
                            raw intern_add(e.interns, "Item"));
+                if (elem != 0i32) { is_iter = true; }
             }
         }
     }
@@ -1477,6 +1479,44 @@ func:check_for = NIL(ExprTyper->:e, StmtNode:s) never fails {
         string:b2 = string_concat(b1, "` and the binding declares `");
         string:b3 = string_concat(b2, raw type_display(e.types, e.interns, bt));
         discard(raw te_error(e, raw TYPE_MISMATCH(), string_concat(b3, "`"), bd.span));
+    }
+    // THE IMPLICIT `next` IS A CALL (DEF-396): in a `pure` body it is held to
+    // the same D-221 rule as an explicit `it.next()`. Only an Iterator
+    // implementor is routed here; a range/slice/array iterates with no user call.
+    if (is_iter) { drop for_iter_next_purity(e, it1, s.span); }
+    pass NIL;
+};
+
+// A `for` OVER AN `Iterator` CALLS `next(@it)` IMPLICITLY (DEF-396, 1.6.1e
+// landing 173): in a `pure` body that call is held to the same D-221 rule as an
+// explicit `it.next()`, which `check_for` had never asked — so a "pure" body
+// could run an effectful `next`, making the verifier's encoding of it as a
+// function of its arguments unsound (DEF-394's class). `it1` is the Iterator
+// implementor, pointer already peeled. A `for` cannot appear in a contract/
+// `Rules`/invariant (an expression context) — a `for` is a statement, refused
+// by the parser (PARSE-002) — so only the `pure`-body case needs an arm. Fails
+// CLOSED: an unresolvable `next` is refused, since the prelude's is not `pure`.
+func:for_iter_next_purity = NIL(ExprTyper->:e, int32:it1, Span:sp) never fails {
+    if (!e.fn_pure) { pass NIL; }
+    int32:nx = raw intern_add(e.interns, "next");
+    MethodFind:mf = raw find_method(e.impls, e.bounds, e.types, e.ast,
+                                    e.interns, it1, nx, e.self_trait);
+    bool:is_pure = false;
+    if (mf.found) {
+        if (mf.decl != 0i32) {
+            DeclNode:md = raw ast_decl(e.ast, DeclId{ index: mf.decl });
+            if (md.kind == DeclKind.DeclFunctionDecl) {
+                if (raw fn_declares_pure(e.ast, md)) { is_pure = true; }
+            }
+        }
+    }
+    if (!is_pure) {
+        string:m1 = string_concat("`",
+            raw type_display(e.types, e.interns, it1));
+        discard(raw te_error(e, raw TYPE_PURE_RULES(),
+            string_concat(m1,
+                "`'s `next` is not declared `pure`, and a `for` over an `Iterator` calls `next(@it)` on each step: a `pure` body calls only `pure` functions (D-221), implicit calls included"),
+            sp));
     }
     pass NIL;
 };

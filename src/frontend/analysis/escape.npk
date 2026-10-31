@@ -244,16 +244,19 @@ pub struct:Escape = {
     // callee may store a borrow of this frame into storage a pointer of this frame names, and its
     // store matrix does not attribute every store to its target (a pointer field, a call's result,
     // an array element, a by-value holder, a destination two levels down: DEF-390), so
-    // `deref_targets_hold` answers yes in a function that lends. EVERY CALL COUNTS -- a call, a method
-    // call, a `#` or bare builtin, and the two calls the language makes with no call node, a `for` over
-    // an `Iterator` (`next(@it)`, D-166) and a template (`to_string`, D-168) --, A BUILTIN'S
-    // INCLUDED: an atomic's `store` writes its argument into the receiver's storage (z9: `sp.a.store(@x)`
-    // over an `atomic<int64->>` field) and `mcpy` copies through its pointer arguments (z10), so D-249's
-    // "a builtin stores nothing through an argument", which `record_dest_refs` reads, does not hold here
-    // (by their shapes `swap`, `compare_exchange` and `mmov` too; an atomic's own store and load are
-    // DEF-391). A SPAWN of an `async` callee does not mark: `escape_spawn_args` refuses every argument
-    // that carries a borrow of this frame but a sanctioned `Mutex`/`shared_arena` pointer, whose interior
-    // is read only through a builtin method call, which lends. A pipe is PARSE-014 (D-362). Keyed by the
+    // `deref_targets_hold` answers yes in a function that lends. EVERY CALL ROAD THAT RUNS CODE ON THIS
+    // FRAME'S OPERANDS COUNTS, WITH NO EXCLUSION LIST -- a call, a method call, a `#` or bare builtin,
+    // the two calls the language makes with no call node (a `for` over an `Iterator`, `next(@it)`, D-166,
+    // and a template, `to_string`, D-168), a SPAWN whose argument carries such a borrow (DEF-393(a),
+    // landing 173) and the implicit `limit<Rules>` check on a borrowy initialiser (DEF-393(b)). A
+    // BUILTIN'S INCLUDED: an atomic's `store` writes its argument into the receiver's storage (z9:
+    // `sp.a.store(@x)` over an `atomic<int64->>` field) and `mcpy` copies through its pointer arguments
+    // (z10), so D-249's "a builtin stores nothing through an argument", which `record_dest_refs` reads,
+    // does not hold here (by their shapes `swap`, `compare_exchange` and `mmov` too; an atomic's own
+    // store and load are DEF-391). A SPAWN MARKS even for a sanctioned `Mutex`/`RwLock`/`CondVar`/
+    // `Barrier`/`shared_arena` pointer (DEF-393(a)): the task may store a borrow of this frame through
+    // the lock's interior, which `pass move(<-sp)` then dereferences out, and `escape_spawn_args`
+    // attributes no such store to its target. A pipe is PARSE-014 (D-362). Keyed by the
     // function's declaration, as `pholds` is; flipped once, a change to the fixpoint as a mark is.
     wild bool->:lends;
     int32:decl_count;
@@ -3785,14 +3788,26 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) never fails {
             drop check_wild_store_decl(x, init, s.span);
         }
         if (!(raw expr_is_none(init))) {
-            if (raw verdict_borrowy(x, init,
-                    raw escape_expr(x, init, raw ESCAPE_DEPTH()))) {
+            bool:init_borrowy = raw escape_expr(x, init, raw ESCAPE_DEPTH());
+            if (raw verdict_borrowy(x, init, init_borrowy)) {
                 // Param-rooted borrows do not taint (0.8.1): the same rule the
                 // assignment and return checks apply. `ConstVal:local =
                 // foldenv_get(@r.env, …)` holds nothing that outlives `r`.
                 if (!(raw borrows_only_param_rooted(x, init,
                                                       raw ESCAPE_DEPTH()))) {
                     drop escape_mark(x, id.index);
+                }
+            }
+            // THE IMPLICIT limit<Rules> CHECK LENDS (DEF-393(b), landing 173): a limited
+            // binding runs its `Rules` function on the value, by value, at the check
+            // (ir_rules.npk's real call of the predicate). Absent the typer's purity gate
+            // (DEF-394) that predicate could store a borrow of this frame through the value,
+            // so the frame LENDS -- as a call, a spawn, a `for`'s `next` and a template's
+            // `to_string` do. Escape leans on nothing about the typer here (as (a') leaned on
+            // nothing about builtins): it marks whenever the operand carries a borrow.
+            if (init_borrowy) {
+                if (!(raw verify_is_none(raw stmt_decl_limit(x.ast, s)))) {
+                    drop escape_mark_lends(x, init);
                 }
             }
             // THE VIEWS THIS BINDING MAY HOLD (D-325), whatever the marks say:
@@ -7031,6 +7046,7 @@ func:escape_spawn_byval = NIL(Escape->:x, ExprId:call, int32:pos, ExprId:a, int3
 };
 
 pub func:escape_spawn_args = NIL(Escape->:x, ExprId:call, int32:pos_base, int32:start, int32:count, int32:depth) never fails {
+    bool:lends_here = false;
     int32:i = 0i32;
     while (i < count) decreases count - i {
         ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
@@ -7071,7 +7087,11 @@ pub func:escape_spawn_args = NIL(Escape->:x, ExprId:call, int32:pos_base, int32:
                 if (sanctioned) {
                     // WALKED BEFORE IT CROSSES (F1 of the review of landing 168, DEF-359): a pick
                     // expression giving the sanctioned pointer declares views in its arm.
-                    discard(raw escape_expr(x, a, depth));
+                    // AND THE SPAWN LENDS (R1 of the review of landing 172, DEF-393): a sanctioned
+                    // pointer carries a borrow of this frame across the spawn, and the task may store
+                    // through it; the lock leaves the frame BY VALUE (`pass move(<-sp)`) with no method
+                    // call, so the frame is marked `lends` as `escape_call_like` marks an ordinary call.
+                    if (raw escape_expr(x, a, depth)) { lends_here = true; }
                     i = i + 1i32;
                     continue;
                 }
@@ -7080,6 +7100,7 @@ pub func:escape_spawn_args = NIL(Escape->:x, ExprId:call, int32:pos_base, int32:
             }
         }
         if (raw escape_expr(x, a, depth)) {
+            lends_here = true;
             ExprNode:anode = raw ast_expr(x.ast, a);
             drop escape_err(x, raw BORROW_SPAWNED(),
                 "a borrow cannot cross a spawn (D-004 rule 4, narrowed by D-180): the scope outlives the task, so this is not about dangling — it is that two tasks holding borrows of one storage is a mutation the holder cannot see, at a suspension point it did not choose",
@@ -7087,6 +7108,7 @@ pub func:escape_spawn_args = NIL(Escape->:x, ExprId:call, int32:pos_base, int32:
         }
         i = i + 1i32;
     }
+    if (lends_here) { drop escape_mark_lends(x, call); }
     pass NIL;
 };
 

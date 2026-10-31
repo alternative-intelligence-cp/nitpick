@@ -2956,11 +2956,64 @@ func:type_template = int32(ExprTyper->:e, ExprNode:n) never fails {
                                 "` has no `ToString`, so it cannot be interpolated in a `&{ }` template — a `string` renders as itself, any other type through `ToString`'s `to_string` (D-168); derive or implement it"),
                             pn.span));
                     }
+                    // THE IMPLICIT `to_string` IS A CALL (DEF-394): in a `pure`
+                    // body or a contract/`Rules`/invariant/`decreases` clause it
+                    // is held to the same D-221 rule as an explicit one.
+                    if (ok) {
+                        drop template_item_purity(e, pt, itmid);
+                    }
                 }
             }
         }
     }
     pass (e.types.t_string);
+};
+
+// A `&{ }` TEMPLATE'S IMPLICIT `to_string` IS A CALL (DEF-394, 1.6.1e landing
+// 173): in a `pure` body or a contract/`Rules`/invariant/`decreases` clause it
+// is held to the same D-221 rule as an explicit `item.to_string()`, which
+// `type_template` had never asked — so `pure` was not closed under templates,
+// and the implicit `limit<Rules>` check could run a `to_string` that stores a
+// frame borrow (DEF-393(B)). `item` already implements `ToString` here.
+//   - A CONTRACT admits only a `raw`-spelled `never fails` `pure` call
+//     (`contract_method_refused`); a `to_string` returns a plain `string`,
+//     which cannot be `raw`-spelled (`raw` of a non-`Result` is TYPE-042), so a
+//     non-`string` type cannot be interpolated in one — TYPE-060, as the
+//     explicit twin `item.to_string()` is refused.
+//   - A `pure` BODY calls only `pure` functions (`pure_method_rules`); the
+//     item's resolved `to_string` must itself be `pure`, else TYPE-061. Fails
+//     CLOSED: an unresolvable `to_string` is refused, since none is `pure`.
+func:template_item_purity = NIL(ExprTyper->:e, int32:pt, ExprId:itmid) never fails {
+    ExprNode:pn = raw ast_expr(e.ast, itmid);
+    if (e.contract_ctx != 0i32) {
+        discard(raw te_error(e, raw TYPE_CONTRACT_RULES(),
+            "a `&{ }` template renders each non-`string` part through `ToString`'s `to_string`, a call, and a contract calls only `raw`-spelled `never fails` `pure` functions (D-221): a `to_string` returns a plain `string` and cannot be `raw`-spelled, so a non-`string` type cannot be interpolated in a contract, `Rules` clause, loop invariant or `decreases` — render it to a `string` in a `fixed` binding first",
+            pn.span));
+        pass NIL;
+    }
+    if (e.fn_pure) {
+        int32:ts_meth = raw intern_add(e.interns, "to_string");
+        MethodFind:mf = raw find_method(e.impls, e.bounds, e.types, e.ast,
+                                        e.interns, pt, ts_meth, e.self_trait);
+        bool:is_pure = false;
+        if (mf.found) {
+            if (mf.decl != 0i32) {
+                DeclNode:md = raw ast_decl(e.ast, DeclId{ index: mf.decl });
+                if (md.kind == DeclKind.DeclFunctionDecl) {
+                    if (raw fn_declares_pure(e.ast, md)) { is_pure = true; }
+                }
+            }
+        }
+        if (!is_pure) {
+            string:m1 = string_concat("`",
+                raw type_display(e.types, e.interns, pt));
+            discard(raw te_error(e, raw TYPE_PURE_RULES(),
+                string_concat(m1,
+                    "`'s `to_string` is not declared `pure`, and a `&{ }` template renders each non-`string` part through it: a `pure` body calls only `pure` functions (D-221), implicit calls included — render it to a `string` outside the `pure` body"),
+                pn.span));
+        }
+    }
+    pass NIL;
 };
 
 pub func:takes_type_from_context = bool(ExprTyper->:e, ExprId:id) never fails {

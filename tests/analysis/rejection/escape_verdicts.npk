@@ -61,37 +61,37 @@
 // expect-error: NITPICK-BORROW-001
 // expect-error-at: 542:11
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 553:10
+// expect-error-at: 554:10
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 563:11
+// expect-error-at: 564:11
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 573:11
+// expect-error-at: 574:11
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 582:11
+// expect-error-at: 583:11
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 592:11
+// expect-error-at: 593:11
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 602:11
+// expect-error-at: 603:11
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 612:11
+// expect-error-at: 613:11
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 622:11
+// expect-error-at: 623:11
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 632:11
+// expect-error-at: 633:11
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 642:11
+// expect-error-at: 643:11
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 652:11
+// expect-error-at: 653:11
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 662:11
+// expect-error-at: 663:11
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 690:11
+// expect-error-at: 691:11
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 697:11
+// expect-error-at: 698:11
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 708:11
+// expect-error-at: 709:11
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 718:11
+// expect-error-at: 719:11
 // DEF-378 + DEF-383 (landing 172): THE ESCAPE WALK'S VERDICTS AND A `return`'s SUMMARY -- what stays refused now that
 // the walk answers a read by the value's TYPE and a dereference by its TARGET. Landing 171 registered two over-refusals
 // of `escape_expr`'s verdicts (DEF-378, management_7 2026-10-30 06:47): a member, an element or a `?.` read through a
@@ -542,7 +542,8 @@ func:lent_field_method = PS(int64->:ext) never fails {
     pass (<-sp);
 };
 
-// 32. (r1s) the AUTOMATIC dereference, `sp.p` read after the callee's store
+// 32. (r1s) the AUTOMATIC dereference, `sp.p` read after the callee's store; BORROW-001 lands at the
+//      `pass` that hands the value up, the line after the read, not at the `sp.p` read itself
 func:lent_auto_deref = PS(int64->:ext) never fails {
     int64:x = 41i64;
     PS:v = PS{ p: ext, k: 2i64 };

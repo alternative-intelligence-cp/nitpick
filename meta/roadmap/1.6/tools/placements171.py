@@ -36,7 +36,12 @@ names its number; DEF-390 and DEF-391 are placed at 176 (management_7, 14:13:20 
 bullet written by name; the control moves DEF-357 from 174 to 175.
 
 [2026-10-30, landing 172, the replacement's commit (nitpick-compiler_50):] DEF-392 is placed at 176 with
-DEF-390 and DEF-391 (management_5, 16:12:12)."""
+DEF-390 and DEF-391 (management_5, 16:12:12).
+
+[2026-10-31, landing 173 (nitpick-compiler_53):] the queue is RENUMBERED +1 past landing 172 (management_10, 2026-10-31
+00:33): 174 the Result-fields group, 175 the old list, 176 DEF-333's, 177 DEF-312's (with DEF-395, placed 00:25), 178
+DEF-318's, the LOW three after 178; DEF-388 stays in the Result-fields group and DEF-389 in DEF-333's, not DEF-312's.
+DEF-393, DEF-394 and DEF-396 FIXED in landing 173, out of the table. The control moves DEF-357 from 175 to 176."""
 import os, re, sys
 
 W = sys.argv[1]
@@ -48,8 +53,8 @@ CONTROL = '--control' in ARGS
 # the named slots past landing 172 that cut the bullet (management_7, 2026-10-30 09:52:11 and 09:56:11)
 MARKERS = ["the Result-fields group's landing", "the old list's landing", "DEF-333's landing", "DEF-312's landing",
            "DEF-318's landing"]
-SLOTS = ['landing 171', 'landing 172', 'landing 173', 'landing 174', 'landing 175', 'landing 176', 'landing 177',
-         'LOW after landing 174', 'LOW after landing 175', 'LOW after landing 177', 'unplaced', 'M3', 'after M3',
+SLOTS = ['landing 171', 'landing 172', 'landing 173', 'landing 174', 'landing 175', 'landing 176', 'landing 177', 'landing 178',
+         'LOW after landing 174', 'LOW after landing 175', 'LOW after landing 177', 'LOW after landing 178', 'unplaced', 'M3', 'after M3',
          'after DEF-286', "step 3d's rest"] + MARKERS + ["LOW after DEF-318's landing"]
 
 def table(spec):
@@ -66,12 +71,12 @@ def table(spec):
 # R1's commit: the slots numbered at landing 172's cut (management_7, 14:05:38), DEF-390 and DEF-391 at 176 (14:13:20, 14:31:25).
 # The replacement's commit: DEF-392 at 176 (management_5, 16:12:12).
 NEW = table([
-    ('landing 173', [380, 381, 382, 385, 388]),
-    ('landing 174', [344, 345, 347, 349, 353, 354, 355, 356, 357]),
-    ('landing 175', [333, 334, 335, 336, 384, 389]),
-    ('landing 176', [312, 348, 350, 325, 386, 387, 390, 391, 392]),
-    ('landing 177', [318, 319, 320, 321, 322, 323]),
-    ('LOW after landing 177', [351, 352, 358]),
+    ('landing 174', [380, 381, 382, 385, 388]),
+    ('landing 175', [344, 345, 347, 349, 353, 354, 355, 356, 357]),
+    ('landing 176', [333, 334, 335, 336, 384, 389]),
+    ('landing 177', [312, 348, 350, 325, 386, 387, 390, 391, 392, 395]),
+    ('landing 178', [318, 319, 320, 321, 322, 323]),
+    ('LOW after landing 178', [351, 352, 358]),
     ('unplaced', [369, 370, 375, 376, 377, 379]),
     ('M3', [298, 299, 313]),
     ('after M3', [286]),
@@ -93,7 +98,7 @@ BASE = table([
 ])
 T = dict(BASE if MODE == 'base' else NEW)
 if CONTROL:
-    T[357] = 'landing 175'
+    T[357] = 'landing 176'
 
 fails = []
 def fail(msg):

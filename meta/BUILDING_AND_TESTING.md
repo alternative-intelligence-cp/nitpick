@@ -2477,3 +2477,41 @@ that carried them retired at the cycle close):
   `emit_tostring`'s `to_string`), not from the parser's call kinds. The cells: `wt/51a/.internal/probes/t172/` (`deref/`, `deref2/`,
   `deref3/`, `extra/`, `twins/`, `chaingap/`, `census386/`, `rlslot/`, `verdict383/`, `supp/`, `mx/`, `rev172/`, `rev172b/`) and
   `t171/p364/`, `t171/def365/`, `t171/rev171/esc/`, `t169/rev169/`.
+
+- **An IMPLICIT call is a call, and a SPAWN and a `limit<Rules>` check LEND: the lending list and the purity gate have
+  no exclusion** (DEF-393, DEF-394, DEF-396; landing 173; escape.npk `escape_spawn_args`'s `lends_here` and the
+  `StmtVarDeclStmt` arm's `init_borrowy`, type_expr.npk `template_item_purity`, type_stmt.npk `for_iter_next_purity`).
+  Landing 172's own gotcha (7) said "A SPAWN of an `async` callee does not mark" — WRONG, and a REGRESSION: a spawn
+  whose argument carries a borrow of this frame, a sanctioned `Mutex`/`RwLock`/`CondVar`/`Barrier`/`shared_arena`
+  pointer INCLUDED, LENDS (DEF-393(a)), because the spawned task may store a borrow of this frame through the lock's
+  interior and `escape_spawn_args` attributes no such store to its target, so face 2's relaxed dereference rule
+  trusted a target the task had poisoned — `pass move(<-sp)` of the lock silent on 172 where 171 refused it
+  (spawn_lends.npk, 114-divergent at run time). THE LESSONS. (1) A ROAD THAT RUNS CODE ON THE FRAME'S OPERANDS IS A
+  ROAD, CALL NODE OR NOT: the spawn and the implicit `limit<Rules>` check (ir_rules.npk runs the Rules predicate on
+  the value, by value) each hand an operand to code that may store through it, so each marks `lends` (DEF-393(a),
+  (b)) — exactly as a `for`'s `next` and a template's `to_string` do (landing 172's gotcha 8). The lending list now
+  has NO EXCLUSION; only a pipe (PARSE-014, D-362) reaches no analysis. (2) ESCAPE LEANS ON NOTHING ABOUT THE TYPER:
+  393(b) marks on a borrowy initialiser of a `limit<Rules>` binding WHETHER OR NOT DEF-394 refuses the template in the
+  Rules clause at the typer — proved by a 393b-only build (INDEP_393b.md: the template-in-Rules is BORROW-001 in
+  escape with DEF-394 absent). A soundness fix in one pass does not rely on a soundness fix in another. (3) AN
+  IMPLICIT `to_string` AND AN IMPLICIT `next` ARE CALLS, held to D-221's purity/contract rules as the explicit
+  `item.to_string()` and `it.next()` are: `type_template` and `check_for` had never asked, so a `pure` body ran an
+  effectful call (the verifier encodes it as a function of its arguments — unsound) and a side-effecting contract clause
+  passed (DEF-394, DEF-396, both pre-existing). Resolve the method (`find_method`) and apply the rule; FAIL CLOSED —
+  an unresolvable or non-`pure` method is refused, since the prelude's `to_string`/`next` are `never fails`, not
+  `pure`. A contract admits only a `raw`-spelled `never fails` `pure` call, and `raw` of a non-`Result` is TYPE-042,
+  so a non-`string` interpolation in a contract is TYPE-060; a `pure` body is TYPE-061. (4) THE PURITY GATE NEVER
+  OVER-REFUSES A LEGAL PROGRAM HERE: a `pure` `next` that advances `self` stores through the `Self->` pointer, which
+  D-221 itself refuses, so no useful pure `for`-over-`Iterator` exists (ctl_pure_next); a range/slice/array iterates
+  through builtin, pure iteration, and is not routed to the check. (5) PROVE THE LIST COMPLETE WITH A MECHANICAL
+  CENSUS: enumerate EVERY road that runs code on the frame's operands — each call arm, the spawn, await, the implicit
+  `next`/`to_string`, the `limit<Rules>` check, loop invariants, contracts, `failsafe`, `defer`/drop — and mark each
+  "marks `lends`" or "can't be handed a borrow", the latter with an ADVERSARIAL cell that tries a storing call and is
+  refused; `failsafe` (fixed signature, invoked from no caller frame) and auto-drop (called with `@value` alone) are
+  STRUCTURAL, no cell possible. No road may be "unmarked but closed by argument alone" (MECH_CENSUS.txt,
+  MECH_CENSUS_FINAL.txt). (6) THE STOPGAP'S COST: face 2's lending rule over-refuses a spawn that stores the caller's
+  OWN pointer (s1t/s2t: BORROW-001, back to 171) — a fix owed in DEF-378's row, narrowed when DEF-390/392's
+  store-attribution lands, never a D-286 item. The deferred by-value face (`pass move(v)` of a lock a spawn stored
+  into) is DEF-395 (→ 177, DEF-390's mechanism on the spawn path). The cells:
+  `wt/51a/.internal/probes/t173/` (`forcells/`, `ctxcells/`, `def395/`, MECH_CENSUS.txt, INDEP_393b.md,
+  DEF394_SIX_CONTEXTS.md, FORNEXT_CENSUS.md, DEF395_EXTENT.md) and `t172/sol/` (`cells/`, `abcells/`).
