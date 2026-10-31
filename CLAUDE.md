@@ -25,7 +25,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   and DEF-389 in DEF-333's landing, NOT DEF-312's, correcting an earlier relay), 00:56 -- and management_7's and management_6's of
   2026-10-30 and 2026-10-29 for what follows): landing 173 LANDED (DEF-393(a) + DEF-393(b) + DEF-394 + DEF-396, the status bullet); the
   libraries' fuzz copy moved from d44dfe3 to d096b82 after landing 172's verification, this landing's sweep reading the new base; then
-  landing 174 = the Result-fields group:
+  landing 174 = the Result-fields group (with DEF-397 at its HEAD, conditional on management's sizing ruling -- management_10 2026-10-31 03:46):
   DEF-380 + DEF-381 + DEF-382 + DEF-385 + DEF-388 (registered after 171 and at 172, HIGH but DEF-380 MEDIUM and DEF-382 LOW: `r.err = E1`
   over a value leaks it (DEF-380); a zero `Error` read off a success and failed makes a success holding the slot's zero, a NULL plain
   pointer (DEF-381); `r.is_error = false` reaches EMIT-002 (DEF-382); an exhaustive `pick` over a valued enum's vacant value takes no arm --

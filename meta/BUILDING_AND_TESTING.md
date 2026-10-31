@@ -2489,8 +2489,10 @@ that carried them retired at the cycle close):
   (spawn_lends.npk, 114-divergent at run time). THE LESSONS. (1) A ROAD THAT RUNS CODE ON THE FRAME'S OPERANDS IS A
   ROAD, CALL NODE OR NOT: the spawn and the implicit `limit<Rules>` check (ir_rules.npk runs the Rules predicate on
   the value, by value) each hand an operand to code that may store through it, so each marks `lends` (DEF-393(a),
-  (b)) — exactly as a `for`'s `next` and a template's `to_string` do (landing 172's gotcha 8). The lending list now
-  has NO EXCLUSION; only a pipe (PARSE-014, D-362) reaches no analysis. (2) ESCAPE LEANS ON NOTHING ABOUT THE TYPER:
+  (b)) — exactly as a `for`'s `next` and a template's `to_string` do (landing 172's gotcha 8). The lending list now has NO EXCLUSION among those call roads; the contract clauses and the `limit<Rules>` check's write
+  points other than the binding's own initialiser are a separate category the escape analysis never walks, closed by
+  D-221's purity gate (TYPE-060), not by the lending list (F1, landing 173's docs-only correction); only a pipe
+  (PARSE-014, D-362) reaches no analysis at all. (2) ESCAPE LEANS ON NOTHING ABOUT THE TYPER:
   393(b) marks on a borrowy initialiser of a `limit<Rules>` binding WHETHER OR NOT DEF-394 refuses the template in the
   Rules clause at the typer — proved by a 393b-only build (INDEP_393b.md: the template-in-Rules is BORROW-001 in
   escape with DEF-394 absent). A soundness fix in one pass does not rely on a soundness fix in another. (3) AN
@@ -2500,10 +2502,12 @@ that carried them retired at the cycle close):
   passed (DEF-394, DEF-396, both pre-existing). Resolve the method (`find_method`) and apply the rule; FAIL CLOSED —
   an unresolvable or non-`pure` method is refused, since the prelude's `to_string`/`next` are `never fails`, not
   `pure`. A contract admits only a `raw`-spelled `never fails` `pure` call, and `raw` of a non-`Result` is TYPE-042,
-  so a non-`string` interpolation in a contract is TYPE-060; a `pure` body is TYPE-061. (4) THE PURITY GATE NEVER
-  OVER-REFUSES A LEGAL PROGRAM HERE: a `pure` `next` that advances `self` stores through the `Self->` pointer, which
-  D-221 itself refuses, so no useful pure `for`-over-`Iterator` exists (ctl_pure_next); a range/slice/array iterates
-  through builtin, pure iteration, and is not routed to the check. (5) PROVE THE LIST COMPLETE WITH A MECHANICAL
+  so a non-`string` interpolation in a contract is TYPE-060; a `pure` body is TYPE-061. (4) THE PURITY GATE NEVER OVER-REFUSES A LEGAL `for`: a `pure` `next` that advances `self` stores through the
+  `Self->` pointer, which D-221 itself refuses, so no useful pure `for`-over-`Iterator` exists (ctl_pure_next); a
+  range/slice/array iterates through builtin, pure iteration, and is not routed to the check. FOR A TEMPLATE the gate
+  is stricter, and intentionally: no prelude `to_string` is `pure` (they are `never fails`), so EVERY scalar
+  interpolation in a `pure` body is now TYPE-061 -- a `pure` body that wants a string builds it from `pure`
+  operations, not an interpolation (F3, landing 173's docs-only correction). (5) PROVE THE LIST COMPLETE WITH A MECHANICAL
   CENSUS: enumerate EVERY road that runs code on the frame's operands — each call arm, the spawn, await, the implicit
   `next`/`to_string`, the `limit<Rules>` check, loop invariants, contracts, `failsafe`, `defer`/drop — and mark each
   "marks `lends`" or "can't be handed a borrow", the latter with an ADVERSARIAL cell that tries a storing call and is
