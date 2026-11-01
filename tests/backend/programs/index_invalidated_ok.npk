@@ -1,0 +1,39 @@
+// expect-exit: 11
+// THE LEGAL TWINS OF `index_invalidated.npk` (DEF-410 (a), landing 176): an index that REASSIGNS the indexed
+// binding in place (`reset(@g)`, `reset($$m g)`) is read after the rewrite, from stable storage -- the fresh
+// value, sequentially consistent (measured 64 = len 4 on 174, 175 and here); an index that moves ANOTHER
+// binding leaves this one whole; the method road through a `Self` receiver reads the fresh element too.
+mod:index_invalidated_ok;
+error:E5;
+trait:Pk = { func:pk = int64(Self:x) never fails; };
+impl:string:Pk = { func:pk = int64(string:x) never fails { pass x.len; }; };
+func:reset = int64(string[2]->:p) never fails { (<-p) = [string_concat("wx", "yz"), string_concat("st", "uv")]; pass 0i64; };
+func:take_s = int64(move string:x) never fails { pass 0i64; };
+func:f = int64() never fails {
+    string[2]:g = [string_concat("a", "bc"), string_concat("d", "ef")];
+    int64:v1 = (g[(raw reset(@g))].len);            // 4: the fresh element
+    string[2]:h = [string_concat("a", "bc"), string_concat("d", "ef")];
+    string:s = string_concat("q", "");
+    int64:v2 = (h[(raw take_s(move(s)))].len);      // 3: `s` moved, `h` whole
+    string[2]:k = [string_concat("a", "bc"), string_concat("d", "ef")];
+    int64:v3 = raw k[(raw reset($$m k))].pk();      // 4: the method road, the fresh element
+    pass v1 + v2 + v3;
+};
+func:main = int32(cstring[]:_~argv) { int64:n = raw f(); exit (n =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

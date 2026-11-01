@@ -44,35 +44,38 @@ func:expanded = Ex(string:src, InternTable->:it) never fails {
     Ast:ast = raw ast_init();
     DiagList:diags = raw diaglist_init();
     TokenList:toks = raw lex_all(0i32, src, it, @diags);
-    Parser:p = raw parser_init(@toks, @ast, @diags, it);
-    DeclId:root = raw p_parse_module(@p);
-
-    Expander:x = raw expander_init(@ast, it, @diags);
-    drop collect_macros(@x, root);
-
-    // WHAT THE DECLARATIONS DECIDE COMES FIRST, and a program it refuses is not
-    // expanded (1.6.1e step 3) -- the driver's order, kept here so that this
-    // file asserts on what the driver would have produced.
-    drop check_macro_decls(@x);
-    if ((raw diaglist_count(@diags)) != 0i64) {
-        Ex:refused = Ex{ ast: move(ast), diags: diags, root: root };
-        pass refused;
+    DeclId:root = DeclId{ index: 0i32 };
+    {   // the parser holds `ast` by address, so its block ends before `ast` is moved out (DEF-413, landing 176)
+        Parser:p = raw parser_init(@toks, @ast, @diags, it);
+        root = raw p_parse_module(@p);
     }
 
-    int32:round = 0i32;
-    bool:more = true;
-    while (more) decreases (raw EXPAND_ROUNDS()) - round {
-        if (round >= (raw EXPAND_ROUNDS())) { break; }
-        more = raw expand_module(@x, root);
-        if (raw expander_blown(@x)) { break; }
-        round = round + 1i32;
-    }
-    // The bound, and the probe that asks who is standing at it.
-    if (more) {
-        if (!(raw expander_blown(@x))) {
-            drop expand_probe_begin(@x);
-            discard(raw expand_module(@x, root));
-            drop expand_no_fixpoint(@x);
+    {   // the expander holds `ast` by address (DEF-413, landing 176): its block ends before `ast` is moved out
+        Expander:x = raw expander_init(@ast, it, @diags);
+        drop collect_macros(@x, root);
+
+        // WHAT THE DECLARATIONS DECIDE COMES FIRST, and a program it refuses is not
+        // expanded (1.6.1e step 3) -- the driver's order, kept here so that this
+        // file asserts on what the driver would have produced. (A refused program
+        // left early with the same `Ex` until landing 176; it skips the rounds now.)
+        drop check_macro_decls(@x);
+        if ((raw diaglist_count(@diags)) == 0i64) {
+            int32:round = 0i32;
+            bool:more = true;
+            while (more) decreases (raw EXPAND_ROUNDS()) - round {
+                if (round >= (raw EXPAND_ROUNDS())) { break; }
+                more = raw expand_module(@x, root);
+                if (raw expander_blown(@x)) { break; }
+                round = round + 1i32;
+            }
+            // The bound, and the probe that asks who is standing at it.
+            if (more) {
+                if (!(raw expander_blown(@x))) {
+                    drop expand_probe_begin(@x);
+                    discard(raw expand_module(@x, root));
+                    drop expand_no_fixpoint(@x);
+                }
+            }
         }
     }
 

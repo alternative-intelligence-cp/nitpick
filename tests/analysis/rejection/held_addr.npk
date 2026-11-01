@@ -1,0 +1,120 @@
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 77:11
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 85:28
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 95:11
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 43:24
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 49:25
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 56:24
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 62:24
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 68:16
+// A PLAIN ADDRESS A BINDING HOLDS SURVIVES NO `move` OF ITS POINTEE (DEF-413, landing 176). `H->:p = @h;` and then a
+// `move` of `h` or of a field of it left `p` pointing at vacated storage, and a read through `p` fabricated a length
+// 0 -- the plainest use-after-move through a pointer there is, accepted on every landing before this one (the
+// bindings analysis knows `h` is vacant and `p` carries no provenance there; to the aliasing analysis a held plain
+// address was a READ that conflicts with nothing, D-286 (1)). D-286 (1) is amended narrowly: a VACATING access --
+// a `move` -- conflicts with every live address party of its root, a held plain address among them, BORROW-013;
+// a write or a reassignment through the name stays legal (`held_addr_ok.npk`), the pointer's purpose. The party
+// lives to the end of the holder's BLOCK (lexical, the closed choice: the third site's `p` is never read after its
+// last use and is refused all the same; last-use liveness is a later relaxation), and it is judged by its ROOT
+// (the fourth site's `@h.k` is disjoint from the moved `h.s` in fact, and refused all the same; field
+// disjointness is a later relaxation). The fifth site is DEF-159's own idiom (landing 105: `string->:p = @x;
+// string:t = move(x); (<-p) = v;`, the value stored back through the held address after the move), legal
+// and measured on every landing from 105 to 175, refused by this closed rule; its programs are parked in
+// `tests/parked/def413-flow/` until the flow relaxation after 180 brings them back. Sites 6-8 (176b, review B's §3): a
+// `dalloc` or a `ralloc` of a PART of the pointee while the address is held, and a `dalloc` of the pointee itself -- the
+// same vacating access as a move (`alias_is_free_call`; the row claimed it, the `move` arm alone asked), each read the
+// freed buffer through the held pointer (the allocator's poison: 231, 230) on 175 and 176.
+mod:held_addr;
+error:E5;
+struct:H = { string:s; int64:k; };
+struct:B = { wild int8->:m; int64:k; };
+func:take = int64(move string:x) never fails { pass 0i64; };
+func:takeh = int64(move H:x) never fails { pass 0i64; };
+func:held_then_field_move = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    H->:p = @h;
+    int64:n = raw take(move(h.s));
+    pass (<-p).s.len + n;
+};
+func:held_then_whole_move = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    H->:p = @h;
+    int64:n = raw takeh(move(h));
+    pass (<-p).s.len + n;
+};
+func:held_past_last_use = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    H->:p = @h;
+    int64:u = (<-p).k;
+    int64:n = raw take(move(h.s));
+    pass u + n;
+};
+func:held_disjoint_field = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    int64->:p = @h.k;
+    int64:n = raw take(move(h.s));
+    pass (<-p) + n;
+};
+func:held_store_after_move = int64() never fails {
+    string:x = string_concat("ab", "cde");
+    string->:p = @x;
+    string:t = move(x);
+    (<-p) = string_concat("wx", "yz");
+    pass t.len + (<-p).len;
+};
+// 6. a `dalloc` of a part of the pointee while the address is held
+func:held_then_dalloc = int64() never fails {
+    B:b = B{ m: alloc(16i64), k: 1i64 };
+    b.m[0i64] = 5i8;
+    B->:p = @b;
+    dalloc(b.m);
+    pass ((<-p).m[0i64] => int64) + (<-p).k;
+};
+// 7. a `ralloc` of a part of the pointee while the address is held
+func:held_then_ralloc = int64() never fails {
+    B:b = B{ m: alloc(16i64), k: 1i64 };
+    b.m[0i64] = 5i8;
+    B->:p = @b;
+    wild int8->:nm = ralloc(b.m, 4096i64);
+    int64:v = ((<-p).m[0i64] => int64);
+    dalloc(nm);
+    pass v + (<-p).k;
+};
+// 8. a `dalloc` of the pointee itself, its address held
+func:held_ptr_then_dalloc = int64() never fails {
+    wild int8->:buf = alloc(16i64);
+    buf[0i64] = 5i8;
+    int8->->:pp = @buf;
+    dalloc(buf);
+    pass ((<-(<-pp)) => int64);
+};
+func:main = int32(cstring[]:_~argv) {
+    int64:t = (raw held_then_field_move()) + (raw held_then_whole_move()) + (raw held_past_last_use()) + (raw held_disjoint_field())
+            + (raw held_store_after_move())
+            + (raw held_then_dalloc()) + (raw held_then_ralloc()) + (raw held_ptr_then_dalloc());
+    exit (t =>! int32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

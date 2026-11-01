@@ -1,0 +1,95 @@
+// expect-exit: 0
+// THE LEGAL TWINS OF `range_bound_window.npk` (DEF-410 (e), landing 176): a range of a List whose bounds are plain
+// (8), whose bound only READS the List through its address (`count_of(@l)`: 7) or through a read claim (`$$i l`:
+// 7), a write THROUGH a range step of the List (`l[0...2][0] = 5`: 5), and a range handed to a WRITER of it
+// (`fill(l[0...2])`: 9), the growth in an index UNDER a range step (`l[(raw push_row(@l))].v[0...2][1]`: 8, the index runs
+// before the view's header loads; 176b, review B's P1b, refused by 176), and the growth hoisted before the view (42, the fresh
+// buffer's; site 9's legal twin). Every value is checked in `main`; the exit is the failing case's number.
+mod:range_bound_window_ok;
+error:E5;
+func:count_of = int64(List<int64>->:p) never fails { pass (<-p).count; };
+struct:Row = { List<int64>:v; int64:k; };
+func:push_row = int64(List<Row>->:p) never fails { for (int64:i in 0i64...200i64) { drop list_push(p, Row{ v: raw list_init::<int64>(1i64), k: i }); } pass 0i64; };
+func:grow0 = int64(List<int64>->:p) never fails { for (int64:i in 0i64...200i64) { drop list_push(p, i); } (<-p)[0i64] = 42i64; pass 0i64; };
+func:mk_rows = List<Row>() never fails {
+    List<Row>:l = raw list_init::<Row>(2i64);
+    Row:r0 = Row{ v: raw list_init::<int64>(2i64), k: 1i64 };
+    drop list_push(@r0.v, 7i64);
+    drop list_push(@r0.v, 8i64);
+    drop list_push(@l, move(r0));
+    pass l;
+};
+func:fill = NIL(int64[]:v) never fails { v[1i64] = 9i64; pass NIL; };
+func:mk_list = List<int64>() never fails {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    drop list_push(@l, 8i64);
+    pass l;
+};
+// 1. plain bounds, the view read
+func:plain_bounds = int64() never fails {
+    List<int64>:l = raw mk_list();
+    int64:hi = 2i64;
+    pass (l[0i64...hi][1i64]);
+};
+// 2. a bound that only reads through `@l`
+func:read_bound = int64() never fails {
+    List<int64>:l = raw mk_list();
+    pass (l[0i64...(raw count_of(@l))][0i64]);
+};
+// 3. a bound that reads through a read claim
+func:iclaim_bound = int64() never fails {
+    List<int64>:l = raw mk_list();
+    pass (l[0i64...(raw count_of($$i l))][0i64]);
+};
+// 4. a write through a range step of the List
+func:write_through = int64() never fails {
+    List<int64>:l = raw mk_list();
+    l[0i64...2i64][0i64] = 5i64;
+    pass l[0i64];
+};
+// 5. a range handed to a writer of it
+func:write_through_arg = int64() never fails {
+    List<int64>:l = raw mk_list();
+    drop fill(l[0i64...2i64]);
+    pass l[1i64];
+};
+// 6. the growth in an index UNDER the range step: it runs before the view's header loads (176b; the safe mirror of site 9)
+func:index_under_view = int64() never fails {
+    List<Row>:l = raw mk_rows();
+    pass (l[(raw push_row(@l))].v[0i64...2i64][1i64]);
+};
+// 7. the growth hoisted before the view (site 9's legal twin): the fresh buffer's 42
+func:growth_hoisted = int64() never fails {
+    List<int64>:l = raw mk_list();
+    int64:i = raw grow0(@l);
+    pass (l[0i64...2i64][i]);
+};
+func:main = int32(cstring[]:_~argv) {
+    if ((raw plain_bounds()) != 8i64)      { exit 11i32; }
+    if ((raw read_bound()) != 7i64)        { exit 12i32; }
+    if ((raw iclaim_bound()) != 7i64)      { exit 13i32; }
+    if ((raw write_through()) != 5i64)     { exit 14i32; }
+    if ((raw write_through_arg()) != 9i64) { exit 15i32; }
+    if ((raw index_under_view()) != 8i64)  { exit 16i32; }
+    if ((raw growth_hoisted()) != 42i64)   { exit 17i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (BorrowOverlap)    { exit 76i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

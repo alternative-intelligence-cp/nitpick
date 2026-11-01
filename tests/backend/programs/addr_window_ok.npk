@@ -1,0 +1,67 @@
+// expect-exit: 25
+// THE LEGAL SHAPES BESIDE `addr_window.npk` (DEF-410 (c), landing 176): a by-value `h` argument or `Self`
+// receiver is a header SNAPSHOT, not a copy, and a later argument that frees its bytes is BORROW-015 since
+// 176b (DEF-410 (f); the two controls that claimed a copy moved to `addr_window.npk`) -- the legal shapes are
+// the move in its OWN statement after the call (7) and the move hoisted, `h` refilled whole, before a literal
+// that holds `@h` (5); a `$$m h.s`
+// that reassigns the field in place beside `@h` is read after the rewrite, the fresh length (4); and the
+// address window is the CALL's, so a move in a sibling argument after the first call has returned is no
+// conflict (5); and the snapshot is taken when its argument EVALUATES, so an EARLIER argument's effect on the owner
+// (`fs2((raw reset(@s)), s)`) hands the callee the fresh header (4; refused by 176b's first build, whose party was
+// order-insensitive). Each measured under landing 175's compiler and this one with the same exit at -O0 and -O2 (`.internal/probes176/def410/c/`, `rev/`).
+mod:addr_window_ok;
+error:E5;
+struct:H = { string:s; int64:k; };
+func:take = int64(move string:x) never fails { pass 0i64; };
+func:reset = int64(string->:p) never fails { (<-p) = string_concat("wx", "yz"); pass 0i64; };
+func:gp = int64(H->:p, int64:k) never fails { pass (<-p).s.len + k; };
+func:fs = int64(string:v, int64:k) never fails { pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+struct:W = { H->:ptr; };
+func:gw = int64(W:w, int64:k) never fails { pass w.ptr.s.len + k; };
+func:g2 = int64(int64:a, int64:b) never fails { pass a + b; };
+func:fs2 = int64(int64:k, string:v) never fails { pass v.len + k; };
+func:value_then_own_move = int64() never fails {
+    string:s = string_concat("ab", "cde");
+    int64:n = raw fs(s, 0i64);
+    int64:t = raw take(move(s));
+    pass n + t;                                      // 7: the move in its own statement after the call
+};
+func:move_then_literal_addr = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    int64:t = raw take(move(h.s));
+    h = H{ s: string_concat("ab", "cde"), k: 1i64 };   // a moved-out field invalidates the whole binding (D-065): refilled whole
+    pass raw gw(W{ ptr: @h }, t);                    // 5
+};
+func:reset_in_place = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    pass raw gp(@h, (raw reset($$m h.s)));          // 4
+};
+func:window_closed = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    pass raw g2((raw gp(@h, 0i64)), (raw take(move(h.s))));   // 5
+};
+func:effect_before_snapshot = int64() never fails {
+    string:s = string_concat("ab", "cde");
+    pass raw fs2((raw reset(@s)), s);               // 4: the header loads after the earlier argument's rewrite
+};
+func:main = int32(cstring[]:_~argv) {
+    int64:t = (raw value_then_own_move()) + (raw move_then_literal_addr()) + (raw reset_in_place()) + (raw window_closed()) + (raw effect_before_snapshot());
+    exit (t =>! int32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

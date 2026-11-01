@@ -1,0 +1,102 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 45:52
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 51:72
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 56:52
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 60:43
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 64:45
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 69:52
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 74:48
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 79:44
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 79:50
+// A CALL'S OR A RANGE'S VIEW IS LIVE TO THE END OF THE FULL EXPRESSION THAT FORMED IT (DEF-410 (b), landing 176).
+// A view a call returns (`string_bytes(s)`, a user function passing a view of its parameter through) or a
+// range forms (`b[0...4]`) carried no party while the rest of its full expression ran, so a later operand of
+// the SAME expression could move, reassign (`@`) or claim (`$$m`) the viewed owner and the view was read
+// after: a struct literal's later field, an array literal's later element, an index under `??`/`?|`, a
+// later argument -- every one read freed memory (230, the allocator's poison byte) on landings 174 and 175
+// (`.internal/probes176/def410/b/`, 78 cells). Now the aliasing analysis raises a VIEW party for such a
+// result, holder -1, live to the end of the statement's top-level expression, and a write-capable access of
+// the viewed owner inside that window is `NITPICK-BORROW-015`, as it is for a view a binding holds.
+mod:view_window;
+error:E5;
+func:take = int64(move string:x) never fails { pass 0i64; };
+func:takeb = int64(move buffer:x) never fails { pass 0i64; };
+func:reset = int64(string->:p) never fails { (<-p) = string_concat("wx", "yz"); pass 0i64; };
+func:vw = fixed uint8[](string:s) never fails { pass string_bytes(s); };
+func:fv = int64(fixed uint8[]:v, int64:k) never fails { pass (v[0i64] => int64) + k; };
+func:oidx = int64?(int64:k) never fails { pass k; };
+func:ridx = int64(int64:k) { pass k; };
+func:hold_w = uint8[](move string:x, string:k) never fails { pass #wild_slice<uint8>(k.ptr, k.len); };
+struct:C = { fixed uint8[]:v; int64:k; };
+struct:W = { uint8[]:v; int64:k; };
+struct:H = { string:s; };
+impl:H = { func:bytes = fixed uint8[](Self->:self) never fails { pass string_bytes(self.s); }; };
+
+func:struct_field = int64() never fails {
+    string:s = string_concat("ab", "cde");
+    C:c = C{ v: string_bytes(s), k: (raw take(move(s))) };
+    pass (c.v[0i64] => int64) + c.k;
+};
+func:array_elem = int64() never fails {
+    string:s = string_concat("ab", "cde");
+    string:t = string_concat("zz", "");
+    uint8[][2]:a = [#wild_slice<uint8>(s.ptr, s.len), (raw hold_w(move(s), t))];
+    pass (a[0i64][0i64] => int64);
+};
+func:index_coalesce = int64() never fails {
+    string:s = string_concat("ab", "cde");
+    pass (string_bytes(s)[(raw oidx((raw take(move(s))))) ?? 0i64] => int64);
+};
+func:index_relay_claim = int64() never fails {
+    string:s = string_concat("ab", "cde");
+    pass (string_bytes(s)[ridx((raw reset($$m s))) ?| 0i64] => int64);
+};
+func:later_argument = int64() never fails {
+    string:s = string_concat("ab", "cde");
+    pass raw fv((raw vw(s)), (raw take(move(s))));
+};
+func:range_field = int64() never fails {
+    buffer:b = buffer_new(16i64);
+    b[0i64] = 97u8;
+    W:w = W{ v: b[0i64...4i64], k: (raw takeb(move(b))) };
+    pass (w.v[0i64] => int64);
+};
+func:address_later = int64() never fails {
+    string:s = string_concat("ab", "cde");
+    C:c = C{ v: string_bytes(s), k: (raw reset(@s)) };
+    pass (c.v[0i64] => int64) + c.k;
+};
+func:method_view = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde") };
+    pass raw fv((raw h.bytes()), (raw take(move(h.s))));
+};
+func:main = int32(cstring[]:_~argv) {
+    int64:t = (raw struct_field()) + (raw array_elem()) + (raw index_coalesce()) + (raw index_relay_claim())
+            + (raw later_argument()) + (raw range_field()) + (raw address_later()) + (raw method_view());
+    exit (t =>! int32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

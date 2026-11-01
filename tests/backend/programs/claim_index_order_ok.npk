@@ -3,13 +3,17 @@
 // ORDER (DEF-407; landing 175's second delta review, R1). In `g[s.len - 4].c[consume(move(s)) - 2]`
 // the inner index reads `s` BEFORE the outer one moves it, so the claim is legal and names `g[1].c[3]`
 // (8); the arithmetic is in bounds only in that order (the other order reads a vacated `s`: len 0,
-// index -4, an `OutOfBounds` trap), so exit 7 measures the EMITTER's order as well as the analysis's.
-// The same for an unassigned `k` assigned (`$$m k`, the out-parameter) in the inner index and read
-// in the outer: `g[seti($$m k) - 1].c[k - 1]` names `g[0].c[0]` (1). Three roads each: a `$$m`
+// index -4, an `OutOfBounds` trap), so exit 7 measures the EMITTER's order as well as the analysis's
+// -- for the MOVE roads. An unassigned `k` assigned (`$$m k`, the out-parameter) in the inner index
+// and read in the outer, `g[seti($$m k) - 1].c[k - 1]`, names `g[0].c[0]` (1); its reversed order
+// would read an UNINITIALISED `k` (undefined: it may land in bounds, at -O2 in particular), so the
+// assign roads measure the analysis's acceptance, not the emitter's order (corrected in 176, T1).
+// Three roads each: a `$$m`
 // claim, a `$$i` claim, an `@` address (the last two go through `assign_expr`'s two-operand road,
-// which always walked a left operand first). Landing 174 accepts all six, as this build does; the
-// first commit of 175 refused the two `$$m` roads (MOVE-001 at `s.len`, ASSIGN-001 at `k`) and
-// accepted their mirrors -- the reversed orders are tests/analysis/rejection/claim_index.npk's.
+// which always walked a left operand first). Landing 174 accepts all six, as this build does; 175's
+// second round (d618068) refused the two `$$m` roads (MOVE-001 at `s.len`, ASSIGN-001 at `k`) and
+// accepted their mirrors (corrected in 176: 175's first commit walked no index at all) -- the
+// reversed orders are tests/analysis/rejection/claim_index.npk's.
 mod:claim_index_order_ok;
 error:E5;
 struct:Row = { int32[4]:c; };

@@ -1,0 +1,74 @@
+// expect-exit: 44
+// THE LEGAL SHAPES BESIDE `view_window.npk` (DEF-410 (b), landing 176): a call-result view's window ends with
+// the full expression that formed it, so the idiom `s = norm(string_bytes(s))` -- the view consumed by the
+// callee, the value complete before the write lands -- stays legal on a local, a field, a declaration and
+// through `string_from_bytes`; an `if` condition's view is dead when the branch writes; a view beside a move
+// of ANOTHER binding is no conflict; and a view read in one statement before a move in the next is the plain
+// sequential shape. Each measured under landing 175's compiler and this one with the same exit at -O0 and -O2 (and the guard shapes on 174's too, `.internal/probes176/def410/b/guard/`).
+mod:view_window_ok;
+error:E5;
+struct:P = { string:s; int64:k; };
+func:norm = string(fixed uint8[]:v) never fails { pass string_concat("wxyz", "!"); };
+func:norms = string(string:v) never fails { pass string_concat("wxyz", "!"); };
+func:take = int64(move string:x) never fails { pass 0i64; };
+func:vw = fixed uint8[](string:s) never fails { pass string_bytes(s); };
+func:fv = int64(fixed uint8[]:v, int64:k) never fails { pass (v[0i64] => int64) + k; };
+func:local_guard = int64() never fails {
+    string:s = string_concat("ab", "cde");
+    s = raw norm(string_bytes(s));
+    pass s.len;                                      // 5
+};
+func:field_guard = int64() never fails {
+    P:p = P{ s: string_concat("ab", "cde"), k: 1i64 };
+    p.s = raw norm(string_bytes(p.s));
+    pass p.s.len;                                    // 5
+};
+func:decl_guard = int64() never fails {
+    string:s = string_concat("ab", "cde");
+    string:t = raw norm(string_bytes(s));
+    pass t.len + s.len;                              // 10
+};
+func:sfb_guard = int64() never fails {
+    string:s = string_concat("ab", "cde");
+    s = raw norms(string_from_bytes(s.ptr, s.len));
+    pass s.len;                                      // 5
+};
+func:cond_then_write = int64() never fails {
+    string:s = string_concat("ab", "cde");
+    if (string_bytes(s)[0i64] == 97u8) { s = string_concat("wxyz", "!"); }
+    pass s.len;                                      // 5
+};
+func:other_binding = int64() never fails {
+    string:s = string_concat("ab", "cde");
+    string:t = string_concat("q", "");
+    int64:n = raw fv((raw vw(s)), (raw take(move(t))));
+    pass n - 90i64;                                  // 97 - 90 = 7
+};
+func:view_then_move = int64() never fails {
+    string:s = string_concat("ab", "cde");
+    int64:a = (string_bytes(s)[0i64] => int64);
+    int64:b = raw take(move(s));
+    pass a + b - 90i64;                              // 7
+};
+func:main = int32(cstring[]:_~argv) {
+    int64:t = (raw local_guard()) + (raw field_guard()) + (raw decl_guard()) + (raw sfb_guard())
+            + (raw cond_then_write()) + (raw other_binding()) + (raw view_then_move());
+    exit (t =>! int32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

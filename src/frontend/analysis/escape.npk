@@ -3224,6 +3224,13 @@ func:type_holds_foreign_pointer = bool(Escape->:x, int32:t, int32:fuel) never fa
 // nothing else (`string_concat` of a view is an owned copy); a plain `@`/`$$`
 // outside a call is D-286's held address and no view. Exhaustion is silent
 // here as in `collect_local_roots`: the escape walk refused the same value.
+// THE VIEWS A VALUE CARRIES, FOR THE ALIASING ANALYSIS (DEF-410 (b), landing 176): a call's result or a range view read
+// as a holder's initialiser is read (the fixpoint's `collect_view_refs`), with the carry fuel. The aliasing walk raises a
+// VIEW party per DIRECT/LAUNDERED ref wherever such a value stands, live to the end of the full expression that formed it.
+pub func:escape_value_views = NIL(Escape->:x, ExprId:id, List<ViewRef>->:out) never fails {
+    drop collect_view_refs(x, id, raw CARRY_FUEL(), out);
+    pass NIL;
+};
 func:collect_view_refs = NIL(Escape->:x, ExprId:id, int32:depth, List<ViewRef>->:out) never fails {
     if (raw expr_is_none(id)) { pass NIL; }
     if (depth <= 0i32) { pass NIL; }

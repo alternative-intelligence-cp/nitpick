@@ -1,0 +1,77 @@
+// expect-exit: 19
+// THE LEGAL SHAPES BESIDE `held_addr.npk` (DEF-413, landing 176): a plain address stays a READ against a WRITE through
+// the name (`h.k = 2i64`, read back as 2) and against a REASSIGNMENT of a field (`h.s = …`, the old string dropped
+// and the new one read back, length 4) -- the pointer's purpose, D-286 (1) -- and a pointer scoped in an INNER
+// block that ends before the move is no conflict (2). Each measured under landing 175's compiler and this one
+// with the same exit at -O0 and -O2 (`.internal/probes176/def410/keepp/`). Two more (176b): a literal that holds `@h`
+// formed AFTER the move, `h` refilled whole (5; the twin of `held_addr_holders.npk`'s site 8), and a pointer scoped in an
+// inner block that ends before a `dalloc` of a part of the pointee (6; the twin of `held_addr.npk`'s site 6).
+mod:held_addr_ok;
+error:E5;
+struct:H = { string:s; int64:k; };
+struct:C = { H->:p; int64:k; };
+struct:B = { wild int8->:m; int64:k; };
+func:take = int64(move string:x) never fails { pass 0i64; };
+func:write_through_name = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    H->:p = @h;
+    h.k = 2i64;
+    pass (<-p).k;                                    // 2
+};
+func:reassign_field = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    H->:p = @h;
+    h.s = string_concat("wx", "yz");
+    pass (<-p).s.len;                                // 4
+};
+func:inner_block_pointer = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    int64:u = 0i64;
+    {
+        H->:p = @h;
+        u = (<-p).k;
+    }
+    int64:n = raw take(move(h.s));
+    pass u + n + 1i64;                               // 2
+};
+func:literal_after_move = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    int64:t = raw take(move(h.s));
+    h = H{ s: string_concat("ab", "cde"), k: 1i64 };   // a moved-out field invalidates the whole binding (D-065): refilled whole
+    C:c = C{ p: @h, k: t };
+    pass (<-c.p).s.len + c.k;                        // 5
+};
+func:inner_block_pointer_then_free = int64() never fails {
+    B:b = B{ m: alloc(16i64), k: 1i64 };
+    b.m[0i64] = 5i8;
+    int64:v = 0i64;
+    {
+        B->:p = @b;
+        v = ((<-p).m[0i64] => int64);
+    }
+    int64:k = b.k;                                   // read before the free: `b.k` after `dalloc(b.m)` is MOVE-002
+    dalloc(b.m);
+    pass v + k;                                      // 6
+};
+func:main = int32(cstring[]:_~argv) {
+    int64:t = (raw write_through_name()) + (raw reassign_field()) + (raw inner_block_pointer())
+            + (raw literal_after_move()) + (raw inner_block_pointer_then_free());
+    exit (t =>! int32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

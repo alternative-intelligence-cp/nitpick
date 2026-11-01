@@ -1,0 +1,142 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 93:36
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 97:35
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 102:35
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 106:35
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 111:41
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 117:45
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 63:31
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 67:32
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 71:29
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 75:30
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 79:44
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 83:47
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 88:41
+// A PLAIN ADDRESS IS A WRITE-CAPABLE ACCESS, AND ITS WINDOW IS THE CALL (DEF-410 (c), landing 176). An `@h`
+// argument, or the implicit `Self->` receiver of a pointer-receiver method, is formed BEFORE the call's later
+// arguments run, and the callee reads through it after; a later argument that moves `h` or a field of it out
+// leaves the callee reading vacated storage -- a fabricated length 0 (exit 60) on landings 174 and 175
+// (`.internal/probes176/def410/c/`, 24 cells). D-286 (1) read a plain address as a READ; a plain address
+// counts as a write-capable ACCESS now, with a party of its own (`PARTY_ADDR`) live from the address to the
+// call's return, and a `move` of its root inside that window is `NITPICK-BORROW-013`. A `$$m h` beside the
+// same move was BORROW-013 already (the claim's own rule). A by-value `h` or `Self` is NOT a copy made first:
+// a string's or a struct's by-value argument is a header SNAPSHOT sharing the bytes, and a later argument that
+// frees them leaves the callee reading freed memory (the allocator's 0xAA, exit 140, `.internal/probes176/rev/p3_*`)
+// -- so a by-value OWNER argument or receiver is a VIEW party for the call (DEF-410 face (f), 176b; sites 8-11,
+// the two controls that claimed a copy among them), and the move is `NITPICK-BORROW-015`, the view's conflict.
+// An address INSIDE a struct literal or chosen by a ternary (`gw(W{ ptr: @h }, …)`, `gp(is (b) : @h : @g, …)`)
+// is the same window (face (c) widened to a non-bare address argument, 176b; sites 12-13): BORROW-013. An address a call RETURNS (`keepp(@h)`, `h.me()`) outlives the call as
+// its result and is an address party to the end of the full expression (face (b)'s gap, management_11's cells):
+// a later argument or a later field that moves `h.s` is the same BORROW-013.
+mod:addr_window;
+error:E5;
+struct:H = { string:s; int64:k; };
+func:take = int64(move string:x) never fails { pass 0i64; };
+func:takeh = int64(move H:x) never fails { pass 0i64; };
+func:gp = int64(H->:p, int64:k) never fails { pass (<-p).s.len + k; };
+func:gv = int64(H:v, int64:k) never fails { pass v.s.len + k; };
+func:fs = int64(string:v, int64:k) never fails { pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+struct:W = { H->:ptr; };
+func:gw = int64(W:w, int64:k) never fails { pass w.ptr.s.len + k; };
+func:keepp = H->(H->:p) never fails { pass p; };
+struct:C = { H->:p; int64:k; };
+impl:H = {
+    func:mp = int64(Self->:self, int64:k) never fails { pass self.s.len + k; };
+    func:me = H->(Self->:self) never fails { pass self; };
+    func:mv = int64(Self:self, int64:k) never fails { pass self.s.len + k; };
+    func:mb = int64(Self:self, int64:k) never fails { pass (string_bytes(self.s)[0i64] => int64) - 90i64 + k; };
+};
+func:addr_then_field_move = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    pass raw gp(@h, (raw take(move(h.s))));
+};
+func:addr_then_whole_move = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    pass raw gp(@h, (raw takeh(move(h))));
+};
+func:receiver_then_field_move = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    pass raw h.mp((raw take(move(h.s))));
+};
+func:receiver_then_whole_move = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    pass raw h.mp((raw takeh(move(h))));
+};
+func:returned_then_arg_move = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    pass raw gp((raw keepp(@h)), (raw take(move(h.s))));
+};
+func:returned_then_field_move = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    C:c = C{ p: (raw keepp(@h)), k: (raw take(move(h.s))) };
+    pass (<-c.p).s.len + c.k;
+};
+func:returned_receiver_then_move = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    pass raw gp((raw h.me()), (raw take(move(h.s))));
+};
+// 8-9. the by-value `h` argument and `Self` receiver that `addr_window_ok.npk` called a copy until 176b: a snapshot
+func:value_arg_then_field_move = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    pass raw gv(h, (raw take(move(h.s))));
+};
+func:value_receiver_then_field_move = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    pass raw h.mv((raw take(move(h.s))));
+};
+// 10-11. the snapshot's bytes READ after the later argument freed them (140 on 175 and 176): a string whole, a `Self`
+func:value_string_then_move = int64() never fails {
+    string:s = string_concat("ab", "cde");
+    pass raw fs(s, (raw take(move(s))));
+};
+func:value_receiver_bytes_then_move = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    pass raw h.mb((raw take(move(h.s))));
+};
+// 12-13. the address inside a struct literal, and chosen by a ternary: the window is the call's (face (c) widened)
+func:literal_addr_then_move = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    pass raw gw(W{ ptr: @h }, (raw take(move(h.s))));
+};
+func:ternary_addr_then_move = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    H:g = H{ s: string_concat("x", ""), k: 2i64 };
+    bool:b = true;
+    pass raw gp(is (b) : @h : @g, (raw take(move(h.s))));
+};
+func:main = int32(cstring[]:_~argv) {
+    int64:t = (raw addr_then_field_move()) + (raw addr_then_whole_move()) + (raw receiver_then_field_move()) + (raw receiver_then_whole_move())
+            + (raw returned_then_arg_move()) + (raw returned_then_field_move()) + (raw returned_receiver_then_move())
+            + (raw value_arg_then_field_move()) + (raw value_receiver_then_field_move()) + (raw value_string_then_move())
+            + (raw value_receiver_bytes_then_move()) + (raw literal_addr_then_move()) + (raw ternary_addr_then_move());
+    exit (t =>! int32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

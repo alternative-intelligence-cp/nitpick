@@ -2218,6 +2218,38 @@ func:type_namespace_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n, int32:msy
     pass (raw type_direct_call(e, id, n, m, ft, 0i32, start, count));
 };
 
+// THE PART OF A `Self->` RECEIVER THAT WOULD RUN TWICE (DEF-414, landing 176): the first call, method call, builtin,
+// `move`, claim, address, `pick`, `await` or spawn met in the receiver expression (none when it holds none), the
+// shapes walked as `ast_depth.npk` walks them; a kind the walk has no arm for is answered closed (the node itself).
+func:recv_effect_site = ExprId(ExprTyper->:e, ExprId:id, int32:fuel) never fails {
+    if (raw expr_is_none(id)) { pass id; }
+    if (fuel <= 0i32) { pass id; }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    if ((n.kind == ExprKind.ExprCallExpr) || (n.kind == ExprKind.ExprMethodCallExpr) || (n.kind == ExprKind.ExprBuiltinExpr)
+        || (n.kind == ExprKind.ExprMoveExpr) || (n.kind == ExprKind.ExprBorrowExpr) || (n.kind == ExprKind.ExprAddressOfExpr)
+        || (n.kind == ExprKind.ExprPickExpr) || (n.kind == ExprKind.ExprAwaitExpr) || (n.kind == ExprKind.ExprDropExpr)) { pass id; }
+    int32:shape = raw expr_shape(n.kind);
+    if (shape == (raw EXPR_SHAPE_LEAF())) { pass (raw expr_none()); }
+    if ((shape == (raw EXPR_SHAPE_LIST())) || (shape == (raw EXPR_SHAPE_ONELIST()))) {
+        // A LITERAL'S ELEMENTS ARE WALKED (176b, review A's T1): a call inside an array or template literal in the receiver --
+        // `a[[(raw bump(@count)), 1i64][1i64]].get()`, `a[`&{ (raw bump(@count)) }`.len].get()`, the receiver itself a list
+        // literal -- ran twice (26 for 16 on 175 and 176) while the literal answered none; a literal with no call stays none (DEF-412's).
+        for (int32:i in 0i32...(raw expr_list_count(n))) {
+            ExprId:el = raw recv_effect_site(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), i) }, fuel - 1i32);
+            if (!(raw expr_is_none(el))) { pass el; }
+        }
+        pass (raw expr_none());
+    }
+    if ((shape != (raw EXPR_SHAPE_ONE())) && (shape != (raw EXPR_SHAPE_TWO())) && (shape != (raw EXPR_SHAPE_THREE()))) { pass id; }
+    ExprId:a = raw recv_effect_site(e, raw expr_lhs(n), fuel - 1i32);
+    if (!(raw expr_is_none(a))) { pass a; }
+    if (shape == (raw EXPR_SHAPE_ONE())) { pass a; }
+    a = raw recv_effect_site(e, raw expr_rhs(n), fuel - 1i32);
+    if (!(raw expr_is_none(a))) { pass a; }
+    if (shape == (raw EXPR_SHAPE_THREE())) { pass (raw recv_effect_site(e, raw expr_third(n), fuel - 1i32)); }
+    pass a;
+};
+
 pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     // A RECEIVER THAT NAMES A MODULE (D-273, 1.5.4c): the call is a direct
     // call of the member. Asked first -- the receiver is a namespace, and
@@ -2751,6 +2783,24 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
             // `Self->` RECEIVER FROM OUTSIDE ITS MODULE (D-313, TYPE-079).
             if (raw refuse_sealed_write(e, raw expr_operand(n), "call through a pointer receiver", n.span)) {
                 pass 0i32;
+            }
+            // A `Self->` RECEIVER HOLDS NO CALL, `move`, CLAIM OR ADDRESS (DEF-414, landing 176): the emitter forms it
+            // twice, so such a part would run twice (`NITPICK-TYPE-103`; the code's comment has the measurements). The
+            // emitter's twice-formed set is exactly `emit_method_call`'s `want_ptr` road -- a `Self->` method on a receiver
+            // VALUE that is neither a pointer nor a `dyn` (a `dyn` receiver is the loaded value, formed once) -- so a
+            // `dyn` receiver is exempt here as a pointer-typed one is above. The walk's fuel (300) exceeds the parser's
+            // nesting bound (256, PARSE-012), so a syntactically valid receiver never exhausts it; past it, closed.
+            ExprId:twice = raw expr_none();
+            if (!dyn_recv) { twice = raw recv_effect_site(e, raw expr_operand(n), 300i32); }
+            if (!(raw expr_is_none(twice))) {
+                ExprNode:tn = raw ast_expr(e.ast, twice);
+                string:w1 = string_concat("`", raw intern_get(e.interns, name));
+                string:w2 = string_concat(w1, "` takes `Self->`, and its receiver holds a part at ");
+                string:w3 = string_concat(w2, int_to_string(tn.span.line => int64));
+                string:w4 = string_concat(w3, ":");
+                string:w5 = string_concat(w4, int_to_string(tn.span.col => int64));
+                string:w6 = string_concat(w5, " (a call, a `move`, a claim or an address) that the emitter would run TWICE -- a pointer receiver is formed as a value and as a place until DEF-414's fix; evaluate that part into a local first, then call the method on a plain place");
+                pass (raw te_error(e, raw TYPE_RECV_TWICE(), move(w6), n.span));
             }
         }
     }

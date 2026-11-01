@@ -99,7 +99,9 @@ thread async func:filler = NIL(shared_arena<int64>->:s, Channel<int64, 4i32, 4i6
 func:disjoint_field_method_deref_call = int64() never fails {
     S:h = S{ s: string_concat("a", "b"), k: 1i64 };
     fixed uint8[]:vw = string_bytes(h.s);
-    drop (<-(raw ids(@h))).kset();
+    // drop (<-(raw ids(@h))).kset();   -- the DEF-315 shape, TYPE-103 (DEF-414, landing 176) until the emitter fix; restore it then
+    S->:hp = raw ids(@h);
+    drop hp.kset();
     pass ((vw[0i64] => int64) + h.k);
 };
 
@@ -115,7 +117,9 @@ func:disjoint_field_method_by_name = int64() never fails {
 func:reading_method_deref_call = int64() never fails {
     S:h = S{ s: string_concat("a", "b"), k: 1i64 };
     fixed uint8[]:vw = string_bytes(h.s);
-    drop (<-(raw ids(@h))).snoop();
+    // drop (<-(raw ids(@h))).snoop();   -- the DEF-315 shape, TYPE-103 (DEF-414, landing 176) until the emitter fix; restore it then
+    S->:hp = raw ids(@h);
+    drop hp.snoop();
     pass (vw[0i64] => int64);
 };
 
@@ -126,7 +130,9 @@ func:method_deref_call_view_block_ended = int64() never fails {
         fixed uint8[]:vw = string_bytes(h.s);
         if (vw[0i64] != 97u8) { pass 0i64; }
     }
-    drop (<-(raw ids(@h))).sset();
+    // drop (<-(raw ids(@h))).sset();   -- the DEF-315 shape, TYPE-103 (DEF-414, landing 176) until the emitter fix; restore it then
+    S->:hp = raw ids(@h);
+    drop hp.sset();
     pass h.s.len;
 };
 
@@ -135,14 +141,18 @@ func:method_deref_call_other_pointee = int64() never fails {
     S:h = S{ s: string_concat("a", "b"), k: 1i64 };
     S:g = S{ s: string_concat("c", "d"), k: 2i64 };
     fixed uint8[]:vw = string_bytes(h.s);
-    drop (<-(raw ids(@g))).sset();
+    // drop (<-(raw ids(@g))).sset();   -- the DEF-315 shape, TYPE-103 (DEF-414, landing 176) until the emitter fix; restore it then
+    S->:gp = raw ids(@g);
+    drop gp.sset();
     pass ((vw[0i64] => int64) + g.s.len);
 };
 
 // 6. the method on the dereference BEFORE the view is taken
 func:method_deref_call_before_view = int64() never fails {
     S:h = S{ s: string_concat("a", "b"), k: 1i64 };
-    drop (<-(raw ids(@h))).sset();
+    // drop (<-(raw ids(@h))).sset();   -- the DEF-315 shape, TYPE-103 (DEF-414, landing 176) until the emitter fix; restore it then
+    S->:hp = raw ids(@h);
+    drop hp.sset();
     fixed uint8[]:vw = string_bytes(h.s);
     pass (vw[0i64] => int64);
 };
@@ -470,7 +480,9 @@ async func:main = int32(cstring[]:_~argv) {
     W:w2 = W{ a: shared_arena_make(8i64), k: 2i32 };
     {
         drop filler(@w.a, done, 1000i64);
-        drop (<-(raw idw(@w2))).rep();
+        // drop (<-(raw idw(@w2))).rep();   -- the DEF-315 shape, TYPE-103 (DEF-414, landing 176) until the emitter fix; restore it then
+        W->:wq2 = raw idw(@w2);
+        drop wq2.rep();
     }
     int64:a1 = await done.recv(raw duration_ms(5i64)) ?! E1;
     if (a1 != 1019i64) { exit 51i32; }
@@ -480,11 +492,15 @@ async func:main = int32(cstring[]:_~argv) {
     }
     int64:a2 = await done.recv(raw duration_ms(5i64)) ?! E1;
     if (a2 != 2019i64) { exit 52i32; }
-    drop (<-(raw idw(@w))).rep();
+    // drop (<-(raw idw(@w))).rep();   -- the DEF-315 shape, TYPE-103 (DEF-414, landing 176) until the emitter fix; restore it then
+    W->:wq = raw idw(@w);
+    drop wq.rep();
     // L3. a method writing the DISJOINT field `k` on the dereference of a call-result pointer while `w.a` is lent
     {
         drop filler(@w.a, done, 3000i64);
-        drop (<-(raw idw(@w))).kset();
+        // drop (<-(raw idw(@w))).kset();   -- the DEF-315 shape, TYPE-103 (DEF-414, landing 176) until the emitter fix; restore it then
+        W->:wq3 = raw idw(@w);
+        drop wq3.kset();
     }
     int64:a3 = await done.recv(raw duration_ms(5i64)) ?! E1;
     if (a3 != 3019i64) { exit 53i32; }

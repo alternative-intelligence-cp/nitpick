@@ -737,3 +737,11 @@ pub func:TYPE_RESULT_BOTH_FIELDS = string() never fails { pass "NITPICK-TYPE-101
 // for safety (D-099's `a?.f` is a FIELD), lifted when the emitter writes the tag and stores the member at the payload's
 // offset (placed after landing 180); the message says to unwrap (`?? d`, `??! Ident`) or test (`!= NIL`) first.
 pub func:TYPE_SAFE_NAV_DERIVED = string() never fails { pass "NITPICK-TYPE-102"; };
+
+// A `Self->` RECEIVER HOLDS NO CALL, `move`, CLAIM OR ADDRESS (DEF-414, 1.6.1e landing 176): the emitter forms a
+// pointer receiver TWICE (`emit_method_call`: once as a value, once as a place), so a part of the receiver expression
+// with an effect RUNS twice -- a counter in an index bumped twice (62), a `move` moving a vacant value (an OutOfBounds
+// trap where a value was expected), a call-result pointer's call made twice -- measured on 174 and 175. A TEMPORARY
+// refusal for safety, lifted when the emitter forms the receiver once (placed after landing 180); the message names
+// the method and the part, and says to evaluate it into a local first.
+pub func:TYPE_RECV_TWICE = string() never fails { pass "NITPICK-TYPE-103"; };

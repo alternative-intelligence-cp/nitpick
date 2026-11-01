@@ -1,77 +1,67 @@
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 199:11
+// expect-error-at: 198:29
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 207:11
+// expect-error-at: 208:23
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 218:11
+// expect-error-at: 218:45
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 228:29
+// expect-error-at: 229:13
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 238:23
+// expect-error-at: 239:33
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 248:45
+// expect-error-at: 249:29
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 259:13
+// expect-error-at: 259:33
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 269:28
+// expect-error-at: 270:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 279:33
+// expect-error-at: 282:13
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 289:29
+// expect-error-at: 294:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 299:33
+// expect-error-at: 305:13
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 310:14
+// expect-error-at: 316:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 322:13
+// expect-error-at: 326:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 334:14
+// expect-error-at: 337:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 345:13
+// expect-error-at: 349:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 356:14
+// expect-error-at: 361:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 366:14
+// expect-error-at: 372:15
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 377:14
+// expect-error-at: 382:36
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 389:14
+// expect-error-at: 392:43
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 401:14
+// expect-error-at: 403:30
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 412:15
+// expect-error-at: 413:43
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 422:36
+// expect-error-at: 424:30
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 432:43
+// expect-error-at: 434:44
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 443:30
+// expect-error-at: 444:45
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 453:43
+// expect-error-at: 455:25
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 464:30
+// expect-error-at: 466:32
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 474:44
+// expect-error-at: 478:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 484:45
+// expect-error-at: 488:36
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 495:25
+// expect-error-at: 499:31
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 506:32
-// expect-error: NITPICK-BORROW-015
-// expect-error-at: 518:14
-// expect-error: NITPICK-BORROW-015
-// expect-error-at: 528:36
-// expect-error: NITPICK-BORROW-015
-// expect-error-at: 539:31
-// expect-error: NITPICK-BORROW-015
-// expect-error-at: 549:43
+// expect-error-at: 509:43
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 558:11
+// expect-error-at: 519:30
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 567:30
-// expect-error: NITPICK-BORROW-016
-// expect-error-at: 576:15
+// expect-error-at: 528:15
 mod:call_result_deref_receiver_slice;
 // DEF-315 + DEF-316 + DEF-317 (1.6.1e, landing 166): THREE ROOTLESS SHAPES RESOLVED TO
 // THE STORAGE THEY REACH. (1) DEF-315: a `Self->` method whose receiver is the BARE
@@ -99,6 +89,14 @@ mod:call_result_deref_receiver_slice;
 // compiled on landing 165's compiler and read freed memory at both legs
 // (`wt/51a/.internal/probes/t166/`, 81 cells, `MEASURED_165.md`). BORROW-015 at the
 // method, the write or the call (a view); BORROW-016 (a lend).
+//
+// LANDING 176 (DEF-414): the five DEF-315 receiver sites -- cases 1, 2, 3, 8 and 22, `(<-(raw ids(@h))).sset()`
+// and its kin -- MOVED to `tests/types/rejection/recv_twice.npk`. A `Self->` method on the bare dereference of a
+// call result is a receiver the emitter forms twice (the call inside it would run twice), refused by the typer
+// as NITPICK-TYPE-103 before any analysis runs; so their DEF-315 arm (`check_pointer_targets`' call-result arm
+// through `rootless_deref_base`) is reached by no accepted program until DEF-414's emitter fix, when the five
+// come back here (DEF-414's row holds the obligation). The case numbers keep their gaps; the 32 sites here give
+// the verdicts and texts they gave on landing 175 (compared at 176's commit).
 //
 // THE TRANSPARENT KINDS (sites 25-33; management_6's guard of 2026-10-29 04:28:44): the readers that
 // resolve a rootless slice or pointer step the operators that are a call's value on ONE path -- `raw f()`
@@ -192,34 +190,6 @@ thread async func:filler = NIL(shared_arena<int64>->:s) joins J2 {
     pass NIL;
 };
 // --- THE VIEW DOMAIN ------------------------------------------------------------------
-// 1. (DEF-315) a `Self->` method writing `self.s` on the explicit dereference of a call-result pointer, under a view of `h.s`
-func:method_on_deref_call = NIL() never fails {
-    S:h = S{ s: string_concat("a", "b"), k: 1i64 };
-    fixed uint8[]:vw = string_bytes(h.s);
-    drop (<-(raw ids(@h))).sset();
-    discard(vw[0i64] => int32);
-    pass NIL;
-};
-
-// 2. (DEF-315) the call result rooted at a pointer PARAMETER (`(<-(raw ids(p))).sset()`), under a view of `p.s` (rule A reads the parameter, DEF-311)
-func:method_on_deref_call_param = NIL(S->:p) never fails {
-    fixed uint8[]:vw = string_bytes(p.s);
-    drop (<-(raw ids(p))).sset();
-    discard(vw[0i64] => int32);
-    pass NIL;
-};
-
-// 3. (DEF-315) the method on the dereference of a call result that may be either of TWO pointees (`pick_s(c, @h, @g)`), under a view of `h.s`
-func:method_on_deref_two_targets = NIL() never fails {
-    S:h = S{ s: string_concat("a", "b"), k: 1i64 };
-    S:g = S{ s: string_concat("c", "d"), k: 2i64 };
-    fixed uint8[]:vw = string_bytes(h.s);
-    bool:c = (h.k == 1i64);
-    drop (<-(raw pick_s(c, @h, @g))).sset();
-    discard(vw[0i64] => int32);
-    pass NIL;
-};
-
 // 4. (DEF-316) a slice element's FIELD written through the dereference of a call-result pointer to the slice local, under a view of the array
 func:slice_elem_field_through_deref_call = NIL() never fails {
     H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
@@ -257,16 +227,6 @@ func:slice_elem_addr_to_writer_through_deref_call = NIL() never fails {
     H2[]:t = arr[0i64...2i64];
     fixed uint8[]:vw = string_bytes(arr[0i64].o);
     drop wr(@(<-(raw idsl(@t)))[0i64]);
-    discard(vw[0i64] => int32);
-    pass NIL;
-};
-
-// 8. (DEF-316 x DEF-315) a `Self->` method on the element through the dereference
-func:slice_elem_method_through_deref_call = NIL() never fails {
-    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
-    H2[]:t = arr[0i64...2i64];
-    fixed uint8[]:vw = string_bytes(arr[0i64].o);
-    drop (<-(raw idsl(@t)))[0i64].hset();
     discard(vw[0i64] => int32);
     pass NIL;
 };
@@ -548,14 +508,6 @@ func:coalesce_ptr_road = NIL() never fails {
     fixed uint8[]:vw = string_bytes(arr[0i64].o);
     (<-((raw idbso(@bs)) ??! E1)).sl[0i64].o = string_concat("x", "y");
     discard(vw[0i64] => int32);
-    pass NIL;
-};
-
-// 22. (DEF-315, the lend) the method replacing `self.a` on the dereference of a call-result pointer while `w.a` is lent to a task
-async func:lend_method_on_deref_call = NIL() {
-    W:w = W{ a: shared_arena_make(8i64), k: 1i32 };
-    drop filler(@w.a);
-    drop (<-(raw idw(@w))).rep();
     pass NIL;
 };
 

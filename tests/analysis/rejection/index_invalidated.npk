@@ -1,0 +1,117 @@
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 46:17
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 51:6
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 56:6
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 61:17
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 66:20
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 71:20
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 76:20
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 82:17
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 88:17
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 93:25
+// AN ELEMENT IS LOADED AFTER ITS INDEX RUNS (DEF-410 (a), landing 176). The emitter forms `g[A]`'s base
+// BEFORE it evaluates `A` and loads (or addresses) the element AFTER, so an `A` that moves the indexed
+// binding out leaves the element coming from VACATED storage: on landings 174 and 175 every road below
+// was accepted and read a fabricated length 0 off an inline array of owners, wrote into dead storage, or
+// trapped OutOfBounds on a moved-out `List`/`buffer` (`.internal/probes176/def410/`, 78 + 32 cells). The
+// bindings analysis now asks the root AGAIN once the index has run: a root the index itself moved out is
+// `NITPICK-MOVE-001` at the element, once, on every road -- a read, an assignment, a compound, `@`,
+// `$$i`, `$$m`, a method receiver, an inline array, a `List`, a `buffer`, a nested index.
+mod:index_invalidated;
+error:E5;
+struct:Row = { string:s; int64:n; };
+struct:Grid = { int32[4]:c; };
+trait:Pk = { func:pk = int64(Self:x) never fails; };
+impl:string:Pk = { func:pk = int64(string:x) never fails { pass x.len; }; };
+func:take = int64(move string[2]:x) never fails { pass 0i64; };
+func:taker = int64(move Row[2]:x) never fails { pass 0i64; };
+func:takeg = int64(move Grid[2]:x) never fails { pass 0i64; };
+func:takel = int64(move List<int64>:x) never fails { pass 0i64; };
+func:takeb = int64(move buffer:x) never fails { pass 0i64; };
+func:peek = NIL(string->:q) never fails { pass NIL; };
+func:look = NIL(fixed string->:q) never fails { pass NIL; };
+func:fill = NIL(string->:q) never fails { pass NIL; };
+
+func:read_road = int64() never fails {
+    string[2]:g = [string_concat("a", "bc"), string_concat("d", "ef")];
+    int64:v = (g[(raw take(move(g)))].len);
+    pass v;
+};
+func:assign_road = int64() never fails {
+    string[2]:g = [string_concat("a", "bc"), string_concat("d", "ef")];
+    g[(raw take(move(g)))] = string_concat("wx", "yz");
+    pass 7i64;
+};
+func:compound_road = int64() never fails {
+    Row[2]:g = [Row{ s: string_concat("a", "bc"), n: 3i64 }, Row{ s: string_concat("d", "ef"), n: 4i64 }];
+    g[(raw taker(move(g)))].n += 1i64;
+    pass 7i64;
+};
+func:addr_road = int64() never fails {
+    string[2]:g = [string_concat("a", "bc"), string_concat("d", "ef")];
+    drop peek(@g[(raw take(move(g)))]);
+    pass 7i64;
+};
+func:iclaim_road = int64() never fails {
+    string[2]:g = [string_concat("a", "bc"), string_concat("d", "ef")];
+    drop look($$i g[(raw take(move(g)))]);
+    pass 7i64;
+};
+func:mclaim_road = int64() never fails {
+    string[2]:g = [string_concat("a", "bc"), string_concat("d", "ef")];
+    drop fill($$m g[(raw take(move(g)))]);
+    pass 7i64;
+};
+func:method_road = int64() never fails {
+    string[2]:g = [string_concat("a", "bc"), string_concat("d", "ef")];
+    int64:v = raw g[(raw take(move(g)))].pk();
+    pass v;
+};
+func:list_road = int64() never fails {
+    List<int64>:l = raw list_init::<int64>(4i64);
+    drop list_push(@l, 7i64);
+    int64:v = (l[(raw takel(move(l)))]);
+    pass v;
+};
+func:buffer_road = int64() never fails {
+    buffer:b = buffer_new(16i64);
+    b[0i64] = 7u8;
+    int64:v = (b[(raw takeb(move(b)))] => int64);
+    pass v;
+};
+func:nested_road = int64() never fails {
+    Grid[2]:g = [Grid{ c: [1i32, 2i32, 3i32, 4i32] }, Grid{ c: [5i32, 6i32, 7i32, 8i32] }];
+    int64:v = (g[0i64].c[(raw takeg(move(g)))] => int64);
+    pass v;
+};
+func:main = int32(cstring[]:_~argv) {
+    int64:t = (raw read_road()) + (raw assign_road()) + (raw compound_road()) + (raw addr_road()) + (raw iclaim_road())
+            + (raw mclaim_road()) + (raw method_road()) + (raw list_road()) + (raw buffer_road()) + (raw nested_road());
+    exit (t =>! int32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

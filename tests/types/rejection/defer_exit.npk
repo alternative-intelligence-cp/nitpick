@@ -1,0 +1,33 @@
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 18:13
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 20:17
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 27:13
+// A `defer` BODY MAY NOT `exit` (DEF-411, landing 176; D-163 rule 7). `exit` runs the scope's pending
+// defers, and a defer body that itself holds an `exit` re-entered that road without end: the compiler
+// trapped on its own stack net (exit 3, no message) on every landing before this one, for a `defer` in
+// `main`, in `failsafe`, and in a nested block of `main`. TYPE-040 -- the cleanup rule that already
+// refuses `fail`, `relay`, `give` and `fall` in a defer body -- now refuses `exit` there too, asked
+// first, one report per site.
+mod:defer_exit;
+error:E5;
+func:g = int64() { fail E5; };
+func:main = int32(cstring[]:_~argv) {
+    int32:k = 1i32;
+    defer { exit 7i32; }
+    if (k == 1i32) {
+        defer { exit 8i32; }
+        k = 2i32;
+    }
+    int64:v = g() ?! E5;
+    exit ((v =>! int32) + k);
+};
+func:failsafe = int32(Error:e) {
+    defer { exit 9i32; }
+    pick (e) {
+        (E5)               { exit 55i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

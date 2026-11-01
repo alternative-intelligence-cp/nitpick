@@ -1,0 +1,116 @@
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 101:38
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 112:34
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 47:34
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 57:34
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 66:28
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 75:10
+// expect-error: NITPICK-MOVE-002
+// expect-error-at: 81:12
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 90:42
+// A `defer` BODY RUNS AT THE SCOPE'S EXIT, so what it reads must still be there (DEF-405).
+//
+// The body was typed against the state at its REGISTRATION (bindings.npk's defer arm)
+// and ran at the exit: a `move`, a free or a re-assignment between the two left its
+// move state and its `is_error` refinement stale, and the body read vacated storage
+// (h1/h2/h4: a wrong value, exit 50 at both legs; a_s1_value: a stale plain pointer).
+// Two rules now: (i) the body inherits NO `checked`/`errchecked` -- it tests
+// `is_error` for itself; (ii) what the body reads is PENDING until its block ends,
+// and a `move` or a `pass` (the leaver that moves an owning operand, D-183) of a
+// pending binding before then is `NITPICK-MOVE-001`, a `dalloc`/`destroy` of one
+// `NITPICK-MOVE-002` (the codes' own sentences, D-065); each names the `defer`. The body's
+// own move or free of what it reads (`defer { dalloc(buf); }`) is the idiom, not the
+// defect; the legal shapes are in `tests/backend/programs/defer_pending_reads_ok.npk`. Sites 7 and 8 (176b): a `defer`
+// NESTED in a body whose INNER body reads `s` and whose outer body then moves it -- MOVE-001 naming the inner `defer`
+// (the outer body's own reads are held aside while the inner body is walked, review A's R2; 176 merged them into the
+// inner `defer`'s and refused the legal mirror, `_ok`'s `nested_outer_reads`); and THE DOCUMENTED CONTROL (A-R1): a
+// pending binding moved and REFILLED before its block ends is legal and safe (175: 7) and refused all the same -- the
+// pending check is by position and knows no refill; an accepted over-refusal on the post-180 relaxation list.
+mod:defer_pending_reads;
+error:E5;
+func:consume = int64(move string:x) never fails { pass x.len; };
+func:mkok_s = string() { pass string_concat("ab", "cde"); };
+func:mkerr_s = string() { fail E5; };
+
+// h1: moved out after the `defer` that reads it.
+func:move_after = int32() never fails {
+    int32:out = 0i32;
+    {
+        string:s = string_concat("ab", "cde");
+        defer { int64:n = s.len; out = (is (n == 5i64) : 7i32 : 50i32); }
+        discard(raw consume(move(s)));
+    }
+    pass out;
+};
+// h2: the `defer` moves it too -- the second move at run time.
+func:double_move = int32() never fails {
+    int32:out = 0i32;
+    {
+        string:s = string_concat("ab", "cde");
+        defer { int64:n = raw consume(move(s)); out = (is (n == 5i64) : 7i32 : 50i32); }
+        discard(raw consume(move(s)));
+    }
+    pass out;
+};
+// h3: a refined read in the body, the `Result` re-assigned before the exit (rule (i), TAINT-001).
+func:refined_then_reassigned = int32() never fails {
+    int32:out = 0i32;
+    Result<string>:r = mkok_s();
+    if (!r.is_error) {
+        defer { int64:n = r.value.len; out = (is (n == 5i64) : 7i32 : 50i32); }
+        r = mkerr_s();
+    }
+    pass out;
+};
+// h4: `pass` moves the binding the `defer` reads.
+func:pass_moves = string(int64->:out) never fails {
+    string:s = string_concat("ab", "cde");
+    defer { (<-out) = s.len; }
+    pass s;
+};
+// A free after the `defer` that writes the allocation.
+func:free_after = int32() never fails {
+    wild int8->:b = alloc(8i64);
+    defer { b[0i64] = 1i8; }
+    dalloc(b);
+    pass 0i32;
+};
+// A LATER `defer` moves what an EARLIER one reads: the later runs first at the exit.
+func:later_defer_moves = int32() never fails {
+    int32:out = 0i32;
+    {
+        string:s = string_concat("ab", "cde");
+        defer { int64:n = s.len; out = (is (n == 5i64) : 7i32 : 50i32); }
+        defer { discard(raw consume(move(s))); }
+    }
+    pass out;
+};
+// A `defer` nested in a body: the INNER body reads `s`, the outer body moves it after registering the inner (176b, A-R2).
+func:nested_inner_reads = int32() never fails {
+    int32:out = 0i32;
+    {
+        string:s = string_concat("ab", "cde");
+        defer {
+            defer { out = out + (is (s.len == 5i64) : 7i32 : 50i32); }
+            discard(raw consume(move(s)));
+        }
+    }
+    pass out;
+};
+// THE DOCUMENTED CONTROL (A-R1): moved and refilled before the block ends -- legal (175: 7), refused by position.
+func:moved_then_refilled = int32() never fails {
+    int32:out = 0i32;
+    {
+        string:s = string_concat("ab", "cde");
+        defer { out = (is (s.len == 2i64) : 7i32 : 50i32); }
+        discard(raw consume(move(s)));
+        s = string_concat("x", "y");
+    }
+    pass out;
+};

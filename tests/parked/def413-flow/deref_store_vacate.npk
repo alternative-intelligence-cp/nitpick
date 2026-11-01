@@ -1,0 +1,53 @@
+// expect-exit: 0
+//
+// PARKED AT LANDING 176 (DEF-413): case 6 of `tests/backend/programs/deref_store_drop.npk` -- `x` MOVED out past
+// a held `@x`, then stored over through the pointer (DEF-159's idiom, DEF-120's store drop: the vacated slot's
+// drop frees nothing, `t` keeps the body it was handed, the pointer reads the new one). It ran exit 0 on every
+// landing from 105 to 175; under DEF-413's closed rule the `move(x)` is BORROW-013 (a `move` is a vacating access
+// and conflicts with the live held address `p`), so it cannot stand in a suite. It goes back into
+// `deref_store_drop.npk` (as case 6, its number kept free there) when the flow relaxation after landing 180
+// admits a holder that is written whole before it is read again. `tests/parked/` is listed by no suite.
+mod:deref_store_vacate;
+error:E9;
+
+func:mk = string() never fails { pass string_concat("abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "c"); };
+func:nw = string() never fails { pass string_concat("xyzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", "w"); };
+
+// The first byte says which body: 21 mk, 22 nw, 25 sn, 70 the free poison.
+func:obs_s = int32(string:v) never fails {
+    if (string_byte_length(v) == 0i64) { pass 23i32; }
+    fixed uint8[]:bs = string_bytes(v);
+    if (bs[0i64] == 97u8) { pass 21i32; }
+    if (bs[0i64] == 120u8) { pass 22i32; }
+    if (bs[0i64] == 115u8) { pass 25i32; }
+    if (bs[0i64] == 170u8) { pass 70i32; }
+    pass 24i32;
+};
+
+// 6. MOVED, THEN STORED OVER: `x`'s slot is vacant after the move, so the
+//    store's drop frees nothing and `t` keeps the body it was handed
+func:case_vacate = int32() never fails {
+    string:x = raw mk();
+    string->:p = @x;
+    string:t = move(x);
+    (<-p) = raw nw();
+    if ((raw obs_s(t)) != 21i32) { pass 8i32; }
+    if ((raw obs_s(<-p)) != 22i32) { pass 9i32; }
+    pass 0i32;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    int32:r = raw case_vacate();
+    exit r;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest) { exit 91i32; }, (HeapOom) { exit 92i32; }, (IntOverflow) { exit 93i32; },
+        (OutOfBounds) { exit 94i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; },
+        (StackExhausted) { exit 106i32; }, (MachineFault) { exit 107i32; },
+        (LimitViolated) { exit 108i32; }, (DecreasesViolated) { exit 109i32; }, (TbbErr) { exit 110i32; },
+        (E9) { exit 111i32; },
+        (*) { exit 99i32; }
+    }
+    exit 9i32;
+};

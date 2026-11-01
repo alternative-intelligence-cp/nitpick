@@ -74,6 +74,7 @@ use "../types.npk".*;
 use "../expr_types.npk".*;
 use "../type_resolve.npk".*;   // `fold_const` — one evaluator, one idea of constant
 use "../type_members.npk".*;   // `type_param_at_of`: the receiver a `Self->` method takes (DEF-402)
+use "../type_layout.npk".*;    // `type_drops`: an owning `pass` operand MOVES out of its binding (DEF-405)
 use "../type_codes.npk".*;
 use "./analysis_codes.npk".*;
 use "./exhaust.npk".*;
@@ -199,6 +200,17 @@ pub struct:Assign = {
     int32:fn_slots;            // the length of `addr_taken`: the function's slot count
     bool:collecting;           // the pre-walk is running: `note_addr_taken` records, nothing reports
     bool:addr_deep;            // a place under an address-taker ran past `place_root`'s fuel: fail CLOSED
+    // THE PENDING `defer` READS (DEF-405, landing 176): per slot, the depth of the BLOCK whose registered
+    // `defer` body reads the binding (0 = none) and that `defer`'s statement id, set when the body's walk
+    // ends (`defer_reads_merge`) and cleared when the block ends (`defer_reads_end`); a `move`, a free or
+    // a `pass` of a pending binding before then is refused where it stands (`invalidate_place`,
+    // `check_pass_defer_read`). `defer_now` collects the reads of the body being walked.
+    wild int32->:defer_read;
+    wild int32->:defer_stmt;
+    wild bool->:defer_now;
+    int32:defer_blk;           // the enclosing block's depth while a `defer` body is walked, 0 outside one
+    int32:defer_cur;           // that `defer` statement's id
+    int32:scope;               // the module scope of the declaration being walked, for `type_drops`
 };
 
 pub func:assign_init = Assign(Ast->:ast, SymbolTable->:tab,
@@ -224,12 +236,17 @@ pub func:assign_init = Assign(Ast->:ast, SymbolTable->:tab,
             }
         }
     }
-    wild int8->:a1 = alloc(1i64);   // `addr_taken`'s placeholder until the first function (`fn_arrays_begin`)
+    wild int8->:a1 = alloc(1i64);   // the per-function arrays' placeholders until the first function (`fn_arrays_begin`)
+    wild int8->:a2 = alloc(#size_of<int32>());
+    wild int8->:a3 = alloc(#size_of<int32>());
+    wild int8->:a4 = alloc(1i64);
     Assign:x = Assign{ ast: ast, tab: tab, interns: interns, types: types,
                        etypes: etypes, diags: diags, tyres: tyres,
                        quiet: false,
                        pat_first: pfirst, pat_next: pnext, pat_count: pc, sym_count: sc,
-                       addr_taken: a1 =>! wild bool->, fn_slots: 0i32, collecting: false, addr_deep: false };
+                       addr_taken: a1 =>! wild bool->, fn_slots: 0i32, collecting: false, addr_deep: false,
+                       defer_read: a2 =>! wild int32->, defer_stmt: a3 =>! wild int32->,
+                       defer_now: a4 =>! wild bool->, defer_blk: 0i32, defer_cur: 0i32, scope: 0i32 };
     pass x;
 };
 
@@ -516,11 +533,14 @@ func:assign_err = NIL(Assign->:x, move string:code, move string:msg, Span:sp) ne
 // nested `mod` are all function bodies.
 
 pub func:assign_module = NIL(Assign->:x, DeclId:mod_id, int32:scope) never fails {
+    int32:outer_scope = x.scope;
+    x.scope = scope;   // `type_drops` reads a layout in the module's scope (DEF-405)
     DeclNode:m = raw ast_decl(x.ast, mod_id);
     int32:n = raw item_member_count(x.ast, m);
     for (int32:i in 0i32...n) {
         drop assign_decl(x, raw item_member(x.ast, m, i), scope);
     }
+    x.scope = outer_scope;
     pass NIL;
 };
 
@@ -905,6 +925,7 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
     if (s.kind == StmtKind.StmtBlockStmt) {
         drop assign_stmt_window(x, st, raw stmt_list_start(s),
                                 raw stmt_list_count(s), d);
+        drop defer_reads_end(x, depth);   // the block's `defer`s have run (DEF-405)
         pass NIL;
     }
 
@@ -1007,7 +1028,35 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
     if (s.kind == StmtKind.StmtDeferStmt) {
         StmtId:body = StmtId{ index: s.a };
         AssignState:dv = raw state_copy(st);
+        // IT INHERITS NO `is_error` REFINEMENT (DEF-405 (i), landing 176): the body runs at the block's
+        // EXIT, after any re-assignment of a `Result` it reads, so a `checked`/`errchecked` earned above the
+        // `defer` is stale by then -- the body tests for itself (`state_clear_refinements`). AND WHAT IT READS
+        // IS PENDING UNTIL ITS BLOCK ENDS (DEF-405 (ii)): the reads are collected (`defer_now`) and merged
+        // AFTER the walk (`defer_reads_merge`), so the body's own move or free of what it reads
+        // (`defer { dalloc(buf); }`) is the idiom, while a move, free or `pass` of a pending binding before
+        // the block ends is refused where it stands. A body nested in another `defer` body leaves its reads
+        // for the outer merge (they run at the outer body's exit too). The pre-walk collects nothing.
+        int32:outer_blk = x.defer_blk;
+        int32:outer_cur = x.defer_cur;
+        // THE OUTER BODY'S READS BEFORE A NESTED `defer` ARE THE OUTER BODY'S (176b; review A's R2): `defer_now` is set aside
+        // while the nested body is walked and OR-ed back after its merge, so the inner merge marks the inner body's reads
+        // alone -- it took the outer body's earlier reads too, and a move after the inner `defer` of what only the outer body
+        // had read was MOVE-001 naming the inner `defer`, which read nothing of it (r2_nested: 8 on 175, refused by 176).
+        int64:ns = x.fn_slots => int64;
+        if (ns < 1i64) { ns = 1i64; }
+        wild bool->:held = alloc(ns * #size_of<bool>()) =>! wild bool->;
+        for (int64:i in 0i64...ns) { held[i] = x.defer_now[i]; x.defer_now[i] = false; }
+        if (!x.collecting) {
+            drop state_clear_refinements(dv);
+            x.defer_blk = depth + 1i32;   // the enclosing block's depth: its statements are walked at `depth`
+            x.defer_cur = id.index;
+        }
         drop assign_stmt(x, dv, body, d);
+        x.defer_blk = outer_blk;
+        x.defer_cur = outer_cur;
+        if (!x.collecting) { drop defer_reads_merge(x, depth + 1i32, id.index, outer_blk == 0i32); }
+        for (int64:i in 0i64...ns) { if (held[i]) { x.defer_now[i] = true; } }
+        dalloc(held);
         pass NIL;
     }
 
@@ -1017,7 +1066,11 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
 
     // `pass`, `fail`, `return`, `exit` and the six that carry one expression. Each
     // READS its operand, which is the whole of what this analysis owes them.
-    if (s.kind == StmtKind.StmtPassStmt)   { drop assign_expr(x, st, raw stmt_operand(s), d); pass NIL; }
+    if (s.kind == StmtKind.StmtPassStmt)   {
+        drop assign_expr(x, st, raw stmt_operand(s), d);
+        drop check_pass_defer_read(x, raw stmt_operand(s));   // `pass place;` MOVES an owning value (DEF-405 (c))
+        pass NIL;
+    }
     if (s.kind == StmtKind.StmtFailStmt)   { drop assign_expr(x, st, raw stmt_operand(s), d); pass NIL; }
     if (s.kind == StmtKind.StmtReturnStmt) { drop assign_expr(x, st, raw stmt_operand(s), d); pass NIL; }
     if (s.kind == StmtKind.StmtExitStmt)   { drop assign_expr(x, st, raw stmt_expr(s), d); pass NIL; }
@@ -1476,6 +1529,22 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) never
         pass NIL;
     }
 
+    // AN ELEMENT IS LOADED AFTER ITS INDEX RUNS (DEF-410 (a), landing 176). The emitter forms `g[A]`'s base
+    // BEFORE it evaluates `A` and loads (or addresses) the element AFTER, so an `A` that moves the indexed
+    // binding out or frees it leaves the element coming from vacated storage: a fabricated length 0 off an
+    // inline array of owners, a write into dead storage (`x_garr_move_*`, 174 == 175, every road -- a read,
+    // an assignment, a compound, `@`, `$$i`, a method receiver). The base is read first, as every reader
+    // reads it; the root is asked AGAIN once the index has run, and a root the index itself invalidated is
+    // refused here, once (a root invalid before the index was already reported by the first read).
+    if (n.kind == ExprKind.ExprIndexExpr) {
+        drop assign_expr(x, st, raw expr_lhs(n), d);
+        int32:bs = raw binding_slot(x, raw expr_lhs(n));
+        bool:was = raw slot_invalid(st, bs);
+        drop assign_expr(x, st, raw expr_rhs(n), d);
+        drop index_invalidated(x, st, bs, was, n.span);
+        pass NIL;
+    }
+
     // `move(place)` (D-065) TRANSFERS OWNERSHIP OUT OF THE SOURCE. Nothing moves
     // because it was assigned or passed — ownership moves only where `move` is
     // written, which is what makes this a question about one operator rather than
@@ -1674,6 +1743,7 @@ func:assign_read = NIL(Assign->:x, AssignState:st, ExprNode:n) never fails {
 
     int32:rs = raw symbol_slot(x, n.a);
     if (rs < 0i32) { pass NIL; }
+    drop note_defer_read(x, rs);   // a read inside a `defer` body is a read at the block's exit (DEF-405)
 
     // MOVED OR FREED IS REPORTED FIRST, because it is the more specific answer to
     // the same question. A binding that was moved out of is not assigned either —
@@ -1730,11 +1800,36 @@ func:assign_mark_place = NIL(Assign->:x, AssignState:st, ExprId:place, int32:dep
     }
     if (r.id.index != place.index) {
         drop assign_read(x, st, rn);
+        int32:cs = raw symbol_slot(x, rn.a);
+        bool:was = raw slot_invalid(st, cs);
         drop assign_place_indexes(x, st, place, depth, raw BORROW_FUEL());   // and every index on the path, in evaluation order (DEF-407)
+        drop index_invalidated(x, st, cs, was, (raw ast_expr(x.ast, place)).span);   // and the root once more, after them (DEF-410 (a))
         pass NIL;
     }
     if (rn.a == 0i32) { pass NIL; }
+    drop note_defer_read(x, raw symbol_slot(x, rn.a));   // a `$$m` claim in a `defer` body is a use at the exit (DEF-405)
     drop state_mark(st, raw symbol_slot(x, rn.a));
+    pass NIL;
+};
+
+// A SLOT THAT IS MOVED OUT OF OR FREED, or −1 for a place with no tracked root.
+func:slot_invalid = bool(AssignState:st, int32:slot) never fails {
+    if (slot < 0i32) { pass false; }
+    if (raw state_freed(st, slot)) { pass true; }
+    pass (raw state_moved(st, slot));
+};
+
+// THE ROOT, ASKED AGAIN AFTER AN INDEX RAN (DEF-410 (a)): `was` is the root's state before the index, so a
+// root the index itself moved out or freed is refused here, once, at the element, with the move code the
+// state names.
+func:index_invalidated = NIL(Assign->:x, AssignState:st, int32:slot, bool:was, Span:at) never fails {
+    if (was) { pass NIL; }
+    if (!(raw slot_invalid(st, slot))) { pass NIL; }
+    string:code = raw MOVE_USE_AFTER();
+    if (raw state_freed(st, slot)) { code = raw MOVE_USE_AFTER_FREE(); }
+    drop assign_err(x, move(code),
+        "this element is loaded after its index runs, and the index moved the indexed binding out or freed it: the base was formed before the index, so the element would come from vacated storage (DEF-410)",
+        at);
     pass NIL;
 };
 
@@ -1748,7 +1843,8 @@ func:assign_mark_place = NIL(Assign->:x, AssignState:st, ExprId:place, int32:dep
 // evaluates the index (`addr_of_place`: `emit_expr`/`index_base_place` of the left side, then `emit_expr` of the
 // right), so in `g[A].c[B]` A runs before B. This walk therefore descends to the root first and judges each index
 // on the way back up -- innermost first, as `assign_expr`'s two-operand road walks a left operand before its
-// right. The first commit of this landing walked them OUTERMOST first: that refused the legal
+// right. The second round of this landing (d618068) walked them OUTERMOST first (corrected in 176: the
+// first commit, ef95990, walked no index at all -- DEF-407's hole itself): that refused the legal
 // `g[s.len].c[consume(move(s))]` (MOVE-001 at `s.len`, a regression against 174) and accepted its mirror, a
 // read of `s` in the outer index after the inner one moved it -- DEF-407's own class. The fuel is `place_root`'s;
 // `assign_mark_place` reaches here only when `place_root` finished within it, so the walk always finishes.
@@ -1894,13 +1990,32 @@ func:invalidate_place = NIL(Assign->:x, AssignState:st, ExprId:place, bool:freed
     if (raw expr_is_none(place)) { pass NIL; }
     if (raw place_crosses_pointer(x, place)) { pass NIL; }
     PlaceRoot:r = raw place_root(x.ast, place, raw BORROW_FUEL());
-    if (r.exhausted)            { pass NIL; }
+    // PAST THE PLACE WALK'S FUEL THE MOVED OR FREED BINDING IS UNKNOWN, so the move or free cannot be
+    // tracked and a later read of the binding could not be refused: closed rather than open (DEF-409,
+    // landing 176; the address-taken set's standard, F4). Unreachable today -- the typer's TYPE-024 refuses
+    // a `move` or a free of a place 64 or more steps deep FIRST, by the same `place_root` and the same fuel
+    // (the cells `.internal/probes176/def409/`, deep62..65) -- and closed so that a change to that walk
+    // cannot open it.
+    if (r.exhausted) {
+        ExprNode:pn = raw ast_expr(x.ast, place);
+        drop assign_err(x, raw ASSIGN_TOO_DEEP(),
+            "this move or free reaches a place 64 or more steps deep (the place walk's fuel), past what the move analysis can read down to a binding, so it cannot be tracked and a later read of the binding could not be refused (DEF-409, closed rather than open): shorten the place",
+            pn.span);
+        pass NIL;
+    }
     if (raw expr_is_none(r.id)) { pass NIL; }
     ExprNode:rn = raw ast_expr(x.ast, r.id);
     if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
     if (rn.a == 0i32) { pass NIL; }
     int32:ms = raw symbol_slot(x, rn.a);
     if (ms < 0i32) { pass NIL; }
+    // A MOVE OR FREE OF A BINDING A REGISTERED `defer` BODY READS (DEF-405 (ii), landing 176): the body
+    // runs at its block's exit, after this, and would read vacated storage (h1/h2: a wrong value; a plain
+    // pointer payload: NULL or stale, a_s1_value). The body's own move or free of what it reads is not
+    // pending yet (merged after its walk), so `defer { dalloc(buf); }` stands.
+    if ((ms < x.fn_slots) && (x.defer_read[ms => int64] != 0i32)) {
+        drop defer_pending_err(x, ms, place, freed);
+    }
 
     if (freed) {
         drop state_mark_freed(st, ms);
@@ -2158,6 +2273,12 @@ func:check_value_read = NIL(Assign->:x, AssignState:st, ExprNode:n) never fails 
     }
     if (raw addr_taken_refuses(x, slot, n.span)) { pass NIL; }
     if (raw state_checked(st, slot)) { pass NIL; }
+    if (x.defer_blk != 0i32) {
+        drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
+            "this `Result` is read inside a `defer` body, which runs at its block's exit -- after any re-assignment of the binding -- so an `is_error` test outside the body licenses nothing in it (DEF-405): test `is_error` inside the `defer`, and read `value` where it is false",
+            n.span);
+        pass NIL;
+    }
 
     drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
         "this `Result` is not known to hold a value here -- no `is_error` test guards the read, or the one on this path found an error -- so its `value` carries the `unknown` taint: read it where `is_error` is false, or unwrap the binding with `?!`, `?|` or `relay` (D-007; `raw` takes only a call, D-163)",
@@ -2219,6 +2340,12 @@ func:check_err_read = NIL(Assign->:x, AssignState:st, ExprNode:n) never fails {
     }
     if (raw addr_taken_refuses(x, slot, n.span)) { pass NIL; }
     if (raw state_errchecked(st, slot)) { pass NIL; }
+    if (x.defer_blk != 0i32) {
+        drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
+            "this `Result`'s `err` is read inside a `defer` body, which runs at its block's exit -- after any re-assignment of the binding -- so an `is_error` test outside the body licenses nothing in it (DEF-405): test `is_error` inside the `defer`, and read `err` where it is true",
+            n.span);
+        pass NIL;
+    }
 
     drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
         "this `Result` is not known to hold an error here -- no `is_error` test guards the read -- so its `err` may be the success slot's zero, and failing with it fabricates a success holding a NULL value: read `.err` where `is_error` is true (`if (r.is_error) { fail r.err; }`), or forward the binding with `?!`, `?|` or `relay` (DEF-381; D-007)",
@@ -2240,15 +2367,30 @@ func:check_err_read = NIL(Assign->:x, AssignState:st, ExprNode:n) never fails {
 // measured over the tree, the libraries, the applications and the fuzz corpus before building: two
 // sites, both `tests/backend/programs/actor.npk`, re-spelled in this landing.
 
-// A FRESH FUNCTION: the per-slot set, zeroed. (Leaked as the states are: the compiler reclaims at exit.)
+// A FRESH FUNCTION: the per-slot set, zeroed; the previous function's four arrays (the placeholders' at the first) are freed
+// first (176b, review A's M1: 9 bytes a slot were kept to the exit, the whole program's slot count).
 func:fn_arrays_begin = NIL(Assign->:x, int32:n) never fails {
+    dalloc(x.addr_taken); dalloc(x.defer_read); dalloc(x.defer_stmt); dalloc(x.defer_now);
     int64:size = n => int64;
     if (size < 1i64) { size = 1i64; }
     wild int8->:m1 = alloc(size * #size_of<bool>());
+    wild int8->:m2 = alloc(size * #size_of<int32>());
+    wild int8->:m3 = alloc(size * #size_of<int32>());
+    wild int8->:m4 = alloc(size * #size_of<bool>());
     x.addr_taken = m1 =>! wild bool->;
+    x.defer_read = m2 =>! wild int32->;
+    x.defer_stmt = m3 =>! wild int32->;
+    x.defer_now = m4 =>! wild bool->;
     x.fn_slots = size =>! int32;
-    for (int64:i in 0i64...size) { x.addr_taken[i] = false; }
+    for (int64:i in 0i64...size) {
+        x.addr_taken[i] = false;
+        x.defer_read[i] = 0i32;
+        x.defer_stmt[i] = 0i32;
+        x.defer_now[i] = false;
+    }
     x.addr_deep = false;
+    x.defer_blk = 0i32;
+    x.defer_cur = 0i32;
     pass NIL;
 };
 
@@ -2319,6 +2461,115 @@ func:addr_taken_refuses = bool(Assign->:x, int32:slot, Span:at) never fails {
         "this `Result`'s address is taken in this function (`@`, `$$i`/`$$m`, or a method taking `Self->`, of it or of a place into it), and a write through that address can move it to the other road after any `is_error` test, on a road this analysis cannot see (DEF-402): test and read it through a fresh local whose address is never taken (copy or `move` the value into one)",
         at);
     pass true;
+};
+
+// --- the pending `defer` reads (DEF-405, landing 176) -------------------------------------------------
+//
+// A `defer` BODY RUNS AT ITS BLOCK'S EXIT, not where it is written (D-183's order: join, defers, drops),
+// so what it reads must still be there THEN. Until this landing the body was walked once, against the
+// state at its registration, and a `move`, a `dalloc`/`destroy` or a `pass` of the binding between the
+// `defer` and the exit left the body reading vacated storage -- a wrong value for an owned payload, a
+// NULL or stale plain pointer for a pointer one (management_10's h1/h2/h3/a_s1_value cells, 173 == 174).
+// The rule: a binding a registered `defer` body reads is PENDING until the block that registered the
+// `defer` ends, and a move or free of it before then is refused AT THE MOVE OR FREE, naming the `defer`.
+
+// A READ INSIDE THE BODY BEING WALKED is collected; nothing outside a body, nothing in the pre-walk.
+func:note_defer_read = NIL(Assign->:x, int32:slot) never fails {
+    if (x.defer_blk == 0i32) { pass NIL; }
+    if ((slot < 0i32) || (slot >= x.fn_slots)) { pass NIL; }
+    x.defer_now[slot => int64] = true;
+    pass NIL;
+};
+
+// THE BODY HAS BEEN WALKED: its reads become pending for the block (`blk`, the OUTERMOST registering
+// block wins -- the depth counts DOWN from the function's body, so the larger depth is the outer block),
+// each naming the `defer` (`stmt`). A body nested in another `defer` body does not drain `defer_now`:
+// the outer body's merge takes those reads too (and the outer body's EARLIER reads are set aside while the
+// nested body is walked, 176b: they are not the nested body's).
+func:defer_reads_merge = NIL(Assign->:x, int32:blk, int32:stmt, bool:drain) never fails {
+    for (int64:i in 0i64...(x.fn_slots => int64)) {
+        if (x.defer_now[i]) {
+            if (x.defer_read[i] < blk) { x.defer_read[i] = blk; x.defer_stmt[i] = stmt; }
+            if (drain) { x.defer_now[i] = false; }
+        }
+    }
+    pass NIL;
+};
+
+// THE BLOCK HAS ENDED, its `defer`s have run: the reads it held pending are released.
+func:defer_reads_end = NIL(Assign->:x, int32:depth) never fails {
+    for (int64:i in 0i64...(x.fn_slots => int64)) {
+        if (x.defer_read[i] == depth) { x.defer_read[i] = 0i32; x.defer_stmt[i] = 0i32; }
+    }
+    pass NIL;
+};
+
+// A `defer` BODY STARTS WITH NO `is_error` REFINEMENT (DEF-405 (i)): it tests for itself.
+func:state_clear_refinements = NIL(AssignState:s) never fails {
+    for (int64:i in 0i64...(s.count => int64)) {
+        s.checked[i] = false;
+        s.errchecked[i] = false;
+    }
+    pass NIL;
+};
+
+// THE REFUSAL STANDS AT THE MOVE OR FREE AND NAMES THE `defer` (line:col) THAT READS THE BINDING: MOVE-001
+// for a move (the body's read at the exit is a read of a binding moved out of) and MOVE-002 for a free (a
+// read of a binding whose allocation was handed to a deallocator) -- each code's own sentence, D-065.
+func:defer_pending_err = NIL(Assign->:x, int32:slot, ExprId:place, bool:freed) never fails {
+    ExprNode:pn = raw ast_expr(x.ast, place);
+    StmtNode:dn = raw ast_stmt(x.ast, StmtId{ index: x.defer_stmt[slot => int64] });
+    string:m = "the `defer` at ";
+    m = string_concat(m, int_to_string(dn.span.line => int64));
+    m = string_concat(m, ":");
+    m = string_concat(m, int_to_string(dn.span.col => int64));
+    m = string_concat(m, " reads this binding, and a `defer` body runs at its block's exit -- after this ");
+    if (freed) {
+        m = string_concat(m, "free -- so it would read a freed allocation (DEF-405): free the binding after the block ends, or inside that `defer` body itself");
+        drop assign_err(x, raw MOVE_USE_AFTER_FREE(), move(m), pn.span);
+    } else {
+        m = string_concat(m, "move -- so it would read a binding moved out of (DEF-405): move it after the block ends, hand the `defer` a binding of its own, or move a `.clone()`");
+        drop assign_err(x, raw MOVE_USE_AFTER(), move(m), pn.span);
+    }
+    pass NIL;
+};
+
+// PAST THE PLACE WALK'S FUEL THE `pass` OPERAND'S BINDING IS UNKNOWN, and while any `defer` of this function
+// is pending that is refused rather than passed (closed, as the address-taken set's exhaustion is, F4; a
+// `move` or a free past the fuel is `invalidate_place`'s DEF-409 refusal, and TYPE-024 before it).
+func:defer_deep_refuses = NIL(Assign->:x, ExprId:place) never fails {
+    for (int64:i in 0i64...(x.fn_slots => int64)) {
+        if (x.defer_read[i] != 0i32) {
+            ExprNode:pn = raw ast_expr(x.ast, place);
+            drop assign_err(x, raw MOVE_USE_AFTER(),
+                "this `pass` operand is a place 64 or more steps deep (the place walk's fuel), past what the pending-`defer` check can read down to a binding, while a `defer` body registered in this function is still pending (DEF-405, closed rather than open): shorten the place, or `pass` it after the block ends",
+                pn.span);
+            pass NIL;
+        }
+    }
+    pass NIL;
+};
+
+// `pass place;` MOVES AN OWNING VALUE OUT OF ITS BINDING (D-183) -- the one leaver that moves implicitly
+// (`give` is TYPE-046, `return r` TYPE-010) -- and a `defer` registered earlier in the scope reads the
+// binding after that move (DEF-405 (c), the h4_pass_move cell): refused as the explicit move is. A value
+// that does not drop is copied, not moved, so a scalar or a `Copy` payload stays.
+func:check_pass_defer_read = NIL(Assign->:x, ExprId:v) never fails {
+    if (raw expr_is_none(v)) { pass NIL; }
+    if (raw place_crosses_pointer(x, v)) { pass NIL; }
+    PlaceRoot:r = raw place_root(x.ast, v, raw BORROW_FUEL());
+    if (r.exhausted) { drop defer_deep_refuses(x, v); pass NIL; }
+    if (raw expr_is_none(r.id)) { pass NIL; }
+    ExprNode:rn = raw ast_expr(x.ast, r.id);
+    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
+    if (rn.a == 0i32) { pass NIL; }
+    int32:slot = raw symbol_slot(x, rn.a);
+    if ((slot < 0i32) || (slot >= x.fn_slots)) { pass NIL; }
+    if (x.defer_read[slot => int64] == 0i32) { pass NIL; }
+    if (!(raw exprtypes_known(x.etypes, v))) { pass NIL; }
+    if (!(raw type_drops(x.tyres, raw exprtypes_get(x.etypes, v), x.scope, 64i32))) { pass NIL; }
+    drop defer_pending_err(x, slot, v, false);
+    pass NIL;
 };
 
 // Is this place rooted at an IDENTIFIER (a binding or parameter, however deep

@@ -135,6 +135,8 @@ over the slot unconditionally -- a vacant slot's drop is a no-op, a re-filled
 one's is the drop the value was owed -- and only a binding nobody addressed
 keeps the one-byte test.
 
+> *[2026-11-01, 1.6.1e landing 176, DEF-413:]* **The re-fill idiom this paragraph describes is REFUSED now, by a closed rule** -- a plain address a binding holds (`string->:p = @x;`) conflicts with a `move`, a `destroy` or a free of its pointee, or of a part of it, anywhere in the holder's block: `NITPICK-BORROW-013`, "held by `p` at L:C". The hole the rule closes is the READ: on every landing from 105 to 175 a pointee moved out past a held plain pointer could be read through the pointer before anything was stored back -- a fabricated length 0 off the vacated owner (`wt/54b/.internal/t176/keepp/kp_held*.npk`, exit 60) -- because D-286 (1)'s plain address claimed nothing. The rule is lexical (the holder's whole block, not its last use) and judged by the root (a disjoint field's address counts): the closed choice, management_11's ruling of 2026-10-31 21:50. The drop mark above (`ltaken`, `mark_root_taken`) stays, because the flow-sensitive relaxation queued after landing 180 (OPEN_DECISIONS, DEF-413's row) is to admit a holder written whole before its next read again; the six-road programs that measured this paragraph are parked under `tests/parked/def413-flow/` until then.
+
 **What reaches a move slot (DEF-366, DEF-367, DEF-368; 1.6.1e landing 170).** An
 owning value enters a slot that takes ownership -- an initialiser, an
 assignment, `pass`, `give`, a `move` argument, a `move` RECEIVER, a struct or
@@ -401,6 +403,20 @@ free(buffer);   // NITPICK-019 — use after move, and separately
   `NITPICK-ASSIGN-002`): the pointer
   type carries no mutability, so an address of an immutable would be a write
   path no rule sees.
+  DATED NOTE (2026-11-01, landing 176; DEF-410 (c), DEF-413): a plain address
+  still CLAIMS nothing -- it excludes and shares nothing -- but it is a
+  write-capable access with a PARTY for its WINDOW: the call's return for an
+  `@h` argument or the implicit `Self->` receiver (DEF-410 (c)), and the
+  holder's block for an address a binding holds (DEF-413); a move or a free of
+  the root inside the window is BORROW-013 (D-286 (1)'s dated amendment in
+  DECISIONS). Widened at 176b (the same day): the address inside a literal's
+  value or chosen by a ternary, as an argument, has the bare argument's window,
+  and under a literal INITIALISER's values the statement's;
+  a `dalloc`, `ralloc` or `wildx_free` of the held pointee or a part of it is a
+  vacating access; a `$$i`/`$$m` claim of the root conflicts with the held
+  address too; and a BY-VALUE owner argument or `Self` receiver is a SNAPSHOT
+  sharing the owner's bytes, a VIEW party to the call's return (DEF-410 (f);
+  BORROW-015).
 
 ## 3. Allocation Built-ins (NitpickAlloc)
 

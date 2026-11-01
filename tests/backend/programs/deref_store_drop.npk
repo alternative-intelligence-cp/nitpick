@@ -105,17 +105,9 @@ func:case_field_ptr = int32() never fails {
     if ((raw obs_s(b.s)) != 22i32) { pass 7i32; }
     pass 0i32;
 };
-// 6. MOVED, THEN STORED OVER: `x`'s slot is vacant after the move, so the
-//    store's drop frees nothing and `t` keeps the body it was handed
-func:case_vacate = int32() never fails {
-    string:x = raw mk();
-    string->:p = @x;
-    string:t = move(x);
-    (<-p) = raw nw();
-    if ((raw obs_s(t)) != 21i32) { pass 8i32; }
-    if ((raw obs_s(<-p)) != 22i32) { pass 9i32; }
-    pass 0i32;
-};
+// 6. MOVED, THEN STORED OVER -- PARKED at landing 176 in `tests/parked/def413-flow/deref_store_vacate.npk`:
+//    the `move(x)` past the held `@x` is BORROW-013 under DEF-413's closed rule; the case returns with the
+//    flow relaxation after landing 180 (its number is kept free here).
 // 7. a `move` parameter's field through a pointer
 func:take = int32(move Box:b) never fails {
     string->:q = @b.s;
@@ -172,8 +164,6 @@ func:main = int32(cstring[]:_~argv) {
     r = raw case_box();
     if (r != 0i32) { exit r; }
     r = raw case_field_ptr();
-    if (r != 0i32) { exit r; }
-    r = raw case_vacate();
     if (r != 0i32) { exit r; }
     Box:tb = Box{ s: raw mk(), n: 3i64 };
     r = raw take(move(tb));

@@ -1,0 +1,174 @@
+// expect-exit: 0
+// THE LEGAL TWINS OF `assign_target_window.npk` (DEF-410 (d), landing 176): an assignment whose target is STABLE
+// storage while its value writes the container -- an inline array reassigned through `@g` or `$$m g` (the fresh
+// element lands: 9; the compound form loads the old value BEFORE the value runs: 7 + 9 = 16, sequentially
+// consistent on 174, 175 and here), an inline array of strings reassigned (the old elements dropped once, no
+// double free: 5 + 4), a slice parameter re-pointed through `@sl` (the store goes to the NEW storage: 9 + 5), a
+// field through a held pointer with the pointee reassigned through `@h` (9 + 2), a whole local (`x = raw
+// bump(@x)`: the store last), a field of a local with `@h` in the value -- and a List or a buffer element whose
+// value only READS the container (`$$i l`, `l[1] + 1`: 9, 16, 99, 196), and the regex library's shift through a
+// `wild T->` field of a pointer-received struct (`v.items[j] = move(v.items[j - 1])`: 912 - 900 = 12). Every
+// value is checked in `main`; the exit is the failing case's number.
+mod:assign_target_window_ok;
+error:E5;
+pub struct:H = { string:s; int64:n; };
+pub struct:Vec<T: Copy> = { wild T->:items; int64:count; int64:cap; };
+func:resetg = int64(int64[2]->:p) never fails { (<-p) = [1i64, 2i64]; pass 9i64; };
+func:resetsg = string(string[2]->:p) never fails { (<-p) = [string_concat("wx", "yz"), string_concat("st", "uv")]; pass string_concat("klmno", ""); };
+func:repoint = int64(int64[]->:p, int64[]:other) never fails { (<-p) = other; pass 9i64; };
+func:reseth = int64(H->:q) never fails { (<-q) = H{ s: string_concat("wx", ""), n: 5i64 }; pass 9i64; };
+func:bump = int64(int64->:p) never fails { (<-p) = (<-p) + 1i64; pass (<-p) * 2i64; };
+func:peek = int64(List<int64>->:p) never fails { pass (<-p)[1i64] + 1i64; };
+func:peekb = int64(buffer->:p) never fails { pass ((<-p)[0i64] => int64) + 2i64; };
+func:mk_list = List<int64>() never fails {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    drop list_push(@l, 8i64);
+    pass l;
+};
+// 1. an inline array element, the value reassigning the array through its address: the fresh element lands
+func:garr_addr = int64() never fails {
+    int64[2]:g = [7i64, 8i64];
+    g[0i64] = raw resetg(@g);
+    pass g[0i64];
+};
+// 2. the compound twin: the old value is loaded before the value runs (7 + 9)
+func:garr_addr_compound = int64() never fails {
+    int64[2]:g = [7i64, 8i64];
+    g[0i64] += raw resetg(@g);
+    pass g[0i64];
+};
+// 3. the write claim on an inline array
+func:garr_mclaim = int64() never fails {
+    int64[2]:g = [7i64, 8i64];
+    g[0i64] = raw resetg($$m g);
+    pass g[0i64];
+};
+// 4. the compound twin of the claim
+func:garr_mclaim_compound = int64() never fails {
+    int64[2]:g = [7i64, 8i64];
+    g[0i64] += raw resetg($$m g);
+    pass g[0i64];
+};
+// 5. an inline array of strings reassigned through its address: the old elements dropped once, [1] fresh
+func:garrs_addr = int64() never fails {
+    string[2]:sg = [string_concat("a", "bc"), string_concat("d", "ef")];
+    sg[0i64] = raw resetsg(@sg);
+    pass sg[0i64].len + sg[1i64].len;
+};
+// 6. a slice parameter's element, the value re-pointing the slice: the store goes to the new storage
+func:sl_store = int64(int64[]:sl, int64[]:other) never fails { sl[0i64] = raw repoint(@sl, other); pass sl[0i64]; };
+func:slice_addr = int64() never fails {
+    int64[4]:a = [1i64, 2i64, 3i64, 4i64];
+    int64[4]:b = [5i64, 6i64, 7i64, 8i64];
+    int64:r = raw sl_store(a[0i64...4i64], b[0i64...4i64]);
+    pass r + a[0i64];
+};
+// 7. a field through a held pointer, the value reassigning the pointee through `@h`
+func:fieldp_reset = int64() never fails {
+    H:h = H{ s: string_concat("abcde", ""), n: 1i64 };
+    H->:p = @h;
+    (<-p).n = raw reseth(@h);
+    pass h.n + h.s.len;
+};
+// 8. a List element, the value reading the List through a read claim
+func:list_iclaim = int64() never fails {
+    List<int64>:l = raw mk_list();
+    l[0i64] = raw peek($$i l);
+    pass l[0i64];
+};
+// 9. the compound twin of the read claim (7 + 9)
+func:list_iclaim_compound = int64() never fails {
+    List<int64>:l = raw mk_list();
+    l[0i64] += raw peek($$i l);
+    pass l[0i64];
+};
+// 10. a List element, the value reading another element
+func:list_read = int64() never fails {
+    List<int64>:l = raw mk_list();
+    l[0i64] = l[1i64] + 1i64;
+    pass l[0i64];
+};
+// 11. a whole local with `@x` in its value: the store is last
+func:local_self = int64() never fails {
+    int64:x = 3i64;
+    x = raw bump(@x);
+    pass x;
+};
+// 12. a field of a local with `@h` in its value
+func:field_self = int64() never fails {
+    H:h = H{ s: string_concat("abcde", ""), n: 1i64 };
+    h.n = raw reseth(@h);
+    pass h.n + h.s.len;
+};
+// 13. the regex library's shift: a sibling element moved through a `wild T->` field of a pointer-received struct
+func:shift = NIL(Vec<int64>->:v, int64:i) never fails {
+    int64:j = v.count;
+    while (j > i) decreases j - i {
+        v.items[j] = move(v.items[j - 1i64]);
+        j = j - 1i64;
+    }
+    v.items[i] = 9i64;
+    v.count = v.count + 1i64;
+    pass NIL;
+};
+func:wild_vec_shift = int64() never fails {
+    wild int8->:raw_m = alloc(64i64);
+    wild int64->:m = raw_m =>! wild int64->;
+    Vec<int64>:v = Vec{ items: m, count: 0i64, cap: 8i64 };
+    v.items[0i64] = 1i64; v.items[1i64] = 2i64; v.count = 2i64;
+    drop shift(@v, 0i64);
+    int64:r = v.items[0i64] * 100i64 + v.items[1i64] * 10i64 + v.items[2i64];
+    dalloc(raw_m);
+    pass r - 900i64;
+};
+// 14. a buffer element, the value reading the buffer through a read claim
+func:buf_iclaim = int64() never fails {
+    buffer:b = buffer_new(16i64);
+    b[0i64] = 97u8;
+    b[0i64] = (raw peekb($$i b)) =>! uint8;
+    pass (b[0i64] => int64);
+};
+// 15. the compound twin on a buffer (97 + 99)
+func:buf_iclaim_compound = int64() never fails {
+    buffer:b = buffer_new(16i64);
+    b[0i64] = 97u8;
+    b[0i64] += (raw peekb($$i b)) =>! uint8;
+    pass (b[0i64] => int64);
+};
+func:main = int32(cstring[]:_~argv) {
+    if ((raw garr_addr()) != 9i64)              { exit 11i32; }
+    if ((raw garr_addr_compound()) != 16i64)    { exit 12i32; }
+    if ((raw garr_mclaim()) != 9i64)            { exit 13i32; }
+    if ((raw garr_mclaim_compound()) != 16i64)  { exit 14i32; }
+    if ((raw garrs_addr()) != 9i64)             { exit 15i32; }
+    if ((raw slice_addr()) != 14i64)            { exit 16i32; }
+    if ((raw fieldp_reset()) != 11i64)          { exit 17i32; }
+    if ((raw list_iclaim()) != 9i64)            { exit 18i32; }
+    if ((raw list_iclaim_compound()) != 16i64)  { exit 19i32; }
+    if ((raw list_read()) != 9i64)              { exit 20i32; }
+    if ((raw local_self()) != 8i64)             { exit 21i32; }
+    if ((raw field_self()) != 11i64)            { exit 22i32; }
+    if ((raw wild_vec_shift()) != 12i64)        { exit 23i32; }
+    if ((raw buf_iclaim()) != 99i64)            { exit 24i32; }
+    if ((raw buf_iclaim_compound()) != 196i64)  { exit 25i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (BorrowOverlap)    { exit 76i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

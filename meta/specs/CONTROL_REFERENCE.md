@@ -433,6 +433,8 @@ Runs on **every normal exit path** — scope end, `return`, `pass`, `fail`, `rel
 
 A `defer` body decides nothing about the function's outcome and leaves for nowhere (D-163 rule 7, `NITPICK-TYPE-040`): `fail` and `relay` are refused inside one, and since 1.6.1e landing 111 (DEF-233) so are `give` and `fall` -- the body runs at the scope's exit, after the `pick` arm it was written in has finished, so neither has a `pick` to reach (the compiler exited 3 in silence on either until then).
 
+> *[2026-11-01, 1.6.1e landing 176, DEF-405 + DEF-411:]* **A `defer` body is judged for the moment it RUNS, and it may not `exit`.** Until landing 176 the bindings analysis typed a `defer` body against the move state and the `is_error` refinement at its REGISTRATION, and the body ran at the scope's exit, so a `move`, a free or a re-assignment between the two left the body reading vacated storage (a wrong value, exit 50 at both legs, on every landing to 175; a stale plain pointer through a `Result<int64->>`). Three rules now: (i) the body inherits NO `checked`/`errchecked` refinement -- it tests `is_error` for itself, else `NITPICK-TAINT-001`; (ii) what a registered body reads is PENDING until its block ends, and a `move` of a pending binding before then is `NITPICK-MOVE-001`, a `dalloc`/`destroy` of one `NITPICK-MOVE-002`, each naming the `defer`'s position -- the body's OWN move or free of what it reads (`defer { dalloc(buf); }`) is the idiom and stays legal, and a body inside a body leaves its reads to the outer block; (iii) `pass v` of an OWNING `v` that an earlier `defer` reads is the same MOVE-001: D-136 evaluates `v` first, for an owner that evaluation is a move, and the body would run over the vacated `v`. And `exit` inside a `defer` body is `NITPICK-TYPE-040` beside `fail`, `relay`, `give` and `fall` (DEF-411: the emitter ran the scope's defers at the `exit`, the body held the `exit`, and the recursion trapped the compiler with no message): an `exit` decides the whole program's outcome, which a cleanup may not. *176b (the same day; management_11's review A):* a nested `defer` pends only its OWN reads -- the outer body's earlier reads are not the inner `defer`'s (R2) --, and a pending binding moved and REFILLED before its block ends is still MOVE-001, by position (R1, accepted; the relaxation after landing 180). And `pass`, `break` and `continue` in a `defer` body TRAP the compiler as `exit` did (DEF-417, LOW, fail-closed; TYPE-040 with the defer-relative loop counter after landing 180).
+
 > **`defer` does NOT run on a trap** (D-014). `!!!`, `?!` and `??!` transfer control
 > directly to `failsafe` without unwinding. At trap time the state of the system
 > is unknown, including how degraded it is, so no cleanup runs before the handler
@@ -443,7 +445,9 @@ A `defer` body decides nothing about the function's outcome and leaves for nowhe
 ### 4.6 `exit` and K-Semantics
 
 **`exit code;`** terminates the process, and may appear only in `main` or
-`failsafe`.
+`failsafe` -- and never inside a `defer` body, even one written in `main`: `NITPICK-TYPE-040`
+(DEF-411, 1.6.1e landing 176; §4.5's dated note; `pass`, `break` and `continue` in a `defer`
+body are DEF-417, open, after landing 180 -- they trap the compiler today).
 
 > **Note (2026-10-09, 1.6.1e landing 104 — DEF-249):** `code` is an `int32`, exactly, held to it by the checker since this
 > landing (`NITPICK-TYPE-007` at the operand otherwise; an entry point whose signature is already refused keeps that one report). Before it the operand was typed under the expectation and

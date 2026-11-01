@@ -1,0 +1,103 @@
+// expect-exit: 0
+//
+// THE LEGAL SHAPES beside `tests/analysis/rejection/defer_pending_reads.npk` (DEF-405). `nested_outer_reads` (176b, review
+// A's R2): the OUTER body's early read is its own, not the inner `defer`'s, so the outer body may move `s` after registering
+// an inner that reads nothing of it (8; 176 refused it). `pass_scalar`: face (c)'s legal side, a `pass` of a scalar the body
+// reads copies it.
+mod:defer_pending_reads_ok;
+error:E5;
+func:consume = int64(move string:x) never fails { pass x.len; };
+func:mkok_s = string() { pass string_concat("ab", "cde"); };
+func:mkerr_s = string() { fail E5; };
+// THE IDIOM: the body itself frees what it reads.
+func:defer_frees = int32() never fails {
+    wild int8->:b = alloc(8i64);
+    defer { dalloc(b); }
+    b[0i64] = 1i8;
+    pass (b[0i64] => int32);
+};
+// A scalar re-assigned after the `defer`: the body reads the FINAL value.
+func:scalar_reassigned = int32() never fails {
+    int32:out = 0i32;
+    {
+        int32:k = 1i32;
+        defer { out = k; }
+        k = 7i32;
+    }
+    pass out;
+};
+// The body TESTS for itself after a re-assignment: no inherited refinement.
+func:defer_tests_itself = int32() never fails {
+    int32:out = 0i32;
+    Result<string>:r = mkok_s();
+    if (!r.is_error) {
+        defer { if (r.is_error) { out = 7i32; } else { out = 50i32; } }
+        r = mkerr_s();
+    }
+    pass out;
+};
+// An inner block's `defer` has run when the outer tail moves the binding.
+func:inner_defer_done = int32() never fails {
+    int32:out = 0i32;
+    string:s = string_concat("ab", "cde");
+    { defer { out = (is (s.len == 5i64) : 7i32 : 50i32); } }
+    discard(raw consume(move(s)));
+    pass out;
+};
+// The EARLIER `defer` moves, the later one reads: the later runs first at the exit.
+func:earlier_defer_moves = int32() never fails {
+    int32:out = 0i32;
+    {
+        string:s = string_concat("ab", "cde");
+        defer { discard(raw consume(move(s))); }
+        defer { out = (is (s.len == 5i64) : 7i32 : 50i32); }
+    }
+    pass out;
+};
+// A `defer` nested in a body: the outer body read `s` before the inner `defer`, and moves it after (the inner reads `out` only).
+func:nested_outer_reads = int32() never fails {
+    int32:out = 0i32;
+    {
+        string:s = string_concat("ab", "cde");
+        defer {
+            int64:n = s.len;
+            defer { out = out + 1i32; }
+            discard(raw consume(move(s)));
+            out = (is (n == 5i64) : 7i32 : 50i32);
+        }
+    }
+    pass out;
+};
+// Face (c)'s legal side: `pass` of a SCALAR the `defer` reads copies it; nothing is vacated.
+func:pass_scalar = int32(int32->:seen) never fails {
+    int32:k = 7i32;
+    defer { (<-seen) = k; }
+    pass k;
+};
+func:main = int32(cstring[]:_~argv) {
+    if ((raw defer_frees()) != 1i32)          { exit 11i32; }
+    if ((raw scalar_reassigned()) != 7i32)    { exit 12i32; }
+    if ((raw defer_tests_itself()) != 7i32)   { exit 13i32; }
+    if ((raw inner_defer_done()) != 7i32)     { exit 14i32; }
+    if ((raw earlier_defer_moves()) != 7i32)  { exit 15i32; }
+    if ((raw nested_outer_reads()) != 8i32)   { exit 16i32; }
+    int32:seen = 0i32;
+    if ((raw pass_scalar(@seen)) != 7i32)     { exit 17i32; }
+    if (seen != 7i32)                         { exit 18i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (E5)               { exit 55i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

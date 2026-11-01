@@ -49,8 +49,11 @@ func:parsed = Parsed(string:src, InternTable->:it) never fails {
     Ast:ast = raw ast_init();
     DiagList:diags = raw diaglist_init();
     TokenList:toks = raw lex_all(0i32, src, it, @diags);
-    Parser:p = raw parser_init(@toks, @ast, @diags, it);
-    DeclId:root = raw p_parse_module(@p);
+    DeclId:root = DeclId{ index: 0i32 };
+    {   // the parser holds `ast` by address, so its block ends before `ast` is moved out (DEF-413, landing 176)
+        Parser:p = raw parser_init(@toks, @ast, @diags, it);
+        root = raw p_parse_module(@p);
+    }
     Parsed:out = Parsed{ ast: move(ast), diags: diags, root: root };
     pass out;
 };

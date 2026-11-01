@@ -918,6 +918,11 @@ pub func:clear_root_flag = NIL(ExprEmitter->:x, ExprId:vid) never fails {
 // value after a move has cleared the flag. A root that is not a flagged local --
 // a pointer parameter's pointee, a global, a temporary -- needs no mark: the
 // drop walk never reaches it.
+// LANDING 176 (DEF-413): the store-after-move road this mark guards -- DEF-159's re-fill idiom, `string->:p = @x;
+// string:t = move(x); (<-p) = v;` (landing 105) -- is REFUSED by the aliasing analysis from 176 on (`NITPICK-BORROW-013`
+// at the move: a plain address HELD by a binding survives no move of its pointee or of a part of it, `check_addr_window`),
+// so no accepted program reaches it; the mark stays as the emitter's own guarantee, independent of the analysis, and
+// the flow-sensitive relaxation queued after landing 180 (OPEN_DECISIONS, DEF-413's relaxation entry) relies on it again.
 pub func:mark_root_taken = NIL(ExprEmitter->:x, ExprId:vid) never fails {
     if (raw expr_is_none(vid)) { pass NIL; }
     PlaceRoot:r = raw place_root(x.ast, vid, raw BORROW_FUEL());

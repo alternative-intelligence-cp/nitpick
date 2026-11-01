@@ -1,0 +1,140 @@
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 104:34
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 111:32
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 47:24
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 56:9
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 58:24
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 65:24
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 72:24
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 81:24
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 90:24
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 97:24
+// EVERY WAY A BINDING COMES TO HOLD A PLAIN ADDRESS MAKES IT A HOLDER (DEF-413, landing 176; the faces beside
+// `held_addr.npk`'s direct `H->:p = @h`): a COPY of the holder (`H->:q = p`), a call result held across
+// statements (`raw keepp(@h)`), a struct FIELD holding it (`W{ ptr: @h }`), the field ASSIGNED it (`w.ptr = @h`),
+// the field set THROUGH A CALLEE (`stash(@w, @h)`), and an `await` between the move and the read. Each read the
+// vacated field through the pointer (a fabricated length 0: 65 for 70) on every landing before this one
+// (`.internal/t176/census/k413/`). The holder party is raised in the prescan from the stored-address refs of
+// every declaration and store (`prescan_view_parties`' plain branch, gated by `can_hold`: a pointer local, or a
+// type that holds a pointer at some depth, `type_holds_elem_pointer`; deduplicated per holder and place,
+// `pre_has_party`), and a `move` of the root is BORROW-013 against it. The inner-block copy (site 2) is
+// BORROW-002 first: the holder `p` is bound by its block and `q` outlives it. Sites 8 and 9 (176b, review B's E5): the
+// DECLARATION's literal holding `@h` with the move in a later field, and the assignment's -- the holder's parties are live
+// while its initialiser runs now (`register_holder` before the walk; 176 made them live after it, and site 8 read a
+// fabricated length 0 on 175 and 176); the literal's own `@h` meets its party by node identity.
+mod:held_addr_holders;
+error:E5;
+pub struct:H = { string:s; int64:n; };
+pub struct:W = { H->:ptr; };
+pub struct:C = { H->:p; int64:k; };
+func:take = int64(move string:x) never fails { pass x.len; };
+func:keepp = H->(H->:p) never fails { pass p; };
+func:stash = NIL(W->:w, H->:p) never fails { (<-w).ptr = p; pass NIL; };
+// 1. a copy of the holder
+func:holder_copy = int64() never fails {
+    H:h = H{ s: string_concat("abcde", ""), n: 1i64 };
+    H->:p = @h;
+    H->:q = p;
+    int64:t = raw take(move(h.s));
+    pass t + q.s.len;
+};
+// 2. the inner-block copy, `q` outliving `p`
+func:holder_copy_inner = int64() never fails {
+    H:h = H{ s: string_concat("abcde", ""), n: 1i64 };
+    H->:q = @h;
+    {
+        H->:p = @h;
+        q = p;
+    }
+    int64:t = raw take(move(h.s));
+    pass t + q.s.len;
+};
+// 3. a call result held across statements
+func:holder_call_result = int64() never fails {
+    H:h = H{ s: string_concat("abcde", ""), n: 1i64 };
+    H->:p = raw keepp(@h);
+    int64:t = raw take(move(h.s));
+    pass t + p.s.len;
+};
+// 4. a struct field holding the address
+func:holder_field = int64() never fails {
+    H:h = H{ s: string_concat("abcde", ""), n: 1i64 };
+    W:w = W{ ptr: @h };
+    int64:t = raw take(move(h.s));
+    pass t + w.ptr.s.len;
+};
+// 5. the field assigned the address
+func:holder_field_assign = int64() never fails {
+    H:h = H{ s: string_concat("abcde", ""), n: 1i64 };
+    H:h2 = H{ s: string_concat("x", ""), n: 2i64 };
+    W:w = W{ ptr: @h2 };
+    w.ptr = @h;
+    int64:t = raw take(move(h.s));
+    pass t + w.ptr.s.len;
+};
+// 6. the field set through a callee
+func:holder_callee_set = int64() never fails {
+    H:h = H{ s: string_concat("abcde", ""), n: 1i64 };
+    H:h2 = H{ s: string_concat("x", ""), n: 2i64 };
+    W:w = W{ ptr: @h2 };
+    drop stash(@w, @h);
+    int64:t = raw take(move(h.s));
+    pass t + w.ptr.s.len;
+};
+// 7. an `await` between the move and the read
+async func:holder_await = int64() {
+    H:h = H{ s: string_concat("abcde", ""), n: 1i64 };
+    H->:p = @h;
+    int64:t = raw take(move(h.s));
+    await sleep(raw duration_ms(1i64)) ?| NIL;
+    pass t + p.s.len;
+};
+// 8. the declaration's literal holding the address, the move in a later field (176b, E5)
+func:holder_literal_decl = int64() never fails {
+    H:h = H{ s: string_concat("abcde", ""), n: 1i64 };
+    C:c = C{ p: @h, k: (raw take(move(h.s))) };
+    pass (<-c.p).s.len + c.k;
+};
+// 9. the assignment's literal holding the address, the move in a later field: the holder's parties live from its declaration
+func:holder_literal_assign = int64() never fails {
+    H:h = H{ s: string_concat("abcde", ""), n: 1i64 };
+    C:c = C{ p: @h, k: 0i64 };
+    c = C{ p: @h, k: (raw take(move(h.s))) };
+    pass (<-c.p).s.len + c.k;
+};
+async func:main = int32(cstring[]:_~argv) {
+    int64:t = (raw holder_copy()) + (raw holder_copy_inner()) + (raw holder_call_result()) + (raw holder_field())
+            + (raw holder_field_assign()) + (raw holder_callee_set())
+            + (raw holder_literal_decl()) + (raw holder_literal_assign());
+    Result<int64>:ar = await holder_await();
+    if (ar.is_error) { exit 59i32; }
+    exit ((t + ar.value) =>! int32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 57i32; },
+        (BorrowOverlap)    { exit 76i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

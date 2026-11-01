@@ -51,30 +51,36 @@ func:ex = Ex(string:src, InternTable->:it) never fails {
     Ast:ast = raw ast_init();
     DiagList:pd = raw diaglist_init();
     TokenList:tk = raw lex_all(0i32, src, it, @ld);
-    Parser:p = raw parser_init(@tk, @ast, @pd, it);
-    DeclId:mod_id = raw p_parse_module(@p);
+    DeclId:mod_id = DeclId{ index: 0i32 };
+    {   // the parser holds `ast` by address, so its block ends before `ast` is moved out (DEF-413, landing 176)
+        Parser:p = raw parser_init(@tk, @ast, @pd, it);
+        mod_id = raw p_parse_module(@p);
+    }
 
     SymbolTable:tab = raw symtab_init();
     DiagList:diags = raw diaglist_init();
     int32:scope = raw collect_module(@tab, @ast, @diags, mod_id, 0i32);
-    Resolver:rs = raw resolver_init(@ast, @tab, it, @diags);
-    drop resolve_module(@rs, mod_id, scope);
+    {   // the resolver holds `ast` and `tab` by address (DEF-413): its block ends before they are moved out
+        Resolver:rs = raw resolver_init(@ast, @tab, it, @diags);
+        drop resolve_module(@rs, mod_id, scope);
+    }
 
     TypeTable:types = raw typetable_init();
     InstanceTable:inst = raw insttable_init();
-    TypeResolver:tr = raw tyres_init(@ast, @types, @tab, it, @diags, @inst);
-    ImplTable:im = raw impltable_init();
-    drop collect_impls(@im, @tr, mod_id, scope);
-    BoundTable:bd = raw boundtable_init();
-    drop collect_bounds(@bd, @tr, mod_id, scope);
-
     // SIZED AFTER PARSING, so it covers every expression the parser built. Sizing
     // it before would make it short by exactly the expressions the test is about.
     ExprTypes:ets = raw exprtypes_init(raw ast_expr_count(@ast));
-    FnInstTable:fninsts = raw fninst_init();
-    ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd,
-                                  @inst, @fninsts, @ets);
-    drop check_module(@e, mod_id, scope);
+    {   // the type resolver and the typer hold `types` (and `ast`, `tab`, `ets`, `inst`) by address (DEF-413): their block ends before the move-out
+        TypeResolver:tr = raw tyres_init(@ast, @types, @tab, it, @diags, @inst);
+        ImplTable:im = raw impltable_init();
+        drop collect_impls(@im, @tr, mod_id, scope);
+        BoundTable:bd = raw boundtable_init();
+        drop collect_bounds(@bd, @tr, mod_id, scope);
+        FnInstTable:fninsts = raw fninst_init();
+        ExprTyper:e = raw etyper_init(@ast, @types, @tab, it, @diags, scope, @im, @bd,
+                                      @inst, @fninsts, @ets);
+        drop check_module(@e, mod_id, scope);
+    }
 
     Ex:out = Ex{ ast: move(ast), types: move(types), ets: move(ets), diags: diags,
                  parse_errs: raw diaglist_count(@pd) };
@@ -110,8 +116,11 @@ func:px = Px(string:src, InternTable->:it) never fails {
     Ast:ast = raw ast_init();
     DiagList:pd = raw diaglist_init();
     TokenList:tk = raw lex_all(0i32, src, it, @ld);
-    Parser:p = raw parser_init(@tk, @ast, @pd, it);
-    ExprId:id = raw p_parse_expr(@p);
+    ExprId:id = ExprId{ index: 0i32 };
+    {   // the parser holds `ast` by address, so its block ends before `ast` is moved out (DEF-413, landing 176)
+        Parser:p = raw parser_init(@tk, @ast, @pd, it);
+        id = raw p_parse_expr(@p);
+    }
     Px:out = Px{ ast: move(ast), id: id };
     pass out;
 };

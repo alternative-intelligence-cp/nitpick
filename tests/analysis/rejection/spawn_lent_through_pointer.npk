@@ -1,29 +1,38 @@
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 88:5
-// expect-error: NITPICK-BORROW-016
 // expect-error-at: 97:5
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 106:34
+// expect-error-at: 106:5
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 115:29
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 116:18
+// expect-error-at: 115:34
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 126:5
+// expect-error-at: 125:18
 // expect-error: NITPICK-BORROW-016
 // expect-error-at: 135:5
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 145:5
+// expect-error-at: 144:5
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 153:5
+// expect-error-at: 154:5
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 162:33
+// expect-error-at: 162:5
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 171:28
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 173:18
+// expect-error-at: 171:33
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 183:18
+// expect-error-at: 182:18
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 193:13
+// expect-error-at: 192:18
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 209:18
+// expect-error-at: 202:13
+// expect-error: NITPICK-BORROW-016
+// expect-error-at: 218:18
+// LANDING 176 (DEF-413): the two sites that `move` the crossing by name while a NAMED pointer to it is live
+// (`rev_named_move`'s `move(s)` under `sp`, `rev_mutex_move`'s `move(m)` under `mp`) carry a second verdict
+// now, BORROW-013 at the move: a `move` is a vacating access, and it conflicts with every live address party
+// of its root -- the held plain address `sp`/`mp` among them -- as `held_addr.npk` states. BORROW-016 at the
+// same statement stays: the lend's conflict is the task's, the holder's is the pointer's, two parties.
 mod:spawn_lent_through_pointer;
 // DEF-306 (1.6.1e, landing 163): A SPAWN'S LEND IS COMPARED AGAINST A WRITE OF THE
 // CROSSING REACHED BY ANOTHER NAME, ONE OF THEM A POINTER TO THE SAME STORAGE. A

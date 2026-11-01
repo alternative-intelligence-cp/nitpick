@@ -5,9 +5,9 @@
 // expect-error: NITPICK-ASSIGN-001
 // expect-error-at: 52:23
 // expect-error: NITPICK-MOVE-001
-// expect-error-at: 65:54
+// expect-error-at: 66:54
 // expect-error: NITPICK-ASSIGN-001
-// expect-error-at: 73:21
+// expect-error-at: 74:21
 // THE INDEX OF A `$$m` PLACE IS AN EXPRESSION, AND THE BINDINGS ANALYSIS WALKS IT (DEF-407;
 // landing 175's review, F3), IN EVALUATION ORDER (its second review, R1).
 //
@@ -57,8 +57,9 @@ func:unassigned_in_index = int64() never fails {
 // and `assign_place_indexes` descends to the root first and judges each index on the way back
 // up. Here the INNER index moves `s` and the OUTER one reads it after the move: MOVE-001 at the
 // outer `s`. The mirror, `g[s.len - 4].c[consume(move(s)) - 2]`, is legal and runs
-// (tests/backend/programs/claim_index_order_ok.npk). The first commit of 175 walked the indexes
-// outermost first: it refused that legal mirror (a regression against 174) and accepted this.
+// (tests/backend/programs/claim_index_order_ok.npk). The second round of 175 (d618068) walked the
+// indexes outermost first: it refused that legal mirror (a regression against 174) and accepted this
+// (corrected in 176; 175's first commit, ef95990, walked no index at all -- DEF-407's hole itself).
 func:reversed_move = int64() never fails {
     string:s = string_concat("ab", "cde");
     Row[2]:g = [Row{ c: [1i32, 2i32, 3i32, 4i32] }, Row{ c: [5i32, 6i32, 7i32, 8i32] }];

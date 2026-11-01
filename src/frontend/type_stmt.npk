@@ -2972,6 +2972,18 @@ func:check_return = NIL(ExprTyper->:e, StmtNode:s) never fails {
 // error handling and every `defer` between here and the top, which is exactly the
 // uncontrolled shutdown the language exists to make impossible.
 func:check_exit = NIL(ExprTyper->:e, StmtNode:s) never fails {
+    // AN `exit` IN A `defer` BODY (DEF-411, landing 176): the body runs at its scope's exit, and
+    // `exit` runs the pending defers -- so an `exit` inside one re-entered itself (`emit_exit →
+    // run_exit_defers → … → emit_exit`) until the compiler's own stack net fired: exit 3, no
+    // message, on every landing before this one. D-163 rule 7: a cleanup decides nothing about
+    // the function's outcome, and an `exit` decides the whole program's. Asked FIRST, as `fall`'s
+    // is: it is the one mistake, whatever function encloses the `defer` (D-240).
+    if (e.in_defer) {
+        discard(raw te_error(e, raw TYPE_DEFER_EXIT(),
+            "a `defer` body may not `exit` (D-163 rule 7): a cleanup runs while its scope unwinds and decides nothing about the function's outcome, and `exit` decides the whole program's; stop the program from the body the `defer` belongs to, after the cleanup has run",
+            s.span));
+        pass NIL;
+    }
     if (!e.fn_terminal) {
         discard(raw te_error(e, raw TYPE_RESULT_RETURN(),
             "`exit` is legal only in `main` and `failsafe`; elsewhere it would stop the program past every caller's error handling and every pending `defer` — `fail` is how a function reports failure",

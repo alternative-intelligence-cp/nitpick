@@ -1,0 +1,129 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 97:36
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 102:44
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 56:31
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 61:31
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 67:31
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 72:31
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 77:39
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 82:36
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 88:33
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 92:35
+// A RANGE'S VIEW IS LIVE FROM ITS FIRST BOUND (DEF-410 (e), landing 176). The emitter loads a List's or a buffer's
+// header (items and count; ptr and len) BEFORE the range's bounds run (`emit_range_slice`), so a bound that
+// reallocates the container through `@l` or `$$m l`, or swaps the buffer through `@b`, left the view pointing at
+// the FREED buffer: `l[0...(raw grow(@l))][0]`, the view's `.len`, the view as an argument, the view stored in a
+// slice local -- each read the allocator's poison (230) or a stale count on landings 174 and 175 with no verdict
+// (`.internal/t176/census/e/`, `ev_range_grow`, `ev_range_grow_buf`). The range's VIEW party is raised before its
+// bounds are walked (`acc_indices` pushes `push_value_view_parties` ahead of the bound walk; the chain's own
+// access skips its party, `chain_passes_through`) and every write-capable access inside the bounds is judged
+// against it (BORROW-015). An inline array ranged (stable storage) and a slice parameter re-pointed read the
+// fresh elements in fact and are refused all the same (sites 7, 8): the named-view twin (`int64[]:v = g[0...2];
+// drop resetg(@g); v[0]`) is D-325's refusal, and a window is judged as the view it is. Plain bounds, a bound
+// that only READS (`count_of(@l)`, `$$i l`), a write THROUGH a range step and a range handed to a writer of it
+// are the legal twins (`tests/backend/programs/range_bound_window_ok.npk`). A bound that MOVES the List is
+// MOVE-001 by the bindings analysis first (DEF-410 (a)); `string_bytes(s)[0...(raw grows(@s))]` and a view
+// handed to a callee under a reallocating bound were BORROW-015 before this landing (D-325, face (b)). Sites 9 and 10 (176b,
+// review B's E1): the growth in the INDEX of a range view and in the bound of a range OVER a range view -- `acc_indices` walks
+// a chain bottom-up in emission order now, a range step's party raised where its header loads (top-down, 176 walked the outer
+// index before reaching the range under it: the view read the freed buffer, 230); the safe mirror, the growth in an index UNDER
+// the range step (`l[(raw push_row(@l))].v[0i64...2i64][1i64]`, refused by 176 as B-R1), is the `_ok`'s case 6.
+mod:range_bound_window;
+error:E5;
+func:grow = int64(List<int64>->:p) never fails { for (int64:i in 0i64...200i64) { drop list_push(p, i); } pass 1i64; };
+func:swap = int64(buffer->:p) never fails { (<-p) = buffer_new(64i64); (<-p)[0i64] = 98u8; pass 1i64; };
+func:resetg = int64(int64[2]->:p) never fails { (<-p) = [1i64, 2i64]; pass 9i64; };
+func:repoint = int64(int64[]->:p, int64[]:other) never fails { (<-p) = other; pass 9i64; };
+func:peek = int64(int64[]:v) never fails { pass v[0i64]; };
+func:mk_list = List<int64>() never fails {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    drop list_push(@l, 8i64);
+    pass l;
+};
+// 1. a List ranged, the bound growing it through its address
+func:list_addr = int64() never fails {
+    List<int64>:l = raw mk_list();
+    pass ((l[0i64...(raw grow(@l))])[0i64]);
+};
+// 2. the write claim in the bound
+func:list_mclaim = int64() never fails {
+    List<int64>:l = raw mk_list();
+    pass ((l[0i64...(raw grow($$m l))])[0i64]);
+};
+// 3. a buffer ranged, the bound swapping it through its address
+func:buf_addr = int64() never fails {
+    buffer:b = buffer_new(16i64);
+    b[0i64] = 97u8;
+    pass ((b[0i64...(raw swap(@b))])[0i64] => int64);
+};
+// 4. the view's `.len`
+func:view_len = int64() never fails {
+    List<int64>:l = raw mk_list();
+    pass ((l[0i64...(raw grow(@l))]).len);
+};
+// 5. the view as an argument
+func:view_arg = int64() never fails {
+    List<int64>:l = raw mk_list();
+    pass (raw peek(l[0i64...(raw grow(@l))]));
+};
+// 6. the view stored in a slice local
+func:view_decl = int64() never fails {
+    List<int64>:l = raw mk_list();
+    int64[]:v = l[0i64...(raw grow(@l))];
+    pass v[0i64];
+};
+// 7. an inline array ranged, the bound reassigning it through `@g`: stable storage, refused as the named twin is
+func:garr_addr = int64() never fails {
+    int64[2]:g = [7i64, 8i64];
+    pass ((g[0i64...(raw resetg(@g) - 7i64)])[0i64]);
+};
+// 8. a slice parameter ranged, the bound re-pointing it through `@sl`
+func:slice_addr = int64(int64[]:sl, int64[]:other) never fails {
+    pass ((sl[0i64...(raw repoint(@sl, other) - 7i64)])[0i64]);
+};
+// 9. the growth in the index OF a range view: the view's header is loaded, then the root reallocated under it (176b, E1)
+func:view_index_grows = int64() never fails {
+    List<int64>:l = raw mk_list();
+    pass (l[0i64...2i64][(raw grow(@l))]);
+};
+// 10. the growth in the bound of a range OVER a range view: the outer view's header is loaded first (176b, E1's second shape)
+func:view_range_bound_grows = int64() never fails {
+    List<int64>:l = raw mk_list();
+    pass ((l[0i64...2i64][0i64...(raw grow(@l) + 1i64)])[1i64]);
+};
+func:main = int32(cstring[]:_~argv) {
+    int64[4]:a = [1i64, 2i64, 3i64, 4i64];
+    int64[4]:b = [5i64, 6i64, 7i64, 8i64];
+    int64:t = (raw list_addr()) + (raw list_mclaim()) + (raw buf_addr()) + (raw view_len()) + (raw view_arg())
+            + (raw view_decl()) + (raw garr_addr()) + (raw slice_addr(a[0i64...4i64], b[0i64...4i64]))
+            + (raw view_index_grows()) + (raw view_range_bound_grows());
+    exit (t =>! int32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (BorrowOverlap)    { exit 76i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

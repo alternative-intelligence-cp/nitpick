@@ -1,0 +1,192 @@
+// expect-exit: 0
+// THE RECEIVERS A `Self->` METHOD STILL TAKES, EACH FORMED ONCE (DEF-414, landing 176; the legal twins of
+// `tests/types/rejection/recv_twice.npk`, which refuses what the emitter would form twice): a POINTER-typed call
+// result (passed as is: the counter inside the call reads 1), a by-value `Self` receiver whose index has a side
+// effect (no address is formed), a derived by-value `eq` on an enum VARIANT CONSTRUCTOR (the regex library's
+// shape), a call result as a by-value receiver, the ATOMIC intercept's three roads (an addressed element with a
+// side-effecting index, a pointer, `atomic_from_ptr` with a side-effecting pointer argument: each receiver once,
+// load and store), a plain and an arithmetic index, a dereferenced pointer local, a field, a pointer local, a
+// trait-qualified call, and the `dyn` EXEMPTION's three faces (a side-effecting call result of `dyn` type, a
+// `move(d)` of a `dyn` local, a `dyn` local: `via_dyn` forms the receiver once, the counter reads 1). Every value
+// is checked in `main`; the exit is the failing case's number. Cases 17 and 18 (176b, review A's T1): a list literal's call
+// hoisted out of the index (the counter reads 1), and a literal with NO call in the index, which stays none (DEF-412's reading). Each case measured 1/1/1/5/2/0/2/2/1/5/3/5/5/1/1/1
+// at -O0 and under opt -O2 on landing 175's compiler and on this one (`.internal/t176/census/r414/`).
+mod:recv_once_ok;
+error:E5;
+pub struct:Cell = { int64:v; };
+impl:Cell = { func:get = int64(Self->:self) never fails { pass self.v; }; func:peek = int64(Self:self) never fails { pass self.v; }; };
+pub struct:W = { Cell:x; };
+pub trait:Getter = { func:get = int64(Self->:self) never fails; };
+impl:Cell:Getter = { func:get = int64(Self->:self) never fails { pass self.v; }; };
+pub trait:Dget = { func:getd = int64(Self->:self) never fails; };
+impl:Cell:Dget = { func:getd = int64(Self->:self) never fails { pass self.v; }; };
+#[derive(Eq)]
+enum:HirKind = { Literal(uint32); ClassRef(int32); Empty; };
+func:bump = int64(int64->:c) never fails { (<-c) = (<-c) + 1i64; pass 0i64; };
+func:idp = Cell->(Cell->:p, int64->:c) never fails { (<-c) = (<-c) + 1i64; pass p; };
+func:make = Cell() never fails { pass Cell{ v: 5i64 }; };
+func:bump_p = wild int64->(int64->:c, wild int64->:cell) never fails { (<-c) = (<-c) + 1i64; pass cell; };
+func:mkd = dyn Dget(int64->:c) never fails { (<-c) = (<-c) + 1i64; pass Cell{ v: 5i64 }; };
+func:mk_list = List<Cell>() never fails {
+    List<Cell>:l = raw list_init::<Cell>(4i64);
+    drop list_push(@l, Cell{ v: 1i64 });
+    drop list_push(@l, Cell{ v: 2i64 });
+    pass l;
+};
+// 1. a pointer-typed call result, passed as is: the counter reads 1
+func:ptr_result = int64() never fails {
+    Cell:h = Cell{ v: 5i64 };
+    int64:count = 0i64;
+    int64:v = raw (raw idp(@h, @count)).get();
+    pass count + v - 5i64;
+};
+// 2. a by-value receiver whose index has a side effect: no address, formed once
+func:byval_index = int64() never fails {
+    Cell[2]:a = [Cell{ v: 5i64 }, Cell{ v: 6i64 }];
+    int64:count = 0i64;
+    int64:v = raw a[(raw bump(@count))].peek();
+    pass count + v - 5i64;
+};
+// 3. a derived by-value `eq` on a variant constructor
+func:variant_eq = int64() never fails {
+    bool:r = HirKind.Literal(7u32).eq(HirKind.Literal(7u32)) ?! E5;
+    bool:q = HirKind.Literal(7u32).eq(HirKind.ClassRef(7i32)) ?! E5;
+    if (r && (!q)) { pass 1i64; }
+    pass 2i64;
+};
+// 4. a call result as a by-value receiver
+func:byval_call = int64() never fails { pass raw (raw make()).peek(); };
+// 5. the atomic intercept, the addressed road: a side-effecting index, load then store, each once
+func:atomic_inline = int64() never fails {
+    atomic<int64>[2]:aa = [5i64, 6i64];
+    int64:count = 0i64;
+    int64:v = aa[(raw bump(@count))].load();
+    aa[(raw bump(@count))].store(7i64);
+    pass count + v - 5i64;
+};
+// 6. the atomic intercept's pointer road
+func:atomic_ptr = int64() never fails {
+    atomic<int64>:a = 5i64;
+    atomic<int64>->:ap = @a;
+    int64:v = ap.load();
+    ap.store(7i64);
+    pass v + ap.load() - 12i64;
+};
+// 7. `atomic_from_ptr` with a side-effecting pointer argument: once each
+func:atomic_from_pointer = int64() never fails {
+    wild int8->:raw_cell = alloc(8i64);
+    wild int64->:cell = raw_cell =>! wild int64->;
+    (<-cell) = 5i64;
+    int64:count = 0i64;
+    int64:v = atomic_from_ptr::<int64>((raw bump_p(@count, cell))).load();
+    atomic_from_ptr::<int64>((raw bump_p(@count, cell))).store(6i64);
+    int64:w = (<-cell);
+    dalloc(raw_cell);
+    pass count + v + w - 11i64;
+};
+// 8. a plain index
+func:index_plain = int64() never fails {
+    List<Cell>:l = raw mk_list();
+    int64:i = 1i64;
+    pass raw l[i].get();
+};
+// 9. an arithmetic index
+func:index_arith = int64() never fails {
+    List<Cell>:l = raw mk_list();
+    int64:i = 1i64;
+    pass raw l[i - 1i64].get();
+};
+// 10. a dereferenced pointer local
+func:deref_local = int64() never fails {
+    Cell:c = Cell{ v: 5i64 };
+    Cell->:p = @c;
+    pass raw (<-p).get();
+};
+// 11. a field
+func:field_plain = int64() never fails {
+    W:w = W{ x: Cell{ v: 3i64 } };
+    pass raw w.x.get();
+};
+// 12. a pointer local
+func:ptr_local = int64() never fails {
+    Cell:c = Cell{ v: 5i64 };
+    Cell->:p = @c;
+    pass raw p.get();
+};
+// 13. a trait-qualified call on a plain place
+func:trait_call = int64() never fails {
+    Cell:c = Cell{ v: 5i64 };
+    pass raw Getter.get(@c);
+};
+// 14. the `dyn` exemption: a side-effecting call result of `dyn` type (`via_dyn` forms it once)
+func:dyn_call_result = int64() never fails {
+    int64:count = 0i64;
+    int64:v = raw (raw mkd(@count)).getd();
+    pass count + v - 5i64;
+};
+// 15. a `move(d)` of a `dyn` local as the receiver
+func:dyn_move = int64() never fails {
+    int64:count = 0i64;
+    dyn Dget:d = raw mkd(@count);
+    int64:v = raw (move(d)).getd();
+    pass count + v - 5i64;
+};
+// 16. a `dyn` local
+func:dyn_local = int64() never fails {
+    int64:count = 0i64;
+    dyn Dget:d = raw mkd(@count);
+    int64:v = raw d.getd();
+    pass count + v - 5i64;
+};
+// 17. a list literal's call hoisted out of the index (recv_twice's site 13's legal twin): the counter reads 1
+func:index_literal_hoisted = int64() never fails {
+    Cell[2]:a = [Cell{ v: 5i64 }, Cell{ v: 6i64 }];
+    int64:count = 0i64;
+    int64:i = [(raw bump(@count)), 1i64][1i64];
+    int64:v = raw a[i].get();
+    pass count + v - 6i64;
+};
+// 18. a literal with no call in the index stays none: 6
+func:index_literal_plain = int64() never fails {
+    Cell[2]:a = [Cell{ v: 5i64 }, Cell{ v: 6i64 }];
+    pass raw a[[0i64, 1i64][1i64]].get();
+};
+func:main = int32(cstring[]:_~argv) {
+    if ((raw ptr_result()) != 1i64)          { exit 11i32; }
+    if ((raw byval_index()) != 1i64)         { exit 12i32; }
+    if ((raw variant_eq()) != 1i64)          { exit 13i32; }
+    if ((raw byval_call()) != 5i64)          { exit 14i32; }
+    if ((raw atomic_inline()) != 2i64)       { exit 15i32; }
+    if ((raw atomic_ptr()) != 0i64)          { exit 16i32; }
+    if ((raw atomic_from_pointer()) != 2i64) { exit 17i32; }
+    if ((raw index_plain()) != 2i64)         { exit 18i32; }
+    if ((raw index_arith()) != 1i64)         { exit 19i32; }
+    if ((raw deref_local()) != 5i64)         { exit 20i32; }
+    if ((raw field_plain()) != 3i64)         { exit 21i32; }
+    if ((raw ptr_local()) != 5i64)           { exit 22i32; }
+    if ((raw trait_call()) != 5i64)          { exit 23i32; }
+    if ((raw dyn_call_result()) != 1i64)     { exit 24i32; }
+    if ((raw dyn_move()) != 1i64)            { exit 25i32; }
+    if ((raw dyn_local()) != 1i64)           { exit 26i32; }
+    if ((raw index_literal_hoisted()) != 1i64) { exit 27i32; }
+    if ((raw index_literal_plain()) != 6i64)   { exit 28i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (BorrowOverlap)    { exit 76i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

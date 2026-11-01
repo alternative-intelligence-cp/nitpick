@@ -1,0 +1,184 @@
+// expect-error: NITPICK-TYPE-103
+// expect-error-at: 142:49
+// expect-error: NITPICK-TYPE-103
+// expect-error-at: 148:46
+// expect-error: NITPICK-TYPE-103
+// expect-error-at: 153:75
+// expect-error: NITPICK-TYPE-103
+// expect-error-at: 65:35
+// expect-error: NITPICK-TYPE-103
+// expect-error-at: 71:35
+// expect-error: NITPICK-TYPE-103
+// expect-error-at: 77:39
+// expect-error: NITPICK-TYPE-103
+// expect-error-at: 84:42
+// expect-error: NITPICK-TYPE-103
+// expect-error-at: 87:63
+// expect-error: NITPICK-TYPE-103
+// expect-error-at: 89:68
+// expect-error: NITPICK-TYPE-103
+// expect-error-at: 93:23
+// expect-error: NITPICK-TYPE-103
+// expect-error-at: 109:27
+// expect-error: NITPICK-TYPE-103
+// expect-error-at: 114:26
+// expect-error: NITPICK-TYPE-103
+// expect-error-at: 122:37
+// expect-error: NITPICK-TYPE-103
+// expect-error-at: 129:34
+// expect-error: NITPICK-TYPE-103
+// expect-error-at: 135:27
+// A `Self->` RECEIVER HOLDS NO CALL, `move`, CLAIM OR ADDRESS (DEF-414, landing 176): NITPICK-TYPE-103. The
+// emitter forms the receiver of a pointer-taking method TWICE when it is neither a pointer nor a `dyn` -- once as
+// a value (`emit_method_call`'s `emit_expr`) and once as a place (`addr_of`, the `want_ptr` road) -- so a call, a
+// `move`, a `$$m`/`$$i` claim, an `@`, a `pick`, an `await` or a spawn inside it RAN TWICE: a counter bumped in
+// the receiver's index read 2 for 1 on every landing up to 175 (62 for 61), a `move` in the index was a double
+// move (MOVE-001 caught it first), a call result or a field of one as the receiver was EMIT-002, and the
+// dereference of a call-result pointer ran its call twice (62 for 61). The typer refuses the shape now
+// (`recv_effect_site` walks the receiver as `ast_depth.npk` walks a tree, fuel 300 above the parser's 256 and
+// closed past it; one report per method call, the part named). The fix that forms the receiver once (a
+// temporary) is DEF-414's emitter work after landing 180, and it lifts this rule. Exempt and measured once at
+// -O0 and under opt -O2 (`tests/backend/programs/recv_once_ok.npk`): a pointer-typed receiver (passed as is), a
+// `dyn` receiver (`via_dyn` forms it once), a by-value `Self` receiver (no address), the atomic intercept's
+// three roads, and a plain place -- an identifier, a field, a plain or arithmetic index, a dereferenced pointer
+// local, a trait-qualified call. Sites 8-12 are the five DEF-315 receiver shapes of
+// `tests/analysis/rejection/call_result_deref_receiver_slice.npk` (landing 166's cases 1, 2, 3, 8 and 22), moved
+// here because the typer's refusal comes before the analysis those cases tested; they go back at the emitter fix. Sites 13-15
+// (176b, review A's T1): a call inside an ARRAY or TEMPLATE literal in the index, and the receiver itself a list literal holding
+// a call -- the walk answered none on a literal's shape and the call ran twice (26 for 16 on 175 and 176); a literal's elements
+// are walked now, and a literal with no call stays none (`recv_once_ok.npk`'s case 18).
+mod:recv_twice;
+error:E5;
+pub struct:Cell = { int64:v; };
+impl:Cell = { func:get = int64(Self->:self) never fails { pass self.v; }; };
+pub struct:W = { Cell:x; };
+pub struct:Bag = { List<Cell>:items; };
+func:bump = int64(int64->:c) never fails { (<-c) = (<-c) + 1i64; pass 0i64; };
+func:idx = int64(move string:t) never fails { pass t.len - 3i64; };
+func:idp = Cell->(Cell->:p, int64->:c) never fails { (<-c) = (<-c) + 1i64; pass p; };
+func:make = Cell() never fails { pass Cell{ v: 5i64 }; };
+func:makew = W() never fails { pass W{ x: Cell{ v: 5i64 } }; };
+// 1. an element whose index holds a call
+func:index_call = int64() never fails {
+    Cell[2]:a = [Cell{ v: 5i64 }, Cell{ v: 6i64 }];
+    int64:count = 0i64;
+    pass raw a[(raw bump(@count))].get();
+};
+// 2. an element whose index holds a `move`
+func:index_move = int64() never fails {
+    Cell[2]:a = [Cell{ v: 5i64 }, Cell{ v: 6i64 }];
+    string:t = string_concat("abc", "");
+    pass raw a[(raw idx(move(t)))].get();
+};
+// 3. the dereference of a call-result pointer
+func:deref_call = int64() never fails {
+    Cell:h = Cell{ v: 5i64 };
+    int64:count = 0i64;
+    pass raw (<-(raw idp(@h, @count))).get();
+};
+// 4. a List element through a field, the index holding a call
+func:field_index_call = int64() never fails {
+    Bag:bg = Bag{ items: raw list_init::<Cell>(2i64) };
+    drop list_push(@bg.items, Cell{ v: 5i64 });
+    int64:count = 0i64;
+    pass raw bg.items[(raw bump(@count))].get();
+};
+// 5. a call result (a temporary)
+func:call_result = int64() never fails { pass raw (raw make()).get(); };
+// 6. a field of a call result
+func:field_of_call = int64() never fails { pass raw (raw makew()).x.get(); };
+// 7. a `move` of the receiver itself
+func:moved_receiver = int64() never fails {
+    Cell:c = Cell{ v: 5i64 };
+    pass raw (move(c)).get();
+};
+// --- DEF-315's five receiver shapes (landing 166's cases 1, 2, 3, 8 and 22) ------------------------------------
+struct:S = { string:s; int64:k; };
+impl:S = { func:sset = NIL(S->:self) never fails { self.s = string_concat("x", "y"); pass NIL; }; };
+struct:H2 = { string:o; int64:k; };
+impl:H2 = { func:hset = NIL(H2->:self) never fails { self.o = string_concat("x", "y"); pass NIL; }; };
+struct:Wa = { shared_arena<int64>:a; int32:k; };
+impl:Wa = { func:rep = NIL(Wa->:self) never fails { self.a = shared_arena_make(4i64); pass NIL; }; };
+func:ids = S->(S->:x) never fails { pass x; };
+func:pick_s = S->(bool:c, S->:a, S->:b) never fails { if (c) { pass a; } pass b; };
+func:idsl = H2[]->(H2[]->:q) never fails { pass q; };
+func:idw = Wa->(Wa->:q) never fails { pass q; };
+// 8. (case 1) the method on the explicit dereference of a call-result pointer
+func:method_on_deref_call = NIL() never fails {
+    S:h = S{ s: string_concat("a", "b"), k: 1i64 };
+    drop (<-(raw ids(@h))).sset();
+    pass NIL;
+};
+// 9. (case 2) the call result rooted at a pointer parameter
+func:method_on_deref_call_param = NIL(S->:p) never fails {
+    drop (<-(raw ids(p))).sset();
+    pass NIL;
+};
+// 10. (case 3) a call result that may be either of two pointees
+func:method_on_deref_two_targets = NIL() never fails {
+    S:h = S{ s: string_concat("a", "b"), k: 1i64 };
+    S:g = S{ s: string_concat("c", "d"), k: 2i64 };
+    bool:c = (h.k == 1i64);
+    drop (<-(raw pick_s(c, @h, @g))).sset();
+    pass NIL;
+};
+// 11. (case 8) the element below the dereference of a call-result pointer to a slice local
+func:slice_elem_method_through_deref_call = NIL() never fails {
+    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
+    H2[]:t = arr[0i64...2i64];
+    drop (<-(raw idsl(@t)))[0i64].hset();
+    pass NIL;
+};
+// 12. (case 22's receiver) the method replacing `self.a` on the dereference of a call-result pointer
+func:method_replacing_arena_on_deref_call = NIL() never fails {
+    Wa:w = Wa{ a: shared_arena_make(8i64), k: 1i32 };
+    drop (<-(raw idw(@w))).rep();
+    pass NIL;
+};
+// 13. the index a list literal holding a call (176b; the literal's elements walked)
+func:index_list_literal = int64() never fails {
+    Cell[2]:a = [Cell{ v: 5i64 }, Cell{ v: 6i64 }];
+    int64:count = 0i64;
+    pass raw a[[(raw bump(@count)), 1i64][1i64]].get();
+};
+// 14. the index a template literal's length, a call interpolated
+func:index_template_literal = int64() never fails {
+    Cell[2]:a = [Cell{ v: 5i64 }, Cell{ v: 6i64 }];
+    int64:count = 0i64;
+    pass raw a[`&{ (raw bump(@count)) }`.len].get();
+};
+// 15. the receiver itself a list literal holding a call
+func:receiver_list_literal = int64() never fails {
+    int64:count = 0i64;
+    pass raw [Cell{ v: 5i64 }, Cell{ v: (raw bump(@count)) + 6i64 }][1i64].get();
+};
+func:main = int32(cstring[]:_~argv) {
+    S:sp = S{ s: string_concat("p", "q"), k: 3i64 };
+    int64:t = (raw index_call()) + (raw index_move()) + (raw deref_call()) + (raw field_index_call())
+            + (raw call_result()) + (raw field_of_call()) + (raw moved_receiver())
+            + (raw index_list_literal()) + (raw index_template_literal()) + (raw receiver_list_literal());
+    drop method_on_deref_call();
+    drop method_on_deref_call_param(@sp);
+    drop method_on_deref_two_targets();
+    drop slice_elem_method_through_deref_call();
+    drop method_replacing_arena_on_deref_call();
+    exit (t =>! int32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (BorrowOverlap)    { exit 76i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

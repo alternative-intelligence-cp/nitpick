@@ -1,0 +1,178 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 74:24
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 80:25
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 86:24
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 92:25
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 99:25
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 106:26
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 113:25
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 120:26
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 127:26
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 133:38
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 139:38
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 145:38
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 145:67
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 152:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 152:31
+// AN ASSIGNMENT'S TARGET IS A WINDOW ITS VALUE MAY NOT CLOSE (DEF-410 (d), landing 176). The emitter forms the
+// target's ELEMENT ADDRESS before the value runs (the place, then the value, then the store), so a value that
+// reallocates, replaces or moves the container -- `l[0] = raw grow(@l)` (the List grown through its address,
+// its items buffer freed), `l[0] += raw grow($$m l)`, a buffer swapped through `@b` or `$$m b`, a `List<string>`
+// element whose OLD value is dropped off the stale slot, a nested element whose inner or outer List is
+// reallocated (`l[0].v[1] = raw grow_inner(@l[0].v)`), two reallocations in one value -- stored into FREED
+// memory on landings 174 and 175 with no verdict (the fresh buffer kept the old value: 67 for 69, 158 for 159,
+// the nested cells 68 for 69; `.internal/t176/census/d/`). The aliasing analysis raises the target as a party
+// (`PARTY_TARGET`, VIEW-like: `push_target_party` takes the first index step from the top whose base is a List,
+// a buffer or a cstring) BEFORE the value is walked, and judges every write-capable access of the container
+// inside the value against it (`report_target_conflict`, BORROW-015): an `@`, a `$$m`, a `move`, each access its
+// own site (case 12's two reallocations are two sites). The move road carries the bindings analysis's MOVE-001 at
+// the target's root as well (DEF-410 (a): the root is judged after the value; case 13, two sites: 15 sites for
+// 13 cases). STABLE storage is no window -- an inline array, a
+// struct field, a slice parameter re-pointed, a whole local -- a read claim (`$$i`) closes nothing, and a
+// sibling element's move (`l[j] = move(l[j - 1])`, the regex library's shift) stays legal: the twins run in
+// `tests/backend/programs/assign_target_window_ok.npk`.
+mod:assign_target_window;
+error:E5;
+pub struct:Row = { List<int64>:v; int64:k; };
+func:grow = int64(List<int64>->:p) never fails { for (int64:i in 0i64...200i64) { drop list_push(p, i); } pass 9i64; };
+func:grows = string(List<string>->:p) never fails { for (int64:i in 0i64...200i64) { drop list_push(p, string_concat("x", "y")); } pass string_concat("wxyz", ""); };
+func:takes = string(move List<string>:x) never fails { pass string_concat("wxyz", ""); };
+func:swap = int64(buffer->:p) never fails { (<-p) = buffer_new(64i64); (<-p)[0i64] = 98u8; pass 99i64; };
+func:grow_outer = int64(List<Row>->:p) never fails { for (int64:i in 0i64...200i64) { drop list_push(p, Row{ v: raw list_init::<int64>(1i64), k: i }); } pass 9i64; };
+func:grow_inner = int64(List<int64>->:p) never fails { for (int64:i in 0i64...200i64) { drop list_push(p, i); } pass 9i64; };
+func:mk_list = List<int64>() never fails {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    drop list_push(@l, 8i64);
+    pass l;
+};
+func:mk_rows = List<Row>() never fails {
+    List<Row>:l = raw list_init::<Row>(2i64);
+    Row:r0 = Row{ v: raw list_init::<int64>(2i64), k: 1i64 };
+    drop list_push(@r0.v, 7i64);
+    drop list_push(@r0.v, 8i64);
+    drop list_push(@l, move(r0));
+    pass l;
+};
+// 1. a List element, the value growing the List through its address
+func:list_addr = int64() never fails {
+    List<int64>:l = raw mk_list();
+    l[0i64] = raw grow(@l);
+    pass l[0i64];
+};
+// 2. the compound twin
+func:list_addr_compound = int64() never fails {
+    List<int64>:l = raw mk_list();
+    l[0i64] += raw grow(@l);
+    pass l[0i64];
+};
+// 3. a write claim in the value
+func:list_mclaim = int64() never fails {
+    List<int64>:l = raw mk_list();
+    l[0i64] = raw grow($$m l);
+    pass l[0i64];
+};
+// 4. the compound twin of the claim
+func:list_mclaim_compound = int64() never fails {
+    List<int64>:l = raw mk_list();
+    l[0i64] += raw grow($$m l);
+    pass l[0i64];
+};
+// 5. a buffer element, the value swapping the buffer through its address
+func:buf_addr = int64() never fails {
+    buffer:b = buffer_new(16i64);
+    b[0i64] = 97u8;
+    b[0i64] = (raw swap(@b)) =>! uint8;
+    pass (b[0i64] => int64);
+};
+// 6. the compound twin on a buffer
+func:buf_addr_compound = int64() never fails {
+    buffer:b = buffer_new(16i64);
+    b[0i64] = 97u8;
+    b[0i64] += (raw swap(@b)) =>! uint8;
+    pass (b[0i64] => int64);
+};
+// 7. the write claim on a buffer
+func:buf_mclaim = int64() never fails {
+    buffer:b = buffer_new(16i64);
+    b[0i64] = 97u8;
+    b[0i64] = (raw swap($$m b)) =>! uint8;
+    pass (b[0i64] => int64);
+};
+// 8. the compound twin of the claim on a buffer
+func:buf_mclaim_compound = int64() never fails {
+    buffer:b = buffer_new(16i64);
+    b[0i64] = 97u8;
+    b[0i64] += (raw swap($$m b)) =>! uint8;
+    pass (b[0i64] => int64);
+};
+// 9. a `List<string>` element: the store's drop of the OLD value reads the stale slot as well
+func:lists_addr = int64() never fails {
+    List<string>:ls = raw list_init::<string>(2i64);
+    drop list_push(@ls, string_concat("ab", "c"));
+    ls[0i64] = raw grows(@ls);
+    pass ls[0i64].len;
+};
+// 10. a nested element, the INNER List reallocated through an element address
+func:nested_inner = int64() never fails {
+    List<Row>:l = raw mk_rows();
+    l[0i64].v[1i64] = raw grow_inner(@l[0i64].v);
+    pass l[0i64].v[1i64];
+};
+// 11. a nested element, the OUTER List reallocated
+func:nested_outer = int64() never fails {
+    List<Row>:l = raw mk_rows();
+    l[0i64].v[1i64] = raw grow_outer(@l);
+    pass l[0i64].v[1i64];
+};
+// 12. two reallocations in one value
+func:nested_sibling = int64() never fails {
+    List<Row>:l = raw mk_rows();
+    l[0i64].v[1i64] = raw grow_inner(@l[0i64].v) - raw grow_inner(@l[0i64].v);
+    pass l[0i64].v[1i64];
+};
+// 13. the move road: the bindings analysis judges the root after the value (DEF-410 (a))
+func:lists_move = int64() never fails {
+    List<string>:ls = raw list_init::<string>(2i64);
+    drop list_push(@ls, string_concat("ab", "c"));
+    ls[0i64] = raw takes(move(ls));
+    pass 7i64;
+};
+func:main = int32(cstring[]:_~argv) {
+    int64:t = (raw list_addr()) + (raw list_addr_compound()) + (raw list_mclaim()) + (raw list_mclaim_compound())
+            + (raw buf_addr()) + (raw buf_addr_compound()) + (raw buf_mclaim()) + (raw buf_mclaim_compound())
+            + (raw lists_addr()) + (raw nested_inner()) + (raw nested_outer()) + (raw nested_sibling()) + (raw lists_move());
+    exit (t =>! int32);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (BorrowOverlap)    { exit 76i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};
