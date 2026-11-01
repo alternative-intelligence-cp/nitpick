@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   listener's and the fuzzer's findings, safety before correctness before performance. Cycles 0.0–1.5 are complete
   (`meta/roadmap/done/`); 1.4 made the compiler self-hosting (D-202) and 1.5 made the verification leg (`npkg verify`, the floor's
   specification and models, the schedule explorer).
-- **main = landing 176** (2026-11-01; wt/54b, branch 54-r176, on 41e756a; ONE commit ⟦FILL: SHA⟧ squashed from the reviewed first
+- **main = landing 176** (2026-11-01; wt/54b, branch 54-r176, on 41e756a; ONE commit 1582913 squashed from the reviewed first
   build 9985a73 (kept on `54-r176-a`; itself from the four WIP commits on `54-r176-wip`) and the eight faces of management_11's
   reviews A and B, built as 176b) — DEF-405 + DEF-409 + DEF-410 (a)-(f) + DEF-411 + DEF-413 + DEF-414 (analysis/alias.npk
   +375/−66, analysis/bindings.npk +258/−7, analysis/escape.npk +7, type_members.npk +50, type_stmt.npk +12, type_codes.npk +8 by
@@ -57,8 +57,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   DEF-355 + DEF-356 + DEF-357 + DEF-345) + DEF-415 as a rider (HIGH, 176b's review B: a store into a container grown through a
   held alias lands in freed memory; the closed choice on its row, cap 35) + DEF-416 as a second rider (HIGH, ruled a language
   rule 01:53/02:00 EST: `move` takes an owning place with no plain pointer and no non-wild view on its path, TYPE-104; Copy
-  exempt; `wild` unchecked except a pointee reachable from a value binding of the same function; cap 30; the ceiling re-based by
-  self.toml's rule in 177's commit and the per-landing growth line adopted, management_11's 00:58 plan), then
+  exempt; `wild` unchecked except a pointee reachable from a value binding of the same function; cap 36 since 02:38 EST, (b) built; the ceiling re-based by
+  self.toml's rule in 177's commit and the per-landing growth line adopted, management_11's 00:58 plan) + the E-faces as a third rider (E-a + E-d cap 40, E-b 15, E-c 8, E-e 10; pre-existing, confirmed by `.internal/probes176/go/TABLE_GO.md`, no new numbers; E-a's fix keeps a non-dropping by-value argument legal), 177 sized whole first and split by mechanism past about 200 code lines, then
   landing 178 = DEF-333's (DEF-333 + DEF-334 + DEF-335 + DEF-336 + DEF-384 + DEF-389), then landing 179 = DEF-312's (DEF-312
   widened + DEF-348 + DEF-350 + DEF-325 + DEF-386 + DEF-387 + DEF-390 + DEF-391 + DEF-392 + DEF-395), then landing 180 = DEF-318's
   (DEF-318 to DEF-323) — the fuzz seats' M16 targets the first binary after landing 180 —, then after 180: DEF-417
@@ -362,6 +362,7 @@ Five more, each a 1.4 debugging cycle:
 - Treat a template's `to_string`, a `for`'s `next`, a spawn and a `limit<Rules>` check as calls that lend/are purity-checked; prove the list complete with a census — see "An IMPLICIT call is a call, and a SPAWN and a `limit<Rules>` check LEND""
 - Build a `Result` by its literal; `.err`/`.is_error` are read-only (TYPE-024), a `.err` read needs an `is_error` guard (TAINT-001), a non-return literal is slot-typed (TYPE-096/097), a vacant enum and a zero taker TRAP — see "A `Result` is built by its literal, its `err`/`is_error` read-only, its `.err` read guarded, its non-return literal slot-typed, and a vacant discriminant traps"
 - Test and read a `Result` through a local whose address is never taken; bind a call's `Result` before `.value`/`.err` (TAINT-001); unwrap an `Optional` before a computed member (`o?.len`, `o?.value` are TYPE-102) — see "A `Result` is refined only while nothing can write it behind the analysis's back, and a value no binding holds is never refined"
+- Run `rejcheck.py` (the harness's own comparator over every rejection file, both tools) before every commit and after any test edit following a chain; `set_check.py` sees codes only — see "A rejection header's POSITION is checked by the harness alone, so the harness's own comparator runs over every rejection file before every commit"
 - Judge at the moment the code runs: a `defer` body tests `is_error` itself (TAINT-001) and nothing it reads is moved, passed or freed before its block ends (MOVE-001/MOVE-002); never move a root inside its own index (MOVE-001); compute into a local BEFORE a view (`string_bytes(s)[…]`), an `@h`/`Self->` call, an element assignment or a range view's bounds can invalidate the owner (BORROW-015/BORROW-013); a held `@h` outlives no move of `h` (BORROW-013, scope the holder); keep a `Self->` receiver effect-free, list and template literals included (TYPE-103); no `exit` in a `defer` (TYPE-040); since 176b: pass a by-value owner and free or move its bytes in no later argument (BORROW-015), put `@h` in no literal or ternary argument a later argument moves against (BORROW-013), `dalloc`/`ralloc` nothing a held `@h` points into (BORROW-013), hoist a growth out of a range view's index or bound (BORROW-015) — see "The analyses judge at the moment the code runs, and a value the emitter forms before a later part runs has a party for its window"
 
 ### Reserved words that read like ordinary names
