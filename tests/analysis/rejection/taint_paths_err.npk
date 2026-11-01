@@ -1,0 +1,50 @@
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 33:1
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 36:33
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 40:37
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 44:29
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 49:12
+// A `.err` OR `.value` READ OFF A FIELD PATH, A DEREFERENCE OR A MODULE BINDING REFUSES
+// (a pin; F-4, DEF-406, DEF-403).
+//
+// Only a BARE LOCAL's `is_error` test licenses a `.value` or a `.err` read (0.9.8,
+// F-4; `.err` since DEF-381), and every other base refuses by the branch that names
+// its case. A `Result` behind a FIELD PATH refuses by the path branch ("a field or
+// parameter path", F-4; landing 174 and since). A DEREFERENCE `(<-p).err` refuses by
+// the no-binding branch (DEF-406, landing 175): `place_root` stops at a dereference,
+// so `(<-p)` is rooted at no identifier, and on landing 174 it fell through BOTH
+// branches and was read with no check at all (census cell d1: `(<-p).value` with no
+// `is_error` test anywhere, a fabricated 0 off an error, exit 50). A MODULE BINDING,
+// `fixed Result<int64>:G;` -- the one expressible module-level `Result`, since an
+// initialised one is `NITPICK-TYPE-035` (a `Result` literal is no compile-time
+// constant) -- refuses by the slot-less branch, whose message said "arrived through a
+// parameter" until landing 175 although a parameter HAS a slot and is tracked
+// (DEF-403, the wording: now "a module binding or another name with no tracked
+// slot"); `G` has no initialiser, so its declaration is also `NITPICK-ASSIGN-001`. This
+// file pins the `.err` side of the path branch beside `taint.npk`'s `.value` sites,
+// and the other two branches on both sides, so a landing that moves a road is seen.
+mod:taint_paths_err;
+error:E5;
+struct:H = { Result<int64>:r; };
+fixed Result<int64>:G;
+
+func:field_err = int32(H:h) {
+    if (h.r.is_error) { fail h.r.err; }
+    pass 0i32;
+};
+func:deref_err = int32(Result<int64>->:p) {
+    if ((<-p).is_error) { fail (<-p).err; }
+    pass 0i32;
+};
+func:global_err = int32() {
+    if (G.is_error) { fail G.err; }
+    pass 0i32;
+};
+func:global_val = int64() never fails {
+    if (G.is_error) { pass 0i64; }
+    pass (G.value);
+};

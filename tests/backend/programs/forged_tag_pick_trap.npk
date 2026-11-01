@@ -1,0 +1,41 @@
+// expect-exit: 74
+//
+// A FORGED TAG AT AN EXHAUSTIVE STATEMENT `pick` TRAPS (a pin; DEF-385 over D-140).
+//
+// D-140 settled that `intN =>! enum` MANUFACTURES a tag -- an assertion the
+// compiler cannot check, spelled with the bang -- and said what a forged tag does:
+// "makes every arm of a proven `pick` miss and the statement fall through". Since
+// landing 174 (DEF-385) that no-arm path is `npk_trap(Unreachable)` at both
+// lowerings, the switch default and the compare chain's `.none`, so a forged tag
+// no longer falls through a statement pick: it traps, `failsafe` names
+// `Unreachable`, and its arm exits 74. The tag is computed through a call so the
+// folder cannot decide the pick. D-140's dated note of 2026-10-31 records the
+// supersession; this program pins it.
+mod:forged_tag_pick_trap;
+error:E5;
+enum:Col = { Red = 1i32; Blue = 2i32; };
+func:seven = int32() never fails { pass 7i32; };
+func:main = int32(cstring[]:_~argv) {
+    Col:c = (raw seven()) =>! Col;
+    int32:out = 0i32;
+    pick (c) {
+        (Col.Red)  { out = 1i32; },
+        (Col.Blue) { out = 2i32; }
+    }
+    exit out;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (DeadlineExceeded) { exit 90i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (E5)               { exit 55i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

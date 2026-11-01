@@ -1,0 +1,91 @@
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 89:18
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 90:11
+// AN ADDRESS TAKEN PAST THE PLACE WALK'S FUEL FAILS CLOSED (DEF-402; landing 175's review, F4).
+//
+// `note_addr_taken` reads the binding under a place with `place_root` and its 64 of fuel
+// (`BORROW_FUEL`: 63 steps are read, the 64th exhausts it), and at the fuel it returned
+// with nothing marked: a receiver 64 steps deep under a method taking `Self->` (`r.value`
+// + 63 `.a`) took an address into `r` that the set never saw, so `r` stayed refined (the
+// first build of 175 accepted this file; 63 steps it refused). The `@` spelling of the
+// same place is the typer's `NITPICK-TYPE-024` at 64 steps (its own place walk), so the
+// receiver is the one road. Now exhaustion sets `addr_deep`, and every refined read of
+// the function refuses, as `expr_types.npk`'s rule for exhaustion says (fail closed).
+// Generated shape: S0 holds an `int64`, S{i} holds an S{i-1}.
+mod:result_addr_deep;
+error:E5;
+struct:S0 = { int64:a; };
+struct:S1 = { S0:a; };
+struct:S2 = { S1:a; };
+struct:S3 = { S2:a; };
+struct:S4 = { S3:a; };
+struct:S5 = { S4:a; };
+struct:S6 = { S5:a; };
+struct:S7 = { S6:a; };
+struct:S8 = { S7:a; };
+struct:S9 = { S8:a; };
+struct:S10 = { S9:a; };
+struct:S11 = { S10:a; };
+struct:S12 = { S11:a; };
+struct:S13 = { S12:a; };
+struct:S14 = { S13:a; };
+struct:S15 = { S14:a; };
+struct:S16 = { S15:a; };
+struct:S17 = { S16:a; };
+struct:S18 = { S17:a; };
+struct:S19 = { S18:a; };
+struct:S20 = { S19:a; };
+struct:S21 = { S20:a; };
+struct:S22 = { S21:a; };
+struct:S23 = { S22:a; };
+struct:S24 = { S23:a; };
+struct:S25 = { S24:a; };
+struct:S26 = { S25:a; };
+struct:S27 = { S26:a; };
+struct:S28 = { S27:a; };
+struct:S29 = { S28:a; };
+struct:S30 = { S29:a; };
+struct:S31 = { S30:a; };
+struct:S32 = { S31:a; };
+struct:S33 = { S32:a; };
+struct:S34 = { S33:a; };
+struct:S35 = { S34:a; };
+struct:S36 = { S35:a; };
+struct:S37 = { S36:a; };
+struct:S38 = { S37:a; };
+struct:S39 = { S38:a; };
+struct:S40 = { S39:a; };
+struct:S41 = { S40:a; };
+struct:S42 = { S41:a; };
+struct:S43 = { S42:a; };
+struct:S44 = { S43:a; };
+struct:S45 = { S44:a; };
+struct:S46 = { S45:a; };
+struct:S47 = { S46:a; };
+struct:S48 = { S47:a; };
+struct:S49 = { S48:a; };
+struct:S50 = { S49:a; };
+struct:S51 = { S50:a; };
+struct:S52 = { S51:a; };
+struct:S53 = { S52:a; };
+struct:S54 = { S53:a; };
+struct:S55 = { S54:a; };
+struct:S56 = { S55:a; };
+struct:S57 = { S56:a; };
+struct:S58 = { S57:a; };
+struct:S59 = { S58:a; };
+struct:S60 = { S59:a; };
+struct:S61 = { S60:a; };
+struct:S62 = { S61:a; };
+struct:S63 = { S62:a; };
+struct:S64 = { S63:a; };
+func:mk = S64() { fail E5; };
+trait:Poke = { func:poke = NIL(Self->:self) never fails; };
+impl:S1:Poke = { func:poke = NIL(S1->:self) never fails { pass NIL; }; };
+func:deep = int64() never fails {
+    Result<S64>:r = mk();
+    if (r.is_error) { pass 0i64; }
+    discard(raw r.value.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.poke());   // 64 steps: past the fuel
+    pass r.value.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a;
+};

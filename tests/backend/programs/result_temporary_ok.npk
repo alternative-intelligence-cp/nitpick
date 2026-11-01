@@ -1,0 +1,33 @@
+// expect-exit: 0
+//
+// THE LEGAL SHAPES beside `tests/analysis/rejection/result_temporary_read.npk`
+// (DEF-406, landing 175): a temporary's `is_error` is a plain bool read, licensing
+// nothing; and the idiom -- bind, test, read -- stands.
+mod:result_temporary_ok;
+error:E5;
+func:mkok = int64() { pass 7i64; };
+func:mkerr = int64() { fail E5; };
+func:temp_is_error = bool() never fails { pass (mkerr().is_error); };
+func:bound = int64() never fails {
+    Result<int64>:r = mkok();
+    if (r.is_error) { pass 0i64; }
+    pass (r.value);
+};
+func:main = int32(cstring[]:_~argv) {
+    if (!(raw temp_is_error())) { exit 11i32; }
+    if ((raw bound()) != 7i64)   { exit 12i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (E5)               { exit 55i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

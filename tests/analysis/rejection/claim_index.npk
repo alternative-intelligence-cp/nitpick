@@ -1,0 +1,75 @@
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 39:12
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 46:10
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 52:23
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 65:54
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 73:21
+// THE INDEX OF A `$$m` PLACE IS AN EXPRESSION, AND THE BINDINGS ANALYSIS WALKS IT (DEF-407;
+// landing 175's review, F3), IN EVALUATION ORDER (its second review, R1).
+//
+// `assign_mark_place` read the ROOT of a derived `$$m` place (`$$m arr[k]` reads `arr` to find
+// the element) and never walked the index, so a `move`, an unassigned name or an `@` inside
+// it was invisible to this analysis alone -- every other reader of a place walks them --
+// and the program ran: the moved binding read a wrong value (exit 50), the unassigned index
+// was undefined (an `OutOfBounds` trap at -O2, nothing at -O0), and the `@r` hidden from
+// DEF-402's pre-walk let a flipped `Result` fabricate a 0 (174 == the first build of 175 on
+// all three). Now the indexes along the path are walked as expressions
+// (`assign_place_indexes`), and each site is refused where its own rule refuses it.
+mod:claim_index;
+error:E5;
+func:mkok = int64() { pass 7i64; };
+func:mkerr = int64() { fail E5; };
+func:flipidx = int64(Result<int64>->:p) never fails { (<-p) = mkerr(); pass 0i64; };
+func:consume = int64(move string:x) never fails { pass x.len; };
+func:fill = NIL(int32->:q) never fails { pass NIL; };
+struct:Row = { int32[4]:c; };
+func:seti = int64(int64->:p) never fails { (<-p) = 1i64; pass 1i64; };
+
+// An `@` inside the index (F3): the pre-walk sees it, so the refined read after it is
+// refused (DEF-402).
+func:addr_in_index = int64() never fails {
+    Result<int64>:r = mkok();
+    int32[4]:arr = [1i32, 2i32, 3i32, 4i32];
+    if (r.is_error) { pass 0i64; }
+    drop fill($$m arr[raw flipidx(@r)]);
+    pass (r.value);
+};
+// A `move` inside the index: the read after it is MOVE-001.
+func:move_in_index = int64() never fails {
+    string:s = string_concat("ab", "cde");
+    int32[8]:arr = [1i32, 2i32, 3i32, 4i32, 5i32, 6i32, 7i32, 8i32];
+    drop fill($$m arr[raw consume(move(s))]);
+    pass s.len;
+};
+// An unassigned name inside the index: ASSIGN-001 at the index.
+func:unassigned_in_index = int64() never fails {
+    int64:k;
+    int32[8]:arr = [1i32, 2i32, 3i32, 4i32, 5i32, 6i32, 7i32, 8i32];
+    drop fill($$m arr[k]);
+    pass 0i64;
+};
+// THE INDEXES ARE WALKED IN EVALUATION ORDER (the second delta review of landing 175, R1). The
+// emitter forms a place's base before it evaluates the index, so in `g[A].c[B]` A runs before B,
+// and `assign_place_indexes` descends to the root first and judges each index on the way back
+// up. Here the INNER index moves `s` and the OUTER one reads it after the move: MOVE-001 at the
+// outer `s`. The mirror, `g[s.len - 4].c[consume(move(s)) - 2]`, is legal and runs
+// (tests/backend/programs/claim_index_order_ok.npk). The first commit of 175 walked the indexes
+// outermost first: it refused that legal mirror (a regression against 174) and accepted this.
+func:reversed_move = int64() never fails {
+    string:s = string_concat("ab", "cde");
+    Row[2]:g = [Row{ c: [1i32, 2i32, 3i32, 4i32] }, Row{ c: [5i32, 6i32, 7i32, 8i32] }];
+    drop fill($$m g[(raw consume(move(s))) - 4i64].c[s.len - 2i64]);
+    pass 7i64;
+};
+// The same order for an unassigned name: `k` is assigned (`$$m k`, the out-parameter) in the
+// OUTER index and read in the inner one, which runs first -- ASSIGN-001 at the inner `k`.
+func:reversed_assign = int64() never fails {
+    int64:k;
+    Row[2]:g = [Row{ c: [1i32, 2i32, 3i32, 4i32] }, Row{ c: [5i32, 6i32, 7i32, 8i32] }];
+    drop fill($$m g[k - 1i64].c[(raw seti($$m k)) - 1i64]);
+    pass 7i64;
+};

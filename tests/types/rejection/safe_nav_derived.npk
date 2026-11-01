@@ -1,0 +1,127 @@
+// expect-error: NITPICK-TYPE-102
+// expect-error-at: 59:18
+// expect-error: NITPICK-TYPE-102
+// expect-error-at: 60:18
+// expect-error: NITPICK-TYPE-102
+// expect-error-at: 63:18
+// expect-error: NITPICK-TYPE-102
+// expect-error-at: 66:19
+// expect-error: NITPICK-TYPE-102
+// expect-error-at: 69:18
+// expect-error: NITPICK-TYPE-102
+// expect-error-at: 72:18
+// expect-error: NITPICK-TYPE-102
+// expect-error-at: 73:18
+// expect-error: NITPICK-TYPE-102
+// expect-error-at: 76:18
+// expect-error: NITPICK-TYPE-102
+// expect-error-at: 79:18
+// expect-error: NITPICK-TYPE-102
+// expect-error-at: 82:19
+// expect-error: NITPICK-TYPE-102
+// expect-error-at: 85:19
+// expect-error: NITPICK-TYPE-102
+// expect-error-at: 86:20
+// expect-error: NITPICK-TYPE-102
+// expect-error-at: 87:18
+// expect-error: NITPICK-TYPE-102
+// expect-error-at: 89:19
+// expect-error: NITPICK-TYPE-102
+// expect-error-at: 99:13
+// expect-error: NITPICK-TYPE-102
+// expect-error-at: 103:14
+// `?.` REACHES A STRUCT'S STORED FIELD ONLY (DEF-408, landing 175).
+//
+// D-099's table says `a?.f` is "the field, still wrapped", and a FIELD is what the
+// emitter lowers right: `emit_member_from`'s struct arm types the read by the field
+// (`fty = fi.type_id`) and stores it at the payload's offset. Every other arm -- the
+// members the compiler COMPUTES from a base, a `string`'s `.len`, an array's `.len`, a
+// `Result`'s `.value`, a `frac`'s `.num` -- types the read by the `?.` node's own
+// `Optional` type and stores the raw member at the Optional's BASE, so a present
+// `string?`'s `o?.len` read a wrong value (exit 60 at -O0 and -O2 on string, array,
+// slice, simd, buffer, cstring and tryte `.len`, string and buffer `.cap`, and a
+// `Result`'s three members, measured on 174 and on this landing's build), and a
+// `frac?`'s `o?.num` emitted IR `llc` refuses (`'%t71' defined with type 'i32' but
+// expected '{ i8, i32 }'`). The base compiler ACCEPTED every site below.
+//
+// Until the emitter writes the tag and stores the member at the payload's offset (the
+// relaxation, placed after landing 180), the typer refuses a computed member through
+// `?.` with `NITPICK-TYPE-102`: unwrap the `Optional` first (`?? d`, `??! Ident`) or
+// test it (`!= NIL`), then read the member. A struct's field stays open, by value and
+// through a pointer -- the control is `tests/backend/programs/safe_nav_struct_ok.npk`.
+// A member that does not exist keeps its own report (`member_type` is asked first).
+mod:safe_nav_derived;
+error:E5;
+func:mkok = int64() { pass 7i64; };
+func:main = int32(cstring[]:_~argv) {
+    string:s = string_concat("ab", "c");
+    string?:os = move(s);
+    int64:w1 = os?.len ?? 99i64;                       // a string's length
+    int64:w2 = os?.cap ?? 99i64;                       // and its capacity
+    int32[4]:a = [1i32, 2i32, 3i32, 4i32];
+    int32[4]?:oa = a;
+    int64:w3 = oa?.len ?? 99i64;                       // a fixed array's length
+    int32[]:sl = a[1i32...4i32];
+    int32[]?:osl = sl;
+    int64:w4 = osl?.len ?? 99i64;                      // a slice's length
+    simd<int32, 4>:v = simd(1i32);
+    simd<int32, 4>?:ov = v;
+    int64:w5 = ov?.len ?? 99i64;                       // a simd's lane count
+    buffer:b = buffer_new(16i64);
+    buffer?:ob = move(b);
+    int64:w6 = ob?.len ?? 99i64;                       // a buffer's length
+    int64:w7 = ob?.cap ?? 99i64;                       // and its capacity
+    cstring:cs = to_cstring("abc") ?! E5;
+    cstring?:oc = move(cs);
+    int64:w8 = oc?.len ?? 99i64;                       // a cstring's length
+    tryte:t = 42;
+    tryte?:ot = t;
+    int64:w9 = ot?.len ?? 99i64;                       // a tryte's digit count
+    frac32:third = (1i32 => frac32) / (3i32 => frac32);
+    frac32?:of = third;
+    int32:w10 = of?.num ?? 99i32;                      // a frac's numerator
+    Result<int64>:r = mkok();
+    Result<int64>?:or = r;
+    int64:w11 = or?.value ?? 99i64;                    // a Result's value
+    Error?:w12 = or?.err;                              // its error
+    bool:w13 = or?.is_error ?? true;                   // and its derived flag
+    string->?:ps = NIL;
+    int64:w14 = ps?.len ?? 99i64;                      // through the pointer `access_base` peels
+    int64:sum = w1 + w2 + w3 + w4 + w5 + w6 + w7 + w8 + w9 + (w10 => int64) + w11 + w14;
+    if (w12 != NIL) { exit 1i32; }
+    if (w13) { exit 2i32; }
+    exit (sum =>! int32);
+};
+// A Guard's `.value` (D-056) and an OwnedFd's `.value` (D-185) are computed members too.
+async func:guard_value = int32(Mutex<int32, 3i32>->:m) {
+    Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64));
+    Guard<int32>?:og = move(g);
+    pass (og?.value ?? 99i32);
+};
+func:fd_value = int64(move OwnedFd:h) never fails {
+    OwnedFd?:oh = move(h);
+    fd:f = oh?.value ??! E5;
+    pass (f => int64);
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E5)               { exit 55i32; },
+        (IntOverflow)      { exit 91i32; },
+        (Unreachable)      { exit 74i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (TbbErr)           { exit 95i32; },
+        (CastRange)        { exit 90i32; },
+        (DeadlineExceeded) { exit 89i32; },
+        (StaleHandle)      { exit 88i32; },
+        (ChannelClosed)    { exit 87i32; },
+        (DecreasesViolated) { exit 86i32; },
+        (LimitViolated)    { exit 85i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

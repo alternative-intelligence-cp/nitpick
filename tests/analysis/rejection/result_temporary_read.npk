@@ -1,0 +1,59 @@
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 40:54
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 41:38
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 45:18
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 49:17
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 55:27
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 58:64
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 59:49
+// A `.value` OR `.err` READ OFF A VALUE NO BINDING HOLDS IS UNCHECKED (DEF-406, landing 175).
+//
+// `check_value_read`/`check_err_read` refuse a read whose `Result` is a field or
+// parameter path (F-4) and license one on a bare local by its `is_error` test; a base
+// that is NEITHER -- a call's result, a `move(...)`, a ternary's value -- fell out of
+// both branches and was READ WITHOUT A CHECK: `mkerr().value` read a NULL plain
+// pointer (MachineFault, a backstop only) or a fabricated 0, `mkok().err` a silent
+// zero (173 == 174, exit 50 on every cell). The comment above the rule called binding
+// "the idiom", but an idiom is enforced only if the other spelling is refused. Now
+// it is: bind the value to a local first and test `is_error` on THAT (D-007). The
+// legal shapes are in `tests/backend/programs/result_temporary_ok.npk`.
+//
+// ONE MORE FACE, found by the review of this landing (F5): a base reached through the
+// pointer level the TYPER peels -- a pointer binding's automatic dereference (`p.value`
+// is `(<-p).value` with the `<-` left off, D-006; exit 50 on 174 and on the first
+// build) -- is the same read under an identifier's spelling, and refuses with the same
+// message. (The review's F6, `o?.value` through an `Optional`, is closed one stage
+// earlier: a `Result`'s members are computed, and `?.` reaches a struct's stored field
+// only -- `NITPICK-TYPE-102`, DEF-408, `tests/types/rejection/safe_nav_derived.npk`.)
+mod:result_temporary_read;
+error:E5;
+func:mkok = int64() { pass 7i64; };
+func:mkerr = int64() { fail E5; };
+
+// A call's result (t2).
+func:call_value = int64() never fails { pass (mkerr().value); };
+func:call_err = int32() { fail mkok().err; };
+// A `move(...)` (t1).
+func:move_value = int64() never fails {
+    Result<int64>:r = mkerr();
+    pass (move(r).value);
+};
+func:move_err = int32() {
+    Result<int64>:r = mkok();
+    fail move(r).err;
+};
+// A ternary's value (t3).
+func:ternary_value = int64(bool:c) never fails {
+    Result<int64>:a = mkerr();
+    Result<int64>:b = mkerr();
+    pass ((is (c) : a : b).value);
+};
+// A pointer binding's AUTOMATIC dereference (F5): `.` peels one pointer level (D-006).
+func:ptr_value = int64(Result<int64>->:p) never fails { pass (p.value); };
+func:ptr_err = int32(Result<int64>->:p) { fail p.err; };

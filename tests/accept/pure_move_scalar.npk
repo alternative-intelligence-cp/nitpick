@@ -1,0 +1,34 @@
+// A `pure` BODY MAY `move` ITS OWN LOCALS (DEF-397's legal half, landing 175).
+//
+// Landing 174 made a `pure` body's `move` of a place that is not its own local --
+// a parameter, a pointee, a borrow, a slice, a handle -- `NITPICK-TYPE-061`, the
+// twin of the `(<-p) = ...` gate (`tests/types/rejection/pure_rules.npk`'s
+// `p_move_*` sites): such a move vacates memory the caller can see (D-221, D-325).
+// Its own SCALAR local is the legal half: the move spends the local (DEF-120) and
+// nothing outside the body can see it. An owning local (`string`) in a `pure` body
+// is refused by another rule (`p_owner`, TYPE-061's allocation face), so the legal
+// half is the copy-type shape alone.
+mod:pure_move_scalar;
+error:E5;
+func:scalar_move = int32(int32:a) never fails pure { int32:x = a; int32:y = move(x); pass y; };
+func:bool_move = bool(bool:b) never fails pure { bool:x = b; bool:y = move(x); pass y; };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw scalar_move(7i32)) != 7i32) { exit 1i32; }
+    if (!(raw bool_move(true)))          { exit 2i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (DeadlineExceeded) { exit 90i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (E5)               { exit 55i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

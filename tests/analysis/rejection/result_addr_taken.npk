@@ -1,0 +1,183 @@
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 75:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 82:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 90:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 98:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 107:17
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 120:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 127:15
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 137:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 144:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 151:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 158:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 164:17
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 165:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 171:11
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 172:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 178:28
+// A `Result` WHOSE ADDRESS IS TAKEN in its function is never refined (DEF-402, landing 175).
+//
+// `if (!r.is_error) { ... r.value ... }` licenses the read because nothing between the
+// test and the read can change `r`. A write THROUGH ITS ADDRESS -- a callee handed `@r`,
+// a local alias `(<-p) = ...`, a `defer` that writes, a method taking `Self->` whose
+// receiver is `r` -- puts the `Result` on the other road after the test, and the
+// `checked`/`errchecked` fact survived it: `.value` read off an error (a fabricated 0
+// for a scalar, a NULL plain pointer dereferenced for a pointer payload) and `.err` off
+// a success (management_10, 2026-10-31; the cells under `.internal/probes174/writehole/`
+// and `.internal/probes175/`).
+//
+// THE RULE IS FLOW-INSENSITIVE AND CLOSED: a silent pre-walk of the whole body records
+// every binding whose address is taken -- `@`, `$$i` or `$$m` of the binding OR OF A
+// PLACE INTO IT (`@r.value` reaches the payload, and a payload pointer can vacate or
+// retype what the refined read then reads), or the binding or a place into it as the
+// receiver of a method taking `Self->` -- and a `.value`/`.err` read of such a binding
+// is `NITPICK-TAINT-001` wherever it stands: before or after the taking, in a loop, in
+// a `defer`. The legal shapes and the re-spelling -- test and read through a fresh local
+// whose address is never taken -- are in `tests/backend/programs/result_addr_taken_ok.npk`.
+mod:result_addr_taken;
+error:E5;
+struct:Box = { int64:n; };
+trait:Poke = { func:poke = NIL(Self->:self) never fails; };
+impl:Result<int64>:Poke = {
+    func:poke = NIL(Result<int64>->:self) never fails { (<-self) = mkerr(); pass NIL; };
+};
+impl:Box:Poke = {
+    func:poke = NIL(Box->:self) never fails { self.n = 0i64; pass NIL; };
+};
+func:mkok = int64() { pass 7i64; };
+func:mkerr = int64() { fail E5; };
+func:mkbox = Box() { pass Box{ n: 6i64 }; };
+func:sink = NIL(Result<int64>->:p) never fails { pass NIL; };
+func:flip = NIL(Result<int64>->:p) never fails { (<-p) = mkerr(); pass NIL; };
+func:unflip = NIL(Result<int64>->:p) never fails { (<-p) = mkok(); pass NIL; };
+func:zero = NIL(int64->:p) never fails { (<-p) = 0i64; pass NIL; };
+
+// e5: the address handed to a callee that does not write -- the conservative cost.
+func:taken_nowrite = int64() never fails {
+    Result<int64>:r = mkok();
+    if (r.is_error) { pass 0i64; }
+    drop sink(@r);
+    pass (r.value);
+};
+// c1v: a callee flips the road through `@r` after the test.
+func:callee_flips = int64() never fails {
+    Result<int64>:r = mkok();
+    if (r.is_error) { pass 0i64; }
+    drop flip(@r);
+    pass (r.value);
+};
+// c2v: a local alias flips it.
+func:alias_flips = int64() never fails {
+    Result<int64>:r = mkok();
+    if (r.is_error) { pass 0i64; }
+    Result<int64>->:p = @r;
+    (<-p) = mkerr();
+    pass (r.value);
+};
+// e6: the address is taken BEFORE the test; the test refines, the write undoes it.
+func:taken_before = int64() never fails {
+    Result<int64>:r = mkok();
+    Result<int64>->:p = @r;
+    if (r.is_error) { pass 0i64; }
+    (<-p) = mkerr();
+    pass (r.value);
+};
+// e7: loop-carried -- iteration 2 reads after iteration 1's write.
+func:loop_carried = int64() never fails {
+    Result<int64>:r = mkok();
+    if (r.is_error) { pass 0i64; }
+    int32:i = 0i32;
+    int64:seen = 7i64;
+    while (i < 2i32) decreases (2i32 - i) {
+        seen = r.value;
+        Result<int64>->:p = @r;
+        (<-p) = mkerr();
+        i = i + 1i32;
+    }
+    pass seen;
+};
+// e3: the write is in a `defer`.
+func:defer_writes = int64() never fails {
+    Result<int64>:r = mkok();
+    Result<int64>->:p = @r;
+    defer { (<-p) = mkerr(); }
+    if (r.is_error) { pass 0i64; }
+    pass (r.value);
+};
+// c1e: the `.err` twin -- a callee flips to SUCCESS, and `.err` is the slot's zero.
+func:err_off_flipped = int32() {
+    Result<int64>:r = mkerr();
+    if (r.is_error) {
+        drop unflip(@r);
+        fail r.err;
+    }
+    pass 0i32;
+};
+// `$$m r`: a write-capable claim handed to a callee (the claim is a write to the assignment
+// analysis, which refused this read before 175; the claim is in the set as well).
+func:claim_mut = int64() never fails {
+    Result<int64>:r = mkok();
+    if (r.is_error) { pass 0i64; }
+    drop flip($$m r);
+    pass (r.value);
+};
+// `$$i r`: a shared claim -- in the set as `@` is, conservatively.
+func:claim_shared = int64() never fails {
+    Result<int64>:r = mkok();
+    if (r.is_error) { pass 0i64; }
+    drop sink($$i r);
+    pass (r.value);
+};
+// r1: a method taking `Self->` whose receiver is the binding itself -- the implicit `@r`.
+func:receiver_flips = int64() never fails {
+    Result<int64>:r = mkok();
+    if (r.is_error) { pass 0i64; }
+    drop r.poke();
+    pass (r.value);
+};
+// The qualified spelling of the same call.
+func:qualified_flips = int64() never fails {
+    Result<int64>:r = mkok();
+    if (r.is_error) { pass 0i64; }
+    drop Poke.poke(@r);
+    pass (r.value);
+};
+// An address INTO the binding: `@r.value` reaches the payload, and the rule is closed.
+func:payload_address = int64() never fails {
+    Result<int64>:r = mkok();
+    if (r.is_error) { pass 0i64; }
+    drop zero(@r.value);
+    pass (r.value);
+};
+// A `Self->` method on the PAYLOAD: its receiver is a place into the binding.
+func:payload_receiver = int64() never fails {
+    Result<Box>:r = mkbox();
+    if (r.is_error) { pass 0i64; }
+    drop r.value.poke();
+    pass (r.value.n);
+};
+// h7: the read is in a `defer` registered BEFORE the taking; the `defer` runs after the write.
+func:defer_reads_then_taken = int64(int64->:out) never fails {
+    Result<int64>:r = mkok();
+    if (!r.is_error) {
+        defer { (<-out) = r.value; }
+        Result<int64>->:p = @r;
+        (<-p) = mkerr();
+    }
+    pass 0i64;
+};

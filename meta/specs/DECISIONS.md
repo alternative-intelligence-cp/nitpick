@@ -505,6 +505,25 @@ path. How ERR is represented in `tbb8`/`16`/`32`/`64`, how it survives arithmeti
 and how it is tested must be nailed down before either `Result` lowering or
 arithmetic lowering is implemented.
 
+*[2026-10-31, 1.6.1e (landing 175, DEF-402 + DEF-406) — a dated note.]* **The `is_error` refinement is a
+fact about a `Result` nothing can write behind the analysis's back, and a `.value`/`.err` read is licensed
+for a BARE LOCAL alone.** Two refusals joined the taint discipline at landing 175. A `.value`/`.err` read
+whose `Result` is a value no binding holds -- a call's result, a `move(...)`, a ternary's value, a
+dereference `(<-p).value` -- is `NITPICK-TAINT-001` (DEF-406; until then `f().value` and `(<-p).value`
+were read with no check at all, the code's comment calling the bind-first idiom "the shape of the
+language" while the other spelling passed; a pointer BINDING's automatic dereference, `p.value`, D-006,
+is the same read and refuses too -- the delta review's F5 -- and `o?.value` through an `Optional` is refused
+one stage earlier, at the typer, as every computed member through `?.` is: `NITPICK-TYPE-102`, DEF-408,
+D-099's note). And a local
+`Result` whose address is taken ANYWHERE in its function -- `@`, `$$i`/`$$m`, or a method taking `Self->`,
+of it or of a place into it -- is never refined: its `.value`/`.err` read is `NITPICK-TAINT-001` wherever
+it stands (DEF-402: a write through the address flips the road after the test, on a road the walk cannot
+see -- a callee handed `@r`, a local alias, a `defer`, a loop's later iteration; the set is filled by a
+silent pre-walk of the whole body, so it is independent of statement order). The re-spelling is a fresh
+local whose address is never taken. A ternary's, a `while`'s or a `when`'s condition is still no guard
+(DEF-399, pinned at 175), and a `defer` body is still typed on its registration-time state (DEF-405,
+landing 176).
+
 ---
 
 ## D-008 — `tbb` sticky ERR encoding — **SETTLED**
@@ -7526,6 +7545,21 @@ same commit as the code it was checking.
 
 ---
 
+*[2026-10-31, 1.6.1e (landing 175, DEF-408) — a dated note.]* **`a?.f` is a struct's STORED field, and until
+DEF-408's emitter fix `?.` reaches nothing else: `NITPICK-TYPE-102`, a TEMPORARY restriction.** The table
+above says "the field, still wrapped", and a field is what the emitter lowers right: `emit_member_from`'s
+struct arm types the read by the field and stores it at the payload's offset. Every COMPUTED member -- a
+`string`'s, a `cstring`'s or a `buffer`'s `.len`/`.cap`/`.ptr`, an array's, a slice's, a simd's or a tryte's
+`.len`, a `frac`'s parts, a `Result`'s `.value`/`.err`/`.is_error`, a `Guard`'s, an `RGuard`'s or an
+`OwnedFd`'s `.value` -- was typed by the `?.` node's own `Optional` type and stored at the Optional's base,
+so a present `string?`'s `o?.len` read a wrong value on every compiler before landing 175 (twelve kinds
+measured, `.internal/probes175/extent408/`; a `frac32?`'s `o?.num` emitted IR `llc` refuses). Landing 175
+refuses such a read at the typer with its own code, `NITPICK-TYPE-102` (`type_member_access`): the message
+names the member and the base's type and says to unwrap (`?? d`, `??! Ident`) or test (`!= NIL`) first.
+This narrows nothing the decision promised -- `a?.f` was always a field -- and is lifted when the emitter fix
+lands (placed after landing 180, OPEN_DECISIONS DEF-408); it had 0 live sites in the tree, the libraries and
+the applications when it landed.
+
 ## D-100 — A variadic function is a different type kind, not a flag
 
 **Settled in cycle 0.4.5.** `..*T[]` parsed, resolved and bound its name from
@@ -10391,6 +10425,12 @@ used as a `pick` discriminant): of the 9 code sites, 3 only `==`/`!=`-compare th
 the compiler itself stored (`type_name_index` is `pass t.payload`, always a valid variant) — so the
 trap is DEAD at every `src/` site. The `type_cast.npk:438-446` comment still describing the
 fall-through is stale and corrected at landing 175.
+
+*[2026-10-31, 1.6.1e (landing 175) — a dated note.]* The trap is PINNED by
+`tests/backend/programs/forged_tag_pick_trap.npk` (a forged tag, `7i32 =>! Col` computed through a call, at
+an exhaustive STATEMENT `pick`: exit 74 at both legs, the `(Unreachable)` arm), and the "88 sites" above is
+the count at 0.9: landing 174's census found 10 hits (9 code sites and 1 comment, all `TokenKind`, none
+reaching the trap). `type_cast.npk`'s echo of this paragraph is corrected at 175.
 
 ## D-141 — The fd floor, the error-code space, and stdout/stderr's contract — **SETTLED**
 

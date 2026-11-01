@@ -1,0 +1,84 @@
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 31:35
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 36:42
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 45:14
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 56:14
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 68:14
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 79:14
+// A TERNARY, `while` OR `when` CONDITION ON `is_error` IS NOT A GUARD TODAY (a pin; DEF-399 widened).
+//
+// The taint discipline recognises an error guard by SHAPE -- an `if` or a `pick` on
+// `is_error` (D-007), for `.value` and, since DEF-381, for `.err` -- and no other
+// condition refines either bit: the ternary's condition, a `while`'s and a `when`'s
+// are read by nobody, so the `.value`/`.err` under them is `NITPICK-TAINT-001`
+// although the test is right there. DEF-399 (LOW, placed after landing 180) is the
+// relaxation that would teach the guard reader these forms, for BOTH bits, together
+// with the short-circuit `&&`/`||` operands (`me0394`'s shape). Until it lands this
+// file PINS the refusal: a landing that relaxes one of these six reads moves its line
+// to `tests/accept/taint.npk` and is read against DEF-399.
+mod:taint_guard_shapes;
+error:E5;
+func:mf = int32(bool:c) { if (c) { fail E5; } pass 1i32; };
+
+// The ternary's condition.
+func:tern_err = Error(bool:c) never fails {
+    Result<int32>:r = mf(c);
+    Error:e = (is (r.is_error) : r.err : E5);
+    pass e;
+};
+func:tern_val = int32(bool:c) never fails {
+    Result<int32>:r = mf(c);
+    int32:v = (is (r.is_error) : 0i32 : r.value);
+    pass v;
+};
+// A `while`'s condition.
+func:while_err = Error(bool:c) never fails {
+    Result<int32>:r = mf(c);
+    Error:e = E5;
+    int32:k = 1i32;
+    while (r.is_error) decreases k {
+        e = r.err;
+        r = mf(false);
+        k = k - 1i32;
+    }
+    pass e;
+};
+func:while_val = int32(bool:c) never fails {
+    Result<int32>:r = mf(c);
+    int32:v = 0i32;
+    int32:k = 1i32;
+    while (!r.is_error) decreases k {
+        v = r.value;
+        r = mf(true);
+        k = k - 1i32;
+    }
+    pass v;
+};
+// A `when`'s condition.
+func:when_err = Error(bool:c) never fails {
+    Result<int32>:r = mf(c);
+    Error:e = E5;
+    int32:k = 1i32;
+    when (r.is_error) decreases k {
+        e = r.err;
+        r = mf(false);
+        k = k - 1i32;
+    } then { k = 0i32; } end { k = 0i32; }
+    pass e;
+};
+func:when_val = int32(bool:c) never fails {
+    Result<int32>:r = mf(c);
+    int32:v = 0i32;
+    int32:k = 1i32;
+    when (!r.is_error) decreases k {
+        v = r.value;
+        r = mf(true);
+        k = k - 1i32;
+    } then { k = 0i32; } end { k = 0i32; }
+    pass v;
+};

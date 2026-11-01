@@ -1,0 +1,89 @@
+// expect-exit: 0
+//
+// THE LEGAL SHAPES beside `tests/analysis/rejection/result_addr_taken.npk` (DEF-402,
+// landing 175): a `Result` whose address is never taken is refined as before, the set
+// is per BINDING (another `Result`'s address taken beside it changes nothing), a COPY
+// of the `Result` is storage of its own (writing the copy leaves the original on its
+// road), the re-spelling of the refused shape is a fresh local whose address is
+// never taken, and a BY-VALUE method on the payload or on the `Result` takes no
+// address at all -- a built-in of the five value kinds (`simd.sum`; the review's F1,
+// a regression of this landing's first build) or a user `Self` by value (c12).
+mod:result_addr_taken_ok;
+error:E5;
+func:mkok = int64() { pass 7i64; };
+func:mkerr = int64() { fail E5; };
+func:mkv = simd<int32, 4>() { pass simd(1i32, 2i32, 3i32, 4i32); };
+trait:Peek = { func:peek = int64(Self:self) never fails; };
+impl:Result<int64>:Peek = { func:peek = int64(Result<int64>:self) never fails { pass 1i64; }; };
+func:sink = NIL(Result<int64>->:p) never fails { pass NIL; };
+func:flip = NIL(Result<int64>->:p) never fails { (<-p) = mkerr(); pass NIL; };
+
+// e4: the address is never taken -- the common case.
+func:never_taken = int64() never fails {
+    Result<int64>:r = mkok();
+    if (r.is_error) { pass 0i64; }
+    pass (r.value);
+};
+// The set is per binding: `b`'s address is taken and flipped, `a` is read.
+func:other_taken = int64() never fails {
+    Result<int64>:a = mkok();
+    Result<int64>:b = mkok();
+    if (a.is_error) { pass 0i64; }
+    drop flip(@b);
+    pass (a.value);
+};
+// A copy is storage of its own: the copy is flipped, the original is read.
+func:copy_flipped = int64() never fails {
+    Result<int64>:r = mkok();
+    if (r.is_error) { pass 0i64; }
+    Result<int64>:c = r;
+    c = mkerr();
+    pass (r.value);
+};
+// THE RE-SPELLING of the refused e5 shape: the pointer work in a block of its own, then
+// the test and the read through a fresh local whose address is never taken.
+func:respelled = int64() never fails {
+    Result<int64>:r = mkok();
+    { drop sink(@r); }
+    Result<int64>:c = r;
+    if (c.is_error) { pass 0i64; }
+    pass (c.value);
+};
+// A BUILT-IN BY-VALUE METHOD ON THE PAYLOAD (F1): `simd.sum` has no callee type and
+// takes its receiver by value, so `r` stays refined.
+func:builtin_byval = int32() never fails {
+    Result<simd<int32, 4>>:r = mkv();
+    if (r.is_error) { pass 0i32; }
+    pass r.value.sum();
+};
+// A USER `Self` BY-VALUE METHOD on the `Result` itself (c12's shape).
+func:user_byval = int64() never fails {
+    Result<int64>:r = mkok();
+    if (r.is_error) { pass 0i64; }
+    discard(raw r.peek());
+    pass (r.value);
+};
+func:main = int32(cstring[]:_~argv) {
+    if ((raw never_taken()) != 7i64)  { exit 11i32; }
+    if ((raw builtin_byval()) != 10i32) { exit 15i32; }
+    if ((raw user_byval()) != 7i64)   { exit 16i32; }
+    if ((raw other_taken()) != 7i64)  { exit 12i32; }
+    if ((raw copy_flipped()) != 7i64) { exit 13i32; }
+    if ((raw respelled()) != 7i64)    { exit 14i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (DeadlineExceeded) { exit 90i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (E5)               { exit 55i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

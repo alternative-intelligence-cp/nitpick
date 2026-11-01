@@ -73,6 +73,7 @@ use "../parse_decl.npk".*;
 use "../types.npk".*;
 use "../expr_types.npk".*;
 use "../type_resolve.npk".*;   // `fold_const` — one evaluator, one idea of constant
+use "../type_members.npk".*;   // `type_param_at_of`: the receiver a `Self->` method takes (DEF-402)
 use "../type_codes.npk".*;
 use "./analysis_codes.npk".*;
 use "./exhaust.npk".*;
@@ -132,7 +133,7 @@ pub struct:AssignState = {
     // idiom CONTROL_REFERENCE §`?!` documents and `?!` lowers to. OFF that road
     // (`reads_the_error`'s `pass r.err` with no guard) the error field may be the
     // success slot's zero, and `fail`-ing it fabricates a success holding a NULL
-    // value (DEF-381): `NITPICK-TAINT-001`, reversing `tests/accept/taint.npk:97`'s
+    // value (DEF-381): `NITPICK-TAINT-001`, reversing `tests/accept/taint.npk:97 (at landing 173's 3b0043e)`'s
     // pinned design (the author's answer (b), relayed 2026-10-30 14:05:38).
     //
     // IT INTERSECTS AT A MERGE, like `checked` -- the read after the merge happens
@@ -150,6 +151,9 @@ pub struct:AssignState = {
     wild bool->:sealed_any;
     wild bool->:sealed_firm;
     int32:count;
+    // THE COLLECTING PRE-WALK SHARES ONE STATE (DEF-402, landing 175): `state_copy` hands this state
+    // back as its own copy, so the silent walk that fills the address-taken set allocates nothing.
+    bool:shared;
 };
 
 pub struct:Assign = {
@@ -185,6 +189,16 @@ pub struct:Assign = {
     wild int32->:pat_next;    // per symbol id: the next symbol of the same pattern, or 0
     int32:pat_count;
     int32:sym_count;
+    // THE ADDRESS-TAKEN SET OF THE FUNCTION BEING WALKED (DEF-402, landing 175): per slot, whether its
+    // address is taken somewhere in the body -- `@` or `$$i`/`$$m` of the binding or of a place into
+    // it, or the binding (or a place into it) as the receiver of a method taking `Self->`. Filled by
+    // a silent pre-walk of the whole body (`collecting`), so the set is independent of statement
+    // order (an address taken BEFORE the `is_error` test, or on a loop's later iteration, counts),
+    // and read by `addr_taken_refuses` at every refined `.value`/`.err` read.
+    wild bool->:addr_taken;
+    int32:fn_slots;            // the length of `addr_taken`: the function's slot count
+    bool:collecting;           // the pre-walk is running: `note_addr_taken` records, nothing reports
+    bool:addr_deep;            // a place under an address-taker ran past `place_root`'s fuel: fail CLOSED
 };
 
 pub func:assign_init = Assign(Ast->:ast, SymbolTable->:tab,
@@ -210,10 +224,12 @@ pub func:assign_init = Assign(Ast->:ast, SymbolTable->:tab,
             }
         }
     }
+    wild int8->:a1 = alloc(1i64);   // `addr_taken`'s placeholder until the first function (`fn_arrays_begin`)
     Assign:x = Assign{ ast: ast, tab: tab, interns: interns, types: types,
                        etypes: etypes, diags: diags, tyres: tyres,
                        quiet: false,
-                       pat_first: pfirst, pat_next: pnext, pat_count: pc, sym_count: sc };
+                       pat_first: pfirst, pat_next: pnext, pat_count: pc, sym_count: sc,
+                       addr_taken: a1 =>! wild bool->, fn_slots: 0i32, collecting: false, addr_deep: false };
     pass x;
 };
 
@@ -236,7 +252,7 @@ pub func:state_new = AssignState(int32:n) never fails {
                                  errchecked: m8 =>! wild bool->,
                                  sealed_any: m6 =>! wild bool->,
                                  sealed_firm: m7 =>! wild bool->,
-                                 count: size =>! int32 };
+                                 count: size =>! int32, shared: false };
     for (int64:i in 0i64...size) {
         s.must[i] = false;
         s.may[i] = false;
@@ -251,6 +267,7 @@ pub func:state_new = AssignState(int32:n) never fails {
 };
 
 func:state_copy = AssignState(AssignState:src) never fails {
+    if (src.shared) { pass src; }   // the pre-walk's one state is its own copy (DEF-402)
     AssignState:d = raw state_new(src.count);
     int64:i = 0i64;
     while (i < (src.count => int64)) decreases ((src.count => int64)) - i {
@@ -560,6 +577,19 @@ func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) never fails {
             drop state_mark(st, ps);
             ps = ps + 1i32;
         }
+        // THE ADDRESS-TAKEN SET IS COLLECTED FIRST (DEF-402, landing 175): the whole body is walked
+        // once SILENTLY (`quiet`: nothing reported) on one shared state, recording every binding
+        // whose address is taken, so the set is independent of statement order; then the real walk
+        // consults it at every refined read (`addr_taken_refuses`).
+        drop fn_arrays_begin(x, raw symtab_fn_slots(x.tab, id.index));
+        AssignState:pre = raw state_new(raw symtab_fn_slots(x.tab, id.index));
+        pre.shared = true;
+        bool:sq = x.quiet;
+        x.quiet = true;
+        x.collecting = true;
+        drop assign_stmt(x, pre, body, raw ASSIGN_DEPTH());
+        x.collecting = false;
+        x.quiet = sq;
         drop assign_stmt(x, st, body, raw ASSIGN_DEPTH());
         // EVERY PATH ENDS IN `pass`, `fail`, `exit` OR A TRAP (DEF-108, 1.6.0 step
         // 5c; the library listener's fuzzer, the user's rule): a body that can reach
@@ -1461,7 +1491,15 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) never
         pass NIL;
     }
 
+    // `@place` (D-004 rule 1) TAKES THE ADDRESS: the binding under the place joins the address-taken
+    // set (DEF-402); the operand is read as it was.
+    if (n.kind == ExprKind.ExprAddressOfExpr) {
+        drop note_addr_taken(x, raw expr_operand(n));
+        drop assign_expr(x, st, raw expr_operand(n), d);
+        pass NIL;
+    }
     if (n.kind == ExprKind.ExprBorrowExpr) {
+        drop note_addr_taken(x, raw expr_operand(n));   // a `$$i`/`$$m` claim takes the address too (DEF-402)
         if (raw borrow_is_mut(n)) {
             drop assign_mark_place(x, st, raw expr_operand(n), d);
             pass NIL;
@@ -1537,6 +1575,7 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) never
                                     raw expr_list_count(n), d);
             pass NIL;
         }
+        drop note_recv_taken(x, id, recv);   // a method taking `Self->` takes its receiver's address (DEF-402)
         drop assign_expr(x, st, recv, d);
         drop assign_expr_window(x, st, raw expr_list_start(n),
                                 raw expr_list_count(n), d);
@@ -1691,10 +1730,41 @@ func:assign_mark_place = NIL(Assign->:x, AssignState:st, ExprId:place, int32:dep
     }
     if (r.id.index != place.index) {
         drop assign_read(x, st, rn);
+        drop assign_place_indexes(x, st, place, depth, raw BORROW_FUEL());   // and every index on the path, in evaluation order (DEF-407)
         pass NIL;
     }
     if (rn.a == 0i32) { pass NIL; }
     drop state_mark(st, raw symbol_slot(x, rn.a));
+    pass NIL;
+};
+
+// THE INDEX EXPRESSIONS ALONG A `$$m` PLACE'S PATH ARE WALKED (DEF-407, landing 175's review, F3):
+// `$$m arr[k]` reads `k` as any other expression does. Until this landing only the ROOT was read, so a
+// `move`, an unassigned name or an `@` inside the index was invisible to this analysis alone (every
+// other reader of a place walks them; 174 == 175 on the three cells, a wrong value and an undefined
+// index at run time). The path is stepped as `place_root` steps it, plus the dereference and the
+// casts, and an index below a step this walk does not know is as unseen as before -- the walk ends.
+// IN EVALUATION ORDER (the second delta review of this landing, R1): the emitter forms a place's BASE before it
+// evaluates the index (`addr_of_place`: `emit_expr`/`index_base_place` of the left side, then `emit_expr` of the
+// right), so in `g[A].c[B]` A runs before B. This walk therefore descends to the root first and judges each index
+// on the way back up -- innermost first, as `assign_expr`'s two-operand road walks a left operand before its
+// right. The first commit of this landing walked them OUTERMOST first: that refused the legal
+// `g[s.len].c[consume(move(s))]` (MOVE-001 at `s.len`, a regression against 174) and accepted its mirror, a
+// read of `s` in the outer index after the inner one moved it -- DEF-407's own class. The fuel is `place_root`'s;
+// `assign_mark_place` reaches here only when `place_root` finished within it, so the walk always finishes.
+func:assign_place_indexes = NIL(Assign->:x, AssignState:st, ExprId:place, int32:depth, int32:left) never fails {
+    if (left <= 0i32) { pass NIL; }
+    if (raw expr_is_none(place)) { pass NIL; }
+    ExprNode:pn = raw ast_expr(x.ast, place);
+    if (pn.kind == ExprKind.ExprIndexExpr) {
+        drop assign_place_indexes(x, st, raw expr_lhs(pn), depth, left - 1i32);   // the base's indexes run first
+        drop assign_expr(x, st, raw expr_rhs(pn), depth);                          // then this one
+        pass NIL;
+    }
+    if ((pn.kind == ExprKind.ExprMemberAccessExpr) || (pn.kind == ExprKind.ExprDerefExpr)
+            || (pn.kind == ExprKind.ExprCastExpr) || (pn.kind == ExprKind.ExprUncheckedCastExpr)) {
+        drop assign_place_indexes(x, st, raw expr_operand(pn), depth, left - 1i32);
+    }
     pass NIL;
 };
 
@@ -2019,31 +2089,58 @@ pub func:symbol_slot = int32(Assign->:x, int32:sym) never fails {
 
 // READING `.value` OFF A `Result` THAT NOTHING HAS CHECKED.
 //
-// ONLY A BINDING-ROOTED READ IS CHECKED, and that is not a hole so much as the
-// shape of the language: `f().value` calls `f` and reads the field of a temporary,
-// and there is no way to have checked THAT temporary — the check would call `f` a
-// second time and get a different `Result`. So the idiom is to bind it, and the
-// binding is what this tracks.
+// ONLY A BARE LOCAL'S `is_error` TEST LICENSES A READ, and every other base REFUSES:
+// a field or parameter path (F-4), a slot-less name (DEF-403), and -- since DEF-406
+// (landing 175) -- a value no binding holds (`f().value`, `move(r).value`, a ternary's
+// `.value`, and `(<-p).value`: a dereference is rooted at no binding of this frame, so
+// until DEF-406 it was read with NO test at all, cell d1, a fabricated 0 off an error).
+// `f().value` calls `f` and reads the field of a temporary that nothing can
+// have tested (testing it would call `f` again and get a different `Result`), so the
+// idiom is to bind it; until DEF-406 this comment called that the shape of the
+// language while the unbound read passed with no check at all -- a NULL plain pointer
+// dereferenced, a fabricated zero. An idiom is enforced only if the other spelling is
+// refused. And a bare local's test holds only while nothing can write the `Result`
+// behind the analysis's back: a local whose ADDRESS is taken anywhere in its function
+// (`@r`, `$$i r`/`$$m r`, a `Self->` receiver, or any of those into it) is never
+// refined (DEF-402, `addr_taken_refuses`).
 func:check_value_read = NIL(Assign->:x, AssignState:st, ExprNode:n) never fails {
     string:f = raw intern_get(x.interns, (raw expr_name(n)) =>! int32);
     if (!(raw string_eq(f, "value"))) { pass NIL; }
 
     ExprId:base = raw expr_operand(n);
     int32:ty = raw exprtypes_get(x.etypes, base);
+    // THE BASE MAY BE REACHED THROUGH THE POINTER LEVEL THE TYPER PEELS (DEF-406's late face, landing
+    // 175's review, F5): `.` peels ONE pointer level (`access_base`, D-006), so a `Result` behind it is
+    // read with NO binding holding this value -- `p.value` is `(<-p).value` with the `<-` left off --
+    // and it refuses below as the dereference does. (`?.` never reaches here: a `Result`'s members
+    // through it are `NITPICK-TYPE-102` at the typer, DEF-408, the review's F6 closed there.)
+    bool:through = false;
+    if ((raw type_kind(x.types, ty)) == (raw TY_POINTER())) {
+        ty = raw type_elem(x.types, ty);
+        through = true;
+    }
     if ((raw type_kind(x.types, ty)) != (raw TY_RESULT())) { pass NIL; }
 
     // ONLY A BARE LOCAL IS TRACKABLE, so only a bare local's check counts
     // (0.9.8, F-4). Before this, a field-rooted read collapsed to its root —
     // checking `t.a` licensed reading `t.b.value` — and a param-rooted read
     // was invisible entirely. Both now refuse CONSERVATIVELY, matching the
-    // untracked-binding posture: bind the Result to a local, check that. The
-    // one documented exception stays: a call-rooted temporary (`f().value`)
-    // cannot be checked at all, and binding it is the idiom.
+    // untracked-binding posture: bind the Result to a local, check that. A base
+    // that is NEITHER an identifier nor rooted at one -- a call's result, a
+    // `move(...)`, a ternary's value -- was the one exception, read with no check
+    // at all until DEF-406 (landing 175); it refuses too now, with its own message.
+    // A base reached THROUGH the pointer level the typer peels -- a pointer binding's
+    // automatic dereference (`p.value`, D-006) -- is the same case under an
+    // identifier's spelling, found by this landing's review (F5).
     ExprNode:basen = raw ast_expr(x.ast, base);
-    if (basen.kind != ExprKind.ExprIdentifierExpr) {
-        if (raw place_rooted_at_ident(x, base)) {
+    if (through || (basen.kind != ExprKind.ExprIdentifierExpr)) {
+        if ((!through) && (raw place_rooted_at_ident(x, base))) {
             drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
                 "this `Result` lives behind a field or parameter path, which the taint discipline cannot track (F-4): bind it to a local and test `is_error` on that (D-007; `raw` takes only a call, D-163)",
+                n.span);
+        } else {
+            drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
+                "this `Result` is a value no binding holds (a call's result, a `move(...)`, a ternary's value, a dereference -- `<-`, or the automatic one a pointer binding's `.` makes), so nothing can have tested it (DEF-406): bind it to a local first and test `is_error` on that (D-007; `raw` takes only a call, D-163)",
                 n.span);
         }
         pass NIL;
@@ -2051,13 +2148,15 @@ func:check_value_read = NIL(Assign->:x, AssignState:st, ExprNode:n) never fails 
 
     int32:slot = raw binding_slot(x, base);
     if (slot < 0i32) {
-        // A bare identifier that is not a tracked local: a PARAMETER'S Result
-        // — unwitnessable here, same conservative answer.
+        // A bare identifier with no binding slot: a module binding, or another
+        // slot-less name (a PARAMETER has a slot and is tracked, DEF-403) --
+        // unwitnessable here, the same conservative answer.
         drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
-            "this `Result` arrived through a parameter, which the taint discipline cannot track (F-4): bind it to a local and test `is_error` on that (D-007; `raw` takes only a call, D-163)",
+            "this `Result` is a module binding or another name with no tracked slot, which the taint discipline cannot witness (F-4, DEF-403): bind it to a local and test `is_error` on that (D-007; `raw` takes only a call, D-163)",
             n.span);
         pass NIL;
     }
+    if (raw addr_taken_refuses(x, slot, n.span)) { pass NIL; }
     if (raw state_checked(st, slot)) { pass NIL; }
 
     drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
@@ -2074,7 +2173,7 @@ func:check_value_read = NIL(Assign->:x, AssignState:st, ExprNode:n) never fails 
 // is `error != 0`, D-069), so forwarding it is a real failure. OFF that road `.err`
 // is the success slot's zero, and `fail`-ing it fabricates a success holding a NULL
 // value, dereferenced to a MachineFault (DEF-381, 107/107): `NITPICK-TAINT-001`,
-// reversing `tests/accept/taint.npk:97` (the author's answer (b)). The structure is
+// reversing `tests/accept/taint.npk:97 (at landing 173's 3b0043e)` (the author's answer (b)). The structure is
 // `check_value_read`'s byte for byte, with `errchecked` where it reads `checked`.
 func:check_err_read = NIL(Assign->:x, AssignState:st, ExprNode:n) never fails {
     string:f = raw intern_get(x.interns, (raw expr_name(n)) =>! int32);
@@ -2082,16 +2181,30 @@ func:check_err_read = NIL(Assign->:x, AssignState:st, ExprNode:n) never fails {
 
     ExprId:base = raw expr_operand(n);
     int32:ty = raw exprtypes_get(x.etypes, base);
+    // THE BASE MAY BE REACHED THROUGH THE POINTER LEVEL THE TYPER PEELS (DEF-406's late face, landing
+    // 175's review, F5): `.` peels ONE pointer level (`access_base`, D-006), so a `Result` behind it is
+    // read with NO binding holding this value -- `p.value` is `(<-p).value` with the `<-` left off --
+    // and it refuses below as the dereference does. (`?.` never reaches here: a `Result`'s members
+    // through it are `NITPICK-TYPE-102` at the typer, DEF-408, the review's F6 closed there.)
+    bool:through = false;
+    if ((raw type_kind(x.types, ty)) == (raw TY_POINTER())) {
+        ty = raw type_elem(x.types, ty);
+        through = true;
+    }
     if ((raw type_kind(x.types, ty)) != (raw TY_RESULT())) { pass NIL; }
 
     // ONLY A BARE LOCAL IS TRACKABLE (0.9.8, F-4), as for `.value`: a field- or
     // parameter-rooted `Result` the taint discipline cannot witness, so its `.err`
     // refuses conservatively -- bind it to a local and test `is_error` on that.
     ExprNode:basen = raw ast_expr(x.ast, base);
-    if (basen.kind != ExprKind.ExprIdentifierExpr) {
-        if (raw place_rooted_at_ident(x, base)) {
+    if (through || (basen.kind != ExprKind.ExprIdentifierExpr)) {
+        if ((!through) && (raw place_rooted_at_ident(x, base))) {
             drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
                 "this `Result` lives behind a field or parameter path, which the taint discipline cannot track (F-4): bind it to a local and read `.err` where `is_error` is true (DEF-381; D-007)",
+                n.span);
+        } else {
+            drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
+                "this `Result` is a value no binding holds (a call's result, a `move(...)`, a ternary's value, a dereference -- `<-`, or the automatic one a pointer binding's `.` makes), so nothing can have found an error in it (DEF-406): bind it to a local first and read `.err` where `is_error` is true (DEF-381; D-007)",
                 n.span);
         }
         pass NIL;
@@ -2100,16 +2213,112 @@ func:check_err_read = NIL(Assign->:x, AssignState:st, ExprNode:n) never fails {
     int32:slot = raw binding_slot(x, base);
     if (slot < 0i32) {
         drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
-            "this `Result` arrived through a parameter, which the taint discipline cannot track (F-4): bind it to a local and read `.err` where `is_error` is true (DEF-381; D-007)",
+            "this `Result` is a module binding or another name with no tracked slot, which the taint discipline cannot witness (F-4, DEF-403): bind it to a local and read `.err` where `is_error` is true (DEF-381; D-007)",
             n.span);
         pass NIL;
     }
+    if (raw addr_taken_refuses(x, slot, n.span)) { pass NIL; }
     if (raw state_errchecked(st, slot)) { pass NIL; }
 
     drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
         "this `Result` is not known to hold an error here -- no `is_error` test guards the read -- so its `err` may be the success slot's zero, and failing with it fabricates a success holding a NULL value: read `.err` where `is_error` is true (`if (r.is_error) { fail r.err; }`), or forward the binding with `?!`, `?|` or `relay` (DEF-381; D-007)",
         n.span);
     pass NIL;
+};
+
+// --- the address-taken set (DEF-402, landing 175) ---------------------------------------------------
+//
+// A `checked`/`errchecked` refinement is a fact about a `Result` that NOTHING WRITES between the
+// `is_error` test and the read. A write THROUGH ITS ADDRESS breaks that on a road this walk cannot
+// see -- a callee handed `@r` (c1v), a local alias `(<-p) = ...` (c2v), a `defer` that writes (e3),
+// a method taking `Self->` whose receiver is `r` (r1), the address taken BEFORE the test (e6) or on
+// a loop's earlier iteration (e7) -- so `.value` was read off an error (a fabricated 0; a NULL plain
+// pointer dereferenced, c3v) and `.err` off a success (c1e). The rule is FLOW-INSENSITIVE and
+// CLOSED: a binding whose address is taken ANYWHERE in its function, bare or through a place into
+// it (`@r.value` reaches the payload, and a payload pointer can vacate what the refined read then
+// reads), is never refined; the re-spelling is a fresh local whose address is never taken. The cost
+// measured over the tree, the libraries, the applications and the fuzz corpus before building: two
+// sites, both `tests/backend/programs/actor.npk`, re-spelled in this landing.
+
+// A FRESH FUNCTION: the per-slot set, zeroed. (Leaked as the states are: the compiler reclaims at exit.)
+func:fn_arrays_begin = NIL(Assign->:x, int32:n) never fails {
+    int64:size = n => int64;
+    if (size < 1i64) { size = 1i64; }
+    wild int8->:m1 = alloc(size * #size_of<bool>());
+    x.addr_taken = m1 =>! wild bool->;
+    x.fn_slots = size =>! int32;
+    for (int64:i in 0i64...size) { x.addr_taken[i] = false; }
+    x.addr_deep = false;
+    pass NIL;
+};
+
+// THE BINDING UNDER A PLACE WHOSE ADDRESS IS TAKEN joins the set -- a bare name, or the root of a
+// field or element path (`@r.value` takes an address INTO `r`); a dereference or a call's result
+// roots at no binding of this frame. Records during the pre-walk only; the real walk's set is complete.
+func:note_addr_taken = NIL(Assign->:x, ExprId:place) never fails {
+    if (!x.collecting) { pass NIL; }
+    if (raw expr_is_none(place)) { pass NIL; }
+    PlaceRoot:r = raw place_root(x.ast, place, raw BORROW_FUEL());
+    // PAST THE FUEL THE ROOT IS UNKNOWN, and an unknown root marks EVERY slot (`addr_deep`, read by
+    // `addr_taken_refuses`): exhaustion fails closed, as `expr_types.npk`'s rule for it says (this
+    // landing's review, F4; a 64-step receiver under a `Self->` method reached it, `p175_deep_recv_64`).
+    if (r.exhausted) { x.addr_deep = true; pass NIL; }
+    if (raw expr_is_none(r.id)) { pass NIL; }
+    ExprNode:rn = raw ast_expr(x.ast, r.id);
+    if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
+    if (rn.a == 0i32) { pass NIL; }
+    int32:slot = raw symbol_slot(x, rn.a);
+    if ((slot < 0i32) || (slot >= x.fn_slots)) { pass NIL; }
+    x.addr_taken[slot => int64] = true;
+    pass NIL;
+};
+
+// A METHOD TAKING `Self->` TAKES ITS RECEIVER'S ADDRESS (the auto-ref of 1.0.9b, as `alias.npk`'s
+// `acc_call` reads it): the receiver joins the set unless it is already a pointer. A callee with no
+// type is a BUILT-IN (`type_method_call`'s intercepts set none): the built-ins of the five VALUE kinds
+// (`simd`, `tfp`, `dim`, `tern`, `complex`; `*_own_method`) take their receiver by value and address
+// nothing, so `r.value.sum()` leaves `r` refined (this landing's review, F1 -- a regression of the
+// first build); every other built-in (an arena's, an atomic's, a channel's, a lock's) takes `Self->`,
+// and an unknown callee stays read as taking one.
+func:note_recv_taken = NIL(Assign->:x, ExprId:call, ExprId:recv) never fails {
+    if (!x.collecting) { pass NIL; }
+    int32:ft = raw exprtypes_callee_ft(x.etypes, call);
+    bool:ptr_recv = true;
+    if ((ft == 0i32) && (raw exprtypes_known(x.etypes, recv))) {
+        int32:rk = raw type_kind(x.types, raw exprtypes_get(x.etypes, recv));
+        if ((rk == (raw TY_SIMD())) || (rk == (raw TY_TFP())) || (rk == (raw TY_DIM()))
+                || (rk == (raw TY_TERN())) || (rk == (raw TY_COMPLEX()))) { pass NIL; }
+    }
+    if (ft != 0i32) {
+        ptr_recv = false;
+        if ((raw type_param_count_of(x.types, ft)) > 0i32) {
+            int32:p0 = raw type_param_at_of(x.ast, x.types, ft, 0i32);
+            if ((raw type_kind(x.types, p0)) == (raw TY_POINTER())) { ptr_recv = true; }
+        }
+    }
+    if (!ptr_recv) { pass NIL; }
+    if (raw exprtypes_known(x.etypes, recv)) {
+        if ((raw type_kind(x.types, raw exprtypes_get(x.etypes, recv))) == (raw TY_POINTER())) { pass NIL; }
+    }
+    drop note_addr_taken(x, recv);
+    pass NIL;
+};
+
+// A REFINED READ OF AN ADDRESS-TAKEN `Result` IS REFUSED (DEF-402): the `is_error` test that would
+// license it can be undone by a write through the address, on a road the walk cannot see.
+func:addr_taken_refuses = bool(Assign->:x, int32:slot, Span:at) never fails {
+    if (x.addr_deep) {
+        drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
+            "a place 64 or more steps deep (the place walk's fuel) has its address taken in this function (`@`, `$$i`/`$$m`, or a method taking `Self->`), past what the address-taken set can read down to a binding, so no `Result` of this function is refined (DEF-402, closed rather than open): shorten the place, or test and read the `Result` in a function of its own",
+            at);
+        pass true;
+    }
+    if (slot >= x.fn_slots) { pass false; }
+    if (!x.addr_taken[slot => int64]) { pass false; }
+    drop assign_err(x, raw TAINT_UNCHECKED_VALUE(),
+        "this `Result`'s address is taken in this function (`@`, `$$i`/`$$m`, or a method taking `Self->`, of it or of a place into it), and a write through that address can move it to the other road after any `is_error` test, on a road this analysis cannot see (DEF-402): test and read it through a fresh local whose address is never taken (copy or `move` the value into one)",
+        at);
+    pass true;
 };
 
 // Is this place rooted at an IDENTIFIER (a binding or parameter, however deep

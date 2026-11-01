@@ -728,3 +728,12 @@ pub func:TYPE_MOVE_FN_VALUE = string() never fails { pass "NITPICK-TYPE-100"; };
 // an error is TAINT-001, `raw` TYPE-042) and an owner nobody frees on every error road; the author retired it
 // (2026-10-30). Reported once at the literal; the parts are typed for their own reports and nothing more is asked of them.
 pub func:TYPE_RESULT_BOTH_FIELDS = string() never fails { pass "NITPICK-TYPE-101"; };
+
+// `?.` REACHES A STRUCT'S STORED FIELD ONLY (DEF-408, 1.6.1e landing 175): a member the compiler COMPUTES from its
+// base -- a `string`'s or an array's `.len`, a `Result`'s `.value`/`.err`/`.is_error`, a `frac`'s `.num`, every
+// `member_type` arm but the struct's -- is refused through `?.`. The emitter typed every such arm by the `?.` node's
+// own `Optional` type and stored the raw member at the Optional's base, so twelve kinds read a wrong value in ACCEPTED
+// code and a `frac` emitted IR `llc` refuses; only the struct arm, typed by the field, was right. A TEMPORARY narrowing
+// for safety (D-099's `a?.f` is a FIELD), lifted when the emitter writes the tag and stores the member at the payload's
+// offset (placed after landing 180); the message says to unwrap (`?? d`, `??! Ident`) or test (`!= NIL`) first.
+pub func:TYPE_SAFE_NAV_DERIVED = string() never fails { pass "NITPICK-TYPE-102"; };

@@ -2713,9 +2713,13 @@ func:type_result_literal = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fai
     // NULL}` unrefused (the function's wild return, not the slot, D-355) and dereferenced
     // it (MachineFault 107/107), and a value of the slot's own `T` was held to the
     // function's unrelated `T` (TYPE-007 twice). Only a `return`'s literal is the
-    // function's success value (D-355), so the success type comes from the slot here; the
-    // slot's wild qualifier rides in `e.null_ctx`, which the else branch below keeps for a
-    // non-return literal.
+    // function's success value (D-355), so the success type comes from the slot here. The
+    // slot's WILD qualifier does NOT reach a non-return literal (DEF-404, LOW, open): this
+    // node kind is absent from `null_ctx_passes`, so `e.null_ctx` is zeroed before this
+    // typer runs and a non-return literal is always typed PLAIN -- a wild value into a
+    // `wild Result` slot over-refuses (TYPE-097), failing closed. The else branch below
+    // keeps the (zeroed) context for a non-return literal; carrying the slot's wild
+    // context here is DEF-404's fix, placed after landing 180.
     if (!leaves) {
         int32:ctx = e.expected;
         if (ctx != 0i32) {
@@ -2752,12 +2756,16 @@ func:type_result_literal = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fai
         vt = raw check_leaving_value(e, vid, want, n.span);
     } else {
         e.expected = want;
-        // THE VALUE'S WILD CONTEXT IS THE SLOT'S (D-355): an err-only `return` (leaves, no
-        // value) is the function's return slot -- wild exactly where the return is -- but a
-        // literal OUTSIDE a `return` keeps the caller's `e.null_ctx`, the slot's wild
-        // qualifier set by the initialiser, assignment, argument or field typer (DEF-388,
-        // landing 174). Reading `fn_ret_wild` for a non-return literal was the second half of
-        // DEF-388: it admitted NULL into a plain slot whenever the function's return was wild.
+        // THE VALUE'S WILD CONTEXT IS THE RETURN'S WHERE THE LITERAL LEAVES (D-355): an
+        // err-only `return` (leaves, no value) is the function's return slot -- wild exactly
+        // where the return is. A literal OUTSIDE a `return` keeps `e.null_ctx` as it arrives,
+        // which since DEF-388 (landing 174) is never `fn_ret_wild` -- reading that for a
+        // non-return literal admitted NULL into a plain slot whenever the function's return
+        // was wild -- and is in fact always ZERO (DEF-404): the literal's node kind is absent
+        // from `null_ctx_passes`, so the slot's wild qualifier set by the initialiser,
+        // assignment, argument or field typer is cleared before this typer runs, and a
+        // non-return literal is typed plain. Over-refusal of a wild slot, fails closed; the
+        // fix (carry the slot's context) is DEF-404's, placed after landing 180.
         int32:nsv = e.null_ctx;
         if (leaves) {
             e.null_ctx = 0i32;

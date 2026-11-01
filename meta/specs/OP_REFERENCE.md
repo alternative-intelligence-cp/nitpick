@@ -262,7 +262,7 @@ value is ERR, so the taint cannot cross silently. See D-008.
 | `?!` | Emphatic Unwrap | Unwraps a Result. If error, calls `failsafe(err)`. **Takes exactly one argument**, an `Error` constant (D-009's derivation, retyped by D-179). Lowers to `npk_raise`, the program's entry to the one trap route (D-285, 1.5.4e). | `val = fn() ?! Timeout;` |
 
 > **`?\|` and `?!` take a `Result` and nothing else** (D-099's one-wrapper rule; D-144 resolved the earlier suggestion of a tbb fallback operator against it — an ERR is handled by `is_err` or a `pick` `ERR:` arm, never by `?\|`).
-| `?.` | Safe Navigation | Reaches a field **through** an `Optional`. The result is an `Optional` of the field's type — the absence survives the access. | `val = obj?.field;` |
+| `?.` | Safe Navigation | Reaches a field **through** an `Optional`. The result is an `Optional` of the field's type — the absence survives the access. **A struct's STORED field only (landing 175, DEF-408): a computed member through it — `o?.len`, `o?.value` — is `NITPICK-TYPE-102` until the emitter fix after landing 180; unwrap (`?? d`, `??! Ident`) or test (`!= NIL`) first (D-099's note).** | `val = obj?.field;` |
 | `?` | ~~Safe Unwrap~~ | **Struck (D-175, amends D-167).** A bare `?` mirrors Rust's error-propagation; the `Result` fallback is `?\|`. Refused by name. | — |
 | `_?` | Drop | Desugars to `drop expr` — the "void call" of a `never fails`, `NIL`-returning function (**D-163**; the `void` call of a `never fails`, `NIL` callee — refused otherwise, `TYPE-042`). | `_? my_func();` |
 | `_!` | Raw | Desugars to `raw expr` — unwrap the value of a `never fails` call (**D-163**: a checked, zero-cost unwrap — refused unless the callee is `never fails`, `TYPE-042`). | `val = _! my_func();` |

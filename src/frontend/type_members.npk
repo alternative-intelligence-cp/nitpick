@@ -145,6 +145,31 @@ pub func:type_member_access = int32(ExprTyper->:e, ExprId:id, ExprNode:n, bool:s
     int32:found = raw member_type(e, base, name, n.span);
     if (found == 0i32) { pass 0i32; }
     if (optional) {
+        // `?.` REACHES A STORED FIELD ONLY (DEF-408, 1.6.1e landing 175): a member the
+        // compiler COMPUTES from its base -- a `string`'s `.len`, an array's `.len`, a
+        // `Result`'s `.value`, a `frac`'s `.num`, every arm of `member_type` but the
+        // struct's -- is `NITPICK-TYPE-102` through `?.`. The emitter's `emit_member_from`
+        // types every such arm by the `?.` node's own `Optional` type and stores the raw
+        // member at the Optional's base, so a present `string?`'s `o?.len` read a wrong
+        // value (exit 60 on twelve kinds, measured at 174 and 175) and a `frac?`'s
+        // `o?.num` emitted IR `llc` refuses; only the struct arm, typed by the field, is
+        // right. A TEMPORARY narrowing for safety (D-099's `a?.f` is a FIELD), lifted when
+        // the emitter writes the tag and stores the member at the payload's offset (after
+        // landing 180); `tests/types/rejection/safe_nav_derived.npk` pins it until then.
+        // Asked after `member_type` so a member that does not exist keeps its own report,
+        // and after `access_base` so a pointer to a struct (x11) is the struct it reaches.
+        if ((raw type_kind(e.types, base)) != (raw TY_STRUCT())) {
+            string:f1 = raw intern_get(e.interns, name);
+            string:f2 = raw intern_get(e.interns, name);
+            string:k1 = string_concat("`?.` reaches a struct's stored field, and `", f1);
+            string:k2 = string_concat(k1, "` is a member computed from a `");
+            string:k3 = string_concat(k2, raw type_display(e.types, e.interns, base));
+            string:k4 = string_concat(k3,
+                "`; unwrap the `Optional` first (`?? d`, `??! Ident`) or test it (`!= NIL`), then read `.");
+            string:k5 = string_concat(k4, f2);
+            string:k6 = string_concat(k5, "`");
+            pass (raw te_error(e, raw TYPE_SAFE_NAV_DERIVED(), move(k6), n.span));
+        }
         // A MEMBER THAT IS ITSELF AN `Optional` IS NOT WRAPPED TWICE. `op?.f`
         // where `f` is an `int32?` is an `int32?`, not an `int32??` — the two
         // absences are one absence, and both mean "there is no value here".

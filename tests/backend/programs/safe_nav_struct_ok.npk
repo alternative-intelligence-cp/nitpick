@@ -1,0 +1,47 @@
+// expect-exit: 0
+// `?.` REACHES A STRUCT'S STORED FIELD, AND THAT ARM IS RIGHT (DEF-408, landing 175).
+//
+// The typer refuses a COMPUTED member through `?.` (`NITPICK-TYPE-102`,
+// `tests/types/rejection/safe_nav_derived.npk`) because the emitter typed every
+// non-struct arm by the `?.` node's own `Optional` type. The struct arm types the read
+// by the FIELD and is right; this program is the control that keeps the field road
+// open -- a struct by value, a struct through a pointer (the one level `access_base`
+// peels), a generic struct's instance, a nested struct's field, a field whose own type
+// is an `Optional` (D-099's flattening: `int64?`, never `int64??`), and an absent
+// Optional reading its default -- each compared with the value written. Measured on
+// 174 and on this landing's build: exit 0 at -O0 and -O2.
+mod:safe_nav_struct_ok;
+struct:P = { int64:v; };
+struct:Box<T> = { T:inner; };
+struct:N = { int64?:maybe; P:p; };
+func:main = int32(cstring[]:_~argv) {
+    P?:op = P{ v: 7i64 };                              // by value
+    if ((op?.v ?? 99i64) != 7i64) { exit 10i32; }
+    P:p = P{ v: 8i64 };
+    P->?:pp = @p;                                      // through a pointer
+    if ((pp?.v ?? 99i64) != 8i64) { exit 11i32; }
+    Box<int64>?:ob = Box{ inner: 5i64 };        // a generic struct's instance
+    if ((ob?.inner ?? 99i64) != 5i64) { exit 12i32; }
+    N?:nn = N{ maybe: 3i64, p: P{ v: 4i64 } };
+    int64?:m = nn?.maybe;                              // flattened, not wrapped twice
+    if ((m ?? 99i64) != 3i64) { exit 13i32; }
+    P?:inner = nn?.p;                                  // a nested struct, still wrapped
+    if ((inner?.v ?? 99i64) != 4i64) { exit 14i32; }
+    P?:none = NIL;
+    if ((none?.v ?? 99i64) != 99i64) { exit 15i32; }   // absent: the default
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)      { exit 91i32; },
+        (Unreachable)      { exit 74i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

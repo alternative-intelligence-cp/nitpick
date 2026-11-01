@@ -438,10 +438,14 @@ pub func:cast_class = int32(TypeTable->:tyt, int32:from, int32:to) never fails {
     // `intN =>! enum` MANUFACTURES A TAG, and the first draft refused it outright
     // on the exhaustiveness argument. The compiler's own source overruled the
     // draft within one subcycle: a stored tag has to ROUND-TRIP (`payload =>!
-    // TokenKind`, 88 sites), which is precisely the `int32 =>! fd` contract — an
-    // assertion the compiler cannot check, spelled with the bang, greppable. A
-    // forged tag makes every arm of a proven `pick` miss and the statement fall
-    // through; that is the programmer's explicit lie, not the checker's gap.
+    // TokenKind`: 10 hits at landing 174's census, 9 code sites and this comment,
+    // all `TokenKind`, none reaching the trap -- "88 sites" here until landing 175),
+    // which is precisely the `int32 =>! fd` contract — an assertion the compiler
+    // cannot check, spelled with the bang, greppable. A forged tag makes every arm
+    // of a proven `pick` miss; since landing 174 (DEF-385, D-140's dated note of
+    // 2026-10-31) that no-arm path TRAPS `Unreachable` at both lowerings instead of
+    // falling through (`tests/backend/programs/forged_tag_pick_trap.npk` pins it) --
+    // still the programmer's explicit lie, now one the run time refuses to act on.
     // A PAYLOAD-CARRYING target still refuses AT THE BACKEND: a tag is not a
     // whole `{tag, payload}` value, and inventing the other half is not a cast.
     if (tk == (raw TY_ENUM())) {

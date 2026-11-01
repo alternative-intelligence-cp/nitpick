@@ -36,8 +36,9 @@ async func:counter = NIL(Channel<Req, 3i32, 4i64>:inbox) {
         if (m.is_error) {
             running = false;                    // closed and drained: an end
         } else {
-            total = total + m.value.add;
-            await m.value.reply.send(total, raw duration_ms(2000i64)) ?! E1;
+            Req:q = m.value;                    // the payload bound first: `send` takes `Self->`,
+            total = total + q.add;              // and a `Self->` receiver into `m` would take
+            await q.reply.send(total, raw duration_ms(2000i64)) ?! E1;   // `m`'s address (DEF-402)
         }
     }
     pass NIL;

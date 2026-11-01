@@ -8,32 +8,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   listener's and the fuzzer's findings, safety before correctness before performance. Cycles 0.0–1.5 are complete
   (`meta/roadmap/done/`); 1.4 made the compiler self-hosting (D-202) and 1.5 made the verification leg (`npkg verify`, the floor's
   specification and models, the schedule explorer).
-- **main = landing 174** (2026-10-31; wt/53b, branch 53-r174, on 3b0043e) — DEF-397(head) + DEF-380 + DEF-381 + DEF-382 +
-  DEF-385 + DEF-388 (type_expr.npk + type_stmt.npk + analysis/bindings.npk + ir_stmt.npk + ir_expr.npk, +147/−3 code lines),
-  the Result-fields group: a `Result`'s `.err`/`.is_error` standing where a place is needed is TYPE-024 (DEF-380, DEF-382); a
-  `.err` read off the error road is TAINT-001 (DEF-381(b), the `errchecked` dual of `.value`'s `checked`, reversing
-  tests/accept/taint.npk:97); a zero `Error` at a RETURN taker traps `(Unreachable)` instead of fabricating a success
-  (DEF-381(a), D-069's long-specified trap, built); an exhaustive `pick` over a valued enum's vacant fill traps
-  `(Unreachable)` at its no-arm path (DEF-385); a `Result` literal outside a `return` is typed by its SLOT — NULL is TYPE-096,
-  wild is TYPE-097 (DEF-388); and a `pure` body moves out of only its own locals, TYPE-061 (DEF-397, the twin of the `(<-p) =
-  …` gate). 229 programs move emission (161 libs/apps + 68 tree), each a DEF-385 trap and/or a DEF-381(a) guard,
-  BEHAVIOR-NEUTRAL (the typer emission-neutral, cond3; 57/59 runnable backend keep identical exits, the two new trap programs
-  the exceptions); one new libs refusal (me0394, TAINT-001, EXPECTED). The sweep: 18 appeared and 6 vanished, all in this
-  landing's own test files plus me0394. The emission comparison: tree 636 (567 identical, 68 different, 0 newly refused, 1
-  base-only), libs/apps 4,112 (161 different, 1 newly refused). The manifest 7,659 obligations, 1 row added, 256 re-keyed, 0
-  verdicts moved, 0 discharged counts fell, the floor unchanged. peak_live 222,618,984 (harness; 1.42 % headroom; the ~1 % line stands
-  for 175–178). The post-harness review registered DEF-402 + DEF-405 + DEF-406 (HIGH, pre-existing) at 175's head (the `checked`/`errchecked` write-hole, the defer road, the call-temporary `.value`/`.err` read) and DEF-403 + DEF-404 (LOW); DEF-399 widened to a ternary/`while`/`when` guard and both bits; R3's pick trap supersedes D-140 for a forged tag (next free DEF-407). Every landing's
+- **main = landing 175** (2026-10-31; wt/54a, branch 54-r175, on 1772f32; ONE commit squashed from the reviewed first commit ef95990 (kept
+  on `54-r175-rev1`), the first review's fix d618068 (on `54-r175-rev2`) and the second review's R1 fix) — DEF-406(head) + DEF-402 + DEF-407 + DEF-408 (analysis/bindings.npk +229/−20, type_members.npk +25, type_codes.npk
+  +9; +143/−8 code lines; comment-only corrections in type_cast.npk and type_expr.npk): a `.value`/`.err` read off a value no binding
+  holds (a call's result, a `move(...)`, a ternary's value, a dereference, a pointer binding's automatic `p.value`) is TAINT-001 (DEF-406,
+  widened); a local `Result` whose address is taken ANYWHERE in its function (`@`, `$$i`/`$$m`, a `Self->` receiver, of it or of a place
+  into it; a place past the walk's fuel fails closed) is never refined, its `.value`/`.err` read TAINT-001 (DEF-402 under the closed
+  reading v1; the cost 2 sites, both actor.npk, re-spelled; a built-in by-value method on the payload marks nothing); a `$$m` claim's
+  INDEX is walked, in evaluation order (DEF-407; the second review's R1 fixed the order); `?.` reaches a struct's STORED field only — a computed member through it (`o?.len`, `o?.value`, …) is
+  TYPE-102 (DEF-408, pre-existing: the emitter read a wrong value on twelve kinds; closed for safety, the emitter fix after 180);
+  DEF-403's slot-less messages reworded (FIXED). Emission: tree 640 of 640 byte-identical, libs/apps 4,112 (1,948 identical, 2,164 both-refused, 0 different, 0 newly refused). The sweep over 5,392 files: 46
+  appeared (all in the landing's own six rejection files), 0 vanished; 0 live TYPE-102 sites. The manifest 7,662 obligations (3,699 discharged, 2,961 open), 2 rows added (the recursive index walk's fuel, the `addr_taken` allocation), 243 re-keyed, 0 verdicts
+  moved, 0 discharged counts fell, the floor unchanged. peak_live 222,947,646 local (98.72 %; the ~1 % line stands for 176–180). Also: the pins (taint_guard_shapes,
+  taint_paths_err, forged_tag_pick_trap), DEF-397's scalar accept test, the stale comments; DEF-405 (face (c) widened, `pass`'s implicit
+  move) goes to 176; the census of implicit address-taking (56 cells, with the review's and DEF-408's extent) closed every form;
+  management_11's delta review of the first commit (F1–F6) and its second delta review of that fix (R1: the claim index walk ran outermost first, d618068's own regression -- a legal two-index claim refused, its mirror accepted -- fixed, the 16-cell order matrix on four builds; L1: lifting TYPE-102 must bring back TAINT-001 on `o?.value`/`o?.err`, on DEF-408's row) fixed in the same commit; the nearest shape, a ROOT moved inside its own index, is LIVE on both roads on 174 and 175 alike: DEF-410 (HIGH), OPEN, placed in 176 with DEF-405 (one class; three faces after the extent and widened cells: the bindings analysis's inline array of owners, a read of FREED memory through a call-result view -- `string_bytes(s)[IDX]` with `s` moved inside IDX, a literal field, a user view-returning call's argument -- and the address window, a receiver's or `@h`'s pointee vacated by a later argument; the closed rule approved up to ≈ 70 code lines, management_11 20:40); DEF-412 (LOW, after 180: a struct-literal temporary as a `Self->` receiver, EMIT-002 from accepted code; next free DEF-413 and TYPE-103); and `exit` in a `defer` body traps the compiler, DEF-411 (LOW), TYPE-040 to refuse it in 176 (management_11, 20:13); next free DEF-413. Every landing's
   full paragraph is at the top of `meta/STATUS_HISTORY.md`, newest first; read the newest few before planning work.
-- **The queue** (management_10's rulings of 2026-10-31; and management_7's/_6's of 2026-10-30/29 for what follows): landing
-  174 LANDED (DEF-397 + DEF-380 + DEF-381 + DEF-382 + DEF-385 + DEF-388, the status bullet); then landing 175 = DEF-402 + DEF-405 + DEF-406 at its
-  HEAD (HIGH, the `checked`/`errchecked` write-hole + the defer road + the call-temporary read, each sized first) + the old list with DEF-345 (DEF-344 + DEF-347 + DEF-349 +
-  DEF-353 + DEF-354 + DEF-355 + DEF-356 + DEF-357 + DEF-345), then landing 176 = DEF-333's (DEF-333 + DEF-334 + DEF-335 +
-  DEF-336 + DEF-384 + DEF-389), then landing 177 = DEF-312's (DEF-312 widened + DEF-348 + DEF-350 + DEF-325 + DEF-386 +
-  DEF-387 + DEF-390 + DEF-391 + DEF-392 + DEF-395), then landing 178 = DEF-318's (DEF-318 to DEF-323) — the fuzz seats' M16
-  targets the first binary after landing 178 —, then DEF-351, DEF-352, DEF-358 and the new DEF-398/DEF-399/DEF-400/DEF-401/DEF-403/DEF-404 LOW
-  after 178, DEF-369/DEF-370/DEF-376/DEF-379 LOW and DEF-375/DEF-377 MEDIUM unplaced; then M3 (DEF-298 + DEF-299 + DEF-313),
-  DEF-286, then DEF-292, DEF-293, DEF-294, DEF-291, DEF-295, D-358 (Fable's), step 3d's rest (DEF-239), step 4. The plan of
-  record is `meta/roadmap/` (start at `ROADMAP.md`; cycle 1.6's map is `meta/roadmap/1.6/README.md`, its subcycle record
+- **The queue** (management_11's rulings of 2026-10-31 16:00; management_10's/_7's/_6's of 2026-10-29/31 for what follows): landing
+  175 LANDED (DEF-406 + DEF-402 + DEF-407 + DEF-408, the status bullet); then landing 176 = DEF-405 whole (the `defer` body typed at its registration:
+  (i) no inherited refinement, (ii) pending reads against a move or free before the block ends, (c) `pass`'s implicit move; ≈75 code
+  lines, sized; the v1 prototype and its tests under `.internal/probes175/`) + DEF-410 (HIGH: a root moved inside its own index, unjudged on both roads -- the analysis reads the root before the index, the emitter loads the element after it; one class with DEF-405, the analysis judging at a different moment than the code runs; its extent measured first) with DEF-409 (≤ 10 lines, else after 180) and DEF-411 (TYPE-040 extended to `exit` in a `defer` body) as riders and the evaluation-order census as its mechanical check (management_11, 20:13), then landing 177 = the old list with DEF-345 (DEF-344 +
+  DEF-347 + DEF-349 + DEF-353 + DEF-354 + DEF-355 + DEF-356 + DEF-357 + DEF-345), then landing 178 = DEF-333's (DEF-333 + DEF-334 +
+  DEF-335 + DEF-336 + DEF-384 + DEF-389), then landing 179 = DEF-312's (DEF-312 widened + DEF-348 + DEF-350 + DEF-325 + DEF-386 +
+  DEF-387 + DEF-390 + DEF-391 + DEF-392 + DEF-395), then landing 180 = DEF-318's (DEF-318 to DEF-323) — the fuzz seats' M16 targets
+  the first binary after landing 180 —, then DEF-351, DEF-352, DEF-358, DEF-398/DEF-399/DEF-400/DEF-401/DEF-404 LOW and DEF-408's emitter fix (the TYPE-102 relaxation, which must bring back TAINT-001 on `o?.value`/`o?.err` -- the second review's L1) after 180,
+  DEF-369/DEF-370/DEF-376/DEF-379 LOW and DEF-375/DEF-377 MEDIUM unplaced; then M3 (DEF-298 + DEF-299 + DEF-313), DEF-286, then
+  DEF-292, DEF-293, DEF-294, DEF-291, DEF-295, D-358 (Fable's), step 3d's rest (DEF-239), step 4. The plan of record is
+  `meta/roadmap/` (start at `ROADMAP.md`; cycle 1.6's map is `meta/roadmap/1.6/README.md`, its subcycle record
   `meta/roadmap/1.6/1.6.1e.md`); every open defect and question is a row of `meta/roadmap/OPEN_DECISIONS.md`; the notice log
   to the library seats is `meta/NOTICES.md`.
 - **The specification set is complete:** `meta/specs/` holds twenty-one documents and `DECISIONS.md` records 366 decisions, D-001
@@ -321,6 +322,7 @@ Five more, each a 1.4 debugging cycle:
 - Judge a dereference by its TARGET read where the pointer is WRITTEN (`deref_targets_hold`, `redef`), YES in a function that lends (`lends`; a `for`'s `next(@it)` and a template's `to_string` lend too), never by its chain; judge a receiver's walk VERDICT as an argument's; recurse a kind test through every kind that stores it — see "A dereference's verdict asks its TARGET, read where the pointer is WRITTEN, and answers YES in a function that lends; a walk's verdict is judged on every road that runs it; a kind test recurses through every kind that stores the kind
 - Treat a template's `to_string`, a `for`'s `next`, a spawn and a `limit<Rules>` check as calls that lend/are purity-checked; prove the list complete with a census — see "An IMPLICIT call is a call, and a SPAWN and a `limit<Rules>` check LEND""
 - Build a `Result` by its literal; `.err`/`.is_error` are read-only (TYPE-024), a `.err` read needs an `is_error` guard (TAINT-001), a non-return literal is slot-typed (TYPE-096/097), a vacant enum and a zero taker TRAP — see "A `Result` is built by its literal, its `err`/`is_error` read-only, its `.err` read guarded, its non-return literal slot-typed, and a vacant discriminant traps"
+- Test and read a `Result` through a local whose address is never taken; bind a call's `Result` before `.value`/`.err` (TAINT-001); unwrap an `Optional` before a computed member (`o?.len`, `o?.value` are TYPE-102) — see "A `Result` is refined only while nothing can write it behind the analysis's back, and a value no binding holds is never refined"
 
 ### Reserved words that read like ordinary names
 
