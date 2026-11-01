@@ -629,7 +629,6 @@ UNTESTED_CODES = {
     # unclassified kind, a round bound that did not settle). The 3,579-file sweep
     # found none reached anywhere after the bound.
     "NITPICK-ASSIGN-003":  "internal since 1.6.1e step 2 -- the definite-assignment walk's depth belt, behind AST_DEPTH_MAX",
-    "NITPICK-BORROW-007":  "internal since 1.6.1e step 2 -- the escape and aliasing walks' depth belt, behind AST_DEPTH_MAX",
     "NITPICK-LOCK-004":    "internal since 1.6.1e step 2 -- the lock-level walk's depth, unclassified-kind and round belts",
     "NITPICK-PICK-005":    "internal since 1.6.1e step 2 -- the exhaustiveness walk's depth and unclassified-kind belts",
 

@@ -1438,6 +1438,8 @@ the authority on both.
 
 > *[2026-10-31, 1.6.1e landing 175, DEF-408:]* **`a?.f` is a struct's STORED field, and a member the compiler COMPUTES is `NITPICK-TYPE-102` through `?.`** -- `o?.len`, `o?.cap`, `o?.ptr`, `o?.value`, `o?.err`, `o?.is_error`, `o?.num`, a `Guard`'s or an `OwnedFd`'s `o?.value`. The emitter typed every such read by the `?.` node's own `Optional` type and stored the raw member at the Optional's base, so a present `string?`'s `o?.len` read a wrong value on every compiler before 175 (twelve kinds; a `frac32?`'s `o?.num` emitted IR `llc` refuses). Unwrap first (`?? d`, `??! Ident`) or test (`!= NIL`), then read the member. A TEMPORARY restriction (D-099's dated note), lifted by DEF-408's emitter fix after landing 180; a struct's field through `?.`, by value or through a pointer, is right and stays open.
 
+> *[2026-11-01, 1.6.1e landing 177a, DEF-419:]* `?.` off a value built where it stands -- a literal, a `pick`, or an operator with one as an arm -- is `NITPICK-TYPE-105`, as `.` and an index are there. MEMORY_REFERENCE's "What reaches a move slot" has the rule and what a lent `string?` parameter can still do.
+
 **No `pick` selects on an `Optional` (D-260, 1.5.2c; `NITPICK-TYPE-065`).** An
 `Optional` has no arms of its own — no constructor, no readable members, one
 implicit wrap — so `pick (o) { (Ordering.Less) { … } }` over an `Ordering?` is

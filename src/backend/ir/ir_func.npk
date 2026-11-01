@@ -739,8 +739,9 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
     }
     i = 0i32;
     while ((i => int64) < fe.cross_stmts.count) decreases fe.cross_stmts.count - (i => int64) {
-        fe.cross_geps[i => int64] =
-            raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 12i64 + fe.pnames.count + (i => int64));
+        // a local first: `fe` is handed to a callee (DEF-415)
+        string:gep = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", 12i64 + fe.pnames.count + (i => int64));
+        fe.cross_geps[i => int64] = move(gep);
         i = i + 1i32;
     }
 
@@ -774,8 +775,8 @@ func:fnem_open_async = NIL(FnEmitter->:fe) never fails {
     while ((i => int64) < fe.cross_stmts.count) decreases fe.cross_stmts.count - (i => int64) {
         if (fe.cross_roles[i => int64] == 0i32) {
             if (raw type_drops_recorded(fe.ctx.types, fe.cross_types[i => int64], 64i32)) {
-                fe.cross_fgeps[i => int64] =
-                    raw fnem_frame_gep(fe, fe.frame_ty, "%fr", fslot);
+                string:gep = raw fnem_frame_gep(fe, fe.frame_ty, "%fr", fslot);
+                fe.cross_fgeps[i => int64] = move(gep);   // DEF-415
                 fslot = fslot + 1i64;
             }
         }

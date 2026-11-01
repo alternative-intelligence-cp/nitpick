@@ -58,6 +58,8 @@ pick (event) {
 In a lending `pick` these names are views of `event`'s fields and payload
 (D-266); in `pick (move(event))` they own them.
 
+> *[2026-11-01, 1.6.1e landing 177a, P, DEF-410's row; D-266's note:]* **An arm that binds a name holds the selector's place for the arm, whoever writes it.** A write through a held pointer, a holder or a pointer parameter changed the variant under the binding: `Msg->:q = @m; pick (m) { (Msg.Text(x)) { discard(raw setp(q)); … x … } }`: `q9_wild_ptr` 97 → 97 → BORROW-015, a MachineFault at a fabricated address. It is `NITPICK-BORROW-015` now, `pick` the statement and `pick` the expression alike; `_` binds nothing and raises nothing. Copy what you need out of the arm, or write after the `pick`. On a pointer parameter it reads the callee's summary, so a read-only callee stays legal and a write the summary misses stays open (`w31_param_helper` 97 → 97 → 97, DEF-298's writer face, landing 179). Over-refused, the list after landing 180: a write through a pointer the arm itself binds (`pw_write_through_binding` 126 → 126 → BORROW-015), a read-only callee over a local's pointer (`pr_local_read` 67 → 67 → BORROW-015), a sibling field's writer through the root (`pf_field_other` 67 → 67 → BORROW-015).
+
 ### 1.2.2 `pick` Control Modifiers
 
 *   **`fall label;`** — falls through to the labelled arm. There is no implicit fallthrough.
@@ -231,6 +233,8 @@ for (int64:i in 1..3) {
 > type**: no wrap, no widening. Anything else is refused at the checker by
 > name (`NITPICK-TYPE-007`, the type mismatch at the binding — this sentence
 > named `TYPE-033` until 1.6.1d step 4, DEF-133's d6), never at a backend rung.
+>
+> *[2026-11-01, 1.6.1e landing 177a, F, DEF-410's row:]* **A `for` over a call's result or a range holds that view's header for its whole body** (the header is read once, before the first step), so a write-capable access of the view's owner in the body is `NITPICK-BORROW-015`: `for (uint8:b in string_bytes(s)) { s = …; }`, over `raw mkv(s)`, over a ternary of views, over `l[0...2]` with `grow(@l)` in the body: `f1_write` 44 → 44 → BORROW-015, `f2_slice_grow` 229 → 229 → BORROW-015, `h3b_for_write` 44 → 44 → BORROW-015, each read freed bytes before. Bind the data first, or write after the loop. A loop over a named binding keeps its own road. `while`, `when`, `loop`, `till` and `if` hold no view across their block (their conditions and bounds are read to scalars), one line per `StmtKind` in 1.6.1e.md's landing-177a record.
 
 ### 2.4 Counted Iteration (`loop` and `till`)
 For rapid, highly-optimized counted iteration, Nitpick offers `loop` and `till`. They automatically manage the iteration counter and expose it inside the block via the special `$` keyword.

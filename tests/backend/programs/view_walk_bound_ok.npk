@@ -1,0 +1,35 @@
+// expect-exit: 0
+// DEPTH ALONE REFUSES NOTHING (DEF-349, landing 177a): five ternaries around a view of ANOTHER owner stay legal under the walk's bound. The exit is the failing case's number.
+mod:view_walk_bound_ok;
+error:E5;
+func:wr = int64(fixed uint8[]:v, string->:p) never fails { (<-p) = string_concat("wx", "yz"); pass v.len; };
+// d349_deep_ok -- five ternaries and a cast around a view of ANOTHER owner, under the same bound: the depth alone refuses nothing; on 176b: exit 65, here: exit 65.
+func:c_d349_deep_ok = int64() never fails {
+    string:s = string_concat("ab", "cde");
+    string:t = string_concat("ab", "cde");
+    fixed uint8[]:w = string_bytes(t);
+    bool:c = s.len > 2i64;
+    pass raw wr(is (c) : (is (c) : (is (c) : (is (c) : (is (c) : string_bytes(t) : w) : w) : w) : w) : w, @s);
+};
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c_d349_deep_ok()) != 5i64) { exit 1i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

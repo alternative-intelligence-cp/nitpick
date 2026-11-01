@@ -785,8 +785,10 @@ pub func:require_move_if_owning = NIL(ExprTyper->:e, ExprId:id, int32:ty,
     if (src == 0i32) { pass NIL; }
     if (raw expr_is_variant_ctor(e, id)) { pass NIL; }
     if (src != 1i32) {
+        // One report: the operator at the path's root says the same at its own span when it is typed (DEF-419), and `diaglist_push` keeps one.
+        if (src == 2i32) { at = (raw ast_expr(e.ast, (raw place_root(e.ast, id, raw BORROW_FUEL())).id)).span; }
         string:o1 = string_concat("`", raw type_display(e.types, e.interns, ty));
-        string:o2 = string_concat(o1, "` owns storage (or is a type parameter that may, D-264), and this operator hands back a place's own value -- a ternary's arm, either side of `??` or `?|`, the value of `?!` or `??!`, the operand of `relay` or a cast -- so the result is a copy of that place and would leave two owners (D-183, DEF-367). Write `move(...)` at the place inside it (`is (c) : move(a) : move(b)`, `move(o) ?? d`, `move(s) => T`), or `.clone()` it");
+        string:o2 = "this operator hands back a place's own value -- a ternary's arm, either side of `??` or `?|`, the value of `?!` or `??!`, the operand of `relay` or a cast -- and that value owns storage (or is a type parameter that may, D-264), so the result is a copy of the place and would leave two owners: the operator's value is dropped at the statement's end and the place at its own, wherever the operator stands, a read included (D-183, DEF-367, DEF-419). Write `move(...)` at the place inside it (`is (c) : move(a) : move(b)`, `move(o) ?? d`, `move(s) => T`), or `.clone()` it; to read it where it stands, choose an address (`<-(is (c) : @a : @b)`)";
         if (src == 3i32) {
             o2 = string_concat(o1, "` owns storage (or is a type parameter that may, D-264), and this reads it out of a value no binding holds -- a temporary's field or element, or what a call's pointer points at --: the temporary drops whole at the statement's end, the part with it, so the copy would leave two owners (D-183, DEF-368). Bind the value first and move the part out of the binding (`T:t = f(…); x = move(t.part);`), or `.clone()` the part");
         }
@@ -3352,7 +3354,7 @@ func:view_refused = bool(ExprTyper->:e, ExprNode:n, string:name) never fails {
 };
 
 func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
-    string:name = raw intern_get(e.interns, raw builtin_name(n));
+    string:name = string_concat("", raw intern_get(e.interns, raw builtin_name(n)));
     int32:gc = raw builtin_generic_count(n);
     int32:start = raw expr_list_start(n);
     int32:argc = (raw expr_list_count(n)) - gc;
@@ -4286,8 +4288,7 @@ func:type_struct_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
         drop report_sealed(e, st, first_sealed, "struct literal", n.span);
     }
     if (nsealed > 1i32) {
-        string:ts = raw type_display(e.types, e.interns, st);
-        string:m1 = string_concat("`", ts);
+        string:m1 = string_concat("`", raw type_display(e.types, e.interns, st));
         string:m2 = string_concat(m1, "`'s `sealed` fields ");
         string:m3 = string_concat(m2, sealed_names);
         string:m4 = string_concat(m3, " are written by this struct literal outside the module that declares `");
@@ -4378,7 +4379,33 @@ pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id) never fails {
         }
     }
     drop exprtypes_set(e.expr_types, id, t);
+    // A COPY OF A PLACE THROUGH AN OPERATOR IS REFUSED WHEREVER IT STANDS (DEF-419, landing 177a): the emitter registers the operator's value as a temporary and drops it
+    // (`temp_producer`), so an arm that is a place's own value is freed under its owner: `fs(is (b) : t : t, 0i64)`, `(o ?? t).len`, `(relay r).len` double-freed (the heap
+    // check's Unreachable, 74 on 175 and 176b) and read the poison (170) or another string's bytes (81) before it. A CAST stays the move slot's: its value is its operand's.
+    ExprNode:op = raw ast_expr(e.ast, id);
+    if ((op.kind == ExprKind.ExprTernaryExpr) || (op.kind == ExprKind.ExprNullCoalesceExpr) || (op.kind == ExprKind.ExprSafeUnwrapExpr)
+        || (op.kind == ExprKind.ExprEmphaticUnwrapExpr) || (op.kind == ExprKind.ExprEmphaticCoalesceExpr) || (op.kind == ExprKind.ExprRelayExpr)
+        || (op.kind == ExprKind.ExprDynCastExpr)) {
+        drop require_move_if_owning(e, id, t, op.span);
+    }
+    // A PART OF A VALUE NO BINDING HOLDS, BUILT WHERE IT STANDS (DEF-419's closed alternative; management_12's ruling of 2026-11-01 07:00): a struct or array literal's other parts run, an `@` in
+    // one and a `move` in another, and no analysis follows them through the read of this part. Plain data is not exempt: it is one rule. Six test sites, re-spelled in landing 177a; none outside the tests.
+    if ((t != 0i32) && ((op.kind == ExprKind.ExprMemberAccessExpr) || (op.kind == ExprKind.ExprSafeNavExpr) || (op.kind == ExprKind.ExprIndexExpr))
+        && (raw literal_base(e, raw expr_operand(op), raw BORROW_FUEL()))) {
+        drop diaglist_push(e.diags, raw diag_error(raw TYPE_LITERAL_PART(), "this reads a part of a value built where it stands -- a struct, array or `Result` literal, a `pick`, or an operator with one as an arm --, and the analyses cannot follow what its other parts do to what this part holds; bind it to a name first, then read the part", op.span));
+    }
     pass t;
+};
+func:literal_base = bool(ExprTyper->:e, ExprId:id, int32:fuel) decreases fuel never fails {
+    ExprNode:n = raw ast_expr(e.ast, id);
+    pass (fuel <= 0i32) || (n.kind == ExprKind.ExprStructLiteralExpr) || (n.kind == ExprKind.ExprArrayLiteralExpr) || (n.kind == ExprKind.ExprResultLiteralExpr)
+         || (n.kind == ExprKind.ExprPickExpr)
+         || (((n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr) || (n.kind == ExprKind.ExprDynCastExpr) || (n.kind == ExprKind.ExprRelayExpr)
+              || (n.kind == ExprKind.ExprEmphaticUnwrapExpr) || (n.kind == ExprKind.ExprEmphaticCoalesceExpr))
+             && (raw literal_base(e, raw expr_operand(n), fuel - 1i32)))
+         || ((n.kind == ExprKind.ExprTernaryExpr) && ((raw literal_base(e, raw expr_rhs(n), fuel - 1i32)) || (raw literal_base(e, raw expr_third(n), fuel - 1i32))))
+         || (((n.kind == ExprKind.ExprNullCoalesceExpr) || (n.kind == ExprKind.ExprSafeUnwrapExpr))
+             && ((raw literal_base(e, raw expr_lhs(n), fuel - 1i32)) || (raw literal_base(e, raw expr_rhs(n), fuel - 1i32))));
 };
 
 // THE CONTRACT CONTEXTS (1.5.1, D-221). Five, because the rules differ by

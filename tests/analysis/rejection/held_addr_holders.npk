@@ -28,9 +28,9 @@
 // type that holds a pointer at some depth, `type_holds_elem_pointer`; deduplicated per holder and place,
 // `pre_has_party`), and a `move` of the root is BORROW-013 against it. The inner-block copy (site 2) is
 // BORROW-002 first: the holder `p` is bound by its block and `q` outlives it. Sites 8 and 9 (176b, review B's E5): the
-// DECLARATION's literal holding `@h` with the move in a later field, and the assignment's -- the holder's parties are live
-// while its initialiser runs now (`register_holder` before the walk; 176 made them live after it, and site 8 read a
-// fabricated length 0 on 175 and 176); the literal's own `@h` meets its party by node identity.
+// DECLARATION's literal holding `@h` with the move in a later field (a fabricated length 0 on 175 and 176), and the assignment's. The holder is registered AFTER its
+// initialiser's walk, as on 175, and site 8's `@h` is a statement-scoped address party (holder -2, management_11's ruling of 01:42 EST; the first 176b build registered the
+// holder first and refused nitpick-time's `vec_pop`, so that road was abandoned); site 9 meets the holder's party, live from the holder's declaration (review B's R4).
 mod:held_addr_holders;
 error:E5;
 pub struct:H = { string:s; int64:n; };

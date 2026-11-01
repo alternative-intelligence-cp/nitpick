@@ -175,6 +175,7 @@ pub struct:Alias = {
     // THE RECEIVER OF A CONCURRENT-SET OPERATION is checked against every party
     // but the lent ones (DEF-148), for that one access.
     bool:skip_lent;
+    int32:judge_only;   // 177a: 0, every party; -1, the assignment targets alone (DEF-415); > 0, the parties sited at that expression alone (E-a)
 };
 
 pub func:alias_init = Alias(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
@@ -208,7 +209,7 @@ pub func:alias_init = Alias(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                 pre: raw list_init::<Party>(16i64),
                 call_marks: raw list_init::<int64>(8i64),
                 stmt_sym: map, stmt_count: sc, decl_sym: dmap, decl_count: dc,
-                spawn_call: raw expr_none(), skip_lent: false };
+                spawn_call: raw expr_none(), skip_lent: false, judge_only: 0i32 };
 };
 
 // The symbol a declaration (a parameter) made, or 0.
@@ -218,6 +219,11 @@ func:decl_symbol_of = int32(Alias->:x, int32:decl) never fails {
     pass x.decl_sym[decl => int64];
 };
 
+func:party_in_scope = bool(Alias->:x, Party:p) never fails {
+    if (x.judge_only == 0i32) { pass true; }
+    if (x.judge_only < 0i32) { pass (p.kind == (raw PARTY_TARGET())); }
+    pass (p.site.index == x.judge_only);
+};
 func:alias_err = NIL(Alias->:x, move string:code, move string:msg, Span:sp) never fails {
     drop diaglist_push(x.diags, raw diag_error(move(code), move(msg), sp));
     pass NIL;
@@ -1409,6 +1415,10 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
         Party:p = x.live[i];
         if (p.root != root) { continue; }
         if (p.site.index == self_site.index) { continue; }
+        if (!(raw party_in_scope(x, p))) { continue; }
+        // One report: `target_handed` judged this argument WHOLE already.
+        if ((p.kind == (raw PARTY_TARGET())) && (mode == (raw CHECK_VIEWS())) && (x.judge_only == 0i32)
+            && (raw expr_is_none(self_site))) { continue; }
         bool:summary_judged = ((p.kind == (raw PARTY_VIEW())) || (p.kind == (raw PARTY_LENT())) || (p.kind == (raw PARTY_ELEM_ADDR()))
                                || (p.kind == (raw PARTY_TARGET())));
         if ((mode == (raw CHECK_VIEWS())) && (!summary_judged)) { continue; }
@@ -1464,10 +1474,8 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
         // of it (`items`, `count`: a callee's push or truncate) -- never a SIBLING element (`l[j - 1]`, the regex `Vec`
         // shift) nor the target itself or a part of it, which change the VALUE the store overwrites, not its storage.
         if (p.kind == (raw PARTY_TARGET())) {
-            if (ap.count > pp.count + 1i64) { continue; }
-            if ((ap.count == pp.count + 1i64) && (ap[pp.count].kind != 0i32)) { continue; }
-            drop report_target_conflict(x, p, akind, root, ap, at);
-            pass true;
+            if (raw report_target_conflict(x, p, pp.count, akind, root, ap, at)) { pass true; }
+            continue;
         }
         // A COMPUTED PAIR IS A GUARD SITE (D-286, 1.5.5 step 2): the emitter
         // compares the two storages at run time and traps `BorrowOverlap`,
@@ -1609,7 +1617,9 @@ func:check_view_parties_at = bool(Alias->:x, ViewRef:tgt, List<Step>:ap, int32:s
     for (int64:i in 0i64...x.live.count) {
         Party:p = x.live[i];
         if (p.root != tgt.root) { continue; }
-        if ((p.kind != (raw PARTY_VIEW())) && (p.kind != (raw PARTY_LENT())) && (p.kind != (raw PARTY_ELEM_ADDR()))) { continue; }
+        if (!(raw party_in_scope(x, p))) { continue; }
+        if ((p.kind != (raw PARTY_VIEW())) && (p.kind != (raw PARTY_LENT())) && (p.kind != (raw PARTY_ELEM_ADDR()))
+            && ((p.kind != (raw PARTY_TARGET())) || ((mode == (raw CHECK_VIEWS())) && (x.judge_only == 0i32)))) { continue; }
         if ((mode == (raw CHECK_LENT())) && (p.kind != (raw PARTY_LENT()))) { continue; }
         if (x.skip_lent && (p.kind == (raw PARTY_LENT()))) { continue; }
         if ((self_holder != 0i32) && (p.holder == self_holder)) { continue; }
@@ -1619,6 +1629,10 @@ func:check_view_parties_at = bool(Alias->:x, ViewRef:tgt, List<Step>:ap, int32:s
         if (!(raw party_steps(x, p, @pp))) { drop list_truncate(@pp, 0i64); }   // unreadable: the root WHOLE (DEF-343)
         int32:cls = raw overlap_class(x, pp, ap);
         if (cls == (raw OV_DISJOINT())) { continue; }
+        if (p.kind == (raw PARTY_TARGET())) {
+            if (raw report_target_conflict(x, p, pp.count, akind, tgt.root, ap, at)) { pass true; }
+            continue;
+        }
         if (p.kind == (raw PARTY_ELEM_ADDR())) {
             // A `List` FROZEN BY AN ELEMENT ADDRESS, reached through a pointer
             // (DEF-314, landing 165): a call-result pointer, a named pointer, a
@@ -1999,14 +2013,22 @@ func:check_pointer_targets = bool(Alias->:x, ExprId:place, List<Step>:ap, int32:
 func:check_pointer_view_parties = bool(Alias->:x, int32:root, List<Step>:ap, int32:akind, Span:at, int32:skip) never fails {
     for (int64:i in 0i64...x.live.count) {
         Party:p = x.live[i];
-        if ((p.kind != (raw PARTY_VIEW())) && (p.kind != (raw PARTY_ELEM_ADDR()))) { continue; }
+        if (!(raw party_in_scope(x, p))) { continue; }
+        if ((p.kind != (raw PARTY_VIEW())) && (p.kind != (raw PARTY_ELEM_ADDR())) && (p.kind != (raw PARTY_TARGET()))) { continue; }
         if (p.root == root) { continue; }
         if ((skip != 0i32) && (p.root == skip)) { continue; }
         if (!(raw conflicts(p.kind, akind))) { continue; }
         List<Step>:pp = raw list_init::<Step>(8i64);
         if (!(raw party_steps(x, p, @pp))) { drop list_truncate(@pp, 0i64); }   // unreadable: the root WHOLE (DEF-343)
         ExprId:pe = raw ptr_write_base(x, p.place, pp.count);
-        if (raw expr_is_none(pe)) { continue; }
+        // A VIEW RETURNED THROUGH THE BARE POINTER ITSELF (DEF-355, landing 177a): `fixed uint8[]:vw = raw getv(p);` with `p = @s` raises a view party at `p`, its path empty, and
+        // `ptr_write_base` looks for a pointer BELOW the place and answers none, so `s = …` by its own name met nothing (113, 170: the freed bytes read). The place itself is the pointer.
+        if (raw expr_is_none(pe)) {
+            int32:pvt = raw exprtypes_get(x.etypes, p.place);
+            // Never the holder's own storage (`Holder->:b = @hd;` under `hd`'s possible view of `b`).
+            if ((pvt == 0i32) || ((raw type_kind(x.types, pvt)) != (raw TY_POINTER())) || (p.holder == root)) { continue; }
+            pe = p.place;
+        }
         List<Step>:pre = raw list_init::<Step>(8i64);
         if (!(raw path_steps(x, pe, raw expr_none(), @pre))) { continue; }
         if (pre.count > pp.count) { continue; }
@@ -2021,6 +2043,10 @@ func:check_pointer_view_parties = bool(Alias->:x, int32:root, List<Step>:ap, int
             for (int64:k in pre.count...pp.count) { drop list_push(@tp, pp[k]); }
             int32:cls = raw overlap_class(x, tp, ap);
             if (cls == (raw OV_DISJOINT())) { continue; }
+            if (p.kind == (raw PARTY_TARGET())) {
+                if (raw report_target_conflict(x, p, tp.count, akind, root, ap, at)) { pass true; }
+                continue;
+            }
             if (p.kind == (raw PARTY_ELEM_ADDR())) {
                 int64:lvl = ((raw elem_party_level(x, p, pp)) - pre.count) + tbase;
                 if (raw write_into_elements(x, ap, lvl)) { continue; }
@@ -2054,7 +2080,7 @@ func:report_view_conflict = NIL(Alias->:x, Party:p, int32:akind, int32:root, Lis
         m = string_concat(m, raw intern_get(x.it, (raw symtab_get(x.tab, p.holder)).name));
         m = string_concat(m, "` until the end of the block that declares it");
     } else {
-        if (p.holder < 0i32) { m = string_concat(m, ", a call's result or a range view, live to the end of the full expression that formed it (DEF-410)"); }
+        if (p.holder < 0i32) { m = string_concat(m, ", a call's result, a range view or a lending `pick`'s selector, live to the end of the full expression, the `for` loop or the `pick` arm that formed it (DEF-410)"); }
         else { m = string_concat(m, ", live for the call it is an argument of"); }
     }
     if (cls == (raw OV_COMPUTED())) {
@@ -2071,17 +2097,29 @@ func:report_view_conflict = NIL(Alias->:x, Party:p, int32:akind, int32:root, Lis
 // and 175, the store silently lost; a buffer replaced through `@b` 158; a nested `l[0].v[1]` with its inner List
 // reallocated 68); the compound form loads the old value from the same stale address. The target's own access is
 // judged before the party is raised (the emitter's order), and the party dies with the statement.
-func:report_target_conflict = NIL(Alias->:x, Party:p, int32:akind, int32:root, List<Step>:ap, Span:at) never fails {
+func:report_target_conflict = bool(Alias->:x, Party:p, int64:pc, int32:akind, int32:root, List<Step>:ap, Span:at) never fails {
+    if ((ap.count > pc + 1i64) || ((ap.count == pc + 1i64) && (ap[pc].kind != 0i32))) { pass false; }
     ExprNode:pn = raw ast_expr(x.ast, p.site);
-    string:m = string_concat(raw access_word(akind), " of `");
+    string:head = raw access_word(akind);
+    if (x.judge_only < 0i32) { head = "this pointer or address handed to a callee (judged WHOLE, the callee's summary unread: DEF-415)"; }
+    string:m = string_concat(head, " of `");
     m = string_concat(m, raw render_place(x, root, ap));
-    m = string_concat(m, "` conflicts with the assignment's target at ");
+    bool:ix = (p.holder == (0i32 - 3i32));
+    if (ix) {
+        m = string_concat(m, "` conflicts with the element address formed at ");
+    } else {
+        m = string_concat(m, "` conflicts with the assignment's target at ");
+    }
     m = string_concat(m, int_to_string(pn.span.line => int64));
     m = string_concat(m, ":");
     m = string_concat(m, int_to_string(pn.span.col => int64));
-    m = string_concat(m, ", whose element address is formed BEFORE the value runs: a reallocation, a move or a free of the container inside the value would leave the store writing freed memory (DEF-410 (d)); compute the value into a local first, then assign the local");
+    if (ix) {
+        m = string_concat(m, ", BEFORE a later index on the same place runs: a reallocation, a move or a free of the container inside that index would leave the place's next step reading freed memory (DEF-410 (e)); compute the index into a local first");
+    } else {
+        m = string_concat(m, ", whose element address is formed BEFORE the value runs: a reallocation, a move or a free of the container inside the value would leave the store writing freed memory (DEF-410 (d)); compute the value into a local first, then assign the local");
+    }
     drop alias_err(x, raw BORROW_VIEW_ROOT(), move(m), at);
-    pass NIL;
+    pass true;
 };
 
 // A WRITE-CAPABLE ACCESS OF A `List` WHILE A PLAIN ADDRESS INTO ONE OF ITS
@@ -2104,12 +2142,12 @@ func:report_elem_addr_conflict = NIL(Alias->:x, Party:p, int32:akind, int32:root
     m = string_concat(m, int_to_string(pn.span.line => int64));
     m = string_concat(m, ":");
     m = string_concat(m, int_to_string(pn.span.col => int64));
-    if (p.holder != 0i32) {
+    if (p.holder > 0i32) {
         m = string_concat(m, ", held by `");
         m = string_concat(m, raw intern_get(x.it, (raw symtab_get(x.tab, p.holder)).name));
         m = string_concat(m, "` until the end of the block that declares it");
     } else {
-        m = string_concat(m, ", live for the call it is an argument of");
+        m = string_concat(m, ", live for the call or the initialiser it is part of");
     }
     if (cls == (raw OV_COMPUTED())) {
         m = string_concat(m, " (a computed index: a `List` element address has no run-time guard, so the pair refuses)");
@@ -2169,6 +2207,23 @@ func:push_value_view_parties = NIL(Alias->:x, ExprId:id) never fails {
     }
     pass NIL;
 };
+// E-c (DEF-413, landing 177a): a literal under any form `value_arms` names holds the same `@` as a bare one (`C:c = is (b) : C{ p: @h, k: (raw take(move(h.s))) } : …`, or a `give`: 60 on 175 and 176b).
+// A template's piece is the same value, read after its parts by an implicit `to_string` (`l_tmpl_lit`, 62 on 175 and 176b); a `for`'s iterable and a `pick`'s selector holding a borrow are BORROW-009.
+func:push_value_addr_parties = NIL(Alias->:x, ExprId:e) never fails {
+    int64:m0 = x.live.count;
+    drop push_call_view_party_in(x, e, e, raw ALIAS_DEPTH());
+    int64:m1 = m0;
+    for (int64:q in m0...x.live.count) {
+        Party:pq = x.live[q];
+        if ((pq.kind == (raw PARTY_ADDR())) || (pq.kind == (raw PARTY_ELEM_ADDR()))) {
+            pq.holder = 0i32 - 2i32;
+            x.live[m1] = pq;
+            m1 = m1 + 1i64;
+        }
+    }
+    drop list_truncate(@x.live, m1);
+    pass NIL;
+};
 func:acc_top = NIL(Alias->:x, ExprId:e, int32:akind, int32:depth, bool:is_place) never fails {
     int64:m = x.live.count;
     if (is_place) { drop acc_place(x, e, akind, raw expr_none(), depth); }
@@ -2189,7 +2244,7 @@ func:drop_value_parties = NIL(Alias->:x, int64:m) never fails {
 // THE TARGET'S CONTAINER (DEF-410 (d)): the base of the first index step met from the top whose base is a `List`, a
 // `buffer` or a `cstring` -- the heap-backed kinds whose element address is formed from a header the value can free. An
 // inline array's and a slice's storage is stable (measured: `g[0] = raw reset(@g)` lands, 69), a local's or a field's too.
-func:push_target_party = NIL(Alias->:x, ExprId:tgt) never fails {
+func:push_target_party = NIL(Alias->:x, ExprId:tgt, int32:holder) never fails {
     ExprId:cur = tgt;
     for (int32:hop in 0i32...(raw BORROW_FUEL())) {
         if (raw expr_is_none(cur)) { pass NIL; }
@@ -2202,7 +2257,7 @@ func:push_target_party = NIL(Alias->:x, ExprId:tgt) never fails {
                 if ((bk == (raw TY_BUFFER())) || (bk == (raw TY_CSTRING())) || (raw type_is_list(x.tr, bt))) {
                     int32:root = raw place_root_symbol(x, base);
                     if (root != 0i32) {
-                        drop list_push(@x.live, Party{ site: tgt, kind: raw PARTY_TARGET(), root: root, holder: 0i32 - 1i32, place: base,
+                        drop list_push(@x.live, Party{ site: tgt, kind: raw PARTY_TARGET(), root: root, holder: holder, place: base,
                                                        view_kind: 0i32, root_ptr: raw root_ident_is_pointer(x, base), path: 0i32 });
                     }
                     pass NIL;
@@ -2214,6 +2269,39 @@ func:push_target_party = NIL(Alias->:x, ExprId:tgt) never fails {
         if ((n.kind != ExprKind.ExprMemberAccessExpr) && (n.kind != ExprKind.ExprSafeNavExpr) && (n.kind != ExprKind.ExprDerefExpr)
             && (n.kind != ExprKind.ExprCastExpr) && (n.kind != ExprKind.ExprUncheckedCastExpr)) { pass NIL; }
         cur = raw expr_operand(n);   // a step down the chain (DEF-272, DEF-343)
+    }
+    pass NIL;
+};
+
+// A CALLEE HANDED A WAY TO THE TARGET'S CONTAINER, INSIDE THE WINDOW (DEF-415, landing 177a; management_12's rulings of 2026-11-01 05:42, 05:46 and 05:57): `List<int64>->:q = @l; l[0i64] = raw grow(q);`
+// addressed `l[0]`, the callee reallocated `l` through the alias, and the store landed in freed memory (67 on 175 and 176b; the target party keyed by `l`, the growth a READ of `q`). A held alias, a copy,
+// a struct holding one, `@l`, the implicit `@recv` and a root pointer handed to ANY callee is judged WHOLE against the live targets alone, the callee's summary UNREAD -- the summary misses writes (`q2_helper`,
+// `q2_change`) -- and COMPARED BY PATH: `e.binds[0] = raw grow(@e.syms)` is legal. What the value holds is read off its refs, one hop per fuel, a holder of a holder too (`W->:wp = @w; l[0] = raw wp.gr()`).
+// A callee that writes nothing (`d415_readonly`, `l[i] = raw f(@l)`) or only a SIBLING of the container (`r_e_other`, the pointer root's nine sites in `src/`) is over-refused: the post-180 list; a target with no named root stays open (`s3_rootless`), and the road the row's limit names is the emitter's order (DEF-418).
+func:target_handed = NIL(Alias->:x, ExprId:a, Span:at, int32:judge, bool:own, int32:fuel) decreases fuel never fails {
+    bool:live = judge > 0i32;
+    for (int64:i in 0i64...x.live.count) {
+        if (x.live[i].kind == (raw PARTY_TARGET())) { live = true; }
+    }
+    if (!live) { pass NIL; }
+    if (fuel <= 0i32) {
+        drop alias_err(x, raw BORROW_TOO_DEEP(), "this value reaches through more holders than the aliasing analysis will follow, so what the callee can reach cannot be checked against the assignment's target or the by-value owner beside it", at);
+        pass NIL;
+    }
+    if (own) {
+        x.judge_only = judge;
+        drop check_access_ex(x, a, 0i32, raw ACC_WRITE(), raw expr_none(), at, raw CHECK_VIEWS());
+        x.judge_only = 0i32;
+    }
+    int32:r = raw place_root_symbol(x, a);
+    List<ViewRef>:refs = raw list_init::<ViewRef>(4i64);
+    drop escape_value_views(x.esc, a, @refs);
+    for (int64:k in 0i64...refs.count) {
+        ViewRef:vr = refs[k];
+        // K (management_12's ruling of 2026-11-01 10:31): a value holding an address into ITSELF (`o.p = @o.s; selfw(o)`, 83 on 175 and 176b) is judged against its own snapshot, one step. A WHOLE-self address (a callee summary's `vec_push(@a, ...)`) stays out: 17 sites of `vec_unit` otherwise, and `k2_whole` (`o.me = @o; selfw(o)`, and `selfstore(@o); selfw(o)` by the summary road) stays open, on DEF-418's row.
+        if ((vr.root == 0i32) || ((vr.root == r) && (own || (judge <= 0i32) || (vr.kind != (raw REF_ADDR())) || ((raw ast_expr(x.ast, ExprId{ index: vr.place })).kind == ExprKind.ExprIdentifierExpr)))) { continue; }
+        if ((vr.kind != (raw REF_ADDR())) && (vr.kind != (raw REF_PASS()))) { continue; }
+        drop target_handed(x, ExprId{ index: vr.place }, at, judge, true, fuel - 1i32);
     }
     pass NIL;
 };
@@ -2278,6 +2366,17 @@ func:check_addr_window = NIL(Alias->:x, ExprId:place, Span:at) never fails {
     pass NIL;
 };
 
+// A LENDING ARM'S BINDING IS A VIEW OF THE SELECTOR'S PLACE, LIVE FOR THE ARM (P of 177a; management_12's rulings of 2026-11-01 10:55 and 11:18): a write through a held pointer, a holder or a pointer parameter changed the variant under the binding, and the arm read the old payload: MachineFault at a fabricated address (97, `q9_wild_ptr`, `q10_wild_param`), OutOfBounds (98), a freed string (89). Both spellings of `pick` walk their arms through here, so the existing judges (pointer, holder, D-325) see the party. An arm that binds nothing raises none (`arm_binds_in`). `q6_two_params_num`, two parameters of one owner, is DEF-418's.
+func:alias_pick_arm = NIL(Alias->:x, ExprId:sel, StmtId:arm, int32:dd) never fails {
+    drop frame_push(x);
+    if (((raw place_root_symbol(x, sel)) != 0i32) && (raw arm_binds_in(x.ast, x.it, raw ast_stmt(x.ast, arm)))) {
+        drop list_push(@x.live, Party{ site: sel, kind: raw PARTY_VIEW(), root: raw place_root_symbol(x, sel), holder: 0i32 - 1i32, place: sel,
+                                       view_kind: raw VIEW_DIRECT(), root_ptr: raw root_ident_is_pointer(x, sel), path: 0i32 });
+    }
+    drop alias_stmt(x, arm, dd);
+    drop frame_pop(x);
+    pass NIL;
+};
 func:frame_push = NIL(Alias->:x) never fails { drop list_push(@x.frames, x.live.count); pass NIL; };
 func:frame_pop = NIL(Alias->:x) never fails {
     if (x.frames.count == 0i64) { pass NIL; }
@@ -2390,11 +2489,7 @@ func:alias_stmt = NIL(Alias->:x, StmtId:id, int32:depth) never fails {
                 // raised by `acc_top` with the statement's lifetime, and a call-scoped copy (holder 0) outlived the statement:
                 // `B2:b = B2{ sl: arr[0i64...2i64] }; drop w(b.sl);` was BORROW-015 on a build that kept them (slice_targets_ok).
                 int64:m0 = x.live.count;
-                ExprNode:iv = raw ast_expr(x.ast, init);
-                if ((iv.kind == ExprKind.ExprStructLiteralExpr) || (iv.kind == ExprKind.ExprArrayLiteralExpr)) { drop push_call_view_party_in(x, init, init, 4i32); }
-                int64:m1 = m0;
-                for (int64:q in m0...x.live.count) { Party:pq = x.live[q]; if (pq.kind == (raw PARTY_ADDR())) { pq.holder = 0i32 - 2i32; x.live[m1] = pq; m1 = m1 + 1i64; } }
-                drop list_truncate(@x.live, m1);
+                drop push_value_addr_parties(x, init);
                 drop refuse_holder_copy(x, init, hsym);
                 drop acc_top(x, init, raw ACC_READ(), dd, false);
                 drop drop_value_parties(x, m0);
@@ -2408,7 +2503,7 @@ func:alias_stmt = NIL(Alias->:x, StmtId:id, int32:depth) never fails {
         ExprId:val = raw stmt_assigned(s);
         drop acc_top(x, tgt, raw ACC_WRITE(), dd, true);
         int64:tm = x.live.count;
-        drop push_target_party(x, tgt);   // (d): the target's container is a party while the value is walked
+        drop push_target_party(x, tgt, 0i32 - 1i32);   // (d): the target's container is a party while the value is walked
         drop alias_assign_value(x, tgt, val, dd);
         drop drop_value_parties(x, tm);
         pass NIL;
@@ -2434,6 +2529,8 @@ func:alias_stmt = NIL(Alias->:x, StmtId:id, int32:depth) never fails {
     if (s.kind == StmtKind.StmtForStmt) {
         drop acc_top(x, raw stmt_for_iter(x.ast, s), raw ACC_READ(), dd, false);
         drop frame_push(x);
+        // F (management_12's ruling of 2026-11-01 10:55): a `for` over a call's result or a range holds that VIEW's header for its whole body, so the view is a party of the loop's frame: `for (.. in raw mkv(@s)) { setq(q); }` read freed bytes (44, 229; `h3b`..`h3g`, `f1`..`f15`). A loop over a named binding keeps its own road, `h3e_for_ctl`.
+        if ((raw ast_expr(x.ast, raw stmt_for_iter(x.ast, s))).kind != ExprKind.ExprIdentifierExpr) { drop push_value_view_parties(x, raw stmt_for_iter(x.ast, s)); }
         drop push_loop_binding_parties(x, raw stmt_for_binding(s));
         drop alias_stmt(x, raw stmt_for_body(x.ast, s), dd);
         drop frame_pop(x);
@@ -2449,7 +2546,7 @@ func:alias_stmt = NIL(Alias->:x, StmtId:id, int32:depth) never fails {
     if (s.kind == StmtKind.StmtPickStmt) {
         drop acc_top(x, raw pick_selector(s), raw ACC_READ(), dd, false);
         for (int32:pa in 0i32...(raw pick_arm_count(s))) {
-            drop alias_stmt(x, raw pick_arm_at(x.ast, raw pick_arm_start(s), pa), dd);
+            drop alias_pick_arm(x, raw pick_selector(s), raw pick_arm_at(x.ast, raw pick_arm_start(s), pa), dd);
         }
         pass NIL;
     }
@@ -2721,6 +2818,7 @@ func:refuse_shared_to_writer = NIL(Alias->:x, ExprId:call, int32:pos, int32:hold
 // party before walking the index UNDER it (`l[(raw push_row(@l))].v[0i64...2i64][1i64]`, safe: refused BORROW-015) and walked
 // `l[0i64...2i64][(raw grow0(@l))]`'s outer index before reaching the range below it (the view read the FREED buffer, 230).
 func:acc_indices = NIL(Alias->:x, ExprId:place, int32:depth) never fails {
+    int64:w0 = x.live.count;
     List<int32>:steps = raw list_init::<int32>(4i64);
     ExprId:cur = place;
     for (int32:hop in 0i32...(raw BORROW_FUEL())) {
@@ -2748,7 +2846,22 @@ func:acc_indices = NIL(Alias->:x, ExprId:place, int32:depth) never fails {
         // through a range -- this walk is the one place a range's bounds are read.
         if ((raw ast_expr(x.ast, ix)).kind == ExprKind.ExprRangeExpr) { drop push_value_view_parties(x, step); }
         drop acc_expr(x, ix, raw ACC_READ(), depth - 1i32);
+        // AN ELEMENT'S ADDRESS IS FORMED BEFORE THE NEXT STEP'S INDEX RUNS (E-b, DEF-410 (e), landing 177a): `l[0i64].v[(raw grow_outer(@l)) - 9i64]` addressed `l[0]`, the index
+        // reallocated `l`, and `.v`'s header loaded from the freed element (97 on 175 and 176b; the target's road, `l[0].v[…] = 9`, a machine fault). The read road's twin of (d)'s
+        // PARTY_TARGET: its container a party for the rest of THIS chain (holder -3), gone when the chain ends. The LAST step's own index runs before its element loads: no party.
+        if ((j + 1i64 < steps.count) && ((raw ast_expr(x.ast, ix)).kind != ExprKind.ExprRangeExpr)) {
+            drop push_target_party(x, step, 0i32 - 3i32);
+        }
     }
+    int64:w = w0;
+    for (int64:q in w0...x.live.count) {
+        Party:pq = x.live[q];
+        if (pq.holder != (0i32 - 3i32)) {
+            x.live[w] = pq;
+            w = w + 1i64;
+        }
+    }
+    drop list_truncate(@x.live, w);
     pass NIL;
 };
 
@@ -2916,6 +3029,11 @@ func:acc_expr = NIL(Alias->:x, ExprId:id, int32:akind, int32:depth) never fails 
         pass NIL;
     }
 
+    if (n.kind == ExprKind.ExprTemplateLiteral) {
+        for (int32:tp in 0i32...(raw expr_list_count(n))) {
+            drop push_value_addr_parties(x, ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), tp) });
+        }
+    }
     // A CLAIM ANYWHERE ELSE THAN AN ADMITTING SITE (D-286): refused by name.
     if (n.kind == ExprKind.ExprBorrowExpr) {
         drop acc_indices(x, raw expr_operand(n), dd);
@@ -3005,7 +3123,7 @@ func:acc_expr = NIL(Alias->:x, ExprId:id, int32:akind, int32:depth) never fails 
     if (n.kind == ExprKind.ExprPickExpr) {
         drop acc_expr(x, raw pickx_selector(n), raw ACC_READ(), dd);
         for (int32:pi in 0i32...(raw pickx_arm_count(n))) {
-            drop alias_stmt(x, raw pick_arm_at(x.ast, raw pickx_arm_start(n), pi), dd);
+            drop alias_pick_arm(x, raw pickx_selector(n), raw pick_arm_at(x.ast, raw pickx_arm_start(n), pi), dd);
         }
         pass NIL;
     }
@@ -3051,6 +3169,7 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
                     ExprId:callee, int32:depth) never fails {
     drop acc_expr(x, callee, raw ACC_READ(), depth);
     int64:mark = x.live.count;
+    int64:d0 = raw diaglist_count(x.diags);
     int32:pos_base = 0i32;   // the receiver is position 0 of the callee's summary
     if (!(raw expr_is_none(recv))) { pos_base = 1i32; }
     bool:result_carries = false;
@@ -3066,11 +3185,18 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
         rxt = raw exprtypes_get(x.etypes, recv);
         if (rxt != 0i32) { if ((raw type_kind(x.types, rxt)) == (raw TY_POINTER())) { recv_is_ptr = true; } }
         if (ptr_recv && (!recv_is_ptr)) { drop push_addr_party(x, recv, recv); }
+        if (!(raw is_place_chain(x, recv))) { drop push_call_view_party(x, recv); }   // a literal receiver holds its `@` for the arguments (`W{ ptr: @h }.mv(K)`, 60 on 175 and 176b)
+        if ((rxt != 0i32) && ((ptr_recv && (!recv_is_ptr)) || (raw type_holds_elem_pointer(x, rxt, 0i32, 8i32)))) {
+            drop target_handed(x, recv, (raw ast_expr(x.ast, recv)).span, 0i32 - 1i32, true, 8i32);
+        }
     }
     // The claim arguments become parties first.
     for (int32:i in 0i32...count) {
         ExprId:a = ExprId{ index: raw ast_id_at(x.ast, start, i) };
         int32:pk = raw party_kind_of(x, a);
+        if ((pk == (raw PARTY_PLAIN())) || (pk == (raw PARTY_ELEM_ADDR()))) {
+            drop target_handed(x, raw expr_operand(raw ast_expr(x.ast, raw peel_ptr_casts(x, a))), (raw ast_expr(x.ast, a)).span, 0i32 - 1i32, true, 8i32);
+        }
         if (pk < 0i32) {
             // A VIEW EXPRESSION AS A WHOLE ARGUMENT (D-325): a view party of its
             // viewed place for the call -- `f(string_from_bytes(d.ptr, n), @d)`
@@ -3192,7 +3318,9 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
     // the receiver's index runs before the element loads (DEF-410 (a)), so a claim or a move inside it is that walk's own matter
     // (`k[(raw reset($$m k))].pk()` reads the fresh element, legal) -- and live to the call's return (`mark`): a LATER argument's
     // `move`, `@`, `$$m` or reallocating access of the root is BORROW-015. A type that drops nothing is a true copy and no party.
-    if ((!(raw expr_is_none(recv))) && (!ptr_recv) && (!recv_is_ptr) && (rxt != 0i32) && (raw is_place_chain(x, recv))) { if (raw type_drops(x.tr, rxt, x.scope, 64i32)) { drop push_snapshot_party(x, recv); } }
+    if ((!(raw expr_is_none(recv))) && (!ptr_recv) && (!recv_is_ptr) && (rxt != 0i32)) {
+        drop push_snapshot_parties(x, recv, recv, false, raw ALIAS_DEPTH());
+    }
     // Every ordinary argument as an access against the outer parties and all
     // of the call's claims. A PLAIN ADDRESS handed to a KNOWN callee is, for the
     // view parties, an access of exactly what that callee WRITES through it
@@ -3248,10 +3376,12 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
             }
             // A SLICE NO PLACE NAMES handed to a callee that writes through it
             // (DEF-301, landing 159): a call's result, a ternary -- each storage
-            // its value views, whole, against the view parties there.
+            // its value views, whole, against the view parties there. A VARIADIC position
+            // answers -2 and is judged whole only where its element carries a pointer
+            // (V, 177a, 10:31): `vsw(s, @s)`'s callee writes `<-rest[0]`; `raw total(1i64, ..^xs)` over `int64[]` stays legal.
             if (((raw type_kind(x.types, at2)) == (raw TY_SLICE())) && (!(raw is_place_chain(x, a2)))) {
                 if (!(raw type_slice_fixed(x.types, at2))) {
-                    if ((raw escape_mut_first(x.esc, callee_fn, pos_base + j)) != (0i32 - 1i32)) {
+                    if (((raw escape_mut_first(x.esc, callee_fn, pos_base + j)) >= 0i32) || (((raw escape_mut_first(x.esc, callee_fn, pos_base + j)) == (0i32 - 2i32)) && ((callee_fn <= 0i32) || (raw carries_pointer_type(x.types, raw type_elem(x.types, at2)))))) {
                         discard(raw check_slice_targets(x, a2, a2, raw ACC_WRITE(), (raw ast_expr(x.ast, a2)).span, raw CHECK_VIEWS()));
                     }
                 }
@@ -3273,7 +3403,18 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
         // when the argument evaluates, so an EARLIER argument's effect runs before it (`f((raw grow(@l)), l)` hands the callee the
         // fresh header, legal) and a LATER one after -- and live to the call's return (`mark`): a later `move`, `@`, `$$m` or
         // reallocating access of the root is BORROW-015. A type that drops nothing is a true copy and no party.
-        if ((at2 != 0i32) && (raw is_place_chain(x, a2))) { if (raw type_drops(x.tr, at2, x.scope, 64i32)) { drop push_snapshot_party(x, a2); } }
+        int64:sm = x.live.count;
+        drop push_snapshot_parties(x, a2, a2, false, raw ALIAS_DEPTH());
+        // A USER CALL'S VIEW IS JUDGED THE SAME WAY (DEF-410 (b)'s other order, landing 177a): `gv(@s, raw mkv(s))`, under `?!` or `relay` too, read the bytes the callee freed through the address (83 on 175 and 176b).
+        if (!(raw is_place_chain(x, a2))) { drop push_value_view_parties(x, a2); }
+        if (x.live.count > sm) {
+            bool:vals = (!(raw escape_call_is_bare_builtin(x.esc, id))) && (n.kind != ExprKind.ExprBuiltinExpr);
+            drop rejudge_earlier(x, a2, id, recv, start, j, callee_fn, vals);
+        }
+    }
+    if ((!(raw escape_call_is_bare_builtin(x.esc, id))) && (n.kind != ExprKind.ExprBuiltinExpr)) {
+        if (!(raw expr_is_none(recv))) { drop rejudge_holder(x, recv, d0); }
+        for (int32:h in 0i32...count) { drop rejudge_holder(x, ExprId{ index: raw ast_id_at(x.ast, start, h) }, d0); }
     }
     // Then each claim against the outer parties and the EARLIER claims of the
     // call -- one report per conflicting pair, at the later claim.
@@ -3397,15 +3538,187 @@ func:lend_through_pointer = NIL(Alias->:x, ExprId:id, ExprId:a, ExprNode:an, int
 // call (D-325). Anything else is an ordinary argument; a view NESTED inside
 // one (`f(g(string_bytes(s)))`) is a temporary the escape walk already reads.
 func:push_call_view_party = NIL(Alias->:x, ExprId:a) never fails {
-    drop push_call_view_party_in(x, a, a, 4i32);
+    drop push_call_view_party_in(x, a, a, raw ALIAS_DEPTH());
     pass NIL;
 };
-// The snapshot's party (DEF-410 (f)): a direct view of the owner's place, holder 0, live to the call's return as D-325's is.
-func:push_snapshot_party = NIL(Alias->:x, ExprId:a) never fails {
-    int32:root = raw place_root_symbol(x, a);
-    if (root == 0i32) { pass NIL; }
-    drop list_push(@x.live, Party{ site: a, kind: raw PARTY_VIEW(), root: root, holder: 0i32, place: a, view_kind: raw VIEW_DIRECT(),
-                                   root_ptr: raw root_ident_is_pointer(x, a), path: 0i32 });
+// THE FORMS A VALUE COMES UP THROUGH (E-c, E-d; landing 177a; management_12's ruling of 2026-11-01 07:00: the class, not the next shape): what a node's value IS, one table, every `ExprKind` named, so a form
+// added later fails this `pick`'s exhaustiveness and compiles nothing until it is placed. True, with `out` holding the arms: a cast's, `?!`'s, `??!`'s, `raw`'s, `relay`'s, `await`'s and a spread's operand, a
+// `Result` literal's value, a ternary's arms, both sides of `??` and `?|`, a struct or array literal's values, a pick expression's `give`s, the base of a range off a value no name holds. False: the walkers' own
+// terminals (an address, a call, a name's chain), a part (TYPE-105 refuses one off a literal; a scalar carries nothing), a move or a claim (a place alone: TYPE-024, BORROW-014), and what holds no address at all.
+func:value_arm = bool(List<int32>->:out, ExprId:v) never fails {
+    drop list_push(out, v.index);
+    pass true;
+};
+
+func:value_arm2 = bool(List<int32>->:out, ExprId:v, ExprId:w) never fails {
+    drop list_push(out, v.index);
+    drop list_push(out, w.index);
+    pass true;
+};
+
+func:value_literal = bool(Alias->:x, ExprNode:n, int32:from, int32:step, List<int32>->:out) never fails {
+    int32:cnt = raw expr_list_count(n);
+    int32:i = from;
+    while (i < cnt) decreases cnt - i {
+        drop list_push(out, raw ast_id_at(x.ast, raw expr_list_start(n), i));
+        i = i + step;
+    }
+    pass true;
+};
+
+func:value_arms = bool(Alias->:x, ExprId:a, List<int32>->:out) never fails {
+    ExprNode:n = raw ast_expr(x.ast, a);
+    pick (n.kind) {
+        (ExprKind.ExprCastExpr) { pass (raw value_arm(out, raw expr_operand(n))); },
+        (ExprKind.ExprUncheckedCastExpr) { pass (raw value_arm(out, raw expr_operand(n))); },
+        (ExprKind.ExprDynCastExpr) { pass (raw value_arm(out, raw expr_operand(n))); },
+        (ExprKind.ExprEmphaticUnwrapExpr) { pass (raw value_arm(out, raw expr_operand(n))); },
+        (ExprKind.ExprEmphaticCoalesceExpr) { pass (raw value_arm(out, raw expr_operand(n))); },
+        (ExprKind.ExprRawUnwrapExpr) { pass (raw value_arm(out, raw expr_operand(n))); },
+        (ExprKind.ExprRelayExpr) { pass (raw value_arm(out, raw expr_operand(n))); },
+        (ExprKind.ExprAwaitExpr) { pass (raw value_arm(out, raw expr_operand(n))); },
+        (ExprKind.ExprSpreadExpr) { pass (raw value_arm(out, raw expr_operand(n))); },
+        (ExprKind.ExprResultLiteralExpr) { pass (raw value_arm(out, raw expr_operand(n))); },
+        (ExprKind.ExprTernaryExpr) { pass (raw value_arm2(out, raw expr_rhs(n), raw expr_third(n))); },
+        (ExprKind.ExprNullCoalesceExpr) { pass (raw value_arm2(out, raw expr_lhs(n), raw expr_rhs(n))); },
+        (ExprKind.ExprSafeUnwrapExpr) { pass (raw value_arm2(out, raw expr_lhs(n), raw expr_rhs(n))); },
+        (ExprKind.ExprStructLiteralExpr) { pass (raw value_literal(x, n, 1i32, 2i32, out)); },   // a struct literal alternates NAME and VALUE
+        (ExprKind.ExprArrayLiteralExpr) { pass (raw value_literal(x, n, 0i32, 1i32, out)); },
+        (ExprKind.ExprPickExpr) {
+            drop escape_pick_gives(x.esc, n, out);
+            pass true;
+        },
+        (ExprKind.ExprIndexExpr) {   // a range off a value no name holds is that value's view (`(is (b) : @h : @g)...`, `v_rev_range`)
+            if (((raw ast_expr(x.ast, raw expr_rhs(n))).kind != ExprKind.ExprRangeExpr) || (raw is_place_chain(x, a))) { pass false; }
+            pass (raw value_arm(out, raw expr_lhs(n)));
+        },
+        (ExprKind.ExprNone) { },
+        (ExprKind.ExprIntLiteral) { },
+        (ExprKind.ExprFloatLiteral) { },
+        (ExprKind.ExprCharLiteral) { },
+        (ExprKind.ExprStringLiteral) { },
+        (ExprKind.ExprRawStringLiteral) { },
+        (ExprKind.ExprBlockStringLiteral) { },
+        (ExprKind.ExprBoolLiteral) { },
+        (ExprKind.ExprSentinelLiteral) { },
+        (ExprKind.ExprTemplateLiteral) { },
+        (ExprKind.ExprBinaryExpr) { },
+        (ExprKind.ExprUnaryExpr) { },
+        (ExprKind.ExprPostfixExpr) { },
+        (ExprKind.ExprAddressOfExpr) { },
+        (ExprKind.ExprDerefExpr) { },
+        (ExprKind.ExprBorrowExpr) { },
+        (ExprKind.ExprPipeExpr) { },
+        (ExprKind.ExprRangeExpr) { },
+        (ExprKind.ExprMoveExpr) { },
+        (ExprKind.ExprIsErrExpr) { },
+        (ExprKind.ExprIdentifierExpr) { },
+        (ExprKind.ExprMemberAccessExpr) { },
+        (ExprKind.ExprSafeNavExpr) { },
+        (ExprKind.ExprCallExpr) { },
+        (ExprKind.ExprMethodCallExpr) { },
+        (ExprKind.ExprBuiltinExpr) { },
+        (ExprKind.ExprComptimeExpr) { },
+        (ExprKind.ExprDefaultsExpr) { },
+        (ExprKind.ExprDropExpr) { },
+        (ExprKind.ExprVectorCtorExpr) { },
+        (ExprKind.ExprIterationVarExpr) { },
+        (ExprKind.ExprOldExpr) { },
+        (ExprKind.ExprResultValueExpr) { }
+    }
+    pass false;
+};
+
+// The snapshot's party (DEF-410 (f)): a direct view of the owner's place, holder 0, live to the call's return as D-325's is. A type that drops nothing is a true copy and no party.
+// AN OWNER READ THROUGH A POINTER NO NAME HOLDS IS THE SAME SNAPSHOT (E-d's rest, landing 177a; an owner chosen by an operator is TYPE-046 at the operator, DEF-419): `fs(<-(@s), K)`,
+// `fs((<-(@h)).s, K)` and `fs(<-(is (b) : @s : @t), K)` read the freed bytes (140 on 175 and 176b). `through`: the walk has passed a part step, so what `value_arms` finds below is what the part is read through.
+func:push_snapshot_parties = NIL(Alias->:x, ExprId:a, ExprId:site, bool:through, int32:fuel) decreases fuel never fails {
+    if (raw expr_is_none(a)) { pass NIL; }
+    ExprNode:n = raw ast_expr(x.ast, a);
+    if (fuel <= 0i32) {
+        drop alias_err(x, raw BORROW_TOO_DEEP(), "this argument nests deeper than the aliasing analysis will follow, so the owners in it cannot be checked", n.span);
+        pass NIL;
+    }
+    if (raw is_place_chain(x, a)) {
+        int32:t = raw exprtypes_get(x.etypes, a);
+        int32:root = raw place_root_symbol(x, a);
+        if ((t == 0i32) || (root == 0i32)) { pass NIL; }
+        if (raw type_drops(x.tr, t, x.scope, 64i32)) {
+            drop list_push(@x.live, Party{ site: site, kind: raw PARTY_VIEW(), root: root, holder: 0i32, place: a, view_kind: raw VIEW_DIRECT(),
+                                           root_ptr: raw root_ident_is_pointer(x, a), path: 0i32 });
+        }
+        pass NIL;
+    }
+    bool:part = (n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)
+                || (n.kind == ExprKind.ExprDerefExpr) || (n.kind == ExprKind.ExprIndexExpr);
+    if (part || (through && (n.kind == ExprKind.ExprAddressOfExpr))) {
+        drop push_snapshot_parties(x, raw expr_operand(n), site, part, fuel - 1i32);
+        pass NIL;
+    }
+    List<int32>:arms = raw list_init::<int32>(4i64);
+    discard(raw value_arms(x, a, @arms));
+    for (int64:i in 0i64...arms.count) {
+        drop push_snapshot_parties(x, ExprId{ index: arms[i] }, site, through, fuel - 1i32);
+    }
+    pass NIL;
+};
+// THE SNAPSHOT AGAINST WHAT THE CALLEE WRITES THROUGH AN EARLIER ARGUMENT (E-a, landing 177a): `wr(@s, s)` formed the address, copied the header, and the callee freed the bytes through the
+// address and read them through the copy (140 on 175 and 176b; `h.setread(h)` likewise). `wr2(s, @s)` is BORROW-015 because the address is judged while the snapshot is live; this judges the
+// other order, against THIS snapshot alone. Each argument's own WALK is not repeated: it runs before the header loads (`f((raw grow(@l)), l)` is legal). A claim is the claim rule's.
+// ONLY AS STRONG AS THE CALLEE'S SUMMARY: a write the summary misses is missed here (`q2_helper`, DEF-298's writer face, 179; `q2_change`, DEF-357, 177c).
+func:rejudge_earlier = NIL(Alias->:x, ExprId:snap, ExprId:id, ExprId:recv, int32:start, int32:upto, int32:fn, bool:vals) never fails {
+    int32:base = 1i32;
+    if (raw expr_is_none(recv)) { base = 0i32; }
+    x.judge_only = snap.index;
+    if ((base > 0i32) && (raw callee_takes_ptr_recv(x, id))) {
+        drop check_written(x, recv, fn, 0i32, (raw ast_expr(x.ast, recv)).span);
+    }
+    for (int32:k in 0i32...upto) {
+        ExprId:e = ExprId{ index: raw ast_id_at(x.ast, start, k) };
+        int32:pk = raw party_kind_of(x, e);
+        Span:sp = (raw ast_expr(x.ast, e)).span;
+        if ((pk == (raw PARTY_PLAIN())) || (pk == (raw PARTY_ELEM_ADDR()))) {
+            int32:cf = fn;
+            if (raw casts_change_pointee(x, e)) { cf = 0i32; }
+            drop check_written(x, raw expr_operand(raw ast_expr(x.ast, raw peel_ptr_casts(x, e))), cf, base + k, sp);
+            continue;
+        }
+        int32:et = raw exprtypes_get(x.etypes, e);
+        if ((pk >= 0i32) || (et == 0i32) || (!vals)) { continue; }
+        if ((raw type_kind(x.types, et)) == (raw TY_POINTER())) {
+            drop check_written(x, e, fn, base + k, sp);
+        }
+        if (((raw type_kind(x.types, et)) == (raw TY_SLICE())) && (!(raw type_slice_fixed(x.types, et)))) {
+            if (raw is_place_chain(x, e)) {
+                drop check_written_slice(x, e, fn, base + k, sp);
+            } else {
+                if ((raw escape_mut_first(x.esc, fn, base + k)) != (0i32 - 1i32)) { discard(raw check_slice_targets(x, e, e, raw ACC_WRITE(), sp, raw CHECK_VIEWS())); }
+            }
+        }
+    }
+    x.judge_only = 0i32;
+    pass NIL;
+};
+// A BY-VALUE HOLDER OF THE OWNER BESIDE ITS SNAPSHOT (S1 of 177a's review B; management_12's ruling of 2026-11-01 09:57): `wv(W{ p: @s }, s)`, `W:w = W{ p: @s }; wv(w, s)`, `vw(s, w)`, `w.wm(s)`: the callee wrote
+// through the aggregate's pointer and read the freed bytes through the snapshot (83 on 176b and dde7657). What the value holds is read off its refs and judged WHOLE against this call's views, either order, the summary UNREAD,
+// as DEF-415's: a read-only callee is over-refused (`s1_read_twin`, the post-180 list). The copy itself writes nothing, so a by-value owner beside its own snapshot stays legal. A POINTER to such a holder is the same hole (`wvp(@w, s)`, `w.wmp(s)`); a pointer to the owner itself stays E-a's, by the summary.
+// N (management_12's ruling of 2026-11-01 10:31, with the self-holder's of 10:55): every LIVE view is judged, not this call's alone, at every call: `fs(s, (raw wh(w)))`, an outer snapshot or a held view beside a holder in a nested call, read the freed bytes (83, `h3_for_view` 67). A view held BY the holder itself (`holder == hr`) is that holder's own storage, as `check_pointer_view_parties` reads it (`p.holder == root`): `@x` where `x` holds the possible view of `x.fe.lslots[…].ptr` (`emit_program.npk`, five sites; `ks5_self_holder_ok`). `hr == 0`, no root to compare, exempts nothing. `h20_read_nested`, `h22_view_read_ok`, `la3_laundered_field` over-refused, the post-180 list.
+func:rejudge_holder = NIL(Alias->:x, ExprId:a, int64:d0) never fails {
+    // No view live, nothing to judge; and the type walk below is not free: `struct_field` resolves every field's type again and a generic field commits into `ast.ids` (+4 MiB of `peak_live` on `src/npkc.npk` until this guard).
+    bool:seen = false;
+    for (int64:v in 0i64...x.live.count) { if (x.live[v].kind == (raw PARTY_VIEW())) { seen = true; } }
+    if (!seen) { pass NIL; }
+    int32:t = raw exprtypes_get(x.etypes, a);
+    if ((t != 0i32) && ((raw type_kind(x.types, t)) == (raw TY_POINTER()))) { t = raw type_elem(x.types, t); }
+    if ((t == 0i32) || (!(raw type_holds_elem_pointer(x, t, 0i32, 8i32)))) { pass NIL; }
+    ExprNode:an = raw ast_expr(x.ast, a);
+    int32:hr = raw place_root_symbol(x, is (an.kind == ExprKind.ExprAddressOfExpr) : (raw expr_operand(an)) : a);
+    for (int64:i in 0i64...x.live.count) {
+        if ((raw diaglist_count(x.diags)) > d0) { pass NIL; }   // one mistake, one report
+        if ((x.live[i].kind == (raw PARTY_VIEW())) && ((hr == 0i32) || (x.live[i].holder != hr))) {
+            drop target_handed(x, a, (raw ast_expr(x.ast, a)).span, x.live[i].site.index, false, 8i32);
+        }
+    }
     pass NIL;
 };
 // ... THROUGH A TERNARY'S ARMS AND A CAST'S OPERAND (DEF-338, landing 167):
@@ -3417,17 +3730,20 @@ func:push_snapshot_party = NIL(Alias->:x, ExprId:a) never fails {
 // arms' parties as it skips a bare range argument's (`self_site`): `f(is (c) :
 // arr[0i64...2i64] : arr[1i64...2i64], p)` self-conflicted at the arm's site on build 13
 // (`slice_targets.npk`'s s14, found by the landing's sweep).
+// THE WALK'S BOUND REFUSES (DEF-349, landing 177a): it answered "no party" at a fuel of 4, so four casts or ternaries around a view or
+// an address hid it (`f(is (c) : (is (c) : (is (c) : (is (c) : string_bytes(s) : w) : w) : w) : w, @s)`, 113; the address's window, 65). The one bound, closed past it.
 func:push_call_view_party_in = NIL(Alias->:x, ExprId:a, ExprId:site, int32:fuel) decreases fuel never fails {
-    if (fuel <= 0i32) { pass NIL; }
     if (raw expr_is_none(a)) { pass NIL; }
     ExprNode:n = raw ast_expr(x.ast, a);
-    if ((n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr)) {
-        drop push_call_view_party_in(x, raw expr_operand(n), site, fuel - 1i32);
+    if (fuel <= 0i32) {
+        drop alias_err(x, raw BORROW_TOO_DEEP(), "this argument nests deeper than the aliasing analysis will follow, so the views and addresses in it cannot be checked", n.span);
         pass NIL;
     }
-    if (n.kind == ExprKind.ExprTernaryExpr) {
-        drop push_call_view_party_in(x, raw expr_rhs(n), site, fuel - 1i32);
-        drop push_call_view_party_in(x, raw expr_third(n), site, fuel - 1i32);
+    List<int32>:arms = raw list_init::<int32>(4i64);
+    if (raw value_arms(x, a, @arms)) {
+        for (int64:i in 0i64...arms.count) {
+            drop push_call_view_party_in(x, ExprId{ index: arms[i] }, site, fuel - 1i32);
+        }
         pass NIL;
     }
     // AN ADDRESS THAT IS NOT A BARE `@` ARGUMENT (DEF-410 (c) widened, 176b; review B's E3): `gw(W{ ptr: @h }, (raw take(move(h.s))))`
@@ -3436,13 +3752,23 @@ func:push_call_view_party_in = NIL(Alias->:x, ExprId:a, ExprId:site, int32:fuel)
     // party a bare `@h` argument is (`push_addr_party`), raised with the call's view parties -- before the arguments are walked,
     // so the reversed order (the move first, MOVE-001 by the bindings analysis) reports the window too, its "earlier" the
     // call's. A view-maker under a literal's value is D-325's view party by the same walk.
-    if (n.kind == ExprKind.ExprAddressOfExpr) { drop push_addr_party(x, a, raw expr_operand(n)); pass NIL; }
-    if ((n.kind == ExprKind.ExprStructLiteralExpr) || (n.kind == ExprKind.ExprArrayLiteralExpr)) {
-        int32:cnt = raw expr_list_count(n);
-        int32:i = (is (n.kind == ExprKind.ExprStructLiteralExpr) : 1i32 : 0i32);     // a struct literal alternates NAME and VALUE
-        int32:step = (is (n.kind == ExprKind.ExprStructLiteralExpr) : 2i32 : 1i32);
-        while (i < cnt) decreases cnt - i { drop push_call_view_party_in(x, ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) }, site, fuel - 1i32); i = i + step; }
+    // AN `@` INTO A `List` ELEMENT (E-e, DEF-410 (c), landing 177a): a bare `@l[0]` argument freezes the `List` (PARTY_ELEM_ADDR, DEF-307);
+    // under a literal it was the window party alone, which a vacating access asks and a reallocation does not, so
+    // `ge(WE{ p: @l[0i64] }, (raw grow(@l)))` read the freed buffer (239 on 175 and 176b). The same party as the bare argument's.
+    if (n.kind == ExprKind.ExprAddressOfExpr) {
+        ExprId:apl = raw expr_operand(n);
+        drop target_handed(x, apl, n.span, 0i32 - 1i32, true, 8i32);
+        int32:eroot = raw place_root_symbol(x, apl);
+        if ((eroot != 0i32) && (raw place_is_list_element(x, apl))) {
+            drop list_push(@x.live, Party{ site: a, kind: raw PARTY_ELEM_ADDR(), root: eroot, holder: 0i32, place: apl, view_kind: 0i32,
+                                           root_ptr: raw root_ident_is_pointer(x, apl), path: 0i32 });
+        } else {
+            drop push_addr_party(x, a, apl);
+        }
         pass NIL;
+    }
+    if (raw type_holds_elem_pointer(x, raw exprtypes_get(x.etypes, a), 0i32, 8i32)) {
+        drop target_handed(x, a, n.span, 0i32 - 1i32, true, 8i32);
     }
     ExprId:vp = raw escape_view_place(x.esc, n);
     if (raw expr_is_none(vp)) { pass NIL; }

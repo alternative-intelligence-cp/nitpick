@@ -1,0 +1,247 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 91:120
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 103:102
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 111:61
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 116:193
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 118:144
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 122:192
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 124:224
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 126:232
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 128:219
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 130:209
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 130:209
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 132:203
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 134:136
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 136:152
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 138:175
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 140:151
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 142:213
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 145:177
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 147:163
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 149:164
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 151:171
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 156:216
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 160:166
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 164:216
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 168:158
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 174:233
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 177:209
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 180:293
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 184:292
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 188:229
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 192:223
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 196:229
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 201:262
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 205:156
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 210:229
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 214:164
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 220:224
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 224:263
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 226:151
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 228:145
+// A VIEW HELD ACROSS A BLOCK (F and P of landing 177a; management_12's rulings of 2026-11-01 10:55 and 11:18). The two statement kinds that hold a header value across a block, each with no party until this landing:
+// F, `for`: `for (uint8:b in string_bytes(s)) { s = string_concat("wx", "yz"); n = n + (b => int64); }` read freed bytes (44, 229, 98 on 175 and 176b). The loop's iterable, a call's result or a range, is a party of the loop's frame now (`f*`, `h3*`). `f14_move` gives two reports, BORROW-015 and MOVE-001: the post-180 list.
+// P, a lending `pick`, both spellings: a direct write in the arm was TYPE-067, but a write through a held pointer, a holder or a pointer parameter changed the variant under the binding. `q9_wild_ptr`, `q10_wild_param`: MachineFault at 0x41414141, a fabricated pointer in safe code (97, the worst exit of the family);
+// the other writers OutOfBounds (98) or a freed string (89). An arm that BINDS A NAME raises a view party on the selector's place, live for the arm. STATEMENT FORM: `q*`, `p3`, `p5`, `p7`, `pf_field_sel`, `pl_elem_sel`, `pz_nested`. EXPRESSION FORM: `px*`. An arm that binds nothing raises none (the twins, `block_held_view_ok.npk`).
+// OVER-REFUSED ON PURPOSE, THE POST-180 LIST: a write through a POINTER the arm binds lands in the pointee, not the selector (`pw_write_through_binding`, 126 and right on 176b); a read-only callee through a held pointer (`pr_local_read`); a holder of a sibling field whose type reads as a holder (`pf_field_other`, an enum with payloads answers YES, DEF-54).
+// The class's other kinds hold no header across a block: `if`, `while`, `when`, `loop`, `till`, a bare block (`k_*`, the twins' file); a `defer` body is judged for its block's end (`d1_defer_view`, `d2_defer_lit`).
+mod:block_held_view;
+error:E5;
+func:grow = int64(List<int64>->:p) never fails { for (int64:i in 0i64...200i64) { drop list_push(p, 9i64); } pass 0i64; };
+func:mk_list = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
+func:gr5 = int64(List<int64>->:p) never fails { int64:n = 0i64; for (int64:x in (<-p)[0i64...2i64]) { discard(raw grow(p)); n = n + x; } pass n - 15i64 + 7i64; };
+func:mkv = fixed uint8[](string:v) never fails { pass string_bytes(v); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+struct:W = { string->:p; };
+func:wh = int64(W:w) never fails { <-w.p = string_concat("wx", "yz"); pass 0i64; };
+struct:H = { string:s; int64:k; };
+func:gr = int64(List<int64>->:q) never fails { for (int64:i in 0i64...200i64) { drop list_push(q, 9i64); } pass 0i64; };
+enum:Msg = { Text(string); Num(int64); Quit; };
+func:setn = int64(Msg->:m) never fails { <-m = Msg.Num(1094795585i64); pass 0i64; };
+func:sett = int64(Msg->:m) never fails { <-m = Msg.Text(string_concat("wx", "yz")); pass 0i64; };
+struct:WM = { Msg->:p; };
+func:wmh = int64(WM:w) never fails { <-w.p = Msg.Num(1094795585i64); pass 0i64; };
+func:gp = int64(Msg->:q) never fails { int64:r = 0i64; pick (<-q) { (Msg.Text(x)) { discard(raw setn(q)); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg.Num(k)) { r = k; }, (Msg.Quit) { r = 1i64; } } pass r; };
+struct:Two = { int64:a; int64:b; int64:c; };
+func:setp = int64(Msg__q9_wild_ptr->:m) never fails { <-m = Msg__q9_wild_ptr.Pair(Two{ a: 1094795585i64, b: 1094795585i64, c: 1094795585i64 }); pass 0i64; };
+func:setm = int64(Msg__p3_ptr_held->:m) never fails { <-m = Msg__p3_ptr_held.Text(string_concat("wx", "yz")); pass 0i64; };
+struct:HM = { Msg__pf_field_sel:m; int64:k; };
+func:wf = int64(HM->:h) never fails { h.m = Msg__pf_field_sel.Num(1094795585i64); pass 0i64; };
+func:wl = int64(List<Msg__pl_elem_sel>->:l) never fails { (<-l)[0i64] = Msg__pl_elem_sel.Num(1094795585i64); pass 0i64; };
+enum:EH = { P(string->); N; };
+func:we = int64(EH:e) never fails { pick (e) { (EH.P(p)) { (<-p) = string_concat("wx", "yz"); }, (*) { } } pass 0i64; };
+func:rd = int64(Msg__pr_local_read->:m) never fails { pass 0i64; };
+func:wk = int64(HM__pf_field_other->:h) never fails { h.k = 2i64; pass 0i64; };
+func:nop = int64(fixed uint8[]:v) never fails { pass (v[0i64] => int64); };
+// f1_write; on 176b: exit 44.
+func:c_f1_write = int64() never fails { string:s = string_concat("ab", "cde"); string:t = string_concat("ab", "cde"); int64:n = 0i64; bool:c = s.len > 2i64; for (uint8:b in string_bytes(s)) { s = string_concat("wx", "yz"); n = n + (b => int64); } pass n - 495i64 + 7i64; };
+// f2_slice_grow; on 176b: exit 229.
+func:c_f2_slice_grow = int64() never fails { List<int64>:l = raw mk_list(); int64:n = 0i64; for (int64:x in l[0i64...2i64]) { discard(raw grow(@l)); n = n + x; } pass n - 15i64 + 7i64; };
+// f5_param_range; on 176b: exit 229.
+func:c_f5_param_range = int64() never fails { int64:n = 0i64; List<int64>:l = raw mk_list(); pass raw gr5(@l); };
+// f6_call_view; on 176b: exit 44.
+func:c_f6_call_view = int64() never fails { string:s = string_concat("ab", "cde"); string:t = string_concat("ab", "cde"); int64:n = 0i64; bool:c = s.len > 2i64; for (uint8:b in raw mkv(s)) { s = string_concat("wx", "yz"); n = n + (b => int64); } pass n - 495i64 + 7i64; };
+// f7_tern_view; on 176b: exit 44.
+func:c_f7_tern_view = int64() never fails { string:s = string_concat("ab", "cde"); string:t = string_concat("ab", "cde"); int64:n = 0i64; bool:c = s.len > 2i64; for (uint8:b in is (c) : string_bytes(s) : string_bytes(t)) { s = string_concat("wx", "yz"); n = n + (b => int64); } pass n - 495i64 + 7i64; };
+// f12_nested_block; on 176b: exit 44.
+func:c_f12_nested_block = int64() never fails { string:s = string_concat("ab", "cde"); string:t = string_concat("ab", "cde"); int64:n = 0i64; bool:c = s.len > 2i64; for (uint8:b in string_bytes(s)) { for (int32:i in 0i32...1i32) { s = string_concat("wx", "yz"); } n = n + (b => int64); } pass n - 495i64 + 7i64; };
+// f13_bound_ctl; on 176b: BORROW-015.
+func:c_f13_bound_ctl = int64() never fails { string:s = string_concat("ab", "cde"); string:t = string_concat("ab", "cde"); int64:n = 0i64; bool:c = s.len > 2i64; fixed uint8[]:v = string_bytes(s); for (uint8:b in v) { s = string_concat("wx", "yz"); n = n + (b => int64); } pass n - 495i64 + 7i64; };
+// f14_move; on 176b: MOVE-001.
+func:c_f14_move = int64() never fails { string:s = string_concat("ab", "cde"); string:t = string_concat("ab", "cde"); int64:n = 0i64; bool:c = s.len > 2i64; for (uint8:b in string_bytes(s)) { string:u = move(s); n = n + (b => int64); } pass n - 495i64 + 7i64; };
+// f15_in_if; on 176b: exit 44.
+func:c_f15_in_if = int64() never fails { string:s = string_concat("ab", "cde"); string:t = string_concat("ab", "cde"); int64:n = 0i64; bool:c = s.len > 2i64; for (uint8:b in string_bytes(s)) { if (c) { s = string_concat("wx", "yz"); } n = n + (b => int64); } pass n - 495i64 + 7i64; };
+// h3b_for_write; on 176b: exit 44.
+func:c_h3b_for_write = int64() never fails { string:s = string_concat("ab", "cde"); int64:n = 0i64; for (uint8:b in string_bytes(s)) { s = string_concat("wx", "yz"); n = n + (b => int64); } pass n - 495i64 + 7i64; };
+// h3c_for_setq; on 176b: exit 44.
+func:c_h3c_for_setq = int64() never fails { string:s = string_concat("ab", "cde"); int64:n = 0i64; for (uint8:b in string_bytes(s)) { discard(raw setq(@s)); n = n + (b => int64); } pass n - 495i64 + 7i64; };
+// h3d_for_holder_show; on 176b: exit 44.
+func:c_h3d_for_holder_show = int64() never fails { string:s = string_concat("ab", "cde"); W:w = W{ p: @s }; int64:n = 0i64; for (uint8:b in string_bytes(s)) { discard(raw wh(w)); n = n + (b => int64); } pass n - 495i64 + 7i64; };
+// h3f_for_field; on 176b: exit 44.
+func:c_h3f_for_field = int64() never fails { H:h = H{ s: string_concat("ab", "cde"), k: 0i64 }; int64:n = 0i64; for (uint8:b in string_bytes(h.s)) { h.s = string_concat("wx", "yz"); n = n + (b => int64); } pass n - 495i64 + 7i64; };
+// h3g_for_range; on 176b: exit 98.
+func:c_h3g_for_range = int64() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 100i64); drop list_push(@l, 395i64); int64:n = 0i64; for (int64:b in l[0i64...2i64]) { discard(raw gr(@l)); n = n + b; } pass n - 495i64 + 7i64; };
+// q1_ptr_quit; on 176b: exit 98.
+func:setq__q1_ptr_quit = int64(Msg->:m) never fails { <-m = Msg.Quit; pass 0i64; };
+func:c_q1_ptr_quit = int64() never fails { Msg:m = Msg.Text(string_concat("ab", "cde")); int64:r = 0i64; Msg->:q = @m; pick (m) { (Msg.Text(x)) { discard(raw setq__q1_ptr_quit(q)); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg.Num(k)) { r = k; }, (Msg.Quit) { r = 1i64; } } pass r; };
+// q2_ptr_num; on 176b: exit 98.
+func:c_q2_ptr_num = int64() never fails { Msg:m = Msg.Text(string_concat("ab", "cde")); int64:r = 0i64; Msg->:q = @m; pick (m) { (Msg.Text(x)) { discard(raw setn(q)); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg.Num(k)) { r = k; }, (Msg.Quit) { r = 1i64; } } pass r; };
+// q3_ptr_text; on 176b: exit 89.
+func:c_q3_ptr_text = int64() never fails { Msg:m = Msg.Text(string_concat("ab", "cde")); int64:r = 0i64; Msg->:q = @m; pick (m) { (Msg.Text(x)) { discard(raw sett(q)); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg.Num(k)) { r = k; }, (Msg.Quit) { r = 1i64; } } pass r; };
+// q4_holder_num; on 176b: exit 98.
+func:c_q4_holder_num = int64() never fails { Msg:m = Msg.Text(string_concat("ab", "cde")); int64:r = 0i64; WM:w = WM{ p: @m }; pick (m) { (Msg.Text(x)) { discard(raw wmh(w)); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg.Num(k)) { r = k; }, (Msg.Quit) { r = 1i64; } } pass r; };
+// q5_param_num; on 176b: exit 98.
+func:c_q5_param_num = int64() never fails { Msg:m = Msg.Text(string_concat("ab", "cde")); pass raw gp(@m); };
+// q9_wild_ptr; on 176b: exit 97.
+enum:Msg__q9_wild_ptr = { Text(string); Pair(Two); Quit; };
+func:c_q9_wild_ptr = int64() never fails { Msg__q9_wild_ptr:m = Msg__q9_wild_ptr.Text(string_concat("ab", "cde")); int64:r = 0i64; Msg__q9_wild_ptr->:q = @m; pick (m) { (Msg__q9_wild_ptr.Text(x)) { discard(raw setp(q)); r = (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg__q9_wild_ptr.Pair(k)) { r = k.a; }, (Msg__q9_wild_ptr.Quit) { r = 1i64; } } pass r; };
+// q10_wild_param; on 176b: exit 97.
+enum:Msg__q10_wild_param = { Text(string); Pair(Two); Quit; };
+func:setp__q10_wild_param = int64(Msg__q10_wild_param->:m) never fails { <-m = Msg__q10_wild_param.Pair(Two{ a: 1094795585i64, b: 1094795585i64, c: 1094795585i64 }); pass 0i64; };
+func:gp__q10_wild_param = int64(Msg__q10_wild_param->:q) never fails { int64:r = 0i64; pick (<-q) { (Msg__q10_wild_param.Text(x)) { discard(raw setp__q10_wild_param(q)); r = (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg__q10_wild_param.Pair(k)) { r = k.a; }, (Msg__q10_wild_param.Quit) { r = 1i64; } } pass r; };
+func:c_q10_wild_param = int64() never fails { Msg__q10_wild_param:m = Msg__q10_wild_param.Text(string_concat("ab", "cde")); pass raw gp__q10_wild_param(@m); };
+// p3_ptr_held; on 176b: exit 89.
+enum:Msg__p3_ptr_held = { Text(string); Quit; };
+func:c_p3_ptr_held = int64() never fails { Msg__p3_ptr_held:m = Msg__p3_ptr_held.Text(string_concat("ab", "cde")); Msg__p3_ptr_held->:q = @m; int64:r = 0i64; pick (m) { (Msg__p3_ptr_held.Text(x)) { discard(raw setm(q)); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg__p3_ptr_held.Quit) { r = 1i64; } } pass r; };
+// p5_param_sel; on 176b: exit 89.
+enum:Msg__p5_param_sel = { Text(string); Quit; };
+func:setm__p5_param_sel = int64(Msg__p5_param_sel->:m) never fails { <-m = Msg__p5_param_sel.Text(string_concat("wx", "yz")); pass 0i64; };
+func:gp__p5_param_sel = int64(Msg__p5_param_sel->:q) never fails { int64:r = 0i64; pick (<-q) { (Msg__p5_param_sel.Text(x)) { discard(raw setm__p5_param_sel(q)); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg__p5_param_sel.Quit) { r = 1i64; } } pass r; };
+func:c_p5_param_sel = int64() never fails { Msg__p5_param_sel:m = Msg__p5_param_sel.Text(string_concat("ab", "cde")); pass raw gp__p5_param_sel(@m); };
+// p7_holder; on 176b: exit 89.
+enum:Msg__p7_holder = { Text(string); Quit; };
+struct:WM__p7_holder = { Msg__p7_holder->:p; };
+func:wmh__p7_holder = int64(WM__p7_holder:w) never fails { <-w.p = Msg__p7_holder.Text(string_concat("wx", "yz")); pass 0i64; };
+func:c_p7_holder = int64() never fails { Msg__p7_holder:m = Msg__p7_holder.Text(string_concat("ab", "cde")); int64:r = 0i64; WM__p7_holder:w = WM__p7_holder{ p: @m }; pick (m) { (Msg__p7_holder.Text(x)) { discard(raw wmh__p7_holder(w)); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg__p7_holder.Quit) { r = 1i64; } } pass r; };
+// pf_field_sel; on 176b: exit 98.
+enum:Msg__pf_field_sel = { Text(string); Num(int64); Pair(Two); Quit; };
+func:c_pf_field_sel = int64() never fails { HM:h = HM{ m: Msg__pf_field_sel.Text(string_concat("ab", "cde")), k: 1i64 }; HM->:q = @h; int64:r = 0i64; pick (h.m) { (Msg__pf_field_sel.Text(x)) { discard(raw wf(q)); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; }, (*) { r = 1i64; } } pass r; };
+// pl_elem_sel; on 176b: exit 98.
+enum:Msg__pl_elem_sel = { Text(string); Num(int64); Pair(Two); Quit; };
+func:c_pl_elem_sel = int64() never fails { List<Msg__pl_elem_sel>:l = raw list_init::<Msg__pl_elem_sel>(2i64); drop list_push(@l, Msg__pl_elem_sel.Text(string_concat("ab", "cde"))); List<Msg__pl_elem_sel>->:q = @l; int64:r = 0i64; pick (l[0i64]) { (Msg__pl_elem_sel.Text(x)) { discard(raw wl(q)); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; }, (*) { r = 1i64; } } pass r; };
+// pz_nested; on 176b: exit 98.
+enum:Msg__pz_nested = { Text(string); Num(int64); Pair(Two); Quit; };
+func:setn__pz_nested = int64(Msg__pz_nested->:m) never fails { <-m = Msg__pz_nested.Num(1094795585i64); pass 0i64; };
+func:c_pz_nested = int64() never fails { Msg__pz_nested:m = Msg__pz_nested.Text(string_concat("ab", "cde")); Msg__pz_nested:g = Msg__pz_nested.Quit; Msg__pz_nested->:q = @m; int64:r = 0i64; pick (m) { (Msg__pz_nested.Text(x)) { pick (g) { (Msg__pz_nested.Quit) { discard(raw setn__pz_nested(q)); }, (*) { } } string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; }, (*) { r = 1i64; } } pass r; };
+// px1_ptr_quit; on 176b: exit 98.
+enum:Msg__px1_ptr_quit = { Text(string); Num(int64); Pair(Two); Quit; };
+func:setq__px1_ptr_quit = int64(Msg__px1_ptr_quit->:m) never fails { <-m = Msg__px1_ptr_quit.Quit; pass 0i64; };
+func:c_px1_ptr_quit = int64() never fails { Msg__px1_ptr_quit:m = Msg__px1_ptr_quit.Text(string_concat("ab", "cde")); Msg__px1_ptr_quit->:q = @m; int64:r = pick (m) { (Msg__px1_ptr_quit.Text(x)) { discard(raw setq__px1_ptr_quit(q)); string:junk = string_concat("qq", "qq"); give (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg__px1_ptr_quit.Num(k)) { give k; }, (Msg__px1_ptr_quit.Pair(k)) { give k.a; }, (Msg__px1_ptr_quit.Quit) { give 1i64; } }; pass r; };
+// px2_ptr_num; on 176b: exit 98.
+enum:Msg__px2_ptr_num = { Text(string); Num(int64); Pair(Two); Quit; };
+func:setn__px2_ptr_num = int64(Msg__px2_ptr_num->:m) never fails { <-m = Msg__px2_ptr_num.Num(1094795585i64); pass 0i64; };
+func:c_px2_ptr_num = int64() never fails { Msg__px2_ptr_num:m = Msg__px2_ptr_num.Text(string_concat("ab", "cde")); Msg__px2_ptr_num->:q = @m; int64:r = pick (m) { (Msg__px2_ptr_num.Text(x)) { discard(raw setn__px2_ptr_num(q)); string:junk = string_concat("qq", "qq"); give (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg__px2_ptr_num.Num(k)) { give k; }, (Msg__px2_ptr_num.Pair(k)) { give k.a; }, (Msg__px2_ptr_num.Quit) { give 1i64; } }; pass r; };
+// px3_ptr_text; on 176b: exit 89.
+enum:Msg__px3_ptr_text = { Text(string); Num(int64); Pair(Two); Quit; };
+func:sett__px3_ptr_text = int64(Msg__px3_ptr_text->:m) never fails { <-m = Msg__px3_ptr_text.Text(string_concat("wx", "yz")); pass 0i64; };
+func:c_px3_ptr_text = int64() never fails { Msg__px3_ptr_text:m = Msg__px3_ptr_text.Text(string_concat("ab", "cde")); Msg__px3_ptr_text->:q = @m; int64:r = pick (m) { (Msg__px3_ptr_text.Text(x)) { discard(raw sett__px3_ptr_text(q)); string:junk = string_concat("qq", "qq"); give (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg__px3_ptr_text.Num(k)) { give k; }, (Msg__px3_ptr_text.Pair(k)) { give k.a; }, (Msg__px3_ptr_text.Quit) { give 1i64; } }; pass r; };
+// px4_holder_num; on 176b: exit 98.
+enum:Msg__px4_holder_num = { Text(string); Num(int64); Pair(Two); Quit; };
+struct:WM__px4_holder_num = { Msg__px4_holder_num->:p; };
+func:wmh__px4_holder_num = int64(WM__px4_holder_num:w) never fails { <-w.p = Msg__px4_holder_num.Num(1094795585i64); pass 0i64; };
+func:c_px4_holder_num = int64() never fails { Msg__px4_holder_num:m = Msg__px4_holder_num.Text(string_concat("ab", "cde")); WM__px4_holder_num:w = WM__px4_holder_num{ p: @m }; int64:r = pick (m) { (Msg__px4_holder_num.Text(x)) { discard(raw wmh__px4_holder_num(w)); string:junk = string_concat("qq", "qq"); give (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg__px4_holder_num.Num(k)) { give k; }, (Msg__px4_holder_num.Pair(k)) { give k.a; }, (Msg__px4_holder_num.Quit) { give 1i64; } }; pass r; };
+// px5_param_num; on 176b: exit 98.
+enum:Msg__px5_param_num = { Text(string); Num(int64); Pair(Two); Quit; };
+func:setn__px5_param_num = int64(Msg__px5_param_num->:m) never fails { <-m = Msg__px5_param_num.Num(1094795585i64); pass 0i64; };
+func:gp__px5_param_num = int64(Msg__px5_param_num->:q) never fails { int64:r = pick (<-q) { (Msg__px5_param_num.Text(x)) { discard(raw setn__px5_param_num(q)); string:junk = string_concat("qq", "qq"); give (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg__px5_param_num.Num(k)) { give k; }, (Msg__px5_param_num.Pair(k)) { give k.a; }, (Msg__px5_param_num.Quit) { give 1i64; } }; pass r; };
+func:c_px5_param_num = int64() never fails { Msg__px5_param_num:m = Msg__px5_param_num.Text(string_concat("ab", "cde")); pass raw gp__px5_param_num(@m); };
+// px9_wild_ptr; on 176b: exit 97.
+enum:Msg__px9_wild_ptr = { Text(string); Num(int64); Pair(Two); Quit; };
+func:setp__px9_wild_ptr = int64(Msg__px9_wild_ptr->:m) never fails { <-m = Msg__px9_wild_ptr.Pair(Two{ a: 1094795585i64, b: 1094795585i64, c: 1094795585i64 }); pass 0i64; };
+func:c_px9_wild_ptr = int64() never fails { Msg__px9_wild_ptr:m = Msg__px9_wild_ptr.Text(string_concat("ab", "cde")); Msg__px9_wild_ptr->:q = @m; int64:r = pick (m) { (Msg__px9_wild_ptr.Text(x)) { discard(raw setp__px9_wild_ptr(q)); string:junk = string_concat("qq", "qq"); give (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg__px9_wild_ptr.Num(k)) { give k; }, (Msg__px9_wild_ptr.Pair(k)) { give k.a; }, (Msg__px9_wild_ptr.Quit) { give 1i64; } }; pass r; };
+// px10_wild_param; on 176b: exit 97.
+enum:Msg__px10_wild_param = { Text(string); Num(int64); Pair(Two); Quit; };
+func:setp__px10_wild_param = int64(Msg__px10_wild_param->:m) never fails { <-m = Msg__px10_wild_param.Pair(Two{ a: 1094795585i64, b: 1094795585i64, c: 1094795585i64 }); pass 0i64; };
+func:gp__px10_wild_param = int64(Msg__px10_wild_param->:q) never fails { int64:r = pick (<-q) { (Msg__px10_wild_param.Text(x)) { discard(raw setp__px10_wild_param(q)); string:junk = string_concat("qq", "qq"); give (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg__px10_wild_param.Num(k)) { give k; }, (Msg__px10_wild_param.Pair(k)) { give k.a; }, (Msg__px10_wild_param.Quit) { give 1i64; } }; pass r; };
+func:c_px10_wild_param = int64() never fails { Msg__px10_wild_param:m = Msg__px10_wild_param.Text(string_concat("ab", "cde")); pass raw gp__px10_wild_param(@m); };
+// pw_write_through_binding; on 176b: exit 126.
+func:c_pw_write_through_binding = int64() never fails { string:s = string_concat("ab", "cde"); discard(raw we(EH.P(@s))); pass (string_bytes(s)[0i64] => int64) - 53i64; };
+// pr_local_read; on 176b: exit 67.
+enum:Msg__pr_local_read = { Text(string); Num(int64); Pair(Two); Quit; };
+func:c_pr_local_read = int64() never fails { Msg__pr_local_read:m = Msg__pr_local_read.Text(string_concat("ab", "cde")); Msg__pr_local_read->:q = @m; int64:r = 0i64; pick (m) { (Msg__pr_local_read.Text(x)) { discard(raw rd(q)); r = (string_bytes(x)[0i64] => int64) - 90i64; }, (*) { r = 1i64; } } pass r; };
+// pf_field_other; on 176b: exit 67.
+enum:Msg__pf_field_other = { Text(string); Num(int64); Pair(Two); Quit; };
+struct:HM__pf_field_other = { Msg__pf_field_other:m; int64:k; };
+func:c_pf_field_other = int64() never fails { HM__pf_field_other:h = HM__pf_field_other{ m: Msg__pf_field_other.Text(string_concat("ab", "cde")), k: 1i64 }; HM__pf_field_other->:q = @h; int64:r = 0i64; pick (h.m) { (Msg__pf_field_other.Text(x)) { discard(raw wk(q)); r = (string_bytes(x)[0i64] => int64) - 90i64; }, (*) { r = 1i64; } } pass r; };
+// d1_defer_view; on 176b: BORROW-015.
+func:c_d1_defer_view = int64() never fails { string:s = string_concat("ab", "cde"); fixed uint8[]:v = string_bytes(s); defer { discard(raw nop(v)); } s = string_concat("wx", "yz"); pass 7i64; };
+// d2_defer_lit; on 176b: MOVE-001.
+func:c_d2_defer_lit = int64() never fails { string:s = string_concat("ab", "cde"); defer { discard(raw nop(string_bytes(s))); } string:u = move(s); pass 7i64; };
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

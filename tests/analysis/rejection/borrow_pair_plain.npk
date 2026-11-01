@@ -1,7 +1,9 @@
+// expect-error: NITPICK-BORROW-007
+// expect-error-at: 50:12
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 45:10
+// expect-error-at: 52:10
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 60:10
+// expect-error-at: 67:10
 //
 // THE COUNTERWEIGHT to `tests/accept/borrow_pair_wild.npk` (D-223): the same
 // shape, one word different, and it must still refuse.
@@ -26,6 +28,11 @@
 // `wire` returns the address of a field of one parameter's pointee, which
 // `touch` stores into the other's (the direct store `bp.p = @op.k` is refused
 // inside `touch` as BORROW-002, so the return is the one laundry left).
+//
+// SINCE LANDING 177a the unknown callee's line also answers BORROW-007: the shape rule has `b` and `tmp` each
+// holding the other, and N's walk of a holder beside a live view (`target_handed`) cannot tell that cycle from a
+// chain past its fuel, so it refuses, closed. An over-refusal, on the post-180 list; this file's point is the two
+// BORROW-001s.
 
 mod:borrow_pair_plain;
 struct:Box  = { int32->?:p; int32:n; };

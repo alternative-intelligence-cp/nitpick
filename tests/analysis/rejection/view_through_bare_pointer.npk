@@ -1,0 +1,84 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 27:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 35:5
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 44:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 53:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 62:6
+// A VIEW RETURNED THROUGH THE BARE POINTER ITSELF (DEF-355, landing 177a). `fixed uint8[]:vw = raw getv(p);` with `p = @s` raises a view party at `p`, its path empty, and `ptr_write_base` looked for a pointer BELOW the place and answered none,
+// so `s = ...` by its own name met nothing and the view read freed bytes (`d355_typed`, 113; `r1v_f1_view_summary_named`, 170). The place itself is the pointer now. D-325's rule is flow-free, so a view read BEFORE the owner is written is over-refused when its name lives on
+// (`r1vn_f1_view_summary_noview`, 0 on 176b and safe at run time, as `string_bytes(s)` held by name always was): end the view's block first (`cast_place_readers_ok.npk`, case 22).
+mod:view_through_bare_pointer;
+error:E5;
+func:getv = fixed uint8[](string->:q) never fails { pass string_bytes(<-q); };
+struct:H2 = { string:o; int64:k; };
+func:getm = fixed uint8[](H2->:q) never fails { pass string_bytes((<-q).o); };
+struct:S  = { string:x; int64:k; };
+impl:S = { func:sset = NIL(S->:self) never fails { self.x = string_concat("x", "y"); pass NIL; }; };
+func:getx = fixed uint8[](any->:q) never fails { pass string_bytes((<-(q =>! S->)).x); };
+// d355_typed -- DEF-355's non-cast question: `string_bytes(<-q)` returned through a typed pointer held by a named local; then the owner is written; right verdict a refusal; on 176b: exit 113.
+func:c_d355_typed = int64() never fails {
+    string:s = string_concat("ab", "cd");
+    string->:p = @s;
+    fixed uint8[]:vw = raw getv(p);
+    s = string_concat("zz", "zz");
+    string:junk = string_concat("qq", "qq");
+    pass (((vw[0i64] => int32)) => int64);
+};
+// d355_typed_inline -- inline twin of d355_typed; on 176b: BORROW-015.
+func:c_d355_typed_inline = int64() never fails {
+    string:s = string_concat("ab", "cd");
+    fixed uint8[]:vw = raw getv(@s);
+    s = string_concat("zz", "zz");
+    string:junk = string_concat("qq", "qq");
+    pass (((vw[0i64] => int32)) => int64);
+};
+// d355_typed_member -- the member spelling: `string_bytes((<-q).o)` through a typed pointer held by a named local; on 176b: BORROW-015.
+func:c_d355_typed_member = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:p = @h;
+    fixed uint8[]:vw = raw getm(p);
+    h.o = string_concat("zz", "zz");
+    string:junk = string_concat("qq", "qq");
+    pass (((vw[0i64] => int32)) => int64);
+};
+// r1v_f1_view_summary_named -- review of build 15 (management 15:13), r1v_f1_view_summary_named: F1 view-summary twin (ref_full_path): a view returned through (<-(q =>! S->)).x, the caller writes h.o; on 176b: exit 170.
+func:c_r1v = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    fixed uint8[]:vw = raw getx(ap);
+    h.o = string_concat("zz", "zz");
+    pass (((vw[0i64] => int32)) => int64);
+};
+// r1vn_f1_view_summary_noview -- review of build 15 (management 15:13), r1vn_f1_view_summary_noview: control: the view read BEFORE the write; on 176b: exit 0.
+func:c_r1vn = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    fixed uint8[]:vw = raw getx(ap);
+    int32:first = vw[0i64] => int32;
+    h.o = string_concat("zz", "zz");
+    if (first != 97i32) { pass ((1i32) => int64); }
+    pass ((0i32) => int64);
+};
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,110 @@
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 35:46
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 41:74
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 49:84
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 57:100
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 65:116
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 73:25
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 81:25
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 89:25
+// THE WALK OF AN ARGUMENT'S VALUE HAS ONE BOUND, AND PAST IT THE ANSWER IS A REFUSAL (DEF-349, landing 177a). The walk answered "no party" at a fuel of 4, so four casts or ternaries around a view or an address hid it
+// (`f(is (c) : (is (c) : (is (c) : (is (c) : string_bytes(s) : w) : w) : w) : w, @s)`, 113, the freed bytes; the address's window, 65). The bound is `ALIAS_DEPTH()`, the one no tree exceeds (AST_DEPTH_MAX), and NITPICK-BORROW-007 past it, a backstop no
+// tree reaches. The legal twin, five ternaries over another owner, stands in `view_walk_bound_ok.npk`.
+mod:view_walk_bound;
+error:E5;
+struct:H = { string:s; int64:k; };
+struct:W = { H->:ptr; };
+func:take = int64(move string:x) never fails { pass x.len; };
+func:gw = int64(W:w, int64:k) never fails { pass w.ptr.s.len + k; };
+struct:W2 = { W:w; };
+struct:W3 = { W2:w; };
+struct:W4 = { W3:w; };
+func:gw4 = int64(W4:w, int64:k) never fails { pass w.w.w.w.ptr.s.len + k; };
+func:gp = int64(H->:p, int64:k) never fails { pass p.s.len + k; };
+func:pairr = int32(string->:p, fixed uint8[]:v) never fails { <-p = string_concat("x", "y"); string:junk = string_concat("qq", "qq"); pass (v[0i64] => int32); };
+// d349_addr_lit3 -- DEF-349 residual: control: a one-level literal, BORROW-013; on 176b: BORROW-013.
+func:c_d349_addr_lit3 = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    int64:r = raw gw(W{ ptr: @h }, (raw take(move(h.s))));
+    pass ((((r + 60i64) =>! int32)) => int64);
+};
+// d349_addr_lit4 -- DEF-349 residual: the ADDRESS arm under a 4-level struct literal, fuel out at the `@`; on 176b: exit 65.
+func:c_d349_addr_lit4 = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    int64:r = raw gw4(W4{ w: W3{ w: W2{ w: W{ ptr: @h } } } }, (raw take(move(h.s))));
+    pass ((((r + 60i64) =>! int32)) => int64);
+};
+// d349_addr_t3 -- DEF-349 residual: the ADDRESS arm, `@h` under 3 ternaries, a later move of h.s (true len 5; 60+5 intact+5 taken: 70, fabricated 0: 65); on 176b: BORROW-013.
+func:c_d349_addr_t3 = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    H:g = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    bool:c = h.k > 0i64;
+    int64:r = raw gp((is (c) : (is (c) : (is (c) : @h : @g) : @g) : @g), (raw take(move(h.s))));
+    pass ((((r + 60i64) =>! int32)) => int64);
+};
+// d349_addr_t4 -- DEF-349 residual: the ADDRESS arm, `@h` under 4 ternaries, a later move of h.s (true len 5; 60+5 intact+5 taken: 70, fabricated 0: 65); on 176b: exit 65.
+func:c_d349_addr_t4 = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    H:g = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    bool:c = h.k > 0i64;
+    int64:r = raw gp((is (c) : (is (c) : (is (c) : (is (c) : @h : @g) : @g) : @g) : @g), (raw take(move(h.s))));
+    pass ((((r + 60i64) =>! int32)) => int64);
+};
+// d349_addr_t5 -- DEF-349 residual: the ADDRESS arm, `@h` under 5 ternaries, a later move of h.s (true len 5; 60+5 intact+5 taken: 70, fabricated 0: 65); on 176b: exit 65.
+func:c_d349_addr_t5 = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    H:g = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    bool:c = h.k > 0i64;
+    int64:r = raw gp((is (c) : (is (c) : (is (c) : (is (c) : (is (c) : @h : @g) : @g) : @g) : @g) : @g), (raw take(move(h.s))));
+    pass ((((r + 60i64) =>! int32)) => int64);
+};
+// d349_rev_view_t3 -- DEF-349 residual: the REVERSED order, the view-maker under 3 ternaries, `@s` first; on 176b: BORROW-015.
+func:c_d349_rev_view_t3 = int64() never fails {
+    string:s = string_concat("ab", "cd");
+    string:t = string_concat("ef", "gh");
+    bool:c = s.len > 2i64;
+    int32:r = raw pairr(@s, (is (c) : (is (c) : (is (c) : string_bytes(s) : string_bytes(t)) : string_bytes(t)) : string_bytes(t)));
+    pass ((r) => int64);
+};
+// d349_rev_view_t4 -- DEF-349 residual: the REVERSED order, the view-maker under 4 ternaries, `@s` first; on 176b: exit 113.
+func:c_d349_rev_view_t4 = int64() never fails {
+    string:s = string_concat("ab", "cd");
+    string:t = string_concat("ef", "gh");
+    bool:c = s.len > 2i64;
+    int32:r = raw pairr(@s, (is (c) : (is (c) : (is (c) : (is (c) : string_bytes(s) : string_bytes(t)) : string_bytes(t)) : string_bytes(t)) : string_bytes(t)));
+    pass ((r) => int64);
+};
+// d349_rev_view_t5 -- DEF-349 residual: the REVERSED order, the view-maker under 5 ternaries, `@s` first; on 176b: exit 113.
+func:c_d349_rev_view_t5 = int64() never fails {
+    string:s = string_concat("ab", "cd");
+    string:t = string_concat("ef", "gh");
+    bool:c = s.len > 2i64;
+    int32:r = raw pairr(@s, (is (c) : (is (c) : (is (c) : (is (c) : (is (c) : string_bytes(s) : string_bytes(t)) : string_bytes(t)) : string_bytes(t)) : string_bytes(t)) : string_bytes(t)));
+    pass ((r) => int64);
+};
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

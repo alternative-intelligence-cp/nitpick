@@ -1,0 +1,106 @@
+// expect-exit: 0
+// WHAT AN ASSIGNMENT'S VALUE MAY STILL HAND A CALLEE (DEF-415, landing 177a; the legal twins of `tests/analysis/rejection/assign_target_handed.npk`): an alias of ANOTHER container, a sibling field of
+// the target's root by path, a pointer VALUE that reaches no target, a scalar, a by-value copy that holds no pointer, a wild pointer no address of the target made. Every value is checked in `main`; the exit is the failing case's number.
+mod:assign_target_handed_ok;
+error:E5;
+func:grow = int64(List<int64>->:p) never fails { for (int64:i in 0i64...200i64) { drop list_push(p, i); } pass 9i64; };
+func:mk_list = List<int64>() never fails {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    drop list_push(@l, 8i64);
+    pass l;
+};
+func:rdp = int64(int64->:p) never fails { pass 9i64; };
+struct:B = { List<int64>:l; int64:z; };
+struct:E = { List<int64>:binds; List<int64>:syms; };
+func:mk_e = E() never fails { pass E{ binds: raw mk_list(), syms: raw mk_list() }; };
+func:g = int64(E->:e) never fails { e.binds[0i64] = raw grow(@e.syms); pass 0i64; };
+func:gl = int64(List<int64>:v) never fails { pass v.count + 7i64; };
+struct:Row = { List<int64>:v; int64:k; };
+func:rdk = int64(int64:k) never fails { pass k + 1i64; };
+struct:W = { List<int64>->:p; };
+func:growc = int64(W:w) never fails { pass raw grow(w.p); };
+impl:W = { func:gm = int64(Self:self) never fails { pass raw grow(self.p); }; func:gr = int64(Self->:self) never fails { pass raw grow(self.p); }; };
+func:gw = int64(wild int64->:p) never fails { pass 1i64; };
+struct:E3 = { List<int64>:binds; int64:k; };
+func:rd = int64(E3:e) never fails { pass e.binds.count + e.k; };
+func:idp = List<int64>->(List<int64>->:p) never fails { pass p; };
+// p6_alias_store_T -- B-P6's legal twin: the growth hoisted. Expect 69; on 176b: exit 69, here: exit 69.
+func:c_p6_alias_store_T = int64() never fails {
+    List<int64>:l = raw mk_list();
+    List<int64>->:q = @l;
+    int64:t = raw grow(q);
+    l[0i64] = t;
+    pass l[0i64];
+};
+// d415_two -- the legal twin: the alias holds ANOTHER list; 69; on 176b: exit 69, here: exit 69.
+func:mk_list__d415_two = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
+func:c_d415_two = int64() never fails {
+    List<int64>:l = raw mk_list__d415_two();
+    List<int64>:m = raw mk_list__d415_two();
+    List<int64>->:q = @m;
+    l[0i64] = raw grow(q);
+    pass l[0i64];
+};
+// d415_ptrval; on 176b: exit 69, here: exit 69.
+func:c_d415_ptrval = int64() never fails { B:b = B{ l: raw mk_list(), z: 3i64 }; b.l[0i64] = raw rdp(@b.z); pass b.l[0i64]; };
+// r_e_sibling; on 176b: exit 69, here: exit 69.
+func:c_r_e_sibling = int64() never fails { E:o = raw mk_e(); discard(raw g(@o)); pass o.binds[0i64]; };
+// byval_read; on 176b: exit 69, here: exit 69.
+func:c_byval_read = int64() never fails { List<int64>:l = raw mk_list(); l[0i64] = raw gl(l); pass l[0i64]; };
+// d_deref_arg; on 176b: exit 69, here: exit 69.
+func:c_d_deref_arg = int64() never fails { List<int64>:l = raw mk_list(); List<int64>->:q = @l; l[0i64] = raw gl(<-q); pass l[0i64]; };
+// d_field_scalar_ok; on 176b: exit 64, here: exit 64.
+func:c_d_field_scalar_ok = int64() never fails { Row:r = Row{ v: raw mk_list(), k: 3i64 }; r.v[0i64] = raw rdk(r.k); pass r.v[0i64]; };
+// d_other_struct_ok; on 176b: exit 69, here: exit 69.
+func:c_d_other_struct_ok = int64() never fails { List<int64>:l = raw mk_list(); List<int64>:m = raw mk_list(); W:w = W{ p: @m }; l[0i64] = raw growc(w); pass l[0i64]; };
+// d_scalar_ok; on 176b: exit 69, here: exit 69.
+func:c_d_scalar_ok = int64() never fails { List<int64>:l = raw mk_list(); l[0i64] = raw rdk(l[1i64]); pass l[0i64]; };
+// d_sibling_addr; on 176b: exit 69, here: exit 69.
+func:rdp__d_sibling_addr = int64(int64->:p) never fails { pass (<-p) + 1i64; };
+func:c_d_sibling_addr = int64() never fails { List<int64>:l = raw mk_list(); l[0i64] = raw rdp__d_sibling_addr(@l[1i64]); pass l[0i64]; };
+// d_struct_two_ok; on 176b: exit 69, here: exit 69.
+func:c_d_struct_two_ok = int64() never fails { E:e = E{ binds: raw mk_list(), syms: raw mk_list() }; W:w = W{ p: @e.syms }; e.binds[0i64] = raw growc(w); pass e.binds[0i64]; };
+// d_wild_nocopy_ok; on 176b: exit 61, here: exit 61.
+func:c_d_wild_nocopy_ok = int64() never fails { List<int64>:l = raw mk_list(); wild int64->:w = alloc(8i64) =>! wild int64->; l[0i64] = raw gw(w); dalloc(w); pass l[0i64]; };
+// r2_plain_twin; on 176b: exit 66, here: exit 66.
+func:mk_list__r2_plain_twin = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
+func:c_r2_plain_twin = int64() never fails { E3:o = E3{ binds: raw mk_list__r2_plain_twin(), k: 4i64 }; o.binds[0i64] = raw rd(o); pass o.binds[0i64]; };
+// s3_twin; on 176b: exit 69, here: exit 69.
+func:mk_list__s3_twin = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
+func:c_s3_twin = int64() never fails { List<int64>:l = raw mk_list__s3_twin(); List<int64>:m = raw mk_list__s3_twin(); (<-(raw idp(@l)))[0i64] = raw grow(@m); pass l[0i64]; };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c_p6_alias_store_T()) != 9i64) { exit 1i32; }
+    if ((raw c_d415_two()) != 9i64) { exit 2i32; }
+    if ((raw c_d415_ptrval()) != 9i64) { exit 3i32; }
+    if ((raw c_r_e_sibling()) != 9i64) { exit 4i32; }
+    if ((raw c_byval_read()) != 9i64) { exit 5i32; }
+    if ((raw c_d_deref_arg()) != 9i64) { exit 6i32; }
+    if ((raw c_d_field_scalar_ok()) != 4i64) { exit 7i32; }
+    if ((raw c_d_other_struct_ok()) != 9i64) { exit 8i32; }
+    if ((raw c_d_scalar_ok()) != 9i64) { exit 9i32; }
+    if ((raw c_d_sibling_addr()) != 9i64) { exit 10i32; }
+    if ((raw c_d_struct_two_ok()) != 9i64) { exit 11i32; }
+    if ((raw c_d_wild_nocopy_ok()) != 1i64) { exit 12i32; }
+    if ((raw c_r2_plain_twin()) != 6i64) { exit 13i32; }
+    if ((raw c_s3_twin()) != 9i64) { exit 14i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -9,7 +9,14 @@
 # compiler's own build peaks at 112,913,630 bytes (20 s where it took 242), and
 # the ceiling is that with 2x headroom again, so the class of regression that
 # hid for a year fails loudly the day it returns.
+# Re-based 2026-11-01 (1.6.1e landing 177a; management_11's ruling of 00:57 and
+# plan of 00:58) by the same rule, 2x the peak measured at that landing,
+# 223,843,170 bytes: landing 176 had reached 98.98 % of the old 225,827,260, and
+# the review of 176b found no retention, so what had grown was the compiler. The
+# ceiling catches the class of regression above; ordinary growth is now caught
+# per landing: a landing whose peak_live grows more than 1 % over its parent's
+# brings its cause to management BEFORE its harness.
 kind    = "self"
 entry   = "src/npkc.npk"
-ceiling = 225827260
+ceiling = 447686340
 expect  = "pass"

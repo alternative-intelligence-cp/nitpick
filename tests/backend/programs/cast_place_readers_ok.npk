@@ -144,12 +144,16 @@ func:any_round_trip_disjoint_field_no_view = int32() never fails {
     pass 0i32;
 };
 
-// 22: a view returned through the cast dereference, READ before the owner is written (r1vn)
+// 22: a view returned through the cast dereference, READ before the owner is written (r1vn). THE VIEW'S BLOCK ENDS FIRST since landing 177a: DEF-355's
+// fix freezes the owner for the block of the name holding the view (D-325), as `string_bytes(s)` held by name always did; the unscoped spelling is r1v's refusal in view_through_bare_pointer.npk.
 func:view_through_cast_deref_read_before_write = int32() never fails {
     H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
     any->:ap = (@h) =>! any->;
-    fixed uint8[]:vw = raw getx(ap);
-    int32:first = vw[0i64] => int32;
+    int32:first = 0i32;
+    {
+        fixed uint8[]:vw = raw getx(ap);
+        first = vw[0i64] => int32;
+    }
     h.o = string_concat("zz", "zz");
     if (first != 97i32) { pass 22i32; }
     pass 0i32;

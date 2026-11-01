@@ -1,0 +1,74 @@
+// expect-exit: 0
+// WHAT A LITERAL'S `@` MAY STILL STAND BESIDE (E-c, E-e and the form table, landing 177a; the legal twins of `tests/analysis/rejection/literal_addr_initialiser.npk`): a call before the address, a write to another owner in another arm, a literal
+// bound first and its part read through the binding (TYPE-105's way out), a part of a CALL's result (no literal), a template's piece that holds no address of what is vacated. Every value is checked in `main`; the exit is the failing case's number.
+mod:literal_addr_initialiser_ok;
+error:E5;
+struct:H = { string:s; int64:k; };
+struct:W = { H->:ptr; };
+impl:W = { func:mv = int64(W:self, int64:k) never fails { pass (<-self.ptr).s.len + k; }; func:mt = int64(W:self, int64:k) never fails { pass k; }; };
+func:take = int64(move string:x) never fails { pass 0i64; };
+func:gw = int64(W:w, int64:k) never fails { pass (<-w.ptr).s.len + k; };
+func:mk_h = H(string:t) never fails { pass H{ s: string_concat(t, "cde"), k: 1i64 }; };
+impl:H = { func:mh = int64(Self->:self, int64:k) never fails { pass (<-self).s.len + k; }; };
+func:gp = int64(H->:p, int64:k) never fails { pass (<-p).s.len + k; };
+struct:C = { H->:p; int64:k; };
+func:rd = int64(C:c) never fails { pass (<-c.p).s.len; };
+struct:TS = { H->:p; int64:k; };
+impl:TS:ToString = { func:to_string = string(TS:self) never fails { pass string_concat((<-self.p).s, "x"); }; };
+func:mkw = W__lp_call_member_ok(H->:p) never fails { pass W__lp_call_member_ok{ ptr: p, k: 1i64 }; };
+// a_ok_call_first; on 176b: exit 65, here: exit 65.
+func:c_a_ok_call_first = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; int64:z = raw gw(W{ ptr: @h }, 0i64); int64:y = (raw take(move(h.s))); pass z + y; };
+// a_ok_lit_write; on 176b: exit 70, here: exit 70.
+func:c_a_ok_lit_write = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; pass raw gw(W{ ptr: @h }, (raw gp(@h, 0i64))); };
+// a_ok_pick_other; on 176b: exit 64, here: exit 64.
+func:c_a_ok_pick_other = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; pass raw gp(pick (i) { (1i32) { give @g; }, (*) { give @g; } }, (raw take(move(h.s)))); };
+// a_ok_tern_other; on 176b: exit 64, here: exit 64.
+func:c_a_ok_tern_other = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; pass raw gp(is (b) : @g : @g, (raw take(move(h.s)))); };
+// a_recv_tern_ok; on 176b: exit 60, here: exit 60.
+func:c_a_recv_tern_ok = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; pass raw (is (b) : W{ ptr: @g } : W{ ptr: @g }).mt((raw take(move(h.s)))); };
+// l_discard; on 176b: exit 60, here: exit 60.
+func:c_l_discard = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; discard(C{ p: @h, k: (raw take(move(h.s))) }); pass 0i64; };
+// l_ok_other; on 176b: exit 63, here: exit 63.
+func:c_l_ok_other = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; C:c = C{ p: @g, k: (raw take(move(h.s))) }; pass raw rd(c) - 1i64; };
+// l_ok_pick_other; on 176b: exit 63, here: exit 63.
+func:c_l_ok_pick_other = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; C:c = pick (i) { (*) { give C{ p: @g, k: (raw take(move(h.s))) }; } }; pass raw rd(c) - 1i64; };
+// l_tmpl_ok; on 176b: exit 67, here: exit 67.
+func:c_l_tmpl_ok = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; string:u = `x&{TS{ p: @h, k: 0i64 }}`; pass u.len; };
+// lp_bound_ok -- TYPE-105's way out: the literal bound first, its part read through the binding; on 176b: exit 65, here: exit 65.
+struct:W__lp_bound_ok = { H->:ptr; int64:k; };
+func:c_lp_bound_ok = int64() never fails { H:h = H{ s: string_concat("ab", "cde"), k: 4i64 }; W__lp_bound_ok:w = W__lp_bound_ok{ ptr: @h, k: 1i64 }; pass (<-w.ptr).k + w.k; };
+// lp_call_member_ok -- a part of a CALL's result is no literal: TYPE-105 does not reach it; on 176b: exit 65, here: exit 65.
+struct:W__lp_call_member_ok = { H->:ptr; int64:k; };
+func:c_lp_call_member_ok = int64() never fails { H:h = H{ s: string_concat("ab", "cde"), k: 4i64 }; pass (<-(raw mkw(@h)).ptr).k + 1i64; };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c_a_ok_call_first()) != 5i64) { exit 1i32; }
+    if ((raw c_a_ok_lit_write()) != 10i64) { exit 2i32; }
+    if ((raw c_a_ok_pick_other()) != 4i64) { exit 3i32; }
+    if ((raw c_a_ok_tern_other()) != 4i64) { exit 4i32; }
+    if ((raw c_a_recv_tern_ok()) != 0i64) { exit 5i32; }
+    if ((raw c_l_discard()) != 0i64) { exit 6i32; }
+    if ((raw c_l_ok_other()) != 3i64) { exit 7i32; }
+    if ((raw c_l_ok_pick_other()) != 3i64) { exit 8i32; }
+    if ((raw c_l_tmpl_ok()) != 7i64) { exit 9i32; }
+    if ((raw c_lp_bound_ok()) != 5i64) { exit 10i32; }
+    if ((raw c_lp_call_member_ok()) != 5i64) { exit 11i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

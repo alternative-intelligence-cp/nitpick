@@ -1,0 +1,35 @@
+// expect-exit: 0
+// A VIEW THROUGH A BARE POINTER WITH NOTHING WRITTEN UNDER IT (DEF-355, landing 177a; the legal twin of `tests/analysis/rejection/view_through_bare_pointer.npk`). The exit is the failing case's number.
+mod:view_through_bare_pointer_ok;
+error:E5;
+func:getv = fixed uint8[](string->:q) never fails { pass string_bytes(<-q); };
+// d355_typed_ctl -- control: nothing writes the owner; 97; on 176b: exit 97, here: exit 97.
+func:c_d355_typed_ctl = int64() never fails {
+    string:s = string_concat("ab", "cd");
+    string->:p = @s;
+    fixed uint8[]:vw = raw getv(p);
+    int32:r = vw[0i64] => int32;
+    pass ((r) => int64);
+};
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c_d355_typed_ctl()) != 97i64) { exit 1i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,62 @@
+// expect-exit: 0
+// THE INDEX HOISTED, THE LAST STEP, ANOTHER CONTAINER (E-b of DEF-410 (e), landing 177a; the legal twins of `tests/analysis/rejection/index_element_window.npk`). Every value is checked in `main`; the exit is the failing case's number.
+mod:index_element_window_ok;
+error:E5;
+pub struct:Row = { List<int64>:v; int64:k; };
+func:grow_outer = int64(List<Row>->:p) never fails { for (int64:i in 0i64...200i64) { drop list_push(p, Row{ v: raw list_init::<int64>(1i64), k: i }); } pass 9i64; };
+func:mk_rows = List<Row>() never fails {
+    List<Row>:l = raw list_init::<Row>(2i64);
+    Row:r0 = Row{ v: raw list_init::<int64>(2i64), k: 1i64 };
+    drop list_push(@r0.v, 7i64);
+    drop list_push(@r0.v, 8i64);
+    drop list_push(@l, move(r0));
+    pass l;
+};
+func:grow = int64(List<int64>->:p) never fails { for (int64:i in 0i64...200i64) { drop list_push(p, i); } pass 9i64; };
+func:mk_list = List<int64>() never fails {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    drop list_push(@l, 8i64);
+    pass l;
+};
+func:mk_row = Row__d_read_road_ok() never fails { pass Row__d_read_road_ok{ v: raw mk_list(), k: 1i64 }; };
+func:gro = int64(List<Row__d_read_road_ok>->:p) never fails { for (int64:i in 0i64...200i64) { drop list_push(p, raw mk_row()); } pass 9i64; };
+func:rd = int64(List<Row__r1_other_ok>->:p) never fails { pass (<-p).count - 2i64; };
+// eb_twin; on 176b: exit 67, here: exit 67.
+func:c_eb_twin = int64() never fails { List<Row>:l = raw mk_rows(); int64:i = (raw grow_outer(@l)) - 9i64; pass l[0i64].v[i]; };
+// eb_last_step; on 176b: exit 67, here: exit 67.
+func:c_eb_last_step = int64() never fails { List<int64>:l = raw mk_list(); pass l[(raw grow(@l)) - 9i64]; };
+// d_read_road_ok; on 176b: exit 67, here: exit 67.
+struct:Row__d_read_road_ok = { List<int64>:v; int64:k; };
+func:c_d_read_road_ok = int64() never fails { List<Row__d_read_road_ok>:l = raw list_init::<Row__d_read_road_ok>(2i64); drop list_push(@l, raw mk_row()); List<Row__d_read_road_ok>:m = raw list_init::<Row__d_read_road_ok>(2i64); List<Row__d_read_road_ok>->:q = @m; pass l[0i64].v[(raw gro(q)) - 9i64]; };
+// r1_other_ok; on 176b: exit 67, here: exit 67.
+func:mk_list__r1_other_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
+struct:Row__r1_other_ok = { List<int64>:v; int64:k; };
+func:mk_row__r1_other_ok = Row__r1_other_ok() never fails { pass Row__r1_other_ok{ v: raw mk_list__r1_other_ok(), k: 1i64 }; };
+func:mk_rows__r1_other_ok = List<Row__r1_other_ok>() never fails { List<Row__r1_other_ok>:l = raw list_init::<Row__r1_other_ok>(2i64); drop list_push(@l, raw mk_row__r1_other_ok()); drop list_push(@l, raw mk_row__r1_other_ok()); pass l; };
+func:c_r1_other_ok = int64() never fails { List<Row__r1_other_ok>:l = raw mk_rows__r1_other_ok(); List<Row__r1_other_ok>:m = raw mk_rows__r1_other_ok(); pass l[0i64].v[(raw rd(@m))]; };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c_eb_twin()) != 7i64) { exit 1i32; }
+    if ((raw c_eb_last_step()) != 7i64) { exit 2i32; }
+    if ((raw c_d_read_road_ok()) != 7i64) { exit 3i32; }
+    if ((raw c_r1_other_ok()) != 7i64) { exit 4i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

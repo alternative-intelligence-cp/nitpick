@@ -1,0 +1,134 @@
+// expect-exit: 0
+// WHAT A BLOCK MAY STILL DO BESIDE A VIEW (F and P of landing 177a; the legal twins of `tests/analysis/rejection/block_held_view.npk`): `for`: another owner written, the write after the loop, a sibling field through a pointer. `pick`, in both spellings: a read-only callee through a pointer parameter, the write after the `pick`, an arm that binds
+// nothing (`_`, a payload-less variant, a sibling arm), a consuming `pick` (the binding owns), a selector no place names, another owner written. THE CLASS'S OTHER KINDS (`k_*`): `if`, `while`, `when`, `loop`, `till` and a bare block read a view to a scalar and hold no header across the block, 67 on 175 and 176b.
+mod:block_held_view_ok;
+error:E5;
+func:grow = int64(List<int64>->:p) never fails { for (int64:i in 0i64...200i64) { drop list_push(p, 9i64); } pass 0i64; };
+func:mk_list = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
+struct:HM = { string:s; string:t; int64:k; };
+func:wk = int64(HM->:h) never fails { h.k = 2i64; pass 0i64; };
+enum:Msg = { Text(string); Num(int64); Quit; };
+func:rd = int64(Msg->:m) never fails { pass 0i64; };
+func:gp = int64(Msg->:q) never fails { int64:r = 0i64; pick (<-q) { (Msg.Text(x)) { discard(raw rd(q)); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg.Num(k)) { r = k; }, (Msg.Quit) { r = 1i64; } } pass r; };
+struct:Two = { int64:a; int64:b; int64:c; };
+func:setn = int64(Msg__pu_under_stmt_ok->:m) never fails { <-m = Msg__pu_under_stmt_ok.Num(1094795585i64); pass 0i64; };
+func:mk = Msg__pr_call_sel_ok(int64:k) never fails { pass Msg__pr_call_sel_ok.Num(k); };
+func:setq2 = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:mkv = fixed uint8[](string:v) never fails { pass string_bytes(v); };
+// f8_other_ok; on 176b: exit 67, here: exit 67.
+func:c_f8_other_ok = int64() never fails { List<int64>:l = raw mk_list(); int64:n = 0i64; List<int64>:m = raw mk_list(); for (int64:x in l[0i64...2i64]) { discard(raw grow(@m)); n = n + x; } pass n - 15i64 + 7i64; };
+// f16_after_ok; on 176b: exit 67, here: exit 67.
+func:c_f16_after_ok = int64() never fails { string:s = string_concat("ab", "cde"); string:t = string_concat("ab", "cde"); int64:n = 0i64; bool:c = s.len > 2i64; for (uint8:b in string_bytes(s)) { n = n + (b => int64); } s = string_concat("wx", "yz"); pass n - 495i64 + 7i64; };
+// h3e_for_ctl; on 176b: exit 67, here: exit 67.
+func:c_h3e_for_ctl = int64() never fails { string:s = string_concat("ab", "cde"); int64:n = 0i64; for (uint8:b in string_bytes(s)) { n = n + (b => int64); } pass n - 97i64 - 98i64 - 99i64 - 100i64 - 101i64 + 7i64; };
+// h3i_for_arr; on 176b: exit 67, here: exit 67.
+func:c_h3i_for_arr = int64() never fails { string:s = string_concat("ab", "cde"); int64:n = 0i64; for (uint8:b in string_bytes(s)) { n = n + (b => int64); } s = string_concat("wx", "yz"); pass n - 495i64 + 7i64; };
+// pf_field2_ctl; on 176b: exit 155, here: exit 155.
+func:c_pf_field2_ctl = int64() never fails { HM:h = HM{ s: string_concat("ab", "cde"), t: string_concat("x","y"), k: 1i64 }; HM->:q = @h; int64:r = 0i64; for (uint8:b in string_bytes(h.s)) { discard(raw wk(q)); r = r + (b => int64); } pass r - 400i64; };
+// pf_view_other_ctl; on 176b: exit 67, here: exit 67.
+struct:HM__pf_view_other_ctl = { string:s; int64:k; };
+func:wk__pf_view_other_ctl = int64(HM__pf_view_other_ctl->:h) never fails { h.k = 2i64; pass 0i64; };
+func:c_pf_view_other_ctl = int64() never fails { HM__pf_view_other_ctl:h = HM__pf_view_other_ctl{ s: string_concat("ab", "cde"), k: 1i64 }; HM__pf_view_other_ctl->:q = @h; int64:r = 0i64; fixed uint8[]:v = string_bytes(h.s); discard(raw wk__pf_view_other_ctl(q)); r = (v[0i64] => int64) - 90i64; pass r; };
+// q7_param_read_ok; on 176b: exit 67, here: exit 67.
+func:c_q7_param_read_ok = int64() never fails { Msg:m = Msg.Text(string_concat("ab", "cde")); pass raw gp(@m); };
+// p8_ok; on 176b: exit 67, here: exit 67.
+enum:Msg__p8_ok = { Text(string); Quit; };
+func:c_p8_ok = int64() never fails { Msg__p8_ok:m = Msg__p8_ok.Text(string_concat("ab", "cde")); int64:r = 0i64; pick (m) { (Msg__p8_ok.Text(x)) { r = (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg__p8_ok.Quit) { r = 1i64; } } m = Msg__p8_ok.Quit; pass r; };
+// px7_param_read_ok; on 176b: exit 67, here: exit 67.
+enum:Msg__px7_param_read_ok = { Text(string); Num(int64); Pair(Two); Quit; };
+func:rd__px7_param_read_ok = int64(Msg__px7_param_read_ok->:m) never fails { pass 0i64; };
+func:gp__px7_param_read_ok = int64(Msg__px7_param_read_ok->:q) never fails { int64:r = pick (<-q) { (Msg__px7_param_read_ok.Text(x)) { discard(raw rd__px7_param_read_ok(q)); give (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg__px7_param_read_ok.Num(k)) { give k; }, (Msg__px7_param_read_ok.Pair(k)) { give k.a; }, (Msg__px7_param_read_ok.Quit) { give 1i64; } }; pass r; };
+func:c_px7_param_read_ok = int64() never fails { Msg__px7_param_read_ok:m = Msg__px7_param_read_ok.Text(string_concat("ab", "cde")); pass raw gp__px7_param_read_ok(@m); };
+// px8_after_ok; on 176b: exit 67, here: exit 67.
+enum:Msg__px8_after_ok = { Text(string); Num(int64); Pair(Two); Quit; };
+func:c_px8_after_ok = int64() never fails { Msg__px8_after_ok:m = Msg__px8_after_ok.Text(string_concat("ab", "cde")); int64:r = pick (m) { (Msg__px8_after_ok.Text(x)) { give (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg__px8_after_ok.Num(k)) { give k; }, (Msg__px8_after_ok.Pair(k)) { give k.a; }, (Msg__px8_after_ok.Quit) { give 1i64; } }; m = Msg__px8_after_ok.Quit; pass r; };
+// pu_under_stmt_ok; on 176b: exit 67, here: exit 67.
+enum:Msg__pu_under_stmt_ok = { Text(string); Num(int64); Pair(Two); Quit; };
+func:c_pu_under_stmt_ok = int64() never fails { Msg__pu_under_stmt_ok:m = Msg__pu_under_stmt_ok.Text(string_concat("ab", "cde")); Msg__pu_under_stmt_ok->:q = @m; int64:r = 0i64; pick (m) { (Msg__pu_under_stmt_ok.Text(_)) { discard(raw setn(q)); r = 7i64; }, (*) { r = 1i64; } } pass r; };
+// pu_under_expr_ok; on 176b: exit 67, here: exit 67.
+enum:Msg__pu_under_expr_ok = { Text(string); Num(int64); Pair(Two); Quit; };
+func:setn__pu_under_expr_ok = int64(Msg__pu_under_expr_ok->:m) never fails { <-m = Msg__pu_under_expr_ok.Num(1094795585i64); pass 0i64; };
+func:c_pu_under_expr_ok = int64() never fails { Msg__pu_under_expr_ok:m = Msg__pu_under_expr_ok.Text(string_concat("ab", "cde")); Msg__pu_under_expr_ok->:q = @m; int64:r = pick (m) { (Msg__pu_under_expr_ok.Text(_)) { discard(raw setn__pu_under_expr_ok(q)); give 7i64; }, (*) { give 1i64; } }; pass r; };
+// pn_quit_stmt_ok; on 176b: exit 67, here: exit 67.
+enum:Msg__pn_quit_stmt_ok = { Text(string); Num(int64); Pair(Two); Quit; };
+func:setn__pn_quit_stmt_ok = int64(Msg__pn_quit_stmt_ok->:m) never fails { <-m = Msg__pn_quit_stmt_ok.Num(1094795585i64); pass 0i64; };
+func:c_pn_quit_stmt_ok = int64() never fails { Msg__pn_quit_stmt_ok:m = Msg__pn_quit_stmt_ok.Quit; Msg__pn_quit_stmt_ok->:q = @m; int64:r = 0i64; pick (m) { (Msg__pn_quit_stmt_ok.Quit) { discard(raw setn__pn_quit_stmt_ok(q)); r = 7i64; }, (*) { r = 1i64; } } pass r; };
+// pn_quit_expr_ok; on 176b: exit 67, here: exit 67.
+enum:Msg__pn_quit_expr_ok = { Text(string); Num(int64); Pair(Two); Quit; };
+func:setn__pn_quit_expr_ok = int64(Msg__pn_quit_expr_ok->:m) never fails { <-m = Msg__pn_quit_expr_ok.Num(1094795585i64); pass 0i64; };
+func:c_pn_quit_expr_ok = int64() never fails { Msg__pn_quit_expr_ok:m = Msg__pn_quit_expr_ok.Quit; Msg__pn_quit_expr_ok->:q = @m; int64:r = pick (m) { (Msg__pn_quit_expr_ok.Quit) { discard(raw setn__pn_quit_expr_ok(q)); give 7i64; }, (*) { give 1i64; } }; pass r; };
+// pn_sibling_ok; on 176b: exit 67, here: exit 67.
+enum:Msg__pn_sibling_ok = { Text(string); Num(int64); Pair(Two); Quit; };
+func:setn__pn_sibling_ok = int64(Msg__pn_sibling_ok->:m) never fails { <-m = Msg__pn_sibling_ok.Num(1094795585i64); pass 0i64; };
+func:c_pn_sibling_ok = int64() never fails { Msg__pn_sibling_ok:m = Msg__pn_sibling_ok.Text(string_concat("ab", "cde")); Msg__pn_sibling_ok->:q = @m; int64:r = 0i64; pick (m) { (Msg__pn_sibling_ok.Text(x)) { r = (string_bytes(x)[0i64] => int64) - 90i64; }, (Msg__pn_sibling_ok.Quit) { discard(raw setn__pn_sibling_ok(q)); r = 1i64; }, (*) { r = 2i64; } } pass r; };
+// pc_consume_stmt_ok; on 176b: exit 67, here: exit 67.
+enum:Msg__pc_consume_stmt_ok = { Text(string); Num(int64); Pair(Two); Quit; };
+func:c_pc_consume_stmt_ok = int64() never fails { Msg__pc_consume_stmt_ok:m = Msg__pc_consume_stmt_ok.Text(string_concat("ab", "cde")); int64:r = 0i64; pick (move(m)) { (Msg__pc_consume_stmt_ok.Text(x)) { m = Msg__pc_consume_stmt_ok.Quit; string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; }, (*) { r = 1i64; } } pass r; };
+// pc_consume_expr_ok; on 176b: exit 67, here: exit 67.
+enum:Msg__pc_consume_expr_ok = { Text(string); Num(int64); Pair(Two); Quit; };
+func:c_pc_consume_expr_ok = int64() never fails { Msg__pc_consume_expr_ok:m = Msg__pc_consume_expr_ok.Text(string_concat("ab", "cde")); int64:r = pick (move(m)) { (Msg__pc_consume_expr_ok.Text(x)) { m = Msg__pc_consume_expr_ok.Quit; string:junk = string_concat("qq", "qq"); give (string_bytes(x)[0i64] => int64) - 90i64; }, (*) { give 1i64; } }; pass r; };
+// pr_call_sel_ok; on 176b: exit 67, here: exit 67.
+enum:Msg__pr_call_sel_ok = { Text(string); Num(int64); Pair(Two); Quit; };
+func:setn__pr_call_sel_ok = int64(Msg__pr_call_sel_ok->:m) never fails { <-m = Msg__pr_call_sel_ok.Num(1094795585i64); pass 0i64; };
+func:c_pr_call_sel_ok = int64() never fails { Msg__pr_call_sel_ok:m = Msg__pr_call_sel_ok.Num(7i64); Msg__pr_call_sel_ok->:q = @m; int64:r = 0i64; pick (raw mk(7i64)) { (Msg__pr_call_sel_ok.Num(k)) { discard(raw setn__pr_call_sel_ok(q)); r = k; }, (*) { r = 1i64; } } pass r; };
+// pk_other_owner_ok; on 176b: exit 67, here: exit 67.
+enum:Msg__pk_other_owner_ok = { Text(string); Num(int64); Pair(Two); Quit; };
+func:c_pk_other_owner_ok = int64() never fails { Msg__pk_other_owner_ok:m = Msg__pk_other_owner_ok.Text(string_concat("ab", "cde")); string:o = string_concat("o", "p"); int64:r = 0i64; pick (m) { (Msg__pk_other_owner_ok.Text(x)) { discard(raw setq2(@o)); r = (string_bytes(x)[0i64] => int64) - 90i64; }, (*) { r = 1i64; } } pass r; };
+// k_if_view; on 176b: exit 67, here: exit 67.
+func:c_k_if_view = int64() never fails { string:s = string_concat("ab", "cde"); int64:r = 0i64; if ((raw mkv(s))[0i64] == 97u8) { s = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(s)[0i64] => int64) - 112i64; } pass r; };
+// k_while_view; on 176b: exit 67, here: exit 67.
+func:c_k_while_view = int64() never fails { string:s = string_concat("ab", "cde"); int64:r = 0i64; int64:n = 2i64; while (((raw mkv(s))[0i64] != 0u8) && (n > 0i64)) decreases n { s = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(s)[0i64] => int64) - 112i64; n = n - 1i64; } pass r; };
+// k_when_view; on 176b: exit 67, here: exit 67.
+func:c_k_when_view = int64() never fails { string:s = string_concat("ab", "cde"); int64:r = 0i64; int64:n = 2i64; when (((raw mkv(s))[0i64] != 0u8) && (n > 0i64)) decreases n { s = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(s)[0i64] => int64) - 112i64; n = n - 1i64; } then { r = r + 0i64; } end { r = 1i64; } pass r; };
+// k_loop_view; on 176b: exit 67, here: exit 67.
+func:c_k_loop_view = int64() never fails { string:s = string_concat("ab", "cde"); int64:r = 0i64; loop (0i64, (raw mkv(s)).len, 1i64) { s = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(s)[0i64] => int64) - 112i64; } pass r; };
+// k_till_view; on 176b: exit 67, here: exit 67.
+func:c_k_till_view = int64() never fails { string:s = string_concat("ab", "cde"); int64:r = 0i64; till ((raw mkv(s)).len, 1i64) { s = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(s)[0i64] => int64) - 112i64; } pass r; };
+// k_block_view; on 176b: exit 67, here: exit 67.
+func:c_k_block_view = int64() never fails { string:s = string_concat("ab", "cde"); int64:r = 0i64; { int64:k = (raw mkv(s)).len; s = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(s)[0i64] => int64) - 112i64 + (k - 5i64); } pass r; };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c_f8_other_ok()) != 7i64) { exit 1i32; }
+    if ((raw c_f16_after_ok()) != 7i64) { exit 2i32; }
+    if ((raw c_h3e_for_ctl()) != 7i64) { exit 3i32; }
+    if ((raw c_h3i_for_arr()) != 7i64) { exit 4i32; }
+    if ((raw c_pf_field2_ctl()) != 95i64) { exit 5i32; }
+    if ((raw c_pf_view_other_ctl()) != 7i64) { exit 6i32; }
+    if ((raw c_q7_param_read_ok()) != 7i64) { exit 7i32; }
+    if ((raw c_p8_ok()) != 7i64) { exit 8i32; }
+    if ((raw c_px7_param_read_ok()) != 7i64) { exit 9i32; }
+    if ((raw c_px8_after_ok()) != 7i64) { exit 10i32; }
+    if ((raw c_pu_under_stmt_ok()) != 7i64) { exit 11i32; }
+    if ((raw c_pu_under_expr_ok()) != 7i64) { exit 12i32; }
+    if ((raw c_pn_quit_stmt_ok()) != 7i64) { exit 13i32; }
+    if ((raw c_pn_quit_expr_ok()) != 7i64) { exit 14i32; }
+    if ((raw c_pn_sibling_ok()) != 7i64) { exit 15i32; }
+    if ((raw c_pc_consume_stmt_ok()) != 7i64) { exit 16i32; }
+    if ((raw c_pc_consume_expr_ok()) != 7i64) { exit 17i32; }
+    if ((raw c_pr_call_sel_ok()) != 7i64) { exit 18i32; }
+    if ((raw c_pk_other_owner_ok()) != 7i64) { exit 19i32; }
+    if ((raw c_k_if_view()) != 7i64) { exit 20i32; }
+    if ((raw c_k_while_view()) != 7i64) { exit 21i32; }
+    if ((raw c_k_when_view()) != 7i64) { exit 22i32; }
+    if ((raw c_k_loop_view()) != 7i64) { exit 23i32; }
+    if ((raw c_k_till_view()) != 7i64) { exit 24i32; }
+    if ((raw c_k_block_view()) != 7i64) { exit 25i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

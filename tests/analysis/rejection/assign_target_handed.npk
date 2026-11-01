@@ -1,0 +1,379 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 152:104
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 162:77
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 180:24
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 187:28
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 187:28
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 194:36
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 202:24
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 210:25
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 218:25
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 222:120
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 222:120
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 224:141
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 224:141
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 230:22
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 234:92
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 237:163
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 244:25
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 248:150
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 250:112
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 252:113
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 254:121
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 254:122
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 256:104
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 256:105
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 258:114
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 260:147
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 263:108
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 263:109
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 266:128
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 268:113
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 270:152
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 272:134
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 274:136
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 276:109
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 278:113
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 280:118
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 283:175
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 286:140
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 292:145
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 294:194
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 296:72
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 299:90
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 302:76
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 305:78
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 308:80
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 308:82
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 311:74
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 315:80
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 318:80
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 321:101
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 324:85
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 327:82
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 333:104
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 336:96
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 341:146
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 344:109
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 347:131
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 347:131
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 350:324
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 353:432
+// expect-error: NITPICK-BORROW-007
+// expect-error-at: 356:276
+// expect-error: NITPICK-BORROW-007
+// expect-error-at: 360:359
+// A CALLEE HANDED A WAY TO THE ASSIGNMENT TARGET'S CONTAINER, INSIDE THE WINDOW (DEF-415, landing 177a). `List<int64>->:q = @l; l[0i64] = raw grow(q);` addressed `l[0]`, the
+// callee reallocated `l` through the alias, and the store landed in FREED memory (`p6_alias_store`, 67 on 175 and 176b: the store lost): DEF-410 (d)'s target party is keyed by `l`, and the
+// growth was a READ of `q`. Now a held alias, a copy of one, a struct holding one, `@l`, the implicit `@recv` and a root pointer, handed to ANY callee inside an assignment's value, is judged WHOLE
+// against the live targets alone (`target_handed`), the callee's summary UNREAD, because a summary misses writes (`q2_helper`, DEF-298's writer face; `q2_change`, DEF-357), and BY PATH, so
+// `e.binds[0] = raw grow(@e.syms)` stays legal (`assign_target_handed_ok.npk`). What the value holds is read off its refs, one hop per holder, a holder of a holder too; past the walk's fuel of 8 it refuses
+// (`dt_chain10`, NITPICK-BORROW-007). A callee that writes nothing (`d415_readonly`, `r_e_read`, `v_e_addr_read`) or only a SIBLING of the target's container (`r_e_other`, `r_e_copy_other`, `v_e_addr_other`, the shape of the pointer root's nine `src/` sites), and an `o` that holds a pointer beside it (`r2_holder`, `o.binds[0] = raw rd(o)`), are over-refused, the post-180 relaxation with `l[i] = raw f(@l)`; the road DEF-418 names is the emitter's order.
+mod:assign_target_handed;
+error:E5;
+func:grow = int64(List<int64>->:p) never fails { for (int64:i in 0i64...200i64) { drop list_push(p, i); } pass 9i64; };
+func:mk_list = List<int64>() never fails {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    drop list_push(@l, 8i64);
+    pass l;
+};
+func:grow2 = int64(List<int64>->:p) never fails { for (int64:i in 0i64...200i64) { drop list_push(p, i); } (<-p)[1i64] = 42i64; pass 2i64; };
+struct:W = { List<int64>->:p; };
+func:rd = int64(List<int64>->:p) never fails { pass (<-p).count + 7i64; };
+struct:S = { List<int64>:l; };
+impl:S = { func:gr = int64(Self->:self) never fails { pass raw grow(@self.l); }; func:rdm = int64(Self->:self) never fails { pass self.l.count + 7i64; }; };
+func:growc = int64(W:w) never fails { for (int64:i in 0i64...200i64) { drop list_push(w.p, i); } pass 9i64; };
+func:growu = int64(wild List<int64>->:p) never fails { for (int64:i in 0i64...200i64) { drop list_push(p =>! List<int64>->, i); } pass 9i64; };
+func:growq = int64(List<int64>->->:qq) never fails { pass raw grow(<-qq); };
+func:growp = int64(W->:wp) never fails { pass raw grow(wp.p); };
+impl:W = { func:gm = int64(Self:self) never fails { pass raw grow(self.p); }; func:gr = int64(Self->:self) never fails { pass raw grow(self.p); }; };
+func:idp = List<int64>->(List<int64>->:p) never fails { pass p; };
+func:growa = int64(any->:a) never fails { pass raw grow(a =>! List<int64>->); };
+func:g = int64(List<int64>->:a) never fails { W:w = W{ p: a }; (<-a)[0i64] = raw growc__d_struct_param(w); pass 0i64; };
+struct:E = { List<int64>:binds; List<int64>:syms; };
+func:mk_e = E() never fails { pass E{ binds: raw mk_list(), syms: raw mk_list() }; };
+func:other = int64(E->:e) never fails { drop list_push(@e.syms, 1i64); pass 9i64; };
+func:grow_e = int64(E->:e) never fails { pass raw grow(@e.binds); };
+func:gw = int64(W:w) never fails { pass raw grow(w.p); };
+func:grow_lit = int64(E->:e) never fails { pass raw gw(W{ p: @e.binds }); };
+struct:WE = { E->:e; };
+func:grow_we = int64(WE:we) never fails { pass raw grow_e(we.e); };
+func:h = int64(List<int64>->:a) never fails { pass raw gw(W{ p: a }); };
+func:g2 = int64() never fails { E:o = raw mk_e(); o.binds[0i64] = raw other(@o); pass o.binds[0i64]; };
+struct:E2 = { List<int64>:binds; int64->:kp; };
+struct:W0 = { List<int64>->:p; };
+struct:W1 = { W0->:p; };
+struct:W2 = { W1->:p; };
+struct:W3 = { W2->:p; };
+struct:W4 = { W3->:p; };
+struct:W5 = { W4->:p; };
+struct:W6 = { W5->:p; };
+struct:W7 = { W6->:p; };
+func:gs = int64(W7:v) never fails { pass 9i64; };
+struct:W8 = { W7->:p; };
+struct:W9 = { W8->:p; };
+struct:W10 = { W9->:p; };
+// p6_alias_store -- B-P6 (E4): `q` aliases `l`; the store's target `l[0]` is formed, then `grow(q)` reallocates `l`, then the store lands in the FREED buffer. Correct 69; freed store 67. Right verdict BORROW-015; on 176b: exit 67.
+func:c_p6_alias_store = int64() never fails {
+    List<int64>:l = raw mk_list();
+    List<int64>->:q = @l;
+    l[0i64] = raw grow(q);
+    pass l[0i64];
+};
+// p6_alias_store_D -- B-P6 (E4, through the alias): `(<-q)[0] = raw grow(q)`. Correct 69; freed store 67; on 176b: BORROW-015.
+func:c_p6_alias_store_D = int64() never fails {
+    List<int64>:l = raw mk_list();
+    List<int64>->:q = @l;
+    (<-q)[0i64] = raw grow(q);
+    pass l[0i64];
+};
+// p6_alias_range -- B-P6 (E4, range form): `(<-q)[0...(raw grow2(q))]` -- the view's header against the growth in its own bound (grow2 passes 2: with grow1's 9 the STALE count 2 made it OutOfBounds 98 on 175 -- the header is loaded before the bound runs). Fresh [1] = 42 -> 102; stale 68 or poison; on 176b: BORROW-015.
+func:c_p6_alias_range = int64() never fails {
+    List<int64>:l = raw mk_list();
+    List<int64>->:q = @l;
+    pass (((<-q)[0i64...(raw grow2(q))])[1i64]);
+};
+// d415_copy -- a pointer copy of the alias; on 176b: exit 67.
+func:mk_list__d415_copy = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
+func:c_d415_copy = int64() never fails {
+    List<int64>:l = raw mk_list__d415_copy();
+    List<int64>->:q = @l;
+    List<int64>->:q2 = q;
+    l[0i64] = raw grow(q2);
+    pass l[0i64];
+};
+// d415_compound -- a compound store; on 176b: exit 67.
+func:mk_list__d415_compound = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
+func:c_d415_compound = int64() never fails {
+    List<int64>:l = raw mk_list__d415_compound();
+    List<int64>->:q = @l;
+    l[0i64] += raw grow(q);
+    pass l[0i64];
+};
+// d415_field -- the alias read out of a struct; on 176b: exit 67.
+func:mk_list__d415_field = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
+func:c_d415_field = int64() never fails {
+    List<int64>:l = raw mk_list__d415_field();
+    W:w = W{ p: @l };
+    l[0i64] = raw grow(w.p);
+    pass l[0i64];
+};
+// d415_q_at_l; on 176b: exit 67.
+func:c_d415_q_at_l = int64() never fails { List<int64>:l = raw mk_list(); List<int64>->:q = @l; (<-q)[0i64] = raw grow(@l); pass l[0i64]; };
+// d415_q_q2; on 176b: exit 67.
+func:c_d415_q_q2 = int64() never fails { List<int64>:l = raw mk_list(); List<int64>->:q = @l; List<int64>->:q2 = @l; (<-q)[0i64] = raw grow(q2); pass l[0i64]; };
+// d415_readonly -- the legal twin: a callee that only reads through the alias; 9 + 60 = 69; on 176b: exit 69.
+func:mk_list__d415_readonly = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
+func:c_d415_readonly = int64() never fails {
+    List<int64>:l = raw mk_list__d415_readonly();
+    List<int64>->:q = @l;
+    l[0i64] = raw rd(q);
+    pass l[0i64];
+};
+// d415_recv_addr; on 176b: exit 69.
+func:c_d415_recv_addr = int64() never fails { S:s = S{ l: raw mk_list() }; s.l[0i64] = raw s.rdm(); pass s.l[0i64]; };
+// d415_self_recv; on 176b: exit 69.
+struct:S__d415_self_recv = { List<int64>:l; };
+impl:S__d415_self_recv = { func:rdm = int64(Self->:self) never fails { pass self.l.count + 7i64; }; func:st = int64(Self->:self) never fails { self.l[0i64] = raw self.rdm(); pass self.l[0i64]; }; };
+func:c_d415_self_recv = int64() never fails { S__d415_self_recv:s = S__d415_self_recv{ l: raw mk_list() }; pass raw s.st(); };
+// d415_struct -- the alias inside a by-value struct argument; on 176b: exit 67.
+func:mk_list__d415_struct = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
+func:c_d415_struct = int64() never fails {
+    List<int64>:l = raw mk_list__d415_struct();
+    W:w = W{ p: @l };
+    l[0i64] = raw growc(w);
+    pass l[0i64];
+};
+// d415_wild_held; on 176b: exit 67.
+func:c_d415_wild_held = int64() never fails { List<int64>:l = raw mk_list(); wild List<int64>->:w = (@l) =>! wild List<int64>->; l[0i64] = raw growu(w); pass l[0i64]; };
+// d_at_q; on 176b: exit 67.
+func:c_d_at_q = int64() never fails { List<int64>:l = raw mk_list(); List<int64>->:q = @l; l[0i64] = raw growq(@q); pass l[0i64]; };
+// d_at_struct; on 176b: exit 67.
+func:c_d_at_struct = int64() never fails { List<int64>:l = raw mk_list(); W:w = W{ p: @l }; l[0i64] = raw growp(@w); pass l[0i64]; };
+// d_callres; on 176b: exit 67.
+func:c_d_callres = int64() never fails { List<int64>:l = raw mk_list(); List<int64>->:q = @l; l[0i64] = raw grow(raw idp(q)); pass l[0i64]; };
+// d_callres_addr; on 176b: exit 67.
+func:c_d_callres_addr = int64() never fails { List<int64>:l = raw mk_list(); l[0i64] = raw grow(raw idp(@l)); pass l[0i64]; };
+// d_cast_q; on 176b: exit 67.
+func:c_d_cast_q = int64() never fails { List<int64>:l = raw mk_list(); List<int64>->:q = @l; l[0i64] = raw growa(q =>! any->); pass l[0i64]; };
+// d_direct_store; on 176b: exit 67.
+func:c_d_direct_store = int64() never fails { List<int64>:l = raw mk_list(); List<int64>->:q = @l; int32:k = 1i32; l[0i64] = pick (k) { (1i32) { (<-q) = raw mk_list(); give 5i64; }, (*) { give 1i64; } }; pass l[0i64]; };
+// d_lit_at; on 176b: BORROW-015.
+func:growc__d_lit_at = int64(W:w) never fails { pass raw grow(w.p); };
+func:c_d_lit_at = int64() never fails { List<int64>:l = raw mk_list(); l[0i64] = raw growc__d_lit_at(W{ p: @l }); pass l[0i64]; };
+// d_lit_q; on 176b: exit 67.
+func:growc__d_lit_q = int64(W:w) never fails { pass raw grow(w.p); };
+func:c_d_lit_q = int64() never fails { List<int64>:l = raw mk_list(); List<int64>->:q = @l; l[0i64] = raw growc__d_lit_q(W{ p: q }); pass l[0i64]; };
+// d_move_q; on 176b: exit 67.
+func:c_d_move_q = int64() never fails { List<int64>:l = raw mk_list(); List<int64>->:q = @l; l[0i64] = raw grow(move(q)); pass l[0i64]; };
+// d_pick; on 176b: exit 67.
+func:c_d_pick = int64() never fails { List<int64>:l = raw mk_list(); List<int64>->:q = @l; int32:k = 1i32; l[0i64] = pick (k) { (1i32) { give raw grow(q); }, (*) { give 1i64; } }; pass l[0i64]; };
+// d_qq; on 176b: exit 67.
+func:c_d_qq = int64() never fails { List<int64>:l = raw mk_list(); List<int64>->:q = @l; List<int64>->->:qq = @q; l[0i64] = raw grow(<-qq); pass l[0i64]; };
+// d_qq2; on 176b: exit 67.
+func:c_d_qq2 = int64() never fails { List<int64>:l = raw mk_list(); List<int64>->:q = @l; List<int64>->->:qq = @q; l[0i64] = raw growq(qq); pass l[0i64]; };
+// d_recv_struct; on 176b: exit 67.
+func:c_d_recv_struct = int64() never fails { List<int64>:l = raw mk_list(); W:w = W{ p: @l }; l[0i64] = raw w.gm(); pass l[0i64]; };
+// d_recv_struct_ptr; on 176b: exit 67.
+func:c_d_recv_struct_ptr = int64() never fails { List<int64>:l = raw mk_list(); W:w = W{ p: @l }; l[0i64] = raw w.gr(); pass l[0i64]; };
+// d_recv_wp; on 176b: exit 67.
+func:c_d_recv_wp = int64() never fails { List<int64>:l = raw mk_list(); W:w = W{ p: @l }; W->:wp = @w; l[0i64] = raw wp.gr(); pass l[0i64]; };
+// d_struct_assign; on 176b: exit 67.
+func:growc__d_struct_assign = int64(W:w) never fails { pass raw grow(w.p); };
+func:c_d_struct_assign = int64() never fails { List<int64>:l = raw mk_list(); List<int64>:m = raw mk_list(); W:w = W{ p: @m }; w.p = @l; l[0i64] = raw growc__d_struct_assign(w); pass l[0i64]; };
+// d_struct_copy; on 176b: exit 67.
+func:growc__d_struct_copy = int64(W:w) never fails { pass raw grow(w.p); };
+func:c_d_struct_copy = int64() never fails { List<int64>:l = raw mk_list(); W:w = W{ p: @l }; W:w2 = w; l[0i64] = raw growc__d_struct_copy(w2); pass l[0i64]; };
+// d_struct_param; on 176b: exit 67.
+func:growc__d_struct_param = int64(W:w) never fails { pass raw grow(w.p); };
+func:c_d_struct_param = int64() never fails { List<int64>:l = raw mk_list(); discard(raw g(@l)); pass l[0i64]; };
+// d_struct_q; on 176b: exit 67.
+func:growc__d_struct_q = int64(W:w) never fails { pass raw grow(w.p); };
+func:c_d_struct_q = int64() never fails { List<int64>:l = raw mk_list(); List<int64>->:q = @l; W:w = W{ p: q }; l[0i64] = raw growc__d_struct_q(w); pass l[0i64]; };
+// d_ternary_q; on 176b: exit 67.
+func:c_d_ternary_q = int64() never fails { List<int64>:l = raw mk_list(); List<int64>:m = raw mk_list(); List<int64>->:q = @l; List<int64>->:q3 = @m; bool:b = true; l[0i64] = raw grow(is (b) : q : q3); pass l[0i64]; };
+// r_e_addr; on 176b: BORROW-015.
+func:g__r_e_addr = int64(E->:e) never fails { e.binds[0i64] = raw grow(@e.binds); pass 0i64; };
+func:c_r_e_addr = int64() never fails { E:o = raw mk_e(); discard(raw g__r_e_addr(@o)); pass o.binds[0i64]; };
+// r_e_copy_other; on 176b: exit 69.
+func:g__r_e_copy_other = int64(E->:e) never fails { E->:a = e; e.binds[0i64] = raw other(a); pass 0i64; };
+func:c_r_e_copy_other = int64() never fails { E:o = raw mk_e(); discard(raw g__r_e_copy_other(@o)); pass o.binds[0i64]; };
+// r_e_direct; on 176b: BORROW-015.
+func:g__r_e_direct = int64(E->:e) never fails { e.binds[0i64] = raw grow_e(e); pass 0i64; };
+func:c_r_e_direct = int64() never fails { E:o = raw mk_e(); discard(raw g__r_e_direct(@o)); pass o.binds[0i64]; };
+// r_e_helper; on 176b: exit 67.
+func:g__r_e_helper = int64(E->:e) never fails { e.binds[0i64] = raw grow_lit(e); pass 0i64; };
+func:c_r_e_helper = int64() never fails { E:o = raw mk_e(); discard(raw g__r_e_helper(@o)); pass o.binds[0i64]; };
+// r_e_lit_addr; on 176b: BORROW-015.
+func:g__r_e_lit_addr = int64(E->:e) never fails { e.binds[0i64] = raw gw(W{ p: @e.binds }); pass 0i64; };
+func:c_r_e_lit_addr = int64() never fails { E:o = raw mk_e(); discard(raw g__r_e_lit_addr(@o)); pass o.binds[0i64]; };
+// r_e_other; on 176b: exit 69.
+func:g__r_e_other = int64(E->:e) never fails { e.binds[0i64] = raw other(e); pass 0i64; };
+func:c_r_e_other = int64() never fails { E:o = raw mk_e(); discard(raw g__r_e_other(@o)); pass o.binds[0i64]; };
+// r_e_read; on 176b: exit 69.
+func:rd__r_e_read = int64(E->:e) never fails { pass e.binds.count + 7i64; };
+func:g__r_e_read = int64(E->:e) never fails { e.binds[0i64] = raw rd__r_e_read(e); pass 0i64; };
+func:c_r_e_read = int64() never fails { E:o = raw mk_e(); discard(raw g__r_e_read(@o)); pass o.binds[0i64]; };
+// r_e_we; on 176b: exit 67.
+func:g__r_e_we = int64(E->:e) never fails { e.binds[0i64] = raw grow_we(WE{ e: e }); pass 0i64; };
+func:c_r_e_we = int64() never fails { E:o = raw mk_e(); discard(raw g__r_e_we(@o)); pass o.binds[0i64]; };
+// r_list_copy; on 176b: exit 67.
+func:g__r_list_copy = int64(List<int64>->:p) never fails { List<int64>->:a = p; (<-p)[0i64] = raw h(a); pass 0i64; };
+func:c_r_list_copy = int64() never fails { List<int64>:l = raw mk_list(); discard(raw g__r_list_copy(@l)); pass l[0i64]; };
+// r_list_direct; on 176b: BORROW-015.
+func:g__r_list_direct = int64(List<int64>->:p) never fails { (<-p)[0i64] = raw grow(p); pass 0i64; };
+func:c_r_list_direct = int64() never fails { List<int64>:l = raw mk_list(); discard(raw g__r_list_direct(@l)); pass l[0i64]; };
+// r_list_helper; on 176b: exit 67.
+func:g__r_list_helper = int64(List<int64>->:p) never fails { (<-p)[0i64] = raw h(p); pass 0i64; };
+func:c_r_list_helper = int64() never fails { List<int64>:l = raw mk_list(); discard(raw g__r_list_helper(@l)); pass l[0i64]; };
+// v_e_addr_other; on 176b: exit 69.
+func:c_v_e_addr_other = int64() never fails { pass raw g2(); };
+// v_e_addr_read; on 176b: exit 69.
+func:rd__v_e_addr_read = int64(E->:e) never fails { pass e.binds.count + 7i64; };
+func:g2__v_e_addr_read = int64() never fails { E:o = raw mk_e(); o.binds[0i64] = raw rd__v_e_addr_read(@o); pass o.binds[0i64]; };
+func:c_v_e_addr_read = int64() never fails { pass raw g2__v_e_addr_read(); };
+// v_l_addr_helper; on 176b: exit 67.
+func:g__v_l_addr_helper = int64() never fails { List<int64>:l = raw mk_list(); l[0i64] = raw h(@l); pass l[0i64]; };
+func:c_v_l_addr_helper = int64() never fails { pass raw g__v_l_addr_helper(); };
+// r2_holder; on 176b: exit 66.
+func:mk_list__r2_holder = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
+func:rd__r2_holder = int64(E2:e) never fails { pass e.binds.count + (<-e.kp); };
+func:c_r2_holder = int64() never fails { int64:k = 4i64; E2:o = E2{ binds: raw mk_list__r2_holder(), kp: @k }; o.binds[0i64] = raw rd__r2_holder(o); pass o.binds[0i64]; };
+// s3_named_ctl; on 176b: BORROW-015.
+func:mk_list__s3_named_ctl = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
+func:c_s3_named_ctl = int64() never fails { List<int64>:l = raw mk_list__s3_named_ctl(); l[0i64] = raw grow(@l); pass l[0i64]; };
+// s3_ptr_ctl; on 176b: exit 67.
+func:mk_list__s3_ptr_ctl = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
+func:c_s3_ptr_ctl = int64() never fails { List<int64>:l = raw mk_list__s3_ptr_ctl(); List<int64>->:p = @l; (<-p)[0i64] = raw grow(@l); pass l[0i64]; };
+// dt_hop10 -- ten struct holders in a row between the target's container and the callee: target_handed's fuel of 8; on 176b: exit 67.
+func:mk_list__dt_hop10 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
+func:c_dt_hop10 = int64() never fails { List<int64>:l = raw mk_list__dt_hop10();  W:w1 = W{ p: @l };  W:w2 = W{ p: w1.p };  W:w3 = W{ p: w2.p };  W:w4 = W{ p: w3.p };  W:w5 = W{ p: w4.p };  W:w6 = W{ p: w5.p };  W:w7 = W{ p: w6.p };  W:w8 = W{ p: w7.p };  W:w9 = W{ p: w8.p };  W:w10 = W{ p: w9.p };  l[0i64] = raw grow(w10.p); pass l[0i64]; };
+// dt_ptr10 -- ten pointers to pointers between the target's container and the callee: target_handed's fuel of 8; on 176b: exit 67.
+func:mk_list__dt_ptr10 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
+func:c_dt_ptr10 = int64() never fails { List<int64>:l = raw mk_list__dt_ptr10(); List<int64>->:q1 = @l; List<int64>->->:q2 = @q1; List<int64>->->->:q3 = @q2; List<int64>->->->->:q4 = @q3; List<int64>->->->->->:q5 = @q4; List<int64>->->->->->->:q6 = @q5; List<int64>->->->->->->->:q7 = @q6; List<int64>->->->->->->->->:q8 = @q7; List<int64>->->->->->->->->->:q9 = @q8; List<int64>->->->->->->->->->->:q10 = @q9; l[0i64] = raw grow((<-(<-(<-(<-(<-(<-(<-(<-(<-q10)))))))))); pass l[0i64]; };
+// dt_chain7 -- seven holders, each a struct holding a pointer to the one before, the last handed by value: target_handed's hops, one per holder, inside its fuel of 8; on 176b: exit 69.
+func:mk_list__dt_chain7 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
+func:c_dt_chain7 = int64() never fails { List<int64>:l = raw mk_list__dt_chain7(); W0:w0 = W0{ p: @l }; W1:w1 = W1{ p: @w0 }; W2:w2 = W2{ p: @w1 }; W3:w3 = W3{ p: @w2 }; W4:w4 = W4{ p: @w3 }; W5:w5 = W5{ p: @w4 }; W6:w6 = W6{ p: @w5 }; W7:w7 = W7{ p: @w6 }; l[0i64] = raw gs(w7); pass l[0i64]; };
+// dt_chain10 -- ten holders, each a struct holding a pointer to the one before, the last handed by value: target_handed's hops, one per holder, past its fuel of 8; on 176b: exit 69.
+func:gs__dt_chain10 = int64(W10:v) never fails { pass 9i64; };
+func:mk_list__dt_chain10 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
+func:c_dt_chain10 = int64() never fails { List<int64>:l = raw mk_list__dt_chain10(); W0:w0 = W0{ p: @l }; W1:w1 = W1{ p: @w0 }; W2:w2 = W2{ p: @w1 }; W3:w3 = W3{ p: @w2 }; W4:w4 = W4{ p: @w3 }; W5:w5 = W5{ p: @w4 }; W6:w6 = W6{ p: @w5 }; W7:w7 = W7{ p: @w6 }; W8:w8 = W8{ p: @w7 }; W9:w9 = W9{ p: @w8 }; W10:w10 = W10{ p: @w9 }; l[0i64] = raw gs__dt_chain10(w10); pass l[0i64]; };
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

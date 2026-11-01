@@ -1,45 +1,47 @@
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 104:7
+// expect-error-at: 106:7
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 114:16
+// expect-error-at: 116:16
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 122:16
+// expect-error-at: 124:16
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 130:10
+// expect-error-at: 132:10
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 141:19
+// expect-error-at: 143:19
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 156:18
+// expect-error-at: 158:18
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 171:20
+// expect-error-at: 173:20
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 185:29
+// expect-error-at: 187:29
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 198:29
+// expect-error-at: 200:29
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 211:17
+// expect-error-at: 213:17
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 223:33
+// expect-error-at: 225:33
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 232:32
+// expect-error-at: 234:32
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 242:17
+// expect-error-at: 244:17
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 251:14
+// expect-error-at: 253:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 261:31
+// expect-error-at: 263:31
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 271:14
+// expect-error-at: 273:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 282:17
+// expect-error-at: 284:17
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 292:22
+// expect-error-at: 294:22
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 302:35
+// expect-error-at: 305:20
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 312:94
+// expect-error-at: 305:35
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 318:63
+// expect-error-at: 315:94
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 321:63
 //
 // LANDING 167's POINTER, SLICE AND VIEW READERS (DEF-324, DEF-326, DEF-328, DEF-329, DEF-330, DEF-331,
 // DEF-332, DEF-338): each site here compiled on landing 166's compiler and read freed memory (113) or
@@ -295,6 +297,7 @@ func:any_two_step_retype_named_deref_write = int32() never fails {
 };
 
 // 19. (DEF-332) the same through a CALL RESULT, `(<-((raw idany(ap)) =>! H2->)).o = …`
+// (landing 177a: N judges the holder `ap` handed to `idany` beside `vw`, whole, so the line reports twice, at `ap` and at the write.)
 func:any_two_step_retype_call_result_deref_write = int32() never fails {
     S:s = S{ s: string_concat("ab", "cd"), k: 1i64 };
     any->:ap = (@s) =>! any->;

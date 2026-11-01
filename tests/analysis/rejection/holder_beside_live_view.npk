@@ -1,0 +1,233 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 105:71
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 119:97
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 134:126
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 136:126
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 138:136
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 140:151
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 142:132
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 144:143
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 146:131
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 148:130
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 150:137
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 152:152
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 154:167
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 156:114
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 158:128
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 160:149
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 162:132
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 164:133
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 164:153
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 166:152
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 168:140
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 170:129
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 172:122
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 174:109
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 178:67
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 181:84
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 184:201
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 186:229
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 188:200
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 190:253
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 192:87
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 195:108
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 197:153
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 201:190
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 203:128
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 205:156
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 207:154
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 209:122
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 211:122
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 214:189
+// A HOLDER OF THE OWNER HANDED TO A CALL BESIDE A VIEW THAT IS STILL LIVE (N and K of landing 177a; management_12's rulings of 2026-11-01 10:31 and 10:55). `W:w = W{ p: @s }; fs(s, (raw wh(w)));` copied `s`'s header for the outer call,
+// the nested call wrote through the holder and freed the bytes, and the outer callee read them (83, the freed bytes reused, on 175 and 176b; also through a pointer to the holder, a ternary, a literal, an array element, a copy, a holder a call made,
+// a held view, a laundered view). The holder rule read the views of ITS OWN call; now `rejudge_holder` judges every LIVE view at every call, whole, the summary unread. A view held BY the holder itself is that holder's own storage (the twin in `holder_beside_live_view_ok.npk`, `ks5_self_holder_ok`).
+// OVER-REFUSED ON PURPOSE, THE POST-180 LIST: a callee that only reads (`h20_read_nested`, `h22_view_read_ok`), and a laundered view beside a holder of another field (`la3_laundered_field`, 127 and safe on 176b).
+// K: a value holding an address INTO ITSELF, `o.p = @o.s; selfw(o)`, handed by value: the callee writes through the copy's pointer and reads the copy's freed `s` (`k_self`, 83). A whole-self address (`o.me = @o; selfw(o)`, `k2_whole`, 83) stays OPEN, on DEF-418's row: it is accepted and reads freed bytes.
+mod:holder_beside_live_view;
+error:E5;
+struct:W = { string->:p; };
+func:wh = int64(W:w) never fails { <-w.p = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:whp = int64(W->:w) never fails { <-w.p = string_concat("wx", "yz"); pass 0i64; };
+func:id64 = int64(int64:k) never fails { pass k; };
+struct:K = { int64:a; };
+func:gsk = int64(string:v, K:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k.a; };
+func:gvs = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:wrp = W(string->:p) never fails { pass W{ p: p }; };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:wv = int64(W:w, string:v) never fails { <-w.p = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+struct:W2 = { string:s; };
+struct:WP = { W2->:p; };
+impl:W2 = { func:m3 = int64(W2:self, WP:h) never fails { <-h.p = W2{ s: string_concat("wx", "yz") }; string:junk = string_concat("qq", "qq"); pass (string_bytes(self.s)[0i64] => int64) - 90i64; }; };
+trait:Tw = { func:wr = int64(Self:self) never fails; };
+impl:W:Tw = { func:wr = int64(W:self) never fails { <-self.p = string_concat("wx", "yz"); pass 0i64; }; };
+func:dv = int64(dyn Tw:d, string:v) never fails { discard(raw d.wr()); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:g = int64(string->:p) never fails { W:w = W{ p: p }; pass raw wv(w, <-p); };
+func:ws = int64(List<int64>[]:sl, List<int64>:v) never fails { for (int64:i in 0i64...64i64) { drop list_push(@sl[0i64], i); } pass v[0i64] - 90i64; };
+func:ids = List<int64>[](List<int64>[]:x) never fails { pass x; };
+func:idso = List<int64>[]?(List<int64>[]:x) never fails { pass x; };
+func:mk_list = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
+func:grow = int64(List<int64>->:p) never fails { for (int64:i in 0i64...200i64) { drop list_push(p, i); } pass 0i64; };
+func:fe = int64(int64->:e, int64:k) never fails { pass (<-e) + k; };
+func:vw = fixed uint8[](string->:q) never fails { pass string_bytes(<-q); };
+struct:Tb = { string:one; };
+struct:Gr = { Tb->:tb; int64:k; };
+struct:Rs = { Tb->:tb; };
+func:tg = string(Tb->:t) never fails { pass (string_from_bytes(t.one.ptr, t.one.len)); };
+func:ri = Rs(Gr->:g) never fails { pass Rs{ tb: g.tb }; };
+func:rw = int64(Rs->:r) never fails { r.tb.one = string_concat("wx", "yz"); pass 0i64; };
+func:ff = int64(Gr->:g) never fails { string:v = raw tg(g.tb); Rs:r = raw ri(g); discard(raw rw(@r)); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+struct:T = { string:sm; string:ot; };
+struct:P = { string->:o; };
+func:gt = fixed uint8[](T->:t) never fails { pass string_bytes(t.sm); };
+func:pi = P(T->:t) never fails { pass P{ o: @t.ot }; };
+func:pp = int64(P->:p) never fails { <-p.o = string_concat("wx", "yz"); pass 0i64; };
+func:rh = int64(W:w) never fails { pass (<-w.p).len - 5i64; };
+struct:O = { string:s; string->:p; };
+func:selfw = int64(O:v2) never fails { <-v2.p = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v2.s)[0i64] => int64) - 90i64; };
+struct:V = { fixed uint8[]:v; string->:p; };
+func:selfwp = int64(V->:w) never fails { <-w.p = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (w.v[0i64] => int64) - 90i64; };
+func:selfwv = int64(V:w) never fails { <-w.p = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (w.v[0i64] => int64) - 90i64; };
+func:keep = NIL(O__ks4_self_store_call->:o) never fails { o.t = string_from_bytes(o.s.ptr, o.s.len); pass NIL; };
+func:wr = int64(O__ks4_self_store_call->:o) never fails { o.s = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(o.t)[0i64] => int64) - 90i64; };
+// f_nested_held; on 176b: exit 83.
+func:c_f_nested_held = int64() never fails { string:s = string_concat("ab", "cde"); W:w = W{ p: @s }; pass raw fs(s, (raw wh(w))); };
+// f_nested_ptr; on 176b: exit 83.
+func:c_f_nested_ptr = int64() never fails { string:s = string_concat("ab", "cde"); W:w = W{ p: @s }; pass raw fs(s, (raw whp(@w))); };
+// f_nested_deep; on 176b: exit 83.
+func:c_f_nested_deep = int64() never fails { string:s = string_concat("ab", "cde"); W:w = W{ p: @s }; pass raw fs(s, (raw id64((raw wh(w))))); };
+// h6_nested_tern; on 176b: exit 83.
+func:c_h6_nested_tern = int64() never fails { string:s = string_concat("ab", "cde"); W:w = W{ p: @s }; bool:c = true; pass raw fs(s, is (c) : (raw wh(w)) : 0i64); };
+// h8_nested_lit; on 176b: exit 83.
+func:c_h8_nested_lit = int64() never fails { string:s = string_concat("ab", "cde"); W:w = W{ p: @s }; pass raw gsk(s, K{ a: raw wh(w) }); };
+// h11_view_nested; on 176b: exit 83.
+func:c_h11_view_nested = int64() never fails { string:s = string_concat("ab", "cde"); W:w = W{ p: @s }; pass raw gvs(string_bytes(s), (raw wh(w))); };
+// n2_held_call_made; on 176b: exit 83.
+func:c_n2_held_call_made = int64() never fails { string:s = string_concat("ab", "cde"); W:w = raw wrp(@s); pass raw fs(s, (raw wh(w))); };
+// n3_arr_elem; on 176b: exit 83.
+func:c_n3_arr_elem = int64() never fails { string:s = string_concat("ab", "cde"); W[1]:a = [W{ p: @s }]; pass raw fs(s, (raw wh(a[0i64]))); };
+// n4_copy_holder; on 176b: exit 83.
+func:c_n4_copy_holder = int64() never fails { string:s = string_concat("ab", "cde"); W:w = W{ p: @s }; W:w2 = w; pass raw fs(s, (raw wh(w2))); };
+// h1_view_held; on 176b: exit 83.
+func:c_h1_view_held = int64() never fails { string:s = string_concat("ab", "cde"); W:w = W{ p: @s }; fixed uint8[]:v = string_bytes(s); discard(raw wh(w)); string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64; };
+// h3_for_view; on 176b: exit 67.
+func:c_h3_for_view = int64() never fails { string:s = string_concat("ab", "cde"); W:w = W{ p: @s }; int64:n = 0i64; for (uint8:b in string_bytes(s)) { discard(raw wh(w)); n = n + (b => int64); } pass n - n + 67i64 - 60i64; };
+// f_nested_lit; on 176b: BORROW-015.
+func:c_f_nested_lit = int64() never fails { string:s = string_concat("ab", "cde"); pass raw fs(s, (raw wh(W{ p: @s }))); };
+// h13_ptr_nested; on 176b: BORROW-015.
+func:c_h13_ptr_nested = int64() never fails { string:s = string_concat("ab", "cde"); string->:q = @s; pass raw fs(s, (raw setq(q))); };
+// h13b_ptr_nested_view; on 176b: BORROW-015.
+func:c_h13b_ptr_nested_view = int64() never fails { string:s = string_concat("ab", "cde"); string->:q = @s; pass raw gvs(string_bytes(s), (raw setq(q))); };
+// h12_view_nested_addr; on 176b: BORROW-015.
+func:c_h12_view_nested_addr = int64() never fails { string:s = string_concat("ab", "cde"); pass raw gvs(string_bytes(s), (raw setq(@s))); };
+// h2_view_first; on 176b: BORROW-015.
+func:c_h2_view_first = int64() never fails { string:s = string_concat("ab", "cde"); fixed uint8[]:v = string_bytes(s); W:w = W{ p: @s }; discard(raw wh(w)); string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64; };
+// h4_ptr_held; on 176b: BORROW-015.
+func:c_h4_ptr_held = int64() never fails { string:s = string_concat("ab", "cde"); string->:q = @s; fixed uint8[]:v = string_bytes(s); discard(raw setq(q)); string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64; };
+// n1_direct_write; on 176b: BORROW-015.
+func:c_n1_direct_write = int64() never fails { string:s = string_concat("ab", "cde"); W:w = W{ p: @s }; fixed uint8[]:v = string_bytes(s); <-w.p = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64; };
+// n5_same_call_copy; on 176b: exit 83.
+func:c_n5_same_call_copy = int64() never fails { string:s = string_concat("ab", "cde"); W:w = W{ p: @s }; W:w2 = w; pass raw wv(w2, s); };
+// l_recv_snap; on 176b: exit 83.
+func:c_l_recv_snap = int64() never fails { W2:a = W2{ s: string_concat("ab", "cde") }; WP:h = WP{ p: @a }; pass raw a.m3(h); };
+// c_dyn; on 176b: exit 83.
+func:c_c_dyn = int64() never fails { string:s = string_concat("ab", "cde"); W:w = W{ p: @s }; pass raw dv(w => dyn Tw, s); };
+// x_param_held; on 176b: exit 83.
+func:c_x_param_held = int64() never fails { string:s = string_concat("ab", "cde"); pass raw g(@s); };
+// x_param_lit; on 176b: exit 83.
+func:g__x_param_lit = int64(string->:p) never fails { pass raw wv(W{ p: p }, <-p); };
+func:c_x_param_lit = int64() never fails { string:s = string_concat("ab", "cde"); pass raw g__x_param_lit(@s); };
+// y_param_copy; on 176b: exit 83.
+func:g__y_param_copy = int64(string->:p) never fails { string->:q = p; pass raw wv(W{ p: q }, <-p); };
+func:c_y_param_copy = int64() never fails { string:s = string_concat("ab", "cde"); pass raw g__y_param_copy(@s); };
+// u_call; on 176b: exit 140.
+func:c_u_call = int64() never fails { List<int64>[2]:arr = [raw list_init::<int64>(1i64), raw list_init::<int64>(1i64)]; drop list_push(@arr[0i64], 97i64); bool:c = true; int32:i = 1i32; pass raw ws((raw ids(arr[0i64...2i64])), arr[0i64]); };
+// u_coal; on 176b: exit 140.
+func:c_u_coal = int64() never fails { List<int64>[2]:arr = [raw list_init::<int64>(1i64), raw list_init::<int64>(1i64)]; drop list_push(@arr[0i64], 97i64); bool:c = true; int32:i = 1i32; pass raw ws((raw idso(arr[0i64...1i64])) ?? arr[0i64...2i64], arr[0i64]); };
+// u_pick; on 176b: exit 140.
+func:c_u_pick = int64() never fails { List<int64>[2]:arr = [raw list_init::<int64>(1i64), raw list_init::<int64>(1i64)]; drop list_push(@arr[0i64], 97i64); bool:c = true; int32:i = 1i32; pass raw ws(pick (i) { (1i32) { give arr[0i64...2i64]; }, (*) { give arr[0i64...1i64]; } }, arr[0i64]); };
+// u_tern_cast; on 176b: exit 140.
+func:c_u_tern_cast = int64() never fails { List<int64>[2]:arr = [raw list_init::<int64>(1i64), raw list_init::<int64>(1i64)]; drop list_push(@arr[0i64], 97i64); bool:c = true; int32:i = 1i32; pass raw ws(((is (c) : arr[0i64...2i64] : arr[0i64...1i64]) =>! List<int64>[]), arr[0i64]); };
+// a5_one_param_ctl; on 176b: BORROW-015.
+func:g__a5_one_param_ctl = int64(string->:p) never fails { pass raw fs(<-p, (raw setq(p))); };
+func:c_a5_one_param_ctl = int64() never fails { string:s = string_concat("ab", "cde"); pass raw g__a5_one_param_ctl(@s); };
+// e1_elem_grow; on 176b: BORROW-015.
+func:c_e1_elem_grow = int64() never fails { List<int64>:l = raw mk_list(); pass raw fe(@l[0i64], (raw grow(@l))); };
+// la1_laundered_held; on 176b: exit 83.
+func:c_la1_laundered_held = int64() never fails { string:s = string_concat("ab", "cde"); W:w = W{ p: @s }; fixed uint8[]:v = raw vw(@s); discard(raw wh(w)); string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64; };
+// la4_table_field; on 176b: exit 83.
+func:c_la4_table_field = int64() never fails { Tb:t = Tb{ one: string_concat("ab", "cde") }; Gr:g = Gr{ tb: @t, k: 0i64 }; pass raw ff(@g); };
+// la3_laundered_field; on 176b: exit 127.
+func:c_la3_laundered_field = int64() never fails { T:t = T{ sm: string_concat("ab", "cde"), ot: string_concat("ab", "cde") }; fixed uint8[]:v = raw gt(@t); P:p = raw pi(@t); discard(raw pp(@p)); pass (v[0i64] => int64) - 30i64; };
+// h20_read_nested; on 176b: exit 67.
+func:c_h20_read_nested = int64() never fails { string:s = string_concat("ab", "cde"); W:w = W{ p: @s }; pass raw fs(s, (raw rh(w))); };
+// h22_view_read_ok; on 176b: exit 67.
+func:c_h22_view_read_ok = int64() never fails { string:s = string_concat("ab", "cde"); W:w = W{ p: @s }; fixed uint8[]:v = string_bytes(s); discard(raw rh(w)); pass (v[0i64] => int64) - 90i64; };
+// k_self; on 176b: exit 83.
+func:c_k_self = int64() never fails { string:t = string_concat("ab", "cde"); O:o = O{ s: string_concat("ab", "cde"), p: @t }; o.p = @o.s; pass raw selfw(o); };
+// ks1_self_view_ptr; on 176b: BORROW-015.
+func:c_ks1_self_view_ptr = int64() never fails { string:s = string_concat("ab", "cde"); V:w = V{ v: string_bytes(s), p: @s }; pass raw selfwp(@w); };
+// ks2_self_view_val; on 176b: BORROW-015.
+func:c_ks2_self_view_val = int64() never fails { string:s = string_concat("ab", "cde"); V:w = V{ v: string_bytes(s), p: @s }; pass raw selfwv(w); };
+// ks4_self_store_call; on 176b: BORROW-015.
+struct:O__ks4_self_store_call = { string:s; string:t; };
+func:c_ks4_self_store_call = int64() never fails { O__ks4_self_store_call:o = O__ks4_self_store_call{ s: string_concat("ab", "cde"), t: string_concat("", "") }; drop keep(@o); pass raw wr(@o); };
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

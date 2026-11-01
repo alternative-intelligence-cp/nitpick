@@ -987,14 +987,17 @@ func:invalidate = NIL(Encoder->:e, List<int32>:names) never fails {
         // container it stands for may be another one entirely.
         e.binds[i].lensym = 0i32 - 1i32;
         if (e.binds[i].lanes.count > 0i64) {
-            e.binds[i].lanes = raw lane_syms_new(e, names[k], ty);
+            // a local first: `e` is handed to a callee (DEF-415)
+            List<int32>:fresh = raw lane_syms_new(e, names[k], ty);
+            e.binds[i].lanes = move(fresh);
             continue;
         }
         if (!(raw is_named(e, ty))) { continue; }
         if (raw is_escaped(e, names[k])) { continue; }
         string:nm = raw smt_sym(raw intern_get(e.interns, names[k]),
                                 raw version_next(e, names[k]));
-        e.binds[i].sym = raw sym_new(e, nm, ty);
+        int32:fsym = raw sym_new(e, nm, ty);
+        e.binds[i].sym = fsym;   // DEF-415
         // A LIMITED NAME KEEPS ITS RULE ACROSS A MERGE (L-7): the fresh
         // version is "the value after the construct", and every write inside
         // was guarded by the rule -- the hypothesis, no obligation.
@@ -1016,7 +1019,8 @@ func:invalidate_aggs = NIL(Encoder->:e, List<int32>:roots) never fails {
         if (!(raw is_agg(e, ty))) { continue; }
         if (e.binds[i].sym < 0i32) { continue; }
         string:nm = raw smt_sym(raw intern_get(e.interns, roots[k]), raw version_next(e, roots[k]));
-        e.binds[i].sym = raw sym_new(e, nm, ty);
+        int32:fsym = raw sym_new(e, nm, ty);
+        e.binds[i].sym = fsym;   // DEF-415
         drop assert_rule(e, i);
     }
     pass NIL;
@@ -1470,7 +1474,8 @@ func:agg_write = NIL(Encoder->:e, ExprId:target, Term:val) never fails {
     if (e.binds[bi].sym < 0i32) { pass NIL; }
     Term:ob = raw bind_term(e, bi);
     string:nm = raw smt_sym(raw intern_get(e.interns, p.root), raw version_next(e, p.root));
-    e.binds[bi].sym = raw sym_new(e, nm, rty);
+    int32:fsym = raw sym_new(e, nm, rty);
+    e.binds[bi].sym = fsym;   // DEF-415
     Term:nb = raw bind_term(e, bi);
     int64:j = p.kinds.count;
     while (j > 0i64) decreases j {
@@ -3101,7 +3106,8 @@ func:bind_lanes_assign = NIL(Encoder->:e, int32:name, ExprId:src) never fails {
     int64:bi = raw bind_find(e, name);
     if (bi < 0i64) { pass NIL; }
     if (e.binds[bi].lanes.count == 0i64) { pass NIL; }
-    e.binds[bi].lanes = raw lane_syms_new(e, name, e.binds[bi].type_id);
+    List<int32>:fresh = raw lane_syms_new(e, name, e.binds[bi].type_id);
+    e.binds[bi].lanes = move(fresh);   // DEF-415
     drop bind_lanes_from(e, bi, src);
     pass NIL;
 };
@@ -3110,7 +3116,8 @@ func:bind_lanes_assign = NIL(Encoder->:e, int32:name, ExprId:src) never fails {
 func:lanes_refresh_all = NIL(Encoder->:e) never fails {
     for (int64:i in 0i64...e.binds.count) {
         if (e.binds[i].lanes.count == 0i64) { continue; }
-        e.binds[i].lanes = raw lane_syms_new(e, e.binds[i].name, e.binds[i].type_id);
+        List<int32>:fresh = raw lane_syms_new(e, e.binds[i].name, e.binds[i].type_id);
+        e.binds[i].lanes = move(fresh);   // DEF-415
     }
     pass NIL;
 };
@@ -4421,7 +4428,8 @@ func:counter_advance = NIL(Encoder->:e, int32:kind, int32:name, Term:step, Term:
     if (kind == 2i32) {
         if ((dollar >= 0i64) && (dollar < e.dollars.count)) {
             Term:cur = raw term_copy(e.dollars[dollar]);
-            e.dollars[dollar] = raw counter_next(e, cur, step, asc);
+            Term:nx = raw counter_next(e, cur, step, asc);
+            e.dollars[dollar] = move(nx);   // DEF-415
         }
         pass NIL;
     }

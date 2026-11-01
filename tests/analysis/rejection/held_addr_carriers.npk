@@ -1,0 +1,353 @@
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 83:23
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 93:23
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 103:23
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 113:23
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 123:23
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 133:23
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 143:23
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 151:14
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 160:14
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 169:14
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 178:23
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 187:23
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 196:15
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 205:20
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 214:27
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 222:23
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 230:24
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 238:14
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 247:14
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 256:24
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 264:23
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 273:23
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 283:23
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 291:23
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 299:23
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 306:30
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 313:32
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 320:38
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 330:27
+// A PLAIN ADDRESS HELD IN A CARRIER IS STILL HELD (DEF-344; closed by DEF-413, landing 176; these cases landing 177a's, measured refused on 176b and on this build): an array literal, a `List`, a nested literal, an Optional, a pointer to
+// a pointer, a by-value copy of the holder and a ternary's initialiser, then a move or a claim of the pointee; and the claim's cells of landing 167 (`cells_g`), which DEF-344's row left open until DEF-413 closed them: an address, cast or plain, in a local, a struct's
+// field, a callee-built struct or a copy, against a `$$i`/`$$m` claim of its root. Each is NITPICK-BORROW-013. The two legal controls stand in `held_addr_carriers_ok.npk`.
+mod:held_addr_carriers;
+error:E5;
+struct:H2 = { string:o; int64:k; };
+func:vwg = int32(H2->:p, H2->:q) never fails { fixed uint8[]:vw = string_bytes(p.o); q.o = string_concat("z", "w"); string:junk = string_concat("qq", "qq"); pass (vw[0i64] => int32); };
+struct:PH = { H2->:q; int64:k; };
+struct:PPH = { PH:ph; int64:k; };
+impl:H2 = { func:hset = NIL(H2->:self) never fails { self.o = string_concat("x", "y"); pass NIL; }; };
+func:wrg = NIL(H2->:p) never fails { p.o = string_concat("x", "y"); pass NIL; };
+func:rdg = int64(H2->:p) never fails { pass p.o.len; };
+func:wrg2 = NIL(H2->:p, any->:q) never fails { (<-(q =>! H2->)).o = string_concat("z", "w"); p.k = 5i64; pass NIL; };
+func:rdg2 = int32(H2->:p, any->:q) never fails { fixed uint8[]:vw = string_bytes(p.o); int64:k = (<-(q =>! H2->)).k; string:junk = string_concat("qq", "qq"); if (k != 1i64) { pass 1i32; } pass (vw[0i64] => int32); };
+struct:PA = { any->:q; int64:k; };
+func:vwga = int32(H2->:p, any->:q) never fails { fixed uint8[]:vw = string_bytes(p.o); (<-(q =>! H2->)).o = string_concat("z", "w"); string:junk = string_concat("qq", "qq"); pass (vw[0i64] => int32); };
+func:mkph = PH(H2->:p) never fails { pass PH{ q: p, k: 1i64 }; };
+func:idh = H2->(H2->:p) never fails { pass p; };
+// d344_array -- DEF-344 residual: an address in an array literal holder; on 176b: BORROW-013.
+func:c_d344_array = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2:g = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    bool:c = h.k > 0i64;
+    H2->[2]:a = [@h, @g];
+    int32:r = raw vwg($$m h, a[0i64]);
+    if (r != 97i32) { pass ((r) => int64); }
+    pass ((0i32) => int64);
+};
+// d344_list -- DEF-344 residual: an address pushed into a List; on 176b: BORROW-013.
+func:c_d344_list = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2:g = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    bool:c = h.k > 0i64;
+    List<H2->>:hs = raw list_init::<H2->>(2i64); drop list_push(@hs, @h);
+    int32:r = raw vwg($$m h, hs[0i64]);
+    if (r != 97i32) { pass ((r) => int64); }
+    pass ((0i32) => int64);
+};
+// d344_nested -- DEF-344 residual: an address in a nested literal; on 176b: BORROW-013.
+func:c_d344_nested = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2:g = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    bool:c = h.k > 0i64;
+    PPH:pp = PPH{ ph: PH{ q: @h, k: 1i64 }, k: 0i64 };
+    int32:r = raw vwg($$m h, pp.ph.q);
+    if (r != 97i32) { pass ((r) => int64); }
+    pass ((0i32) => int64);
+};
+// d344_optional -- DEF-344 residual: an Optional holding the address; on 176b: BORROW-013.
+func:c_d344_optional = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2:g = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    bool:c = h.k > 0i64;
+    H2->?:o = @h;
+    int32:r = raw vwg($$m h, o ?? @g);
+    if (r != 97i32) { pass ((r) => int64); }
+    pass ((0i32) => int64);
+};
+// d344_ptrptr -- DEF-344 residual: a pointer to a pointer holding the address; on 176b: BORROW-013.
+func:c_d344_ptrptr = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2:g = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    bool:c = h.k > 0i64;
+    H2->:p0 = @h; H2->->:pp = @p0;
+    int32:r = raw vwg($$m h, <-pp);
+    if (r != 97i32) { pass ((r) => int64); }
+    pass ((0i32) => int64);
+};
+// d344_structcopy -- DEF-344 residual: a by-value copy of the holder struct; on 176b: BORROW-013.
+func:c_d344_structcopy = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2:g = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    bool:c = h.k > 0i64;
+    PH:ph = PH{ q: @h, k: 1i64 }; PH:ph2 = ph;
+    int32:r = raw vwg($$m h, ph2.q);
+    if (r != 97i32) { pass ((r) => int64); }
+    pass ((0i32) => int64);
+};
+// d344_ternary -- DEF-344 residual: an address chosen by a ternary initialiser; on 176b: BORROW-013.
+func:c_d344_ternary = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2:g = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    bool:c = h.k > 0i64;
+    H2->:hp = is (c) : @h : @g;
+    int32:r = raw vwg($$m h, hp);
+    if (r != 97i32) { pass ((r) => int64); }
+    pass ((0i32) => int64);
+};
+// g1_ctl_plain_pointer_address_then_exclusive_claim -- DEF-343's CLAIM face? (party_kind_of at a cast), landing 167, cells_g: control (no cast): a plain pointer holds @h, an exclusive claim of h for a call -- D-286's plain party, REFUSED on 166; on 176b: BORROW-013.
+func:c_g1 = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    drop wrg($$m h);
+    hp.o = string_concat("z", "w");
+    if (h.o.len != 2i64) { pass ((11i32) => int64); }
+    pass ((0i32) => int64);
+};
+// g2_any_cast_address_then_exclusive_claim -- DEF-343's CLAIM face? (party_kind_of at a cast), landing 167, cells_g: the address CAST to any-> as it is taken: does the holder get D-286's plain party? (party_kind_of has no cast arm); on 176b: BORROW-013.
+func:c_g2 = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    drop wrg($$m h);
+    (<-(ap =>! H2->)).o = string_concat("z", "w");
+    if (h.o.len != 2i64) { pass ((11i32) => int64); }
+    pass ((0i32) => int64);
+};
+// g3_same_type_cast_address_then_exclusive_claim -- DEF-343's CLAIM face? (party_kind_of at a cast), landing 167, cells_g: the address cast to its OWN type as it is taken, then the exclusive claim; on 176b: BORROW-013.
+func:c_g3 = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = (@h) =>! H2->;
+    drop wrg($$m h);
+    hp.o = string_concat("z", "w");
+    if (h.o.len != 2i64) { pass ((11i32) => int64); }
+    pass ((0i32) => int64);
+};
+// g4_ctl_any_cast_address_then_shared_claim_write_after -- DEF-343's CLAIM face? (party_kind_of at a cast), landing 167, cells_g: control: the cast address held, a SHARED claim of h for a call, the write through the cast pointer AFTER the call; on 176b: BORROW-013.
+func:c_g4 = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    int64:n = raw rdg($$i h);
+    (<-(ap =>! H2->)).o = string_concat("z", "w");
+    if (n != 4i64) { pass ((11i32) => int64); }
+    pass ((0i32) => int64);
+};
+// g4k_ctl_plain_pointer_then_shared_claim_write_after -- DEF-343's CLAIM face? (party_kind_of at a cast), landing 167, cells_g: g4's no-cast twin (a plain address beside a SHARED claim: D-286's rule decides, measured for parity); on 176b: BORROW-013.
+func:c_g4k = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    int64:n = raw rdg($$i h);
+    hp.o = string_concat("z", "w");
+    if (n != 4i64) { pass ((11i32) => int64); }
+    pass ((0i32) => int64);
+};
+// g5_any_cast_address_and_exclusive_claim_to_one_callee -- DEF-343's CLAIM face? (party_kind_of at a cast), landing 167, cells_g: the exclusive claim of h and the cast pointer to h handed to ONE callee that writes through both; on 176b: BORROW-013.
+func:c_g5 = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    drop wrg2($$m h, ap);
+    if (h.o.len != 2i64) { pass ((11i32) => int64); }
+    pass ((0i32) => int64);
+};
+// g5k_ctl_plain_pointer_and_exclusive_claim_to_one_callee -- DEF-343's CLAIM face? (party_kind_of at a cast), landing 167, cells_g: g5's no-cast twin; on 176b: BORROW-013.
+func:wrg2__g5k = NIL(H2->:p, H2->:q) never fails { q.o = string_concat("z", "w"); p.k = 5i64; pass NIL; };
+func:c_g5k = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    drop wrg2__g5k($$m h, hp);
+    if (h.o.len != 2i64) { pass ((11i32) => int64); }
+    pass ((0i32) => int64);
+};
+// g6_any_cast_address_claim_callee_views_through_claim_writes_through_cast -- DEF-343's CLAIM face? (party_kind_of at a cast), landing 167, cells_g: THE HAZARD: the callee views through the exclusive claim's holder and writes through the cast pointer -- the claim's guarantee (no other live address) broken by the cast; on 176b: BORROW-013.
+func:vwg__g6 = int32(H2->:p, any->:q) never fails { fixed uint8[]:vw = string_bytes(p.o); (<-(q =>! H2->)).o = string_concat("z", "w"); string:junk = string_concat("qq", "qq"); pass (vw[0i64] => int32); };
+func:c_g6 = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    int32:r = raw vwg__g6($$m h, ap);
+    if (r != 97i32) { pass ((r) => int64); }
+    pass ((0i32) => int64);
+};
+// g6k_ctl_plain_pointer_claim_callee_views_through_claim_writes_through_pointer -- DEF-343's CLAIM face? (party_kind_of at a cast), landing 167, cells_g: g6's no-cast twin; on 176b: BORROW-013.
+func:c_g6k = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    int32:r = raw vwg($$m h, hp);
+    if (r != 97i32) { pass ((r) => int64); }
+    pass ((0i32) => int64);
+};
+// g6n_ctl_any_cast_address_read_only_callee_beside_claim -- DEF-343's claim face, the legal controls, landing 167, cells_g: g6's shape with the callee only READING through the cast pointer -- D-286 still refuses the plain address beside an exclusive claim (expected REFUSED on 13; measured for the record); on 176b: BORROW-013.
+func:c_g6n = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    any->:ap = (@h) =>! any->;
+    int32:r = raw rdg2($$m h, ap);
+    if (r != 97i32) { pass ((r) => int64); }
+    pass ((0i32) => int64);
+};
+// g7_any_cast_address_in_struct_field_then_exclusive_claim -- DEF-343's CLAIM face? (party_kind_of at a cast), landing 167, cells_g: the cast address kept in a struct literal's field, then the exclusive claim; on 176b: BORROW-013.
+func:c_g7 = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    PA:pa = PA{ q: (@h) =>! any->, k: 1i64 };
+    drop wrg($$m h);
+    (<-(pa.q =>! H2->)).o = string_concat("z", "w");
+    if (h.o.len != 2i64) { pass ((11i32) => int64); }
+    pass ((0i32) => int64);
+};
+// g7k_ctl_plain_address_in_struct_field_then_exclusive_claim -- DEF-343's CLAIM face? (party_kind_of at a cast), landing 167, cells_g: g7's no-cast twin; on 176b: BORROW-013.
+func:c_g7k = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    PH:ph = PH{ q: @h, k: 1i64 };
+    drop wrg($$m h);
+    ph.q.o = string_concat("z", "w");
+    if (h.o.len != 2i64) { pass ((11i32) => int64); }
+    pass ((0i32) => int64);
+};
+// g8_any_cast_address_in_struct_field_claim_callee_views_through_claim_writes_through_cast -- a plain address kept in an AGGREGATE LITERAL's field raises no plain party? landing 167, cells_g: the hazard with the cast address in the struct literal's field; on 176b: BORROW-013.
+func:c_g8 = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    PA:pa = PA{ q: (@h) =>! any->, k: 1i64 };
+    int32:r = raw vwga($$m h, pa.q);
+    if (r != 97i32) { pass ((r) => int64); }
+    pass ((0i32) => int64);
+};
+// g8k_plain_address_in_struct_field_claim_callee_views_through_claim_writes_through_field -- a plain address kept in an AGGREGATE LITERAL's field raises no plain party? landing 167, cells_g: THE HAZARD, no cast: the address kept in a struct literal's field, the callee views through the exclusive claim's holder and writes through the field; on 176b: BORROW-013.
+func:c_g8k = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    PH:ph = PH{ q: @h, k: 1i64 };
+    int32:r = raw vwg($$m h, ph.q);
+    if (r != 97i32) { pass ((r) => int64); }
+    pass ((0i32) => int64);
+};
+// g9k_plain_address_copied_from_struct_field_claim -- a plain address kept in an AGGREGATE LITERAL's field raises no plain party? landing 167, cells_g: the address kept in a struct literal's field, COPIED out to a pointer local, then the claim (does the copy carry the party?); on 176b: BORROW-013.
+func:c_g9k = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    PH:ph = PH{ q: @h, k: 1i64 };
+    H2->:hp = ph.q;
+    int32:r = raw vwg($$m h, hp);
+    if (r != 97i32) { pass ((r) => int64); }
+    pass ((0i32) => int64);
+};
+// g10k_plain_address_assigned_into_struct_field_after_literal_claim -- a plain address kept in an AGGREGATE LITERAL's field raises no plain party? landing 167, cells_g: the address ASSIGNED into a struct's field after the literal, then the claim; on 176b: BORROW-013.
+func:c_g10k = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2:g = H2{ o: string_concat("ef", "gh"), k: 2i64 };
+    PH:ph = PH{ q: @g, k: 1i64 };
+    ph.q = @h;
+    int32:r = raw vwg($$m h, ph.q);
+    if (r != 97i32) { pass ((r) => int64); }
+    pass ((0i32) => int64);
+};
+// g11k_plain_address_through_callee_built_struct_claim -- a plain address kept in an AGGREGATE LITERAL's field raises no plain party? landing 167, cells_g: the address carried into a callee-built struct, then the claim (DEF-307's c8d shape in the claim domain); on 176b: BORROW-013.
+func:c_g11k = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    PH:ph = raw mkph(@h);
+    int32:r = raw vwg($$m h, ph.q);
+    if (r != 97i32) { pass ((r) => int64); }
+    pass ((0i32) => int64);
+};
+// g12k_call_result_pointer_then_claim -- the plain party (D-286) for a carried address, landing 167, cells_g: the address carried through a CALL's result into a pointer local, then the exclusive claim beside it; on 176b: BORROW-013.
+func:c_g12k = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = raw idh(@h);
+    int32:r = raw vwg($$m h, hp);
+    if (r != 97i32) { pass ((r) => int64); }
+    pass ((0i32) => int64);
+};
+// g13k_plain_address_argument_beside_claim_one_call -- the plain party (D-286) for a carried address, landing 167, cells_g: control: a bare  ARGUMENT beside  in one call (D-286's admission); on 176b: BORROW-013.
+func:c_g13k = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    int32:r = raw vwg($$m h, @h);
+    if (r != 97i32) { pass ((r) => int64); }
+    pass ((0i32) => int64);
+};
+// g14_cast_address_argument_beside_claim_one_call -- the plain party (D-286) for a carried address, landing 167, cells_g: the address CAST as a call argument beside the claim in one call; on 176b: BORROW-013.
+func:c_g14 = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    int32:r = raw vwga($$m h, (@h) =>! any->);
+    if (r != 97i32) { pass ((r) => int64); }
+    pass ((0i32) => int64);
+};
+// g15k_call_result_address_argument_beside_claim_one_call -- the plain party (D-286) for a carried address, landing 167, cells_g: the address through a call's result as an argument beside the claim in one call; on 176b: BORROW-013.
+func:c_g15k = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    int32:r = raw vwg($$m h, raw idh(@h));
+    if (r != 97i32) { pass ((r) => int64); }
+    pass ((0i32) => int64);
+};
+// g16k_pointer_copy_then_claim -- the plain party (D-286) for a carried address, landing 167, cells_g: control: a COPY of a pointer local, the claim beside the copy (the original's party is live); on 176b: BORROW-013.
+func:c_g16k = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2->:hp = @h;
+    H2->:hp2 = hp;
+    {
+        int32:r = raw vwg($$m h, hp2);
+        if (r != 97i32) { pass ((r) => int64); }
+    }
+    pass ((0i32) => int64);
+};
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

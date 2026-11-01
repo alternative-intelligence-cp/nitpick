@@ -1,0 +1,151 @@
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 78:149
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 80:176
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 82:144
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 84:142
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 86:144
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 88:163
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 90:154
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 92:181
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 94:185
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 96:169
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 98:173
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 100:204
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 102:144
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 104:170
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 106:169
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 108:165
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 110:162
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 112:180
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 114:166
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 116:172
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 118:169
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 120:177
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 122:179
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 124:186
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 126:196
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 128:172
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 130:179
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 132:167
+// A PART OF A VALUE NO BINDING HOLDS, BUILT WHERE IT STANDS (NITPICK-TYPE-105, DEF-419's closed alternative, landing 177a; management_12's ruling of 2026-11-01 07:00, accepted 07:32). `W{ ptr: @h, k: (raw take(move(h.s))) }.ptr`: a struct, array or `Result` literal's other parts run, an
+// `@` in one and a `move` in another, and no analysis follows them through the read of this part (60 on 175 and 176b, a fabricated length). Refused at the member, the `?.` or the index, off a literal, a `pick`, or an operator or cast with one as an arm, in every position. One rule: plain data is not exempt (`a_ok_read_first`,
+// `a_index_k`; a later exemption is on the post-180 list). The way out is a binding (`lp_bound_ok`, in `literal_addr_initialiser_ok.npk`).
+mod:literal_part;
+error:E5;
+struct:H = { string:s; int64:k; };
+struct:W = { H->:ptr; };
+impl:W = { func:mv = int64(W:self, int64:k) never fails { pass (<-self.ptr).s.len + k; }; func:mt = int64(W:self, int64:k) never fails { pass k; }; };
+func:take = int64(move string:x) never fails { pass 0i64; };
+func:gp = int64(H->:p, int64:k) never fails { pass (<-p).s.len + k; };
+func:mk_h = H(string:t) never fails { pass H{ s: string_concat(t, "cde"), k: 1i64 }; };
+impl:H = { func:mh = int64(Self->:self, int64:k) never fails { pass (<-self).s.len + k; }; };
+struct:WP = { H->->:pp; };
+struct:C = { H->:p; int64:k; };
+struct:CC = { C:c; int64:k; };
+func:rd = int64(C:c) never fails { pass (<-c.p).s.len; };
+func:id64 = int64(int64:k) never fails { pass k; };
+func:fs = int64(string:v, int64:k) never fails { pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:mk_s = string() never fails { pass string_concat("ab", "cde"); };
+struct:SW = { string:s; int64:k; };
+// a_member_lit; on 176b: exit 60.
+func:c_a_member_lit = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; pass raw gp(W{ ptr: @h }.ptr, (raw take(move(h.s)))); };
+// a_member_tern; on 176b: exit 60.
+func:c_a_member_tern = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; pass raw gp((is (b) : W{ ptr: @h } : W{ ptr: @g }).ptr, (raw take(move(h.s)))); };
+// a_index_lit; on 176b: exit 60.
+func:c_a_index_lit = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; pass raw gp([@h, @g][0i64], (raw take(move(h.s)))); };
+// a_index_k; on 176b: exit 60.
+func:c_a_index_k = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; pass raw gp([@h, @g][(raw take(move(h.s)))], 0i64); };
+// a_range_lit; on 176b: BORROW-012.
+func:c_a_range_lit = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; pass raw gp([@h, @g][0i64...1i64][0i64], (raw take(move(h.s)))); };
+// a_deref_lit; on 176b: exit 64.
+func:c_a_deref_lit = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; H->:q = @g; pass raw gp(<-(WP{ pp: @q }.pp), (raw take(move(h.s)))); };
+// a_ok_read_first; on 176b: exit 65.
+func:c_a_ok_read_first = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; int64:z = (<-(W{ ptr: @h }.ptr)).s.len; int64:y = (raw take(move(h.s))); pass z + y; };
+// l_member; on 176b: exit 60.
+func:c_l_member = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; C:c = CC{ c: C{ p: @h, k: (raw take(move(h.s))) }, k: 0i64 }.c; pass raw rd(c); };
+// l_index; on 176b: exit 60.
+func:c_l_index = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; C:c = [C{ p: @h, k: (raw take(move(h.s))) }, C{ p: @g, k: 0i64 }][0i64]; pass raw rd(c); };
+// l_read; on 176b: exit 60.
+func:c_l_read = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; int64:z = (<-(C{ p: @h, k: (raw take(move(h.s))) }.p)).s.len; pass z; };
+// l_read_i; on 176b: exit 60.
+func:c_l_read_i = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; int64:z = (<-([C{ p: @h, k: (raw take(move(h.s))) }][0i64].p)).s.len; pass z; };
+// l_read_t; on 176b: exit 60.
+func:c_l_read_t = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; int64:z = (<-((is (b) : C{ p: @h, k: (raw take(move(h.s))) } : C{ p: @g, k: 0i64 }).p)).s.len; pass z; };
+// l_read_ix; on 176b: exit 60.
+func:c_l_read_ix = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; int64:z = (<-([@h, @g][(raw take(move(h.s)))])).s.len; pass z; };
+// l_autoderef; on 176b: exit 60.
+func:c_l_autoderef = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; int64:z = C{ p: @h, k: (raw take(move(h.s))) }.p.s.len; pass z; };
+// l_pass_read; on 176b: exit 60.
+func:c_l_pass_read = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; pass (<-(C{ p: @h, k: (raw take(move(h.s))) }.p)).s.len; };
+// l_pass_auto; on 176b: exit 60.
+func:c_l_pass_auto = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; pass C{ p: @h, k: (raw take(move(h.s))) }.p.s.len; };
+// l_pass_k; on 176b: exit 60.
+func:c_l_pass_k = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; pass C{ p: @h, k: (raw take(move(h.s))) }.k; };
+// l_bin_read; on 176b: exit 60.
+func:c_l_bin_read = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; int64:z = 1i64 + (<-(C{ p: @h, k: (raw take(move(h.s))) }.p)).s.len; pass z - 1i64; };
+// l_if_read; on 176b: exit 60.
+func:c_l_if_read = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; if ((<-(C{ p: @h, k: (raw take(move(h.s))) }.p)).s.len == 0i64) { pass 0i64; } pass 1i64; };
+// l_while_read; on 176b: exit 60.
+func:c_l_while_read = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; while ((<-(C{ p: @h, k: (raw take(move(h.s))) }.p)).s.len == 7i64) decreases 0i64 { pass 1i64; } pass 0i64; };
+// l_sel_read; on 176b: exit 60.
+func:c_l_sel_read = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; pick ((<-(C{ p: @h, k: (raw take(move(h.s))) }.p)).s.len) { (0i64) { pass 0i64; }, (*) { pass 1i64; } } pass 2i64; };
+// l_arg_read; on 176b: exit 60.
+func:c_l_arg_read = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; pass raw id64((<-(C{ p: @h, k: (raw take(move(h.s))) }.p)).s.len); };
+// l_tmpl_read; on 176b: exit 60.
+func:c_l_tmpl_read = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; string:u = `v&{(<-(C{ p: @h, k: (raw take(move(h.s))) }.p)).s.len}`; pass u.len - 2i64; };
+// l_assign_read; on 176b: exit 60.
+func:c_l_assign_read = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; int64:z = 3i64; z = (<-(C{ p: @h, k: (raw take(move(h.s))) }.p)).s.len; pass z; };
+// l_give_read; on 176b: exit 60.
+func:c_l_give_read = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; int64:z = pick (i) { (*) { give (<-(C{ p: @h, k: (raw take(move(h.s))) }.p)).s.len; } }; pass z; };
+// l_drop_read; on 176b: exit 60.
+func:c_l_drop_read = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = h.k > 0i64; int32:i = 1i32; discard((<-(C{ p: @h, k: (raw take(move(h.s))) }.p)).s.len); pass 0i64; };
+// s_deref_lit; on 176b: exit 140.
+func:c_s_deref_lit = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); bool:b = s.len > 2i64; int32:i = 1i32; H:h = raw mk_h("ab"); pass raw fs((<-(W{ ptr: @h }.ptr)).s, (raw take(move(h.s)))); };
+// s_member_lit; on 176b: exit 67.
+func:c_s_member_lit = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); bool:b = s.len > 2i64; int32:i = 1i32; pass raw fs(SW{ s: move(t), k: 0i64 }.s, 0i64); };
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -525,23 +525,7 @@ func:check_pick_view_binds = NIL(ExprTyper->:e, int32:selt, bool:consuming,
 
 // DOES THIS ARM BIND A NAME? `_` binds nothing (D-266: it views nothing and
 // freezes nothing). Read by both spellings' arm walks and by the freeze.
-pub func:arm_binds_name = bool(ExprTyper->:e, StmtNode:arm) never fails {
-    PatId:apid = raw arm_pattern(arm);
-    if (raw pat_is_none(apid)) { pass false; }
-    PatNode:pn = raw ast_pat(e.ast, apid);
-    int32:bn = 0i32;
-    if (pn.kind == PatKind.PatEnumDestructure) { bn = raw pat_enum_bind_count(e.ast, pn); }
-    if (pn.kind == PatKind.PatStructDestructure) { bn = raw pat_bind_count(pn); }
-    for (int32:b in 0i32...bn) {
-        int32:bnm = 0i32;
-        if (pn.kind == PatKind.PatEnumDestructure) { bnm = raw pat_enum_bind(e.ast, pn, b); }
-        if (pn.kind == PatKind.PatStructDestructure) { bnm = raw ast_id_at(e.ast, raw pat_bind_start(pn), b); }
-        if (bnm != 0i32) {
-            if (!(raw string_eq(raw intern_get(e.interns, bnm), "_"))) { pass true; }
-        }
-    }
-    pass false;
-};
+pub func:arm_binds_name = bool(ExprTyper->:e, StmtNode:arm) never fails { pass raw arm_binds_in(e.ast, e.interns, arm); };
 
 // One binding, one payload, one recorded type. A variant carrying MORE than one
 // payload is 0.9's — the backend rungs it, and its multi-binding typing lands

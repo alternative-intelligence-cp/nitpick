@@ -185,8 +185,7 @@ pub func:graph_load = int32(ModuleGraph->:g, string:raw_path, Span:from) never f
         pass existing;
     }
 
-    string:text = raw srcmgr_text_proven(@g.sm, file);
-    TokenList:toks = raw lex_all(file, text, g.interns, g.diags);
+    TokenList:toks = raw lex_all(file, raw srcmgr_text_proven(@g.sm, file), g.interns, g.diags);
     Parser:p = raw parser_init(@toks, @g.ast, g.diags, g.interns);
     DeclId:root = raw p_parse_module(@p);
     drop check_file_header(g, file, root);
@@ -285,8 +284,7 @@ func:check_file_header = NIL(ModuleGraph->:g, int32:file, DeclId:root) never fai
 // name what it declares.
 pub func:graph_load_prelude = int32(ModuleGraph->:g) never fails {
     int32:file = raw srcmgr_add_synthetic(@g.sm, raw PRELUDE_PATH(), raw PRELUDE_SOURCE());
-    string:text = raw srcmgr_text_proven(@g.sm, file);
-    TokenList:toks = raw lex_all(file, text, g.interns, g.diags);
+    TokenList:toks = raw lex_all(file, raw srcmgr_text_proven(@g.sm, file), g.interns, g.diags);
     Parser:p = raw parser_init(@toks, @g.ast, g.diags, g.interns);
     DeclId:root = raw p_parse_module(@p);
 

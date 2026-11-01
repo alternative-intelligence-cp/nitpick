@@ -1,0 +1,51 @@
+// expect-exit: 0
+// THE HOLDER'S BLOCK ENDED, OR ANOTHER OWNER (DEF-344, landing 177a; the legal controls of `tests/analysis/rejection/held_addr_carriers.npk`, landing 167's g2n and g3n). The exit is the failing case's number.
+mod:held_addr_carriers_ok;
+error:E5;
+struct:H2 = { string:o; int64:k; };
+impl:H2 = { func:hset = NIL(H2->:self) never fails { self.o = string_concat("x", "y"); pass NIL; }; };
+func:wrg = NIL(H2->:p) never fails { p.o = string_concat("x", "y"); pass NIL; };
+// g2n_ctl_any_cast_address_block_ended_then_claim -- DEF-343's claim face, the legal controls, landing 167, cells_g: control of g2: the cast address's block ended before the claim; on 176b: exit 0, here: exit 0.
+func:c_g2n = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    {
+        any->:ap = (@h) =>! any->;
+        (<-(ap =>! H2->)).k = 7i64;
+    }
+    drop wrg($$m h);
+    if (h.o.len != 2i64) { pass ((11i32) => int64); }
+    pass ((0i32) => int64);
+};
+// g3n_ctl_same_type_cast_address_of_other_then_claim -- DEF-343's claim face, the legal controls, landing 167, cells_g: control of g3: the cast address of ANOTHER struct held across the claim; on 176b: exit 0, here: exit 0.
+func:c_g3n = int64() never fails {
+    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
+    H2:g = H2{ o: string_concat("ef", "gh"), k: 2i64 };
+    H2->:gp = (@g) =>! H2->;
+    drop wrg($$m h);
+    gp.k = 9i64;
+    if (h.o.len != 2i64) { pass ((11i32) => int64); }
+    pass ((0i32) => int64);
+};
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c_g2n()) != 0i64) { exit 1i32; }
+    if ((raw c_g3n()) != 0i64) { exit 2i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

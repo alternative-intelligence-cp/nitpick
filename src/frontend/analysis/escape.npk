@@ -115,6 +115,8 @@ pub struct:Escape = {
     // is the direction a borrow checker is allowed to be wrong in.
     bool:reporting;
     bool:changed;
+    // `escape_pick_gives` asks `collect_gives_refs` for the `give` operands themselves (E-c, landing 177a).
+    bool:gives_ids;
 
     // THE PICK EXPRESSIONS BEING WALKED (DEF-278, landing 152): one frame per open
     // `pick` used as a value, innermost last, each a 0 that the statement walk's
@@ -301,7 +303,7 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
     Escape:x = Escape{ ast: ast, tab: tab, types: types, etypes: etypes,
                        diags: diags, tr: tr, holds: mem =>! wild bool->,
                        holds_count: size =>! int32, redef: rdmem =>! wild bool->,
-                       reporting: false, changed: false,
+                       reporting: false, changed: false, gives_ids: false,
                        givex: raw list_init::<int32>(8i64),
                        vr_head: hmem =>! wild int32->, vr_ptr: pmem =>! wild bool->,
                        vr_root: raw list_init::<int32>(64i64),
@@ -914,6 +916,9 @@ func:mu_add = NIL(Escape->:x, int32:k, int32:path) never fails {
 pub func:escape_mut_first = int32(Escape->:x, int32:callee, int32:k) never fails {
     if (callee <= 0i32) { pass (0i32 - 2i32); }
     if (callee >= x.decl_count) { pass (0i32 - 2i32); }
+    // A VARIADIC ELEMENT IS ON NO POSITION OF THE SUMMARY (V of 177a; management_12's ruling of 2026-11-01 10:31): `vsw(s, @s)`, the callee writing `<-rest[0]`, read as a callee that writes nothing (83 on 175, 176b and n4): the position is written WHOLE, unread (`v3_read_only` over-refused, the post-180 list).
+    DeclNode:vfd = raw ast_decl(x.ast, DeclId{ index: callee });
+    if ((vfd.kind == DeclKind.DeclFunctionDecl) && (k >= (raw fn_param_count(x.ast, vfd))) && (!(raw decl_is_none(raw fn_variadic(x.ast, vfd))))) { pass (0i32 - 2i32); }
     pass x.mu_head[raw flow_slot(callee, k)];
 };
 pub func:escape_mut_next = int32(Escape->:x, int32:i) never fails {
@@ -2875,7 +2880,8 @@ func:record_mut_of_call = NIL(Escape->:x, ExprId:call, ExprId:recv, bool:auto_re
     if (!(raw expr_is_none(recv))) { base = 1i32; }
     int32:total = base + count;
     for (int32:j in 0i32...total) {
-        if (callee > 0i32) { if (x.mu_head[raw flow_slot(callee, j)] < 0i32) { continue; } }
+        int32:first = raw escape_mut_first(x, callee, j);   // a variadic position answers -2 as an unknown callee does
+        if (first == (0i32 - 1i32)) { continue; }
         ExprId:aj = recv;
         bool:aj_auto = auto_ref;
         if (j >= base) { aj = ExprId{ index: raw ast_id_at(x.ast, start, j - base) }; aj_auto = false; }
@@ -2918,13 +2924,13 @@ func:record_mut_of_call = NIL(Escape->:x, ExprId:call, ExprId:recv, bool:auto_re
         // local copy of a pointer parameter (`wr(q2)`, `wrs(@q2.o)`) writes the
         // copy's targets; a parameter's or a frame-owned root records nothing here.
         drop record_mut_through_indirection(x, dp, true);
-        if (callee <= 0i32) {
+        if (first == (0i32 - 2i32)) {
             int32:whole = 0i32;
             if (sl_arg && (!sl_range)) { whole = raw path_intern(x, string_concat("R", "")); }
             drop record_mut_of_place(x, dp, whole);
             continue;
         }
-        int32:e = x.mu_head[raw flow_slot(callee, j)];
+        int32:e = first;
         while (e >= 0i32) decreases e + 1i32 {
             int32:mp = x.mu_path[e => int64];
             if (sl_range) { mp = raw escape_slice_rest_path(x, mp); }
@@ -3503,6 +3509,10 @@ func:collect_gives_refs = NIL(Escape->:x, StmtId:sid, int32:depth, List<ViewRef>
     if (sid.index == 0i32) { pass NIL; }
     StmtNode:s = raw ast_stmt(x.ast, sid);
     if (s.kind == StmtKind.StmtGiveStmt) {
+        if (x.gives_ids) {   // `escape_pick_gives`: the operand itself
+            drop list_push(out, ViewRef{ root: 0i32, place: (raw stmt_operand(s)).index, kind: 0i32, path: 0i32 });
+            pass NIL;
+        }
         drop collect_view_refs(x, raw stmt_operand(s), depth - 1i32, out);
         pass NIL;
     }
@@ -3548,6 +3558,21 @@ func:collect_gives_refs = NIL(Escape->:x, StmtId:sid, int32:depth, List<ViewRef>
 
 // THE VIEW-MAKER CLASSIFICATION, for the aliasing walk (one definition of "what
 // a view-maker views", D-249's): the viewed place of a node, or none.
+// A PICK EXPRESSION'S `give` OPERANDS (E-c, landing 177a; `value_arms`), in source order, off `collect_gives_refs`' own statement walk and the one bound no tree exceeds.
+pub func:escape_pick_gives = NIL(Escape->:x, ExprNode:n, List<int32>->:out) never fails {
+    List<ViewRef>:gs = raw list_init::<ViewRef>(4i64);
+    x.gives_ids = true;
+    for (int32:i in 0i32...(raw pickx_arm_count(n))) {
+        StmtNode:parm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, raw pickx_arm_start(n), i));
+        drop collect_gives_refs(x, raw arm_body(parm), raw AST_DEPTH_MAX(), @gs);
+    }
+    x.gives_ids = false;
+    for (int64:g in 0i64...gs.count) {
+        drop list_push(out, gs[g].place);
+    }
+    pass NIL;
+};
+
 pub func:escape_view_place = ExprId(Escape->:x, ExprNode:n) never fails {
     pass (raw view_place(x, n));
 };

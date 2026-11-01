@@ -1088,8 +1088,7 @@ func:derive_in_module = NIL(ModuleGraph->:g, DeclId:mod_id, int32:index) never f
         o.file = file;
         drop list_push(@g.origins, o);
     }
-    string:dtext = raw srcmgr_text_proven(@g.sm, file);
-    TokenList:toks = raw lex_all(file, dtext, g.interns, g.diags);
+    TokenList:toks = raw lex_all(file, raw srcmgr_text_proven(@g.sm, file), g.interns, g.diags);
     Parser:p = raw parser_init(@toks, @g.ast, g.diags, g.interns);
     DeclId:groot = raw p_parse_module(@p);
 

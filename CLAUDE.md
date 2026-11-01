@@ -8,71 +8,37 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   listener's and the fuzzer's findings, safety before correctness before performance. Cycles 0.0–1.5 are complete
   (`meta/roadmap/done/`); 1.4 made the compiler self-hosting (D-202) and 1.5 made the verification leg (`npkg verify`, the floor's
   specification and models, the schedule explorer).
-- **main = landing 176** (2026-11-01; wt/54b, branch 54-r176, on 41e756a; ONE commit 1582913 squashed from the reviewed first
-  build 9985a73 (kept on `54-r176-a`; itself from the four WIP commits on `54-r176-wip`) and the eight faces of management_11's
-  reviews A and B, built as 176b) — DEF-405 + DEF-409 + DEF-410 (a)-(f) + DEF-411 + DEF-413 + DEF-414 (analysis/alias.npk
-  +375/−66, analysis/bindings.npk +258/−7, analysis/escape.npk +7, type_members.npk +50, type_stmt.npk +12, type_codes.npk +8 by
-  numstat, a comment each in ir_func.npk and ir_stmt.npk; +486/−67 code lines = the first build's +430/−59 and the faces' +56/−8,
-  each face counted under its cap): THE ANALYSES JUDGE AT THE MOMENT THE CODE RUNS. A `defer` body is judged for its block's EXIT:
-  no inherited `is_error` refinement (TAINT-001), its reads pending against a `move`, a `pass` or a free until the block ends
-  (MOVE-001/MOVE-002; a nested `defer` pends only its own reads; a pending binding REFILLED before the block ends is refused by
-  position, the accepted over-refusal), a place past the walk's fuel refused (ASSIGN-003, DEF-409), `exit` inside it refused
-  (TYPE-040, DEF-411; it trapped the compiler) (DEF-405). A root moved inside its own index is MOVE-001 at the element (DEF-410
-  (a)). A call-result view (`string_bytes(s)[IDX]`, a view in a literal's field, under `??`/`?|`, a user view-returning call's
-  result), a plain address (`@h` bare, inside a literal's value or chosen by a ternary, the implicit `Self->` receiver) to the
-  CALL's return, an assignment's TARGET container before its value runs, a range view's header before its bounds (the chain
-  walked bottom-up: a growth under a range step is legal, one in the view's index or bound is not), and a BY-VALUE owner argument
-  or `Self` receiver -- a SNAPSHOT sharing the owner's bytes, raised where it is taken, to the call's return (176b, face (f)) -- are
-  PARTIES of the aliasing analysis; a write-capable or vacating access inside the window is BORROW-015 (a view, a target, a
-  snapshot) or BORROW-013 (an address) (DEF-410 (b)–(f); each read FREED or vacated memory on 175; a view read to completion
-  before a later invalidation in the same statement and the call window matched by root refused deliberately, their
-  relaxations after 180). A plain address HELD by a binding is a party to its holder's block's end: a move, a
-  `dalloc`/`ralloc`/`wildx_free` or a `$$i`/`$$m` claim of its pointee BORROW-013, an `@` under its literal initialiser's
-  values a statement-scoped address party (DEF-413; D-286 (1) amended; lexical and by the root, deliberately; DEF-159's re-fill idiom refused and parked under
-  `tests/parked/def413-flow/`; the flow relaxation after 180, a re-pointed holder its obligation; the 18 unit-test fixtures' 33
-  holder sites re-spelled, its measured over-refusal). A `Self->` receiver holding a call, a `move`, a claim, an address, a
-  `pick`, an `await`, a spawn, or a call inside a list or template literal is TYPE-103 (DEF-414, pre-existing: `emit_method_call`
-  forms the receiver TWICE, `emit_expr` then `addr_of` -- a counter read 2 for 1, a `move` moved twice; closed for safety, the
-  emitter fix after 180; a `dyn` receiver exempt). Emission: tree 646 of 646 byte-identical, libs/apps 4,112 (1,948 identical, 2,164 both-refused, 0 different, 0 newly
-  refused). The sweep over 5,411 files: 113 appeared, all in the landing's own tests and parked programs; 8 vanished (REACH-002);
-  0 sites outside the tests. The manifest 7,695 obligations (3,710 discharged, 2,974 open), 32 rows added, 1 removed, 256 re-keyed,
-  0 verdicts moved, 0 discharged counts fell, the floor's 388 unchanged. peak_live 223,516,308 local (98.98 % of the ceiling,
-  1.02 % headroom; −155,210 against the first build's 223,671,518, whose 99.05 % was reported to management before its harness;
-  the ~1 % line stands for 177–180). Also: the evaluation-order census, management's mechanical check for the landing (118 cells;
-  `wt/54b/.internal/t176/census/CENSUS_TABLE.md`, in 1.6.1e.md's record) found faces (d), (e) and DEF-414; THE SLIP recorded (the
-  first build's count taken at the end, +430/−59 against ≈ +249/−30 approved; management_11, 23:50: accepted as built, the count
-  runs after each face from now on, and 176b's eight faces were counted so); management_11's reviews A (DEF-405 + DEF-409 +
-  DEF-411 + DEF-414) and B (DEF-410 + DEF-413) of the first build, their 33 shapes measured as 45 cells with their legal twins
-  (`.internal/probes176/rev/`, TABLE.md) on 175, the first build and every 176b build; from them DEF-415 (HIGH: a store into a container grown
-  through a HELD ALIAS lands in freed memory; landing 177, a rider), DEF-416 (HIGH: a move THROUGH a pointer vacates the pointee
-  unjudged; ruled a language rule, TYPE-104, a second rider in 177) and DEF-417 (LOW: `pass`/`break`/`continue` in a `defer` body trap the compiler; after 180)
-  registered OPEN; the chain over the final tree caught the first 176b build refusing nitpick-time's `vec_pop` and two `_ok`
-  programs (faces 4 and 6 as first built), reported before the commit and re-ruled (01:42 EST); the first build's harness (cloud2, EXIT 1) failed one file, `claim_index.npk`'s
-  header stale by a comment edit's two lines, fixed, and the harness's own rejection comparison now runs over every rejection
-  file before every commit (management_11, 01:48 EST). Next free DEF-418 and TYPE-104. Every
-  landing's full paragraph is at the top of `meta/STATUS_HISTORY.md`, newest first; read the newest few before planning work.
+- **main = landing 177a** (2026-11-01; wt/55a, branch 55-r177a, on ba82c55; ONE commit ⟦FILL: SHA⟧, the third build, replacing `dde7657`) — E-a + E-b + E-c + E-d + E-e + DEF-415 + DEF-419 + DEF-349 +
+  DEF-355 + TYPE-105, DEF-344 closed with its control, N, V, K, F and P on DEF-410's row (analysis/alias.npk, analysis/escape.npk, parse_pick.npk, type_stmt.npk, type_expr.npk, type_codes.npk; re-spelled `src/`
+  sites in smt_encode.npk, ir_func.npk, module_graph.npk, derive_gen.npk, bridge_stubs.npk; +419/−91 code lines, the caps per face by both counters in the record): WHAT A VALUE IS MADE OF IS ONE TABLE
+  (`value_arms`, all 50 `ExprKind`s named, no `(*)`, a new kind NITPICK-PICK-001). A ternary, `??`, `?|`, `?!`, `??!`, `relay` or `=> dyn` over an owning place is TYPE-046 at the operator in ANY position
+  (DEF-419: a double free in safe code, 74 on 175 and 176b; a lent `string?` parameter therefore has no read spelling, a `move` parameter is the way out, a pointer is not); a member, `?.` or index off a literal,
+  a `pick` or an operator with one as an arm is TYPE-105, strict. A by-value owner's snapshot and a user call's view are judged against what the callee writes through an EARLIER argument (E-a, S2, hole 1;
+  ONLY AS STRONG AS THE SUMMARY: DEF-298's writer face to 179, DEF-357's callee road to 177c); a snapshot through a dereference, a cast included (E-d's rest); an element's address on the read road a party for
+  the rest of its chain (E-b); `@` in a literal under every value form and in a template's piece (E-c, E-e). An assignment's value hands no callee a way to its target's container (DEF-415), and a HOLDER of an owner
+  stands beside no live view of it (S1, N; a view the holder itself holds exempt): BORROW-015, the summary UNREAD, by path, a local first. A variadic position is judged whole (V), a value holding an address into
+  itself is a holder (K). A `for` over a call's result or a range holds that view for its body (F), and a lending `pick` arm that binds a name holds the selector's place, both spellings (P; 97 on 176b, a
+  MachineFault at a fabricated address; `w31_param_helper` stays 97 on DEF-298's writer face, refused at 179). The walk's bound refuses, a backstop no tree reaches (DEF-349); a view through the bare pointer (DEF-355). DEF-418
+  (HIGH, OPEN, wider than registered): two pointer parameters of one owner, a pointer field addressing the whole holder (`k2_whole`); the emitter's order closes its store faces only; THE AUTHOR'S RULE BY TYPE AT
+  THE FUNCTION DOING BOTH THINGS is accepted (11:05 EST), a warning-only census first, out of 177a. DEF-420 (LOW, compiler-internal): `struct_field`, a query, grows `ast.ids` per ask; N crossed a doubling
+  (+2.02 %), `rejudge_holder`'s guard stopped the asking. Emission: tree 657 of 657 byte-identical, libs/apps 4,112 (1,948 identical, 2,164 both-refused, 0 different, 0 newly refused). The sweep over 5,434 files: 370 appeared, 41 vanished, all in the landing's own tests but cc0059's TYPE-046 moved 15:5 to 15:39; 0 sites newly refused outside the tests. The manifest 7,727 obligations (3,723 discharged, 2,982 open), 49 rows added, 16 removed, 221 re-keyed, 0 verdicts moved, 3 discharged counts fell (moved or collapsed bodies, one row discharged to open, the record has each), the floor's 388 unchanged. peak_live 223,843,170 local (+0.146 % on cloud2's parent, 39 bytes over 176b's compiler on the same source); the ceiling re-based to
+  447,686,340 and the 1 % growth line adopted. THE SLIP: the per-face count lapsed 06:35–07:41 EST, one line in the record. Next free DEF-421; TYPE-104 is 177b's, TYPE-105 taken. Every landing's full paragraph is at
+  the top of `meta/STATUS_HISTORY.md`, newest first; read the newest few before planning work.
 - **The queue** (management_11's rulings of 2026-10-31 16:00, 20:13 and 23:50 and of 2026-11-01 01:32; management_10's/_7's/_6's of
-  2026-10-29/31 for what follows): landing 176 LANDED (DEF-405 + DEF-409 + DEF-410 (a)-(f) + DEF-411 + DEF-413 + DEF-414, built as
-  176b, the status bullet); then landing 177 = the old list with DEF-345 (DEF-344 + DEF-347 + DEF-349 + DEF-353 + DEF-354 +
-  DEF-355 + DEF-356 + DEF-357 + DEF-345) + DEF-415 as a rider (HIGH, 176b's review B: a store into a container grown through a
-  held alias lands in freed memory; the closed choice on its row, cap 35) + DEF-416 as a second rider (HIGH, ruled a language
-  rule 01:53/02:00 EST: `move` takes an owning place with no plain pointer and no non-wild view on its path, TYPE-104; Copy
-  exempt; `wild` unchecked except a pointee reachable from a value binding of the same function; cap 36 since 02:38 EST, (b) built; the ceiling re-based by
-  self.toml's rule in 177's commit and the per-landing growth line adopted, management_11's 00:58 plan) + the E-faces as a third rider (E-a + E-d cap 40, E-b 15, E-c 8, E-e 10; pre-existing, confirmed by `.internal/probes176/go/TABLE_GO.md`, no new numbers; E-a's fix keeps a non-dropping by-value argument legal), 177 sized whole first and split by mechanism past about 200 code lines, then
-  landing 178 = DEF-333's (DEF-333 + DEF-334 + DEF-335 + DEF-336 + DEF-384 + DEF-389), then landing 179 = DEF-312's (DEF-312
+  2026-10-29/31 for what follows): landing 177a LANDED (the status bullet); then landing 177b = language: DEF-416 (`move` takes an owning place, TYPE-104; Q1's widening on its row; the gate with the `pass` road and the widening cap 44, `src/` re-spellings apart cap 10) + DEF-345; then landing 177c = crossing: DEF-354 + DEF-357 + DEF-356 + DEF-353 + DEF-347 f2a; each its own chain, review, harness, GO, landing and the libraries' verification (management_12's split, 2026-11-01 05:42), built by a fresh Fable seat (Q85 = (A), the author, 11:05; its brief carries the emitter-order sizing and DEF-418's warning-only census with its two fact checks); no new `move(x.field)` through a pointer in `src/` or its tests, then
+  landing 178 = DEF-333's (DEF-333 + DEF-334 + DEF-335 + DEF-336 + DEF-384 + DEF-389), then landing 179 = DEF-312's (DEF-298's writer face, `w31_param_helper` refused there, + DEF-347 f2b + DEF-312
   widened + DEF-348 + DEF-350 + DEF-325 + DEF-386 + DEF-387 + DEF-390 + DEF-391 + DEF-392 + DEF-395), then landing 180 = DEF-318's
   (DEF-318 to DEF-323) — the fuzz seats' M16 targets the first binary after landing 180 —, then after 180: DEF-417
   (`pass`/`break`/`continue` in a `defer` body, TYPE-040 with the defer-relative loop counter), DEF-351, DEF-352, DEF-358,
   DEF-398/DEF-399/DEF-400/DEF-401/DEF-404 LOW, DEF-408's emitter fix (the TYPE-102 relaxation, which must bring back
   TAINT-001 on `o?.value`/`o?.err` -- the second review's L1), DEF-412 (the literal face; its move and call-result faces closed by
   TYPE-103), DEF-414's emitter fix (the TYPE-103 relaxation: the `Self->` receiver formed ONCE; it restores DEF-315's five sites
-  in `call_result_deref_receiver_slice.npk` and its `_ok`'s originals), DEF-413's flow relaxation (its own entry: a holder written
+  in `call_result_deref_receiver_slice.npk` and its `_ok`'s originals), 177a's over-refusals and open roads (`d415_readonly`, `l[i] = raw f(@l)`, the pointer root's nine sites, `ee_rev_lit`, a `move` in one `pick` arm against `@h` in another, the emitter fix that treats DEF-419's operators as places, read-to-completion, the plain-literal TYPE-105 exemption, `ea3_slice_list_fresh`, a `move` receiver's duplicate report, TYPE-046's `.clone()` advice, `s1_read_twin`, `s1_held_read_twin`, `s1x_generic`, `r1_read_only`, `r2_holder`, `h20_read_nested`, `h22_view_read_ok`, `v3_read_only`, `v10_spread_other_ok`, `la3_laundered_field`, `f14_move`'s and `s3_ptr_ctl`'s two reports, `pw_write_through_binding`, `pr_local_read`, `pf_field_other`, a holder cycle's BORROW-007 wording, the second report at `deref_value_faces`' `ap`, `byvalue_snapshot_earlier`'s `we`, the emitter's order; DEF-418's rule by type its own row, a warning-only census first), DEF-413's flow relaxation (its own entry: a holder written
   whole before its next read is no conflict; cells for the six holder faces, partial against whole stores, holder reassignment,
   disjoint paths and last use; a re-pointed holder, review B's R4, its obligation; it unparks `tests/parked/def413-flow/`; the 18
   fixtures' 33 sites its evidence), DEF-410 (b)'s construct-scoped rule (a view read to completion before the invalidation), the
   accepted over-refusals of 176b's reviews (A-R1: a pending binding refilled before its block ends; B-R3: the call window matched
-  by root); DEF-369/DEF-370/DEF-376/DEF-379 LOW and DEF-375/DEF-377 MEDIUM unplaced; DEF-416 (HIGH: a move through a pointer
-  vacates the pointee unjudged) a LANGUAGE RULING, after libs_36's typed census and a read of the prior art; then M3 (DEF-298 + DEF-299 + DEF-313), DEF-286, then DEF-292, DEF-293, DEF-294, DEF-291,
+  by root); DEF-369/DEF-370/DEF-376/DEF-379/DEF-420 LOW and DEF-375/DEF-377 MEDIUM unplaced; then M3 (DEF-298 + DEF-299 + DEF-313), DEF-286, then DEF-292, DEF-293, DEF-294, DEF-291,
   DEF-295, D-358 (Fable's), step 3d's rest (DEF-239), step 4. The plan of record is `meta/roadmap/` (start at `ROADMAP.md`; cycle
   1.6's map is `meta/roadmap/1.6/README.md`, its subcycle record `meta/roadmap/1.6/1.6.1e.md`); every open defect and question is
   a row of `meta/roadmap/OPEN_DECISIONS.md`; the notice log to the library seats is `meta/NOTICES.md`.
@@ -364,6 +330,7 @@ Five more, each a 1.4 debugging cycle:
 - Test and read a `Result` through a local whose address is never taken; bind a call's `Result` before `.value`/`.err` (TAINT-001); unwrap an `Optional` before a computed member (`o?.len`, `o?.value` are TYPE-102) — see "A `Result` is refined only while nothing can write it behind the analysis's back, and a value no binding holds is never refined"
 - Run `rejcheck.py` (the harness's own comparator over every rejection file, both tools) before every commit and after any test edit following a chain; `set_check.py` sees codes only — see "A rejection header's POSITION is checked by the harness alone, so the harness's own comparator runs over every rejection file before every commit"
 - Judge at the moment the code runs: a `defer` body tests `is_error` itself (TAINT-001) and nothing it reads is moved, passed or freed before its block ends (MOVE-001/MOVE-002); never move a root inside its own index (MOVE-001); compute into a local BEFORE a view (`string_bytes(s)[…]`), an `@h`/`Self->` call, an element assignment or a range view's bounds can invalidate the owner (BORROW-015/BORROW-013); a held `@h` outlives no move of `h` (BORROW-013, scope the holder); keep a `Self->` receiver effect-free, list and template literals included (TYPE-103); no `exit` in a `defer` (TYPE-040); since 176b: pass a by-value owner and free or move its bytes in no later argument (BORROW-015), put `@h` in no literal or ternary argument a later argument moves against (BORROW-013), `dalloc`/`ralloc` nothing a held `@h` points into (BORROW-013), hoist a growth out of a range view's index or bound (BORROW-015) — see "The analyses judge at the moment the code runs, and a value the emitter forms before a later part runs has a party for its window"
+- Bind an owner before an operator reads it (`is`, `??`, `?|`, `?!`, `??!`, `relay`, `=> dyn`: TYPE-046 in every position, a double free); read no part off a literal (TYPE-105); take a `string?` by `move` to read it; compute a value into a local before `l[i] =` hands a callee `l`, an alias or the root pointer, or before a call hands a holder of an owner beside a live view of it, `@` at a variadic position among them (BORROW-015, the summary unread); bind the data before a `for` over a call's result or a range that writes its owner in the body, and copy out of a lending `pick` arm before a write through a held pointer (BORROW-015, either `pick` spelling); ask a cheap condition before `type_holds_elem_pointer`/`struct_field` on a hot walk (DEF-420); ask `value_arms`, never enumerate forms (PICK-001 on a new kind); a landing growing `peak_live` over 1 % tells management before its harness — see "An operator's value is a temporary, so a copy of a place through one is refused wherever it stands"
 
 ### Reserved words that read like ordinary names
 

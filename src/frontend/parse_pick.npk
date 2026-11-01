@@ -553,3 +553,23 @@ func:block_gives = bool(Ast->:ast, StmtNode:b) never fails {
     }
     pass false;
 };
+
+// DOES THIS ARM BIND A NAME? `_` binds nothing (D-266: it views nothing and
+// freezes nothing). The one answer, read by both spellings' arm walks, by the freeze and by the aliasing analysis's arm party.
+pub func:arm_binds_in = bool(Ast->:ast, InternTable->:it, StmtNode:arm) never fails {
+    PatId:apid = raw arm_pattern(arm);
+    if (raw pat_is_none(apid)) { pass false; }
+    PatNode:pn = raw ast_pat(ast, apid);
+    int32:bn = 0i32;
+    if (pn.kind == PatKind.PatEnumDestructure) { bn = raw pat_enum_bind_count(ast, pn); }
+    if (pn.kind == PatKind.PatStructDestructure) { bn = raw pat_bind_count(pn); }
+    for (int32:b in 0i32...bn) {
+        int32:bnm = 0i32;
+        if (pn.kind == PatKind.PatEnumDestructure) { bnm = raw pat_enum_bind(ast, pn, b); }
+        if (pn.kind == PatKind.PatStructDestructure) { bnm = raw ast_id_at(ast, raw pat_bind_start(pn), b); }
+        if (bnm != 0i32) {
+            if (!(raw string_eq(raw intern_get(it, bnm), "_"))) { pass true; }
+        }
+    }
+    pass false;
+};

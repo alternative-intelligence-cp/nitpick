@@ -1,0 +1,100 @@
+// expect-exit: 0
+// WHAT AN OPERATOR OVER AN OWNER MAY STILL DO (DEF-419, landing 177a; the legal twins of `tests/types/rejection/operator_copy_read.npk`): an arm that is a fresh value, an arm under `move`, a cast, `relay` of a call, a by-value `pick` of fresh values, a type that drops nothing, a
+// pointer chosen and read; and THE LENT OPTIONAL'S WAY OUT, a `move` parameter (`lo_move_param`), beside what a lent `string?` can still do: be forwarded by value, be compared to `NIL`, and a plain payload's `v ?? 0`. Every value is checked in `main`; the exit is the failing case's number.
+mod:operator_copy_read_ok;
+error:E5;
+struct:H = { string:s; int64:k; };
+func:fs = int64(string:v, int64:k) never fails { pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:mk_h = H(string:t) never fails { pass H{ s: string_concat(t, "cde"), k: 1i64 }; };
+func:mk_s = string() never fails { pass string_concat("ab", "cde"); };
+func:id64 = int64(int64:k) never fails { pass k; };
+func:fso = int64(string?:v, int64:k) never fails { pass k; };
+struct:W = { H->:ptr; };
+impl:W = { func:mv = int64(W:self, int64:k) never fails { pass (<-self.ptr).s.len + k; }; func:mt = int64(W:self, int64:k) never fails { pass k; }; };
+func:gw = int64(W:w, int64:k) never fails { pass (<-w.ptr).s.len + k; };
+func:rdo = int64(move string?:v) never fails { string:w = move(v) ?? string_concat("z", "z"); pass w.len; };
+func:rd2 = int64(string?:v) never fails { pass 5i64; };
+func:idt<T> = int64(T:x, int64:k) never fails { pass k; };
+func:gop<T: Copy> = int64(T:x, T:y, bool:b) never fails { pass raw idt(is (b) : x : y, 5i64); };
+// dd_arg_fresh; on 176b: exit 67, here: exit 67.
+func:c_dd_arg_fresh = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = s.len > 2i64; int32:i = 1i32; string?:o = raw mk_s(); string?:onil = NIL; Result<string>:r = mk_s(); pass raw fs(is (b) : raw mk_s() : raw mk_s(), 0i64); };
+// dd_arg_mv; on 176b: exit 67, here: exit 67.
+func:c_dd_arg_mv = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = s.len > 2i64; int32:i = 1i32; string?:o = raw mk_s(); string?:onil = NIL; Result<string>:r = mk_s(); pass raw fs(is (b) : move(s) : move(t), 0i64); };
+// dd_bind_ok; on 176b: exit 67, here: exit 67.
+func:c_dd_bind_ok = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = s.len > 2i64; int32:i = 1i32; string?:o = raw mk_s(); string?:onil = NIL; Result<string>:r = mk_s(); string:u = is (b) : move(s) : move(t); pass raw fs(u, 0i64); };
+// dd_cast; on 176b: exit 67, here: exit 67.
+func:c_dd_cast = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = s.len > 2i64; int32:i = 1i32; string?:o = raw mk_s(); string?:onil = NIL; Result<string>:r = mk_s(); pass raw fs(t => string, 0i64); };
+// dd_ctl; on 176b: exit 67, here: exit 67.
+func:c_dd_ctl = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = s.len > 2i64; int32:i = 1i32; string?:o = raw mk_s(); string?:onil = NIL; Result<string>:r = mk_s(); pass 7i64; };
+// dd_pick_fresh; on 176b: exit 67, here: exit 67.
+func:c_dd_pick_fresh = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = s.len > 2i64; int32:i = 1i32; string?:o = raw mk_s(); string?:onil = NIL; Result<string>:r = mk_s(); pass raw fs(pick (i) { (*) { give raw mk_s(); } }, 0i64); };
+// dd_pick_ok; on 176b: exit 67, here: exit 67.
+func:c_dd_pick_ok = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = s.len > 2i64; int32:i = 1i32; string?:o = raw mk_s(); string?:onil = NIL; Result<string>:r = mk_s(); pass raw fs(pick (i) { (*) { give move(t); } }, 0i64); };
+// dd_plain_ok; on 176b: exit 61, here: exit 61.
+func:c_dd_plain_ok = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = s.len > 2i64; int32:i = 1i32; string?:o = raw mk_s(); string?:onil = NIL; Result<string>:r = mk_s(); int64:p = 1i64; int64:q = 2i64; pass raw id64(is (b) : p : q); };
+// dd_ptr_ok; on 176b: exit 67, here: exit 67.
+func:c_dd_ptr_ok = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = s.len > 2i64; int32:i = 1i32; string?:o = raw mk_s(); string?:onil = NIL; Result<string>:r = mk_s(); pass raw fs(<-(is (b) : @s : @t), 0i64); };
+// dd_relay_fresh; on 176b: exit 67, here: exit 67.
+func:c_dd_relay_fresh = int64() { string:s = raw mk_s(); string:t = raw mk_s(); bool:b = s.len > 2i64; int32:i = 1i32; pass raw fs(relay mk_s(), 0i64); };
+// dd_relay_mv; on 176b: exit 67, here: exit 67.
+func:c_dd_relay_mv = int64() { string:s = raw mk_s(); string:t = raw mk_s(); bool:b = s.len > 2i64; int32:i = 1i32; Result<string>:r = mk_s(); pass raw fs(relay move(r), 0i64); };
+// dd_safe_nav; on 176b: exit 60, here: exit 60.
+func:c_dd_safe_nav = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = s.len > 2i64; int32:i = 1i32; string?:o = raw mk_s(); string?:onil = NIL; Result<string>:r = mk_s(); H?:oh = raw mk_h("ab"); pass raw fso(oh?.s, 0i64); };
+// dd_w_ok; on 176b: exit 65, here: exit 65.
+func:c_dd_w_ok = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); H:h = raw mk_h("ab"); H:g = raw mk_h("x"); bool:b = s.len > 2i64; int32:i = 1i32; string?:o = raw mk_s(); string?:onil = NIL; Result<string>:r = mk_s(); W:w1 = W{ ptr: @h }; W:w2 = W{ ptr: @g }; pass raw gw(is (b) : w1 : w2, 0i64); };
+// lo_move_param; on 176b: exit 65, here: exit 65.
+func:c_lo_move_param = int64() never fails { string?:o = string_concat("ab", "cde"); pass raw rdo(move(o)); };
+// lo_lent_forward; on 176b: exit 65, here: exit 65.
+func:rdo__lo_lent_forward = int64(string?:v) never fails { pass raw rd2(v); };
+func:c_lo_lent_forward = int64() never fails { string?:o = string_concat("ab", "cde"); pass raw rdo__lo_lent_forward(o); };
+// lo_lent_isnil; on 176b: exit 65, here: exit 65.
+func:rdo__lo_lent_isnil = int64(string?:v) never fails { if (v == NIL) { pass 0i64; } pass 5i64; };
+func:c_lo_lent_isnil = int64() never fails { string?:o = string_concat("ab", "cde"); pass raw rdo__lo_lent_isnil(o); };
+// lo_lent_plain; on 176b: exit 65, here: exit 65.
+func:rdo__lo_lent_plain = int64(int64?:v) never fails { pass v ?? 0i64; };
+func:c_lo_lent_plain = int64() never fails { int64?:o = 5i64; pass raw rdo__lo_lent_plain(o); };
+// g_op_plain; on 176b: exit 65, here: exit 65.
+func:c_g_op_plain = int64() never fails { pass raw gop(1i64, 2i64, true); };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c_dd_arg_fresh()) != 7i64) { exit 1i32; }
+    if ((raw c_dd_arg_mv()) != 7i64) { exit 2i32; }
+    if ((raw c_dd_bind_ok()) != 7i64) { exit 3i32; }
+    if ((raw c_dd_cast()) != 7i64) { exit 4i32; }
+    if ((raw c_dd_ctl()) != 7i64) { exit 5i32; }
+    if ((raw c_dd_pick_fresh()) != 7i64) { exit 6i32; }
+    if ((raw c_dd_pick_ok()) != 7i64) { exit 7i32; }
+    if ((raw c_dd_plain_ok()) != 1i64) { exit 8i32; }
+    if ((raw c_dd_ptr_ok()) != 7i64) { exit 9i32; }
+    Result<int64>:q10 = c_dd_relay_fresh();
+    if (q10.is_error) { exit 10i32; }
+    if (q10.value != 7i64) { exit 10i32; }
+    Result<int64>:q11 = c_dd_relay_mv();
+    if (q11.is_error) { exit 11i32; }
+    if (q11.value != 7i64) { exit 11i32; }
+    if ((raw c_dd_safe_nav()) != 0i64) { exit 12i32; }
+    if ((raw c_dd_w_ok()) != 5i64) { exit 13i32; }
+    if ((raw c_lo_move_param()) != 5i64) { exit 14i32; }
+    if ((raw c_lo_lent_forward()) != 5i64) { exit 15i32; }
+    if ((raw c_lo_lent_isnil()) != 5i64) { exit 16i32; }
+    if ((raw c_lo_lent_plain()) != 5i64) { exit 17i32; }
+    if ((raw c_g_op_plain()) != 5i64) { exit 18i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

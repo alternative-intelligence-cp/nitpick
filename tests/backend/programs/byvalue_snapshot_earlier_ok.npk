@@ -1,0 +1,178 @@
+// expect-exit: 0
+// WHAT A BY-VALUE OWNER AND AN EARLIER ARGUMENT MAY STILL DO (E-a, E-d's rest, DEF-410 (b)'s other order; landing 177a; the legal twins of `tests/analysis/rejection/byvalue_snapshot_earlier.npk`): a callee that writes
+// nothing through the address, a write to a field the snapshot does not hold, an address of ANOTHER owner, a type that drops nothing (a true copy), a growth in an EARLIER argument's own walk before the header loads, the regex
+// library's `hir_set(@h, 0, raw hir_get(h, 0))`, a cast's snapshot with no invalidation or of another owner (`cs_ok_*`), a holder of ANOTHER owner beside the snapshot (`s1x_other_ok`, `s1x_disjoint_ok`, `s1y_*_ok`), a by-value owner handed twice (`s1x_two_owners_ok`, `s1y_cmp_ok`: `a.cmp(a)`), a slice no name holds with a read-only callee (`s2_read_twin`). Every value is checked in `main`; the exit is the failing case's number.
+mod:byvalue_snapshot_earlier_ok;
+error:E5;
+func:wr = int64(string->:p, string:v) never fails { (<-p) = string_concat("wx", "yz"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+struct:Pt = { int64:x; int64:y; };
+func:wrp = int64(Pt->:p, Pt:v) never fails { p.x = 3i64; pass v.x + p.x; };
+struct:H = { string:s; int64:k; };
+func:wrk = int64(H->:p, string:v) never fails { p.k = 3i64; pass (string_bytes(v)[0i64] => int64) - 90i64; };
+impl:H = {
+    func:setread = int64(Self->:self, H:v) never fails { self.s = string_concat("wx", "yz"); pass (string_bytes(v.s)[0i64] => int64) - 90i64; };
+    func:sets = int64(Self->:self, string:v) never fails { self.s = string_concat("wx", "yz"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+    func:setk = int64(Self->:self, string:v) never fails { self.k = 3i64; pass (string_bytes(v)[0i64] => int64) - 90i64; };
+    func:rdk = int64(Self->:self, string:v) never fails { pass self.k + (string_bytes(v)[0i64] => int64) - 90i64; };
+};
+func:ws = int64(string[]:sl, string:v) never fails { sl[0i64] = string_concat("wx", "yz"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:gv = int64(string->:p, fixed uint8[]:v) never fails { <-p = string_concat("x", "y"); string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64; };
+func:mkv = fixed uint8[](string:v) never fails { pass string_bytes(v); };
+func:mk_s = string() never fails { pass string_concat("ab", "cde"); };
+func:grv = int64(string->:p, fixed uint8[]:v) never fails { pass (string_bytes(<-p).len) + ((v[0i64] => int64) - 97i64); };
+#[derive(Copy)]
+struct:HN = { int64:a; int32:b; };
+struct:HX = { List<HN>:nodes; bool:frozen; };
+func:hx_get = HN(HX:h, int64:i) never fails { pass h.nodes[i]; };
+func:hx_set = NIL(HX->:h, int64:i, HN:n) never fails { h.nodes[i] = n; pass NIL; };
+func:hx_grow = NIL(HX->:h, HN:n) never fails { for (int64:i in 0i64...64i64) { drop list_push(@h.nodes, n); } pass NIL; };
+func:gvn = int64(string->:p, int64:k) never fails { <-p = string_concat("x", "y"); pass k; };
+func:id64 = int64(int64:k) never fails { pass k; };
+func:gs = int64(string->:p, int64:k) never fails { pass (string_bytes(<-p)[0i64] => int64) - 90i64 + k; };
+func:fs = int64(string:v, int64:k) never fails { pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:takeho = int64(move H__s_safe_nav?:x) never fails { pass 0i64; };
+func:fso = int64(string?:v, int64:k) never fails { pass k; };
+func:mk_h = H__s_safe_nav(string:t) never fails { pass H__s_safe_nav{ s: string_concat(t, "cde"), k: 1i64 }; };
+func:take = int64(move string:x) never fails { pass 0i64; };
+struct:W2 = { string:s; };
+impl:W2 = { func:m2 = int64(W2:self, int64:k) never fails { pass (string_bytes(self.s)[0i64] => int64) - 90i64 + k; }; };
+func:wsr = int64(List<int64>[]:sl, List<int64>:v) never fails { pass (v[0i64] - 90i64) + (sl[0i64].count - 1i64); };
+struct:W = { string->:p; };
+func:wv = int64(W:w, string:v) never fails { <-w.p = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+impl:W = {
+    func:wmp = int64(Self->:self, string:v) never fails { <-self.p = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+};
+func:two = int64(string:a, string:b) never fails { pass (string_bytes(a)[0i64] => int64) - 90i64 + (b.len - 5i64); };
+func:wvpn = int64(W->:wp, string:v) never fails { <-((<-wp).p) = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:rdp = int64(W->:wp, string:v) never fails { pass (string_bytes(v)[0i64] => int64) - 90i64; };
+// ea_legal; on 176b: exit 67, here: exit 67.
+func:c_ea_legal = int64() never fails { string:s = string_concat("ab", "cde"); string:c = string_concat(s, ""); pass raw wr(@s, c); };
+// ea_nondrop_ok -- the legal twin of wr(@s, s): a type that drops nothing is a true copy, so the callee's write through the address leaves the copy as it was; on 176b: exit 67, here: exit 67.
+func:c_ea_nondrop_ok = int64() never fails { Pt:pt = Pt{ x: 4i64, y: 5i64 }; pass raw wrp(@pt, pt); };
+// ea2_field_arg_ok -- the legal twin: the callee writes p.k, by-value h.s untouched; 7 + 60 = 67; on 176b: exit 67, here: exit 67.
+func:c_ea2_field_arg_ok = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    pass raw wrk(@h, h.s);
+};
+// ea2_field_recv_ok -- the legal twin: writes self.k; 67; on 176b: exit 67, here: exit 67.
+func:c_ea2_field_recv_ok = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    pass raw h.setk(h.s);
+};
+// ea2_read_recv_ok -- the legal twin: a Self-> receiver that writes nothing; 68; on 176b: exit 68, here: exit 68.
+func:c_ea2_read_recv_ok = int64() never fails {
+    H:h = H{ s: string_concat("ab", "cde"), k: 1i64 };
+    pass raw h.rdk(h.s);
+};
+// ea2_slice_ok; on 176b: exit 67, here: exit 67.
+func:c_ea2_slice_ok = int64() never fails { string[2]:arr = [string_concat("ab", "cde"), string_concat("fg", "hij")]; string:c = string_concat("ab", "cde"); pass raw ws(arr[0i64...2i64], c); };
+// ea2_slice_read_ok; on 176b: exit 67, here: exit 67.
+func:ws__ea2_slice_read_ok = int64(string[]:sl, string:v) never fails { pass (string_bytes(sl[0i64])[0i64] => int64) + (string_bytes(v)[0i64] => int64) - 187i64; };
+func:c_ea2_slice_read_ok = int64() never fails { string[2]:arr = [string_concat("ab", "cde"), string_concat("fg", "hij")]; pass raw ws__ea2_slice_read_ok(arr[0i64...2i64], arr[0i64]); };
+// v_rev_call_ok; on 176b: exit 67, here: exit 67.
+func:c_v_rev_call_ok = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); bool:b = s.len > 2i64; int32:i = 1i32; pass raw gv(@s, raw mkv(t)); };
+// v_rev_ok_ronly; on 176b: exit 65, here: exit 65.
+func:c_v_rev_ok_ronly = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); bool:b = s.len > 2i64; int32:i = 1i32; pass raw grv(@s, raw mkv(s)); };
+// hir_ok; on 176b: exit 67, here: exit 67.
+func:c_hir_ok = int64() never fails {
+    HX:h = HX{ nodes: raw list_init::<HN>(2i64), frozen: false };
+    drop list_push(@h.nodes, HN{ a: 7i64, b: 1i32 });
+    drop hx_set(@h, 0i64, raw hx_get(h, 0i64)); pass h.nodes[0i64].a;
+};
+// hir_ok_grow; on 176b: exit 67, here: exit 67.
+func:c_hir_ok_grow = int64() never fails {
+    HX:h = HX{ nodes: raw list_init::<HN>(2i64), frozen: false };
+    drop list_push(@h.nodes, HN{ a: 7i64, b: 1i32 });
+    drop hx_grow(@h, raw hx_get(h, 0i64)); pass h.nodes[0i64].a;
+};
+// v_ok_index; on 176b: exit 157, here: exit 157.
+func:c_v_ok_index = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); bool:b = s.len > 2i64; int32:i = 1i32; pass raw gvn(@s, (string_bytes(s)[0i64] => int64)); };
+// v_ok_len; on 176b: exit 65, here: exit 65.
+func:c_v_ok_len = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); bool:b = s.len > 2i64; int32:i = 1i32; pass raw gvn(@s, string_bytes(s).len); };
+// v_ok_lit_len; on 176b: exit 65, here: exit 65.
+func:c_v_ok_lit_len = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); bool:b = s.len > 2i64; int32:i = 1i32; pass raw gvn(@s, (raw id64(string_bytes(s).len))); };
+// s_ok_write_ok; on 176b: exit 74, here: exit 74.
+func:c_s_ok_write_ok = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); bool:b = s.len > 2i64; int32:i = 1i32; pass raw fs(t, (raw gs(@s, 0i64))); };
+// s_safe_nav; on 176b: exit 60, here: exit 60.
+struct:H__s_safe_nav = { string:s; int64:k; };
+impl:H__s_safe_nav = { func:mh = int64(Self->:self, int64:k) never fails { pass (<-self).s.len + k; }; };
+func:c_s_safe_nav = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); bool:b = s.len > 2i64; int32:i = 1i32; H__s_safe_nav?:o = raw mk_h("ab"); pass raw fso(o?.s, (raw takeho(move(o)))); };
+// sn_nav; on 176b: exit 60, here: exit 60.
+func:mk_h__sn_nav = H(string:t) never fails { pass H{ s: string_concat(t, "cde"), k: 1i64 }; };
+func:takeho__sn_nav = int64(move H?:x) never fails { pass 0i64; };
+func:c_sn_nav = int64() never fails { H?:o = raw mk_h__sn_nav("ab"); pass raw fso(o?.s, (raw takeho__sn_nav(move(o)))); };
+// cs_ok_cast; on 176b: exit 67, here: exit 67.
+func:c_cs_ok_cast = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); pass raw fs((<-(@s)) => string, 0i64); };
+// cs_ok_other; on 176b: exit 67, here: exit 67.
+func:c_cs_ok_other = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); pass raw fs((<-(@t)) => string, (raw take(move(s)))); };
+// cs_ok_part; on 176b: exit 67, here: exit 67.
+struct:H__cs_ok_part = { string:s; int64:k; };
+func:mk_h__cs_ok_part = H__cs_ok_part(string:t) never fails { pass H__cs_ok_part{ s: string_concat(t, "cde"), k: 1i64 }; };
+impl:H__cs_ok_part = { func:mh = int64(Self->:self, int64:k) never fails { pass (<-self).s.len + k; }; };
+func:c_cs_ok_part = int64() never fails { H__cs_ok_part:h = raw mk_h__cs_ok_part("ab"); pass raw fs(((<-(@h)).s) => string, 0i64); };
+// cs_ok_recv; on 176b: exit 67, here: exit 67.
+func:c_cs_ok_recv = int64() never fails { W2:w = W2{ s: raw mk_s() }; pass raw ((<-(@w)) => W2).m2(0i64); };
+// s2_read_twin; on 176b: exit 67, here: exit 67.
+func:c_s2_read_twin = int64() never fails { List<int64>[2]:arr = [raw list_init::<int64>(1i64), raw list_init::<int64>(1i64)]; drop list_push(@arr[0i64], 97i64); bool:c = true; pass raw wsr(is (c) : arr[0i64...2i64] : arr[0i64...1i64], arr[0i64]); };
+// s1x_disjoint_ok; on 176b: exit 67, here: exit 67.
+struct:H__s1x_disjoint_ok = { string:s; string:t; };
+func:c_s1x_disjoint_ok = int64() never fails { H__s1x_disjoint_ok:h = H__s1x_disjoint_ok{ s: raw mk_s(), t: raw mk_s() }; W:w = W{ p: @h.t }; pass raw wv(w, h.s); };
+// s1x_other_ok; on 176b: exit 67, here: exit 67.
+func:c_s1x_other_ok = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); W:w = W{ p: @t }; pass raw wv(w, s); };
+// s1x_two_owners_ok; on 176b: exit 67, here: exit 67.
+func:c_s1x_two_owners_ok = int64() never fails { string:s = raw mk_s(); pass raw two(s, s); };
+// s1y_disjoint_ptr_ok; on 176b: exit 67, here: exit 67.
+func:c_s1y_disjoint_ptr_ok = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); W:w = W{ p: @t }; pass raw wvpn(@w, s); };
+// s1y_ptr_read_only_ok; on 176b: exit 67, here: exit 67.
+func:c_s1y_ptr_read_only_ok = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); W:w = W{ p: @t }; pass raw rdp(@w, s); };
+// s1y_cmp_ok; on 176b: exit 67, here: exit 67.
+func:c_s1y_cmp_ok = int64() never fails { string:a = raw mk_s(); Ordering:c = raw a.cmp(a); pass 7i64; };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c_ea_legal()) != 7i64) { exit 1i32; }
+    if ((raw c_ea_nondrop_ok()) != 7i64) { exit 2i32; }
+    if ((raw c_ea2_field_arg_ok()) != 7i64) { exit 3i32; }
+    if ((raw c_ea2_field_recv_ok()) != 7i64) { exit 4i32; }
+    if ((raw c_ea2_read_recv_ok()) != 8i64) { exit 5i32; }
+    if ((raw c_ea2_slice_ok()) != 7i64) { exit 6i32; }
+    if ((raw c_ea2_slice_read_ok()) != 7i64) { exit 7i32; }
+    if ((raw c_v_rev_call_ok()) != 7i64) { exit 8i32; }
+    if ((raw c_v_rev_ok_ronly()) != 5i64) { exit 9i32; }
+    if ((raw c_hir_ok()) != 7i64) { exit 10i32; }
+    if ((raw c_hir_ok_grow()) != 7i64) { exit 11i32; }
+    if ((raw c_v_ok_index()) != 97i64) { exit 12i32; }
+    if ((raw c_v_ok_len()) != 5i64) { exit 13i32; }
+    if ((raw c_v_ok_lit_len()) != 5i64) { exit 14i32; }
+    if ((raw c_s_ok_write_ok()) != 14i64) { exit 15i32; }
+    if ((raw c_s_safe_nav()) != 0i64) { exit 16i32; }
+    if ((raw c_sn_nav()) != 0i64) { exit 17i32; }
+    if ((raw c_cs_ok_cast()) != 7i64) { exit 18i32; }
+    if ((raw c_cs_ok_other()) != 7i64) { exit 19i32; }
+    if ((raw c_cs_ok_part()) != 7i64) { exit 20i32; }
+    if ((raw c_cs_ok_recv()) != 7i64) { exit 21i32; }
+    if ((raw c_s2_read_twin()) != 7i64) { exit 22i32; }
+    if ((raw c_s1x_disjoint_ok()) != 7i64) { exit 23i32; }
+    if ((raw c_s1x_other_ok()) != 7i64) { exit 24i32; }
+    if ((raw c_s1x_two_owners_ok()) != 7i64) { exit 25i32; }
+    if ((raw c_s1y_disjoint_ptr_ok()) != 7i64) { exit 26i32; }
+    if ((raw c_s1y_ptr_read_only_ok()) != 7i64) { exit 27i32; }
+    if ((raw c_s1y_cmp_ok()) != 7i64) { exit 28i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

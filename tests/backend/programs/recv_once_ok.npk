@@ -8,9 +8,9 @@
 // load and store), a plain and an arithmetic index, a dereferenced pointer local, a field, a pointer local, a
 // trait-qualified call, and the `dyn` EXEMPTION's three faces (a side-effecting call result of `dyn` type, a
 // `move(d)` of a `dyn` local, a `dyn` local: `via_dyn` forms the receiver once, the counter reads 1). Every value
-// is checked in `main`; the exit is the failing case's number. Cases 17 and 18 (176b, review A's T1): a list literal's call
-// hoisted out of the index (the counter reads 1), and a literal with NO call in the index, which stays none (DEF-412's reading). Each case measured 1/1/1/5/2/0/2/2/1/5/3/5/5/1/1/1
-// at -O0 and under opt -O2 on landing 175's compiler and on this one (`.internal/t176/census/r414/`).
+// is checked in `main`; the exit is the failing case's number. Cases 17 and 18 (176b, review A's T1) were a list literal's call
+// hoisted out of the index and a literal with NO call in the index; since landing 177a both read through a BOUND array, a part of a literal where it stands being TYPE-105, so they test NO HOISTING now: the call runs in its own statement. WHAT THIS FILE SHOWS (management_12's review A of landing 177a, 09:43 EST): ONLY CASES 1, 2, 5, 7 AND 14 hold a counter INSIDE the receiver and could catch one formed twice; every other case checks the value read (the counters for the others go with landing 177b). The first sixteen cases measured 1/1/1/5/2/0/2/2/1/5/3/5/5/1/1/1
+// at -O0 and under opt -O2 on landing 175's compiler and on 176's (`.internal/t176/census/r414/`); cases 17 and 18 read 1 and 6 by `main`'s checks.
 mod:recv_once_ok;
 error:E5;
 pub struct:Cell = { int64:v; };
@@ -138,18 +138,20 @@ func:dyn_local = int64() never fails {
     int64:v = raw d.getd();
     pass count + v - 5i64;
 };
-// 17. a list literal's call hoisted out of the index (recv_twice's site 13's legal twin): the counter reads 1
+// 17. a call in a BOUND array's literal, in its own statement (it was recv_twice's site 13's legal twin before TYPE-105): the counter reads 1, and no hoisting is tested
 func:index_literal_hoisted = int64() never fails {
     Cell[2]:a = [Cell{ v: 5i64 }, Cell{ v: 6i64 }];
     int64:count = 0i64;
-    int64:i = [(raw bump(@count)), 1i64][1i64];
+    int64[2]:ix = [(raw bump(@count)), 1i64];
+    int64:i = ix[1i64];
     int64:v = raw a[i].get();
     pass count + v - 6i64;
 };
-// 18. a literal with no call in the index stays none: 6
+// 18. an index read off a bound array with no call in it stays none: 6, and no hoisting is tested
 func:index_literal_plain = int64() never fails {
     Cell[2]:a = [Cell{ v: 5i64 }, Cell{ v: 6i64 }];
-    pass raw a[[0i64, 1i64][1i64]].get();
+    int64[2]:ix = [0i64, 1i64];
+    pass raw a[ix[1i64]].get();
 };
 func:main = int32(cstring[]:_~argv) {
     if ((raw ptr_result()) != 1i64)          { exit 11i32; }

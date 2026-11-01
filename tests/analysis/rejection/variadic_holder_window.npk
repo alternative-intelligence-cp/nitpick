@@ -1,0 +1,77 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 38:98
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 40:117
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 42:114
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 44:116
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 46:99
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 48:156
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 50:125
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 52:156
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 54:123
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 56:100
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 58:200
+// AN ADDRESS OR A HOLDER IN A VARIADIC POSITION (V of landing 177a; management_12's ruling of 2026-11-01 10:31). `vsw(s, @s)`, the callee writing `<-rest[0]`: the mutation summary has no position for a variadic's element, so the address read as handed to a callee
+// that writes nothing, and the callee read the freed bytes through the snapshot (83 on 175 and 176b; a held pointer, a holder's field, a view beside it, a spread of a slice of pointers, by name, by range and through a parameter). A variadic position is written WHOLE now,
+// the summary unread, where its element type can carry a pointer; a spread of `int64[]` stays legal (`variadic_holder_window_ok.npk`). `v7_plain_ctl`, the plain parameter, was refused already.
+// OVER-REFUSED ON PURPOSE, THE POST-180 LIST: a callee that only reads (`v3_read_only`), and a spread of pointers to ANOTHER owner (`v10_spread_other_ok`).
+mod:variadic_holder_window;
+error:E5;
+func:vsw = int64(string:v, ..*string->[]:rest) never fails { <-rest[0i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+struct:W = { string->:p; };
+func:gv2 = int64(fixed uint8[]:v, ..*string->[]:rest) never fails { <-rest[0i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64; };
+func:ps = int64(string:v, string->:p) never fails { <-p = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:h = int64(string:s, string->[]:xs) never fails { pass raw vsw(s, ..^xs); };
+func:take = int64(move string:x) never fails { pass x.len; };
+func:vk = int64(int64:k, ..*string->[]:rest) never fails { pass (<-rest[0i64]).len + k; };
+func:vsr = int64(string:v, ..*string->[]:rest) never fails { pass ((string_bytes(v)[0i64] => int64) - 90i64) + ((<-rest[0i64]).len - 5i64); };
+// m_var_addr; on 176b: exit 83.
+func:c_m_var_addr = int64() never fails { string:s = string_concat("ab", "cde"); pass raw vsw(s, @s); };
+// m_var_held; on 176b: exit 83.
+func:c_m_var_held = int64() never fails { string:s = string_concat("ab", "cde"); W:w = W{ p: @s }; pass raw vsw(s, w.p); };
+// v1_view_addr; on 176b: exit 83.
+func:c_v1_view_addr = int64() never fails { string:s = string_concat("ab", "cde"); pass raw gv2(string_bytes(s), @s); };
+// v2_held_ptr; on 176b: exit 83.
+func:c_v2_held_ptr = int64() never fails { string:s = string_concat("ab", "cde"); string->:q = @s; pass raw vsw(s, q); };
+// v7_plain_ctl; on 176b: BORROW-015.
+func:c_v7_plain_ctl = int64() never fails { string:s = string_concat("ab", "cde"); pass raw ps(s, @s); };
+// v8_spread_ptrs; on 176b: exit 83.
+func:c_v8_spread_ptrs = int64() never fails { string:s = string_concat("ab", "cde"); string->[1]:a = [@s]; string->[]:xs = a[0i32...1i32]; pass raw vsw(s, ..^xs); };
+// v9_spread_range; on 176b: exit 83.
+func:c_v9_spread_range = int64() never fails { string:s = string_concat("ab", "cde"); string->[1]:a = [@s]; pass raw vsw(s, ..^a[0i32...1i32]); };
+// v11_spread_param; on 176b: exit 83.
+func:c_v11_spread_param = int64() never fails { string:s = string_concat("ab", "cde"); string->[1]:a = [@s]; string->[]:xs = a[0i32...1i32]; pass raw h(s, xs); };
+// v5_addr_then_move; on 176b: MOVE-001.
+func:c_v5_addr_then_move = int64() never fails { string:s = string_concat("ab", "cde"); pass raw vk((raw take(move(s))), @s); };
+// v3_read_only; on 176b: exit 67.
+func:c_v3_read_only = int64() never fails { string:s = string_concat("ab", "cde"); pass raw vsr(s, @s); };
+// v10_spread_other_ok; on 176b: exit 67.
+func:c_v10_spread_other_ok = int64() never fails { string:s = string_concat("ab", "cde"); string:t = string_concat("mn", "opq"); string->[1]:a = [@t]; string->[]:xs = a[0i32...1i32]; pass raw vsw(s, ..^xs); };
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

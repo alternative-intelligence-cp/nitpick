@@ -1,0 +1,37 @@
+// expect-exit: 0
+// WHAT A VARIADIC POSITION MAY STILL TAKE (V of landing 177a; the legal twins of `tests/analysis/rejection/variadic_holder_window.npk`): an address of ANOTHER owner, a `move` in the rest, a spread of a slice whose element holds no pointer.
+mod:variadic_holder_window_ok;
+error:E5;
+func:vsw = int64(string:v, ..*string->[]:rest) never fails { <-rest[0i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:vt = int64(..*string->[]:rest) never fails { pass (<-rest[0i64]).len; };
+func:tot = int64(string:v, ..*int64[]:rest) never fails { pass (string_bytes(v)[0i64] => int64) - 30i64 + rest[0i64]; };
+// v4_other_ok; on 176b: exit 67, here: exit 67.
+func:c_v4_other_ok = int64() never fails { string:s = string_concat("ab", "cde"); string:t = string_concat("ab", "cde"); pass raw vsw(s, @t); };
+// v6_move_in_rest; on 176b: exit 65, here: exit 65.
+func:c_v6_move_in_rest = int64() never fails { string:s = string_concat("ab", "cde"); pass raw vt(@s, @s); };
+// v9_spread_ok; on 176b: exit 127, here: exit 127.
+func:c_v9_spread_ok = int64() never fails { string:s = string_concat("ab", "cde"); int64[2]:a = [0i64, 0i64]; int64[]:ps = a[0i64...2i64]; pass raw tot(s, ..^ps); };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c_v4_other_ok()) != 7i64) { exit 1i32; }
+    if ((raw c_v6_move_in_rest()) != 5i64) { exit 2i32; }
+    if ((raw c_v9_spread_ok()) != 67i64) { exit 3i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};
