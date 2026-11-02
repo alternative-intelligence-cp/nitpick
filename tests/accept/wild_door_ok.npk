@@ -1,0 +1,84 @@
+// WHAT THE `wild` DOOR LETS IN WITH NO CAST (DEF-423's W3, landing 177c): a header's `.ptr` enters a `wild` slot uncast only at a builtin's slot of a known role, with that
+// same header's own `.len` as the count, the same expression spelled twice, and an element of `uint8` or `int8`, so `.len` is a byte count. A writing slot takes a non-`fixed`
+// slice or `buffer`, and its middle argument is one the same test reads (DEF-469, `wild_door_middle.npk`). Everything else needs `=>!` (`tests/analysis/rejection/wild_door.npk`'s h1 to h7, sp2 to sp8). These bodies are never run: `read` and `write` want a real
+// descriptor, and the slots are the point. `wild_door_reads.npk` runs the legal cells that have a value to read.
+mod:wild_door_ok;
+
+// THE READING SLOTS, every byte header: `string_from_bytes`, `write`, the source of `mcpy` and `mmov`.
+func:sfb_string = string(string:h) never fails { pass string_from_bytes(h.ptr, h.len); };
+func:sfb_cstring = string(cstring:h) never fails { pass string_from_bytes(h.ptr, h.len); };
+func:sfb_buffer = string(buffer:h) never fails { pass string_from_bytes(h.ptr, h.len); };
+func:sfb_view = string(fixed uint8[]:h) never fails { pass string_from_bytes(h.ptr, h.len); };
+func:sfb_slice = string(uint8[]:h) never fails { pass string_from_bytes(h.ptr, h.len); };
+func:sfb_i8_view = string(fixed int8[]:h) never fails { pass string_from_bytes(h.ptr, h.len); };
+func:write_string = int64(fd:f, string:h) { int64:n = relay write(f, h.ptr, h.len); pass n; };
+func:write_cstring = int64(fd:f, cstring:h) { int64:n = relay write(f, h.ptr, h.len); pass n; };
+func:write_buffer = int64(fd:f, buffer:h) { int64:n = relay write(f, h.ptr, h.len); pass n; };
+func:write_view = int64(fd:f, fixed uint8[]:h) { int64:n = relay write(f, h.ptr, h.len); pass n; };
+func:write_slice = int64(fd:f, uint8[]:h) { int64:n = relay write(f, h.ptr, h.len); pass n; };
+func:write_i8_slice = int64(fd:f, int8[]:h) { int64:n = relay write(f, h.ptr, h.len); pass n; };
+func:mcpy_from_string = NIL(wild uint8->:d, string:h) never fails { discard(mcpy(d, h.ptr, h.len)); pass NIL; };
+func:mcpy_from_cstring = NIL(wild uint8->:d, cstring:h) never fails { discard(mcpy(d, h.ptr, h.len)); pass NIL; };
+func:mcpy_from_buffer = NIL(wild uint8->:d, buffer:h) never fails { discard(mcpy(d, h.ptr, h.len)); pass NIL; };
+func:mcpy_from_view = NIL(wild uint8->:d, fixed uint8[]:h) never fails { discard(mcpy(d, h.ptr, h.len)); pass NIL; };
+func:mcpy_from_i8 = NIL(wild int8->:d, int8[]:h) never fails { discard(mcpy(d, h.ptr, h.len)); pass NIL; };
+func:mmov_from_string = NIL(wild uint8->:d, string:h) never fails { discard(mmov(d, h.ptr, h.len)); pass NIL; };
+func:mmov_from_buffer = NIL(wild uint8->:d, buffer:h) never fails { discard(mmov(d, h.ptr, h.len)); pass NIL; };
+func:mmov_from_view = NIL(wild uint8->:d, fixed uint8[]:h) never fails { discard(mmov(d, h.ptr, h.len)); pass NIL; };
+
+// THE WRITING SLOTS, a writable byte header only: `read`, `memset`, the destination of `mcpy` and `mmov`.
+func:read_slice = int64(fd:f, uint8[]:h) { int64:n = relay read(f, h.ptr, h.len); pass n; };
+func:read_i8_slice = int64(fd:f, int8[]:h) { int64:n = relay read(f, h.ptr, h.len); pass n; };
+func:read_buffer = int64(fd:f, buffer:h) { int64:n = relay read(f, h.ptr, h.len); pass n; };
+func:memset_slice = NIL(uint8[]:h) never fails { discard(memset(h.ptr, 0i64, h.len)); pass NIL; };
+func:memset_i8_slice = NIL(int8[]:h) never fails { discard(memset(h.ptr, 0i64, h.len)); pass NIL; };
+func:memset_buffer = NIL(buffer:h) never fails { discard(memset(h.ptr, 0i64, h.len)); pass NIL; };
+func:mcpy_into_slice = NIL(uint8[]:h, wild uint8->:s) never fails { discard(mcpy(h.ptr, s, h.len)); pass NIL; };
+func:mcpy_into_buffer = NIL(buffer:h, wild uint8->:s) never fails { discard(mcpy(h.ptr, s, h.len)); pass NIL; };
+func:mmov_into_slice = NIL(uint8[]:h, wild uint8->:s) never fails { discard(mmov(h.ptr, s, h.len)); pass NIL; };
+func:mmov_into_buffer = NIL(buffer:h, wild uint8->:s) never fails { discard(mmov(h.ptr, s, h.len)); pass NIL; };
+
+// THE SAME EXPRESSION SPELLED TWICE, by a field, a nested field, an element and a dereference.
+struct:Hd = { string:name; };
+struct:Hh = { Hd:d; };
+func:by_field = string(Hd:h) never fails { pass string_from_bytes(h.name.ptr, h.name.len); };
+func:by_nested_field = string(Hh:h) never fails { pass string_from_bytes(h.d.name.ptr, h.d.name.len); };
+func:by_element = string(cstring[]:a) never fails { pass string_from_bytes(a[1i64].ptr, a[1i64].len); };
+func:by_deref = string(string->:p) never fails { pass string_from_bytes((<-p).ptr, (<-p).len); };
+func:by_pointer_member = string(Hd->:p) never fails { pass string_from_bytes(p.name.ptr, p.name.len); };
+
+// `.ptr` IS NO SLOT WHERE NOTHING ENTERS: compared with `NULL`, read as a plain pointer, and taken by a written cast wherever a count is not the header's own.
+func:ptr_not_null = bool(string:h) never fails { pass h.ptr != NULL; };
+func:buffer_not_null = bool(buffer:h) never fails { pass h.ptr != NULL; };
+func:written_cast_count = string(string:h, int64:n) never fails { pass string_from_bytes((h.ptr) =>! wild uint8->, n); };
+func:written_cast_ptr_add = wild uint8->(string:h) never fails { pass #ptr_add<uint8>((h.ptr) =>! wild uint8->, 1i64); };
+
+// AN INSTANCE ONLY A GENERIC BODY FORMS, OF A STRUCT WITH `wild` IN IT, ISN'T JUDGED (accepted, 2026-11-02, DEF-454's row): TYPE-107 reads the instances a generic function's emission forms,
+// and the struct instance `Vw<string->>` here is formed by no function with the word in it. The direct spelling is refused (`wild_door_types.npk`'s `t3_no_word_returns_vw`).
+struct:Vw<T> = { wild T->:items; };
+func:hold<U> = int64() never fails { Vw<U>:w = Vw{ items: NULL }; pass 5i64; };
+func:mkvw<U> = Vw<U>() never fails { pass Vw{ items: NULL }; };
+func:hold2<U> = int64() never fails { Vw<U>:w = raw mkvw::<U>(); pass 5i64; };
+func:through_hold = int64() never fails { pass raw hold::<string->>(); };
+func:through_hold2 = int64() never fails { pass raw hold2::<string->>(); };
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,37 @@
+// The instances TYPE-107 leaves alone (DEF-423's generic road, ruled 2026-11-02): a `string` and a struct owning one hold no
+// borrow (an owner is not an address D-223 is about), an integer holds nothing, the prelude's own `List` is exempt however its
+// `T` is spelled, a generic with no `wild` in its declaration may hold a plain pointer, and the word in a comment or a string
+// is no word.
+mod:wild_generic_instance_ok;
+
+func:rt<T> = T(move T:v) never fails { wild T->:c = alloc(8i64) =>! wild T->; <-c = move(v); T:o = move(<-c); dalloc(c); pass move(o); };
+struct:Vw<T> = { wild T->:items; };
+struct:G<T> = { T:p; };
+struct:Own = { string:s; };
+func:cw<T> = T(move T:v) never fails { // wild
+    string:u = "wild"; pass move(v); };
+
+func:a_string = string(move string:s) never fails { pass raw rt::<string>(move(s)); };
+func:b_owner = Own(move Own:o) never fails { pass raw rt::<Own>(move(o)); };
+func:c_int = int64() never fails { pass raw rt::<int64>(5i64); };
+func:d_vec_of_string = NIL() never fails { Vw<string>:v = Vw{ items: NULL }; pass NIL; };
+func:e_list_of_plain = NIL(string->:q) never fails { List<string->>:l = raw list_init::<string->>(4i64); drop list_push(@l, q); pass NIL; };
+func:f_plain_generic = int64(string->:q) never fails { G<string->>:g = G{ p: q }; pass g.p.len; };
+func:g_word_in_comment = int64(string->:q) never fails { string->:r = raw cw::<string->>(q); pass r.len; };
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

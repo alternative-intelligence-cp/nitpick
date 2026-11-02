@@ -1,0 +1,62 @@
+// expect-exit: 0
+// expect-obligation: failsafe-post discharged 11
+// expect-obligation: exhaustive checker 1
+// expect-obligation: bounds discharged 6
+// expect-obligation: bounds open 1
+//
+// A READ `x.ptr[i]` IS THE HEADER'S OWN INDEX, AND ITS ROW IS THE HEADER'S (DEF-425's I2, landing 177c; D-070's rows). A loop over a binding's `.len` proves each
+// read inside it, as `x[i]` does, and the verified build turns the guard into one `llvm.assume`: the bound is the same length term, a `string`, a `buffer` and a slice at
+// `i < len`, a `cstring` at `i <= len`, its terminator being its own. The one `open` row is `argv[0i64]`: nothing bounds `argv`'s count here.
+mod:bounds_header_ptr;
+
+func:sum_string = int64() never fails {
+    string:s = string_concat("ab", "cde");
+    int64:t = 0i64;
+    for (int64:i in 0i64...s.len) { t = t +% (s.ptr[i] => int64); }
+    pass t;
+};
+
+func:sum_buffer = int64() never fails {
+    buffer:b = buffer_new(8i64);
+    for (int64:i in 0i64...b.len) { b[i] = 3u8; }
+    int64:t = 0i64;
+    for (int64:i in 0i64...b.len) { t = t +% (b.ptr[i] => int64); }
+    pass t;
+};
+
+func:sum_view = int64(fixed uint8[]:v) never fails {
+    int64:t = 0i64;
+    for (int64:i in 0i64...v.len) { t = t +% (v.ptr[i] => int64); }
+    pass t;
+};
+
+func:cstring_terminator = int64(cstring:c) never fails {
+    int64:t = 0i64;
+    for (int64:i in 0i64...c.len) { t = t +% (c.ptr[i] => int64); }
+    pass t +% (c.ptr[c.len] => int64);
+};
+
+func:main = int32(cstring[]:argv) {
+    if ((raw sum_string()) != 495i64) { exit 10i32; }
+    if ((raw sum_buffer()) != 24i64) { exit 11i32; }
+    string:h = string_concat("a", "b");
+    if ((raw sum_view(string_bytes(h))) != 195i64) { exit 12i32; }
+    if ((raw cstring_terminator(argv[0i64])) < 0i64) { exit 13i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (DecreasesViolated) { exit 99i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

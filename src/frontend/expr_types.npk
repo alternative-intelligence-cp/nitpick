@@ -169,6 +169,10 @@ pub struct:ExprTypes = {
     List<int32>:alias_site;
     List<int32>:alias_party;
     List<int32>:alias_holder;
+    // THE VALUES THE `wild` DOOR REFUSED (DEF-423, landing 177c): the typer judges a value where it enters a `wild` slot, the one
+    // point it knows the slot, and the analyses report it (`NITPICK-BORROW-011`, `escape_report_door`), so a door refusal never
+    // silences an analysis (a typer error stops them). Expression ids; sparse, like `cross`.
+    List<int32>:door;
 };
 
 pub func:exprtypes_init = ExprTypes(int32:n) never fails {
@@ -202,7 +206,8 @@ pub func:exprtypes_init = ExprTypes(int32:n) never fails {
                              odecl: raw list_init::<int32>(16i64),
                              alias_site: raw list_init::<int32>(8i64),
                              alias_party: raw list_init::<int32>(8i64),
-                             alias_holder: raw list_init::<int32>(8i64) };
+                             alias_holder: raw list_init::<int32>(8i64),
+                             door: raw list_init::<int32>(8i64) };
     for (int64:i in 0i64...size) {
         t.items[i] = 0i32;
         t.known[i] = false;

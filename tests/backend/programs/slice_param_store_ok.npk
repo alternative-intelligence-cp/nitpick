@@ -56,7 +56,7 @@ func:read_then_write = int32(S->:p) never fails {
 };
 func:wild_slice = int32(S->:p) never fails {
     wild Holder->:w = calloc(2i64, 24i64) =>! wild Holder->;
-    Holder[]:ws = #wild_slice<Holder>(w, 2i64);
+    Holder[]:ws = #wild_slice<Holder>(w, 2i64) =>! Holder[];
     drop put(ws, p);
     int32:r = ws[0i64].v[0i64] => int32;
     dalloc(w);

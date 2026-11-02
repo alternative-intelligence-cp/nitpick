@@ -34,7 +34,7 @@ func:wv_pop<T: Copy> = T(WV<T>->:v) never fails {
     pass answer;
 };
 func:wb_push = NIL(WB->:b, uint8:x) never fails {
-    uint8[]:room = #wild_slice<uint8>(b.body.ptr, b.body.cap);
+    uint8[]:room = #wild_slice<uint8>(b.body.ptr =>! wild uint8->, b.body.cap);
     room[b.len] = x;
     b.len = b.len + 1i64;
     pass NIL;

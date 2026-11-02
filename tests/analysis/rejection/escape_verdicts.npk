@@ -179,12 +179,12 @@ thread async func:rdmf = NIL(move H:h) joins J2 {
 };
 func:takev_long = string(move HB:h, string->:pw) {
     fixed uint8[]:bs = string_bytes(<-pw);
-    h.v = string_from_bytes(bs.ptr, 2i64);
+    h.v = string_from_bytes(bs.ptr =>! wild uint8->, 2i64);
     return Result{value: h.v};
 };
 func:takev_pass = string(move HB:h, string->:pw) {
     fixed uint8[]:bs = string_bytes(<-pw);
-    h.v = string_from_bytes(bs.ptr, 2i64);
+    h.v = string_from_bytes(bs.ptr =>! wild uint8->, 2i64);
     pass h.v;
 };
 

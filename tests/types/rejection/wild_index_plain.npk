@@ -1,0 +1,242 @@
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 74:54
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 78:89
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 81:183
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 85:99
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 88:52
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 91:108
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 94:102
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 97:77
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 102:83
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 110:65
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 118:100
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 126:65
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 131:71
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 134:79
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 137:66
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 140:87
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 143:70
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 154:70
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 161:67
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 166:67
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 170:95
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 174:101
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 177:87
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 188:111
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 199:116
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 203:99
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 203:109
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 207:54
+// expect-error: NITPICK-TYPE-106
+// expect-error-at: 211:101
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 217:77
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 220:78
+// A PLAIN POINTER HAS ONE ELEMENT (DEF-425, landing 177c): `p[k]` and `@p[k]` are refused (`NITPICK-TYPE-106`) unless `k` is the constant 0
+// or `p` has `wild` provenance (I1), since a plain pointer has no length to check `k` against: a run of elements is a slice, `(<-p)[i]`
+// through a pointer to an array. And a WRITE or an ADDRESS through any header's `.ptr[i]`, `wild` or not, is refused (I2): the bytes of a
+// `string`, a `fixed` view or a `buffer` are written only through their own operations, with the bound and the rights their type carries.
+// A READ `x.ptr[i]` through such a header is the header's own checked index (`tests/backend/programs/header_ptr_past.npk`,
+// `wild_door_reads.npk`). Each module below is one cell, as it read on the census's tree.
+mod:wild_index_plain;
+
+// THE RULED LIST: I1, A PLAIN POINTER HAS ONE ELEMENT, AND I2, A WRITE OR AN ADDRESS THROUGH A HEADER'S `.ptr` (rulings section 2).
+mod:r1_string_ptr_index_write = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string:s = raw mks(); s.ptr[0i64] = 113u8; pass (string_bytes(s)[0i64] => int64) - 90i64; };
+};
+mod:r2_fixed_view_ptr_index_write = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string:s = raw mks(); fixed uint8[]:b = string_bytes(s); b.ptr[0i64] = 113u8; pass (string_bytes(s)[0i64] => int64) - 90i64; };
+};
+mod:r3_slice_ptr_index_past_end = {
+func:f = int64() never fails { int64:j = 5i64; uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; int64:k = 5i64; uint8[]:v = b[0i64...8i64]; for (int64:i in 0i64...100000i64) { v.ptr[i] = 0u8; } pass j + k - 5i64; };
+};
+mod:r4_slice_ptr_elem_owner_store = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string[2]:a = [raw mks(), raw mks()]; string[]:v = a[0i64...2i64]; v.ptr[0i64] = string_concat("wx", "yz"); pass a[0i64].len + 0i64; };
+};
+mod:r11_literal_ptr_index_write = {
+func:f = int64() never fails { string:s = "abcde"; s.ptr[0i64] = 113u8; pass (string_bytes(s)[0i64] => int64) - 90i64; };
+};
+mod:r12_plain_ptr_index_read_past = {
+func:f = int64() never fails { int64:i = 5i64; int64:j = 7i64; int64->:p = @i; int64:n = 1000000i64; pass p[n] + 0i64; };
+};
+mod:r13_plain_ptr_index_write_past = {
+func:f = int64() never fails { int64:i = 5i64; int64->:p = @i; for (int64:k in 0i64...1000000i64) { p[k] = 0i64; } pass 5i64; };
+};
+mod:r14_plain_param_index_write = {
+func:g = NIL(int64->:p) never fails { for (int64:k in 0i64...1000000i64) { p[k] = 0i64; } pass NIL; };
+func:f = int64() never fails { int64:i = 5i64; drop g(@i); pass 5i64; };
+};
+mod:r15_string_ptr_index_past = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string[1]:a = [raw mks()]; string->:p = @a[0i64]; p[1i64] = string_concat("wx", "yz"); pass 5i64; };
+};
+mod:i2e_addr_of_ptr_index_write = {
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:f = int64() never fails { string:s = raw mk(); uint8->:p = @s.ptr[0i64]; <-p = 113u8; pass (string_bytes(s)[0i64] => int64) - 90i64; };
+};
+mod:i2f_fixed_view_addr_write = {
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:f = int64() never fails { string:s = raw mk(); fixed uint8[]:v = string_bytes(s); uint8->:p = @v.ptr[0i64]; <-p = 113u8; pass (string_bytes(s)[0i64] => int64) - 90i64; };
+};
+mod:i2g_far_addr = {
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:f = int64() never fails { string:s = raw mk(); uint8->:p = @s.ptr[9000000i64]; pass ((<-p) => int64) - 30i64; };
+};
+
+// I1 CELL BY CELL: ONLY THE CONSTANT 0 OR A POINTER OF `wild` PROVENANCE IS INDEXED (a variable holding 0 and a folded 0 are not the constant).
+mod:i1_nonzero = {
+func:f = int64() never fails { int64:x = 65i64; int64->:p = @x; pass p[1i64]; };
+};
+mod:i1_addr_nonzero = {
+func:f = int64() never fails { int64:x = 65i64; int64->:p = @x; int64->:r = @p[1i64]; pass 5i64; };
+};
+mod:i1_write_nonzero = {
+func:f = int64() never fails { int64:x = 65i64; int64->:p = @x; p[1i64] = 7i64; pass 5i64; };
+};
+mod:i1_var_zero = {
+func:f = int64() never fails { int64:x = 65i64; int64:k = 0i64; int64->:p = @x; pass p[k]; };
+};
+mod:i1_folded = {
+func:f = int64() never fails { int64:x = 5i64; int64->:p = @x; pass p[1i64 - 1i64]; };
+};
+mod:i1c_zero_expression = {
+struct:S = { int64->:p; };
+struct:Bx = { wild S->:w; };
+struct:Hs = { string:s; int64[]:v; uint8[]:b; };
+trait:Tr = { func:gv = int64(Self->:self) never fails; };
+struct:M = { int64:k; };
+impl:M:Tr = { func:gv = int64(M->:self) never fails { pass self.k; }; };
+struct:Wd = { wild dyn Tr:d; };
+func:mkv = int64[](int64[]:v) never fails { pass v; };
+func:f = int64() never fails { int64:a = 5i64; int64->:p = @a; pass p[0i64 + 1i64] - 5i64; };
+};
+
+// I2 CELL BY CELL: THE CLAIMS, THE RECEIVERS, A WRITE THROUGH A FIELD, AN ELEMENT OR A COMPOUND ASSIGNMENT, A `move` OUT (TYPE-104 beside it); A `string` HEADER STORED IN A `wild` BLOCK IS STILL A `string`, ITS BYTES NOT `wild`.
+mod:a1_claim_i_ptr_index = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:rdb = int64(uint8->:p) never fails { pass (<-p) => int64; };
+func:f = int64() never fails { string:s = raw mks(); pass raw rdb($$i s.ptr[0i64]); };
+};
+mod:a2_claim_m_ptr_index = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:rdb = int64(uint8->:p) never fails { pass (<-p) => int64; };
+func:f = int64() never fails { string:s = raw mks(); pass raw rdb($$m s.ptr[0i64]); };
+};
+mod:a7_write_elem_field = {
+struct:M = { int64:k; };
+func:f = int64() never fails { M[2]:b = [M{ k: 1i64 }, M{ k: 2i64 }]; M[]:v = b[0i64...2i64]; v.ptr[1i64].k = 9i64; pass 5i64; };
+};
+mod:a8_write_elem_arr = {
+struct:Ma = { int64[2]:a; int64:k; };
+func:f = int64() never fails { Ma[1]:b = [Ma{ a: [1i64, 2i64], k: 2i64 }]; Ma[]:v = b[0i64...1i64]; v.ptr[0i64].a[1i64] = 9i64; pass 5i64; };
+};
+mod:a9_compound = {
+func:f = int64() never fails { int64[2]:b = [1i64, 2i64]; int64[]:v = b[0i64...2i64]; v.ptr[1i64] += 9i64; pass 5i64; };
+};
+mod:a10_receiver_auto_addr = {
+struct:M = { int64:k; };
+impl:M = {
+    func:setk = NIL(M->:self, int64:v) never fails { self.k = v; pass NIL; };
+    func:getk = int64(M->:self) never fails { pass self.k; };
+    func:byv = int64(M:self, wild string->:x) never fails { string:t = move(<-x); pass self.k; };
+    func:wself = int64(wild M->:self) never fails { pass self.k; };
+    func:wxself = int64(wildx M->:self) never fails { pass self.k; };
+};
+func:f = int64() never fails { M[2]:b = [M{ k: 1i64 }, M{ k: 2i64 }]; M[]:v = b[0i64...2i64]; drop v.ptr[1i64].setk(9i64); pass b[1i64].k - 4i64; };
+};
+mod:a11_receiver_read = {
+struct:M = { int64:k; };
+impl:M = {
+    func:setk = NIL(M->:self, int64:v) never fails { self.k = v; pass NIL; };
+    func:getk = int64(M->:self) never fails { pass self.k; };
+    func:byv = int64(M:self, wild string->:x) never fails { string:t = move(<-x); pass self.k; };
+    func:wself = int64(wild M->:self) never fails { pass self.k; };
+    func:wxself = int64(wildx M->:self) never fails { pass self.k; };
+};
+func:f = int64() never fails { M[2]:b = [M{ k: 1i64 }, M{ k: 2i64 }]; M[]:v = b[0i64...2i64]; pass (raw v.ptr[1i64].getk()) + 3i64; };
+};
+mod:a13_move_out = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string[1]:b = [raw mks()]; string[]:v = b[0i64...1i64]; string:t = move(v.ptr[0i64]); pass t.len; };
+};
+mod:a14_paren_write = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string:s = raw mks(); (s.ptr)[0i64] = 113u8; pass s.len; };
+};
+mod:a18_string_in_wild_block_write = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { wild string->:w = alloc(32i64) =>! wild string->; (<-w) = raw mks(); (<-w).ptr[1i64] = 99u8; pass ((<-w).ptr[1i64] => int64) - 94i64; };
+};
+
+// A RANGE OVER A PLAIN POINTER WAS NEVER A ROAD (TYPE-007).
+mod:a5_ptr_range = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string:s = raw mks(); fixed uint8[]:v = s.ptr[0i64...2i64]; pass v.len + 3i64; };
+};
+mod:a6_ptr_range_far = {
+func:f = int64() never fails { buffer:o = buffer_new(4i64); uint8[]:v = o.ptr[0i64...9000000i64]; pass (v[8999999i64] => int64) + 5i64; };
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

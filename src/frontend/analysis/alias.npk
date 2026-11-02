@@ -1799,8 +1799,13 @@ func:ptr_ref_is_target = bool(Alias->:x, ViewRef:vr, int32:pty, int32:pte) never
     // write through another, 113 at both legs): a ref carried as an `any->` VALUE is a
     // target of every pointee -- `escape_any_pointer_link`, the three readers' one predicate.
     if (raw escape_any_pointer_link(x.esc, pt, pte)) { pass ((vr.kind == (raw REF_ADDR())) || (vr.kind == (raw REF_PASS()))); }
-    if (vr.kind == (raw REF_ADDR())) { pass (pt == pte); }
-    if (vr.kind == (raw REF_PASS())) { pass (pt == pty); }
+    // WHAT A CALL'S RESULT REACHES (DEF-426, landing 177c): a call handed `@h` may hand back what `h` holds, so the address counts where its pointee's type holds the
+    // pointer's target (`get(@holder)`), by type, as the rest of this question is. A result carried from a pointer parameter (`REF_PASS`) is that parameter's pointee's twin.
+    if (vr.kind == (raw REF_ADDR())) { pass ((pt == pte) || (raw escape_type_holds(x.esc, pt, pte, 8i32))); }
+    if (vr.kind == (raw REF_PASS())) {
+        if (pt == pty) { pass true; }
+        pass ((raw type_kind(x.types, pt)) == (raw TY_POINTER())) && (raw escape_type_holds(x.esc, raw type_elem(x.types, pt), pte, 8i32));
+    }
     pass false;
 };
 
@@ -1862,6 +1867,21 @@ func:peel_ptr_casts = ExprId(Alias->:x, ExprId:e) never fails {
     pass cur;
 };
 
+// WHAT AN ADDRESS HANDED TO A CALL HOLDS (DEF-426), read off the holder's refs when its own type is no target: `get(@box)`, `box` holding `@h`, reaches `h`.
+func:targets_held = NIL(Alias->:x, int32:rr, int32:from, int32:pty, int32:pte, int32:fuel, List<ViewRef>->:out) decreases fuel never fails {
+    if ((fuel <= 0i32) || (rr == 0i32)) { pass NIL; }
+    Symbol:rsy = raw symtab_get(x.tab, rr);
+    if (rsy.origin_kind != (raw SYM_STMT())) { pass NIL; }
+    int32:e3 = raw escape_view_ref_first(x.esc, rsy.origin);
+    while (e3 >= 0i32) decreases e3 + 1i32 {
+        ViewRef:vr3 = raw escape_view_ref(x.esc, e3);
+        e3 = raw escape_view_ref_next(x.esc, e3);
+        if ((vr3.root == 0i32) || (vr3.root == rr) || (vr3.root == from)) { continue; }
+        if (raw ptr_ref_is_target(x, vr3, pty, pte)) { drop list_push(out, vr3); continue; }
+        if (vr3.kind == (raw REF_ADDR())) { drop targets_held(x, vr3.root, rr, pty, pte, fuel - 1i32, out); }
+    }
+    pass NIL;
+};
 func:pointer_targets_of = NIL(Alias->:x, ExprId:pe_in, int32:fuel, List<ViewRef>->:out) decreases fuel never fails {
     if (fuel <= 0i32) { pass NIL; }
     ExprId:pe = raw peel_ptr_casts(x, pe_in);   // DEF-343: the pointer under its casts
@@ -1889,6 +1909,7 @@ func:pointer_targets_of = NIL(Alias->:x, ExprId:pe_in, int32:fuel, List<ViewRef>
                 e2 = raw escape_view_ref_next(x.esc, e2);
                 if (vr2.root == 0i32) { continue; }
                 if (vr2.root == rr) { continue; }
+                drop targets_held(x, vr2.root, rr, pty, pte, fuel - 1i32, out);   // DEF-426's hop, through a pointer as off a name (`qp.q`, `h1`, 83)
                 if (!(raw ptr_ref_is_target(x, vr2, pty, pte))) { continue; }
                 drop list_push(out, vr2);
             }
@@ -1901,6 +1922,7 @@ func:pointer_targets_of = NIL(Alias->:x, ExprId:pe_in, int32:fuel, List<ViewRef>
         e = raw escape_view_ref_next(x.esc, e);
         if (vr.root == 0i32) { continue; }
         if (vr.root == r) { continue; }
+        drop targets_held(x, vr.root, r, pty, pte, fuel - 1i32, out);
         if (!(raw ptr_ref_is_target(x, vr, pty, pte))) { continue; }
         drop list_push(out, vr);
     }
@@ -2348,7 +2370,9 @@ func:check_addr_window = NIL(Alias->:x, ExprId:place, Span:at) never fails {
         // left `p` reading the vacated storage (a fabricated length 0, 174 == 175; `.internal/probes176/def410/keepp/`).
         // The party is PARTY_PLAIN with the holder's symbol, live to the end of the holder's block (the closed choice:
         // lexical, not last-use). A write or a reassignment through the name stays legal: only a VACATING access conflicts.
-        bool:held = (p.kind == (raw PARTY_PLAIN())) && (p.holder > 0i32);
+        // A `$$i` HOLDER IS HELD AGAINST A FREE AS AN `@` HOLDER IS (DEF-480): `int64->:p = $$i (<-a); dalloc(a);` read freed bytes, a free being a read and a read no conflict with a shared claim.
+        // Only over a place of pointer type: a `move` of an owner under `$$i` already has its report.
+        bool:held = ((p.kind == (raw PARTY_PLAIN())) || ((p.kind == (raw PARTY_SHARED())) && ((raw type_kind(x.types, raw exprtypes_get(x.etypes, place))) == (raw TY_POINTER())))) && (p.holder > 0i32);
         if ((p.kind != (raw PARTY_ADDR())) && (!held)) { continue; }
         ExprNode:pn = raw ast_expr(x.ast, p.site);
         string:m = string_concat("this vacates `", raw intern_get(x.it, (raw symtab_get(x.tab, root)).name));

@@ -457,7 +457,7 @@ pub func:subst_emitted_type = int32(LlCtx->:c, int32:id) never fails {
     if (c.subst_params_count == 0i32) { pass id; }
     if (c.tr == NULL) { pass id; }
     if (!(raw type_mentions_param(c.types, c.ast, id, 64i32))) { pass id; }
-    pass (raw type_subst(c.tr =>! TypeResolver->, id, raw subst_emitted_scope(c), raw span_none(),   // the crossing (D-361): a wild table handle into a plain parameter
+    pass (raw type_subst_ctx(c.tr =>! TypeResolver->, id, raw subst_emitted_scope(c), raw span_none(),   // the crossing (D-361): a wild table handle into a plain parameter
                            raw SUBST_FUEL_LL(), c.impls));
 };
 
@@ -791,7 +791,7 @@ pub func:ll_type = LlType(LlCtx->:c, int32:id) never fails {
     if (k == (raw TY_ASSOC())) {
         if (c.tr != NULL) {
             int32:ab = raw subst_emitted_param(c, raw type_assoc_base(c.types, id));
-            int32:bound = raw assoc_binding_of(c.tr =>! TypeResolver->, c.impls, ab,   // the crossing (D-361)
+            int32:bound = raw assoc_binding_of(c.tr =>! TypeResolver->, raw impls_opt(c.impls), ab,   // the crossing (D-361)
                               raw type_assoc_trait(c.types, id),
                               raw type_assoc_name(c.types, id));
             if (bound != 0i32) { pass (raw ll_type(c, bound)); }
@@ -1030,7 +1030,7 @@ pub func:ll_struct_body = LlType(TypeResolver->:r, LlCtx->:c, int32:id,
         DeclNode:m = raw ast_decl(c.ast, mid);
         if (m.kind == DeclKind.DeclFieldDecl) {
             int32:ft0 = raw resolve_type(r, raw field_type(m), scope);
-            int32:ft = raw type_subst(r, ft0, g, m.span, raw SUBST_FUEL_LL(),
+            int32:ft = raw type_subst_ctx(r, ft0, g, m.span, raw SUBST_FUEL_LL(),
                             c.impls);
             LlType:ll = raw ll_member_type(c, ft);
             if (ll.state != (raw LL_OK())) {

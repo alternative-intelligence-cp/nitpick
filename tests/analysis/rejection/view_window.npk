@@ -1,7 +1,7 @@
 // expect-error: NITPICK-BORROW-015
 // expect-error-at: 45:52
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 51:72
+// expect-error-at: 51:89
 // expect-error: NITPICK-BORROW-015
 // expect-error-at: 56:52
 // expect-error: NITPICK-BORROW-015
@@ -34,7 +34,7 @@ func:vw = fixed uint8[](string:s) never fails { pass string_bytes(s); };
 func:fv = int64(fixed uint8[]:v, int64:k) never fails { pass (v[0i64] => int64) + k; };
 func:oidx = int64?(int64:k) never fails { pass k; };
 func:ridx = int64(int64:k) { pass k; };
-func:hold_w = uint8[](move string:x, string:k) never fails { pass #wild_slice<uint8>(k.ptr, k.len); };
+func:hold_w = uint8[](move string:x, string:k) never fails { pass #wild_slice<uint8>(k.ptr =>! wild uint8->, k.len); };
 struct:C = { fixed uint8[]:v; int64:k; };
 struct:W = { uint8[]:v; int64:k; };
 struct:H = { string:s; };
@@ -48,7 +48,7 @@ func:struct_field = int64() never fails {
 func:array_elem = int64() never fails {
     string:s = string_concat("ab", "cde");
     string:t = string_concat("zz", "");
-    uint8[][2]:a = [#wild_slice<uint8>(s.ptr, s.len), (raw hold_w(move(s), t))];
+    uint8[][2]:a = [#wild_slice<uint8>(s.ptr =>! wild uint8->, s.len), (raw hold_w(move(s), t))];
     pass (a[0i64][0i64] => int64);
 };
 func:index_coalesce = int64() never fails {

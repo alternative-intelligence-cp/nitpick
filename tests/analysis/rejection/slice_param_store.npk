@@ -210,7 +210,7 @@ func:ctl_read_only = int32(S->:p) never fails {
 };
 func:ctl_wild = int32(S->:p) never fails {
     wild Holder->:w = calloc(2i64, 24i64) =>! wild Holder->;
-    Holder[]:ws = #wild_slice<Holder>(w, 2i64);
+    Holder[]:ws = #wild_slice<Holder>(w, 2i64) =>! Holder[];
     drop put(ws, p);
     p.s = string_concat("x", "y");
     dalloc(w);

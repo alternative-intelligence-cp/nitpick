@@ -1,0 +1,196 @@
+// expect-exit: 0
+//
+// A READ `x.ptr[i]` THROUGH ANY HEADER, `wild` OR NOT, IS THE HEADER'S OWN CHECKED INDEX (DEF-425's I2, landing 177c): past the length it traps `OutOfBounds`, and it read
+// the bytes past the block before. The bound is per kind: `i < len` for a `string`, a `buffer` and a slice; `i <= len` for a `cstring`, whose terminator is its
+// own. `ptr` and `len` load after the index is evaluated (`wild_door_reads.npk`'s `i2a`). Each case runs in a child of this program, whose own `failsafe` reads
+// `OutOfBounds` as 98; a case that returns reads as its cell's value instead, so a missing guard is seen. `r8` is the control: a slice's own index, the same trap.
+mod:header_ptr_past;
+
+use "../../../lib/nproc.npk".*;
+
+error:E9;
+
+mod:i2c_empty_header_len_minus_one = {
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:f = int64() never fails { string:s = string_concat("", ""); int64:r = (s.ptr[s.len - 1i64] => int64); pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:i2j_past_end_read = {
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:f = int64() never fails { string:s = raw mk(); int64:r = (s.ptr[5i64] => int64); pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:i2k_far_read = {
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:f = int64() never fails { buffer:b = buffer_new(4i64); int64:r = (b.ptr[9000000i64] => int64); pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:r8_slice_bounds_ctl = {
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; int64:n = 100i64; v[n] = 0u8; pass 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:a4_range_view_ptr_past = {
+func:f = int64() never fails { buffer:o = buffer_new(8i64); pass (o[0i64...2i64].ptr[2i64] => int64) + 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:a15_through_pointer_past = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string:s = raw mks(); string->:q = @s; pass (q.ptr[9i64] => int64) + 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:a21_cstring_past = {
+error:E5_a21_cstring_past;
+func:f = int64() never fails { cstring:c = to_cstring("abcde") ?! E5_a21_cstring_past; pass (c.ptr[c.len + 1i64] => int64) + 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:b2_buffer_past = {
+func:f = int64() never fails { buffer:b = buffer_new(8i64); int64:r = (b.ptr[8i64] => int64) * 0i64; pass r; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e1b_view_past = {
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; pass v.ptr[3i64] - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e2b_call_slice_past = {
+func:mkv = int64[](int64[]:v) never fails { pass v; };
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; pass (raw mkv(v)).ptr[9i64] - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e5b_call_string_past = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; pass ((raw mks()).ptr[9i64] => int64) - 98i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e8b_through_pointer_past = {
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; int64[]->:q = @v; pass q.ptr[3i64] - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e13b_range_view_past = {
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; pass (v[1i64...3i64]).ptr[2i64] - 3i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e15_negative_index = {
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; int64:i = 0i64 - 1i64; pass v.ptr[i] - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:u1_u8_index_200 = {
+func:f = int64() never fails { wild int64->:w = alloc(2400i64) =>! wild int64->; for (int64:i in 0i64...300i64) { <-(#ptr_add<int64>(w, i)) = i; } int64[]:v = #wild_slice<int64>(w, 300i64); uint8:k = 200u8; int64:r = v[k]; dalloc(w); pass r - 200i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:u2_u8_ptr_index_200 = {
+func:f = int64() never fails { wild int64->:w = alloc(2400i64) =>! wild int64->; for (int64:i in 0i64...300i64) { <-(#ptr_add<int64>(w, i)) = i; } int64[]:v = #wild_slice<int64>(w, 300i64); uint8:k = 200u8; int64:r = v.ptr[k]; dalloc(w); pass r - 200i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+
+func:drive = int32(int64:which) never fails {
+    if (which == 1i64) { pass raw i2c_empty_header_len_minus_one.cell_main(); }
+    if (which == 2i64) { pass raw i2j_past_end_read.cell_main(); }
+    if (which == 3i64) { pass raw i2k_far_read.cell_main(); }
+    if (which == 4i64) { pass raw r8_slice_bounds_ctl.cell_main(); }
+    if (which == 5i64) { pass raw a4_range_view_ptr_past.cell_main(); }
+    if (which == 6i64) { pass raw a15_through_pointer_past.cell_main(); }
+    if (which == 7i64) { pass raw a21_cstring_past.cell_main(); }
+    if (which == 8i64) { pass raw b2_buffer_past.cell_main(); }
+    if (which == 9i64) { pass raw e1b_view_past.cell_main(); }
+    if (which == 10i64) { pass raw e2b_call_slice_past.cell_main(); }
+    if (which == 11i64) { pass raw e5b_call_string_past.cell_main(); }
+    if (which == 12i64) { pass raw e8b_through_pointer_past.cell_main(); }
+    if (which == 13i64) { pass raw e13b_range_view_past.cell_main(); }
+    if (which == 14i64) { pass raw e15_negative_index.cell_main(); }
+    if (which == 15i64) { pass raw u1_u8_index_200.cell_main(); }
+    if (which == 16i64) { pass raw u2_u8_ptr_index_200.cell_main(); }
+    pass 4i32;
+};
+
+func:args_of = ProcArgs(string:exe, string:a) {
+    ProcArgs:pa = raw args_init();
+    args_push(@pa, exe) ?! E9;
+    args_push(@pa, a) ?! E9;
+    pass pa;
+};
+
+async func:child = int64(Path:self, ProcArgs->:env, string:which) {
+    ProcArgs:a = args_of(self.text, which) ?! E9;
+    Proc:p = proc_spawn(self, @a, env) ?! E9;
+    ProcExit:x = (await proc_wait(move(p), raw duration_secs(10i64))) ?! E9;
+    drop args_free(@a);
+    if (!x.exited) { pass 255i64; }
+    pass x.status;
+};
+
+func:case_of = int64(string:w) never fails {
+    if (string_equals(w, "1")) { pass 1i64; }
+    if (string_equals(w, "2")) { pass 2i64; }
+    if (string_equals(w, "3")) { pass 3i64; }
+    if (string_equals(w, "4")) { pass 4i64; }
+    if (string_equals(w, "5")) { pass 5i64; }
+    if (string_equals(w, "6")) { pass 6i64; }
+    if (string_equals(w, "7")) { pass 7i64; }
+    if (string_equals(w, "8")) { pass 8i64; }
+    if (string_equals(w, "9")) { pass 9i64; }
+    if (string_equals(w, "10")) { pass 10i64; }
+    if (string_equals(w, "11")) { pass 11i64; }
+    if (string_equals(w, "12")) { pass 12i64; }
+    if (string_equals(w, "13")) { pass 13i64; }
+    if (string_equals(w, "14")) { pass 14i64; }
+    if (string_equals(w, "15")) { pass 15i64; }
+    if (string_equals(w, "16")) { pass 16i64; }
+    pass 0i64;
+};
+
+async func:main = int32(cstring[]:argv) {
+    if (argv.len == 2i64) {
+        string:w = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+        exit (raw drive(raw case_of(w)));
+    }
+    string:sp = string_from_bytes(argv[0i64].ptr, argv[0i64].len);
+    Path:self = path_parse(sp) ?! E9;
+    ProcArgs:env = raw args_init();
+    cstring[]:mine = environ();
+    for (int64:i in 0i64...mine.len) { args_push_cstring(@env, mine[i]) ?! E9; }
+
+    string[16]:cases = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"];
+    for (int64:c in 0i64...16i64) {
+        int64:r = (await child(self, @env, cases[c])) ?! E9;
+        if (r != 98i64) { exit ((10i64 + c) =>! int32); }   // the case's position, 0 based, from 10
+    }
+    drop args_free(@env);
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DeadlineExceeded) { exit 89i32; },
+        (header_ptr_past.E5_a21_cstring_past) { exit 89i32; },
+        (header_ptr_past.E9) { exit 89i32; },
+        (nproc.EProcArgs) { exit 89i32; },
+        (nproc.EProcDeadline) { exit 89i32; },
+        (nproc.EProcSpawn) { exit 89i32; },
+        (nproc.EProcWait) { exit 89i32; },
+        (prelude.BadPath) { exit 89i32; },
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -117,7 +117,7 @@ func:c_r416b_wild_param = int64() never fails {
 };
 // pa1_ptr_add_param_field_ok; on 177a: exit=60, here: exit=60 (build 6 refused it, TYPE-047: lib/ntensor.npk's `get`, a builtin's result at the END of the path).
 struct:S__pa1 = { buffer:b; int64:n; };
-func:get__pa1 = string(S__pa1->:self, int64:k) never fails { pass (<-(#ptr_add<string>(self.b.ptr, k))); };
+func:get__pa1 = string(S__pa1->:self, int64:k) never fails { pass (<-(#ptr_add<string>(self.b.ptr =>! wild string->, k))); };
 func:c_pa1_ptr_add_param_field_ok = int64() never fails {
     S__pa1:s = S__pa1{ b: buffer_new(64i64), n: 1i64 };
     string:x = raw get__pa1(@s, 0i64);

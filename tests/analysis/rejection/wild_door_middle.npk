@@ -1,0 +1,83 @@
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 43:98
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 45:92
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 47:104
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 48:118
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 49:118
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 51:115
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 52:113
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 54:129
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 56:138
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 57:152
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 59:85
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 60:84
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 61:68
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 62:79
+// THE ARGUMENT BETWEEN A WRITING SLOT'S `.ptr` AND ITS `.len` (DEF-469, landing 177c; found by `nitpick-compiler_61`'s reading, measured by `nitpick-compiler_62`, `MANAGEMENT/probes/w3-middle/`).
+// `memset`, `mcpy` and `mmov` take a destination's `.ptr` uncast only with the same header's `.len` as the count (W3), and the emitter reads `.ptr`, runs the middle argument, then reads `.len`: a call,
+// a ternary, a `pick` or a write there pairs an old `.ptr` with a new `.len`. On the parent and on this landing's first final build these shapes, `n1` to `m8`, compiled and read 71, the mixed pair (`n2`:
+// the old buffer freed under the read `.ptr`, 0 where its control reads 7; the runs are the probe's). The middle is held to the spelling test now: NITPICK-BORROW-011 at the `.ptr`. The cells that stay
+// legal, with what they read, are `tests/backend/programs/wild_door_middle_ok.npk`. Every other W3 slot has its count directly after the pointer, so nothing runs between.
+mod:wild_door_middle;
+
+func:repoint = int64(uint8[]->:b, uint8[]:big) never fails { <-b = big; pass 7i64; };
+func:rep_src = wild uint8->(uint8[]->:b, uint8[]:big, wild uint8->:src) never fails { <-b = big; pass src; };
+func:bump = int64(int64->:i) never fails { <-i = 1i64; pass 7i64; };
+func:bump_src = wild uint8->(int64->:i, wild uint8->:src) never fails { <-i = 1i64; pass src; };
+func:regrow = int64(buffer->:b) never fails { <-b = buffer_new(64i64); pass 7i64; };
+
+// No `wild`, no `=>!`, no `#` on the page: the write runs past the caller's view.
+func:n1_memset_nowild = NIL(uint8[]:s) never fails { uint8[]:b = s[2i64...4i64]; discard(memset(b.ptr, raw repoint(@b, s), b.len)); pass NIL; };
+// A `buffer`: the middle drops the old block.
+func:n2_memset_buffer = int64() never fails { buffer:b = buffer_new(4i64); discard(memset(b.ptr, raw regrow(@b), b.len)); pass (b[0i64] => int64); };
+// The middle a call, each destination.
+func:m1_memset_call = NIL(uint8[]:small, uint8[]:big) never fails { uint8[]:b = small; discard(memset(b.ptr, raw repoint(@b, big), b.len)); pass NIL; };
+func:m2_mcpy_call = NIL(uint8[]:small, uint8[]:big, wild uint8->:src) never fails { uint8[]:b = small; discard(mcpy(b.ptr, raw rep_src(@b, big, src), b.len)); pass NIL; };
+func:m3_mmov_call = NIL(uint8[]:small, uint8[]:big, wild uint8->:src) never fails { uint8[]:b = small; discard(mmov(b.ptr, raw rep_src(@b, big, src), b.len)); pass NIL; };
+// A ternary holding the call; a `pick` expression whose arm writes the header, with no call at all.
+func:m4_memset_ternary = NIL(uint8[]:small, uint8[]:big, bool:c) never fails { uint8[]:b = small; discard(memset(b.ptr, is (c) : (raw repoint(@b, big)) : 7i64, b.len)); pass NIL; };
+func:m5_memset_pick = NIL(uint8[]:small, uint8[]:big, int64:k) never fails { uint8[]:b = small; discard(memset(b.ptr, pick (k) { (0i64) { b = big; give 7i64; }, (*) { give 7i64; } }, b.len)); pass NIL; };
+// Through a pointer to the header.
+func:m6_memset_deref = NIL(uint8[]:small, uint8[]:big) never fails { uint8[]:b = small; uint8[]->:pb = @b; discard(memset((<-pb).ptr, raw repoint(pb, big), (<-pb).len)); pass NIL; };
+// The index on the path moves, nothing re-pointed.
+func:m7_memset_index = NIL(uint8[]:small, uint8[]:big) never fails { uint8[][2]:arr = [small, big]; int64:i = 0i64; discard(memset(arr[i].ptr, raw bump(@i), arr[i].len)); pass NIL; };
+func:m8_mcpy_index = NIL(uint8[]:small, uint8[]:big, wild uint8->:src) never fails { uint8[][2]:arr = [small, big]; int64:i = 0i64; discard(mcpy(arr[i].ptr, raw bump_src(@i, src), arr[i].len)); pass NIL; };
+// THE CLOSED DIRECTION'S PRICE: a middle with no effect that the spelling test cannot read. 0 sites in the population; the road is a local before the call, or the written cast on the `.ptr`.
+func:o1_mcpy_ptr_add = NIL(uint8[]:b, wild uint8->:src) never fails { discard(mcpy(b.ptr, #ptr_add<uint8>(src, 1i64), b.len)); pass NIL; };
+func:o2_mcpy_cast_addr = NIL(uint8[]:b) never fails { uint8:x = 7u8; discard(mcpy(b.ptr, (@x) =>! wild uint8->, b.len)); pass NIL; };
+func:o3_memset_char = NIL(uint8[]:b) never fails { discard(memset(b.ptr, ('a' => int64), b.len)); pass NIL; };
+func:o4_memset_negate = NIL(uint8[]:b, int64:k) never fails { discard(memset(b.ptr, -k, b.len)); pass NIL; };
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

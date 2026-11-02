@@ -453,12 +453,14 @@ def check_positive(name, entry, exp, tmp, tools):
 
 
 def check_negative(name, entry, exp, tmp, tools):
-    """A correct program the BACKEND must refuse with NITPICK-RUNG-001 (D-085).
+    """A program the COMPILER must refuse, with these codes at these positions.
 
-    THE PARSER NEVER RESTRICTS; THE BACKEND DOES. The file must pass the whole
-    frontend -- parse, resolve, type-check, analyse -- and be refused by
-    EMISSION, naming the construct and the rung. A file that fails earlier is a
-    test of the wrong stage and reports as one.
+    What this checks is `check_backend_rejection`'s and nothing else: the
+    compiler's own reports against the file's expectations. NOTHING CHECKS WHICH
+    STAGE REFUSED, or that the file passes `tools/check`: a frontend refusal of
+    the same code at the same position passes here too. So a file of this suite
+    says in its own comment why no earlier stage can make its report, as
+    `tests/backend/rejection/wild_generic_transitive.npk` does.
 
     This asserted against the SEED's rungs until 1.4.6, and separately against
     the real compiler's in a `rungs` stage further down. Post-switch those were
@@ -2662,13 +2664,13 @@ def runtime_allowlist():
 
 
 def check_backend_rejection(binary, path, name, exp):
-    """A correct program the BACKEND must refuse with NITPICK-RUNG-001 (D-085).
+    """A program the COMPILER must refuse, with these codes at these positions.
 
     Until 0.7.7 this suite could only be run against the SEED's rungs, because
-    the seed was the only backend. `tools/emit_check.npk` is the real one: the
-    file must pass the whole frontend -- parse, resolve, type-check, analyse --
-    and be refused by EMISSION, naming the construct and the rung. A file that
-    fails earlier is a test of the wrong stage and reports as one.
+    the seed was the only backend. Since then `binary` is the real one, and this
+    asks `check_module_rejection`'s question of its reports: every code at its
+    line and column, and nothing unnamed. It does NOT ask which stage refused, so
+    a refusal an earlier stage makes at the same position passes (`check_negative`).
     """
     return check_module_rejection(binary, path, name, exp)
 

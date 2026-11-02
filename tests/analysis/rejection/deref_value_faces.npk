@@ -39,9 +39,9 @@
 // expect-error: NITPICK-BORROW-015
 // expect-error-at: 305:35
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 315:94
+// expect-error-at: 315:128
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 321:63
+// expect-error-at: 321:80
 //
 // LANDING 167's POINTER, SLICE AND VIEW READERS (DEF-324, DEF-326, DEF-328, DEF-329, DEF-330, DEF-331,
 // DEF-332, DEF-338): each site here compiled on landing 166's compiler and read freed memory (113) or
@@ -312,13 +312,13 @@ func:ternary_of_views_as_call_arg = int32() never fails {
     string:d = string_concat("hello", " world");
     int64:z = 0i64;
     bool:c = (z == 0i64);
-    pass (raw pair(is (c) : string_from_bytes(d.ptr, 5i64) : string_from_bytes(d.ptr, 3i64), @d));
+    pass (raw pair(is (c) : string_from_bytes(d.ptr =>! wild uint8->, 5i64) : string_from_bytes(d.ptr =>! wild uint8->, 3i64), @d));
 };
 
 // 21. (DEF-338) a view through a same-type CAST as the call argument, `string_from_bytes(d.ptr, 5i64) =>! string`
 func:cast_view_as_call_arg = int32() never fails {
     string:d = string_concat("hello", " world");
-    pass (raw pair(string_from_bytes(d.ptr, 5i64) =>! string, @d));
+    pass (raw pair(string_from_bytes(d.ptr =>! wild uint8->, 5i64) =>! string, @d));
 };
 
 func:main = int32(cstring[]:_~argv) {

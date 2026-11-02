@@ -1,0 +1,34 @@
+// expect-exit: 94
+// expect-obligation: failsafe-post discharged 11
+// expect-obligation: exhaustive checker 1
+// expect-obligation: bounds open 1
+//
+// A READ `x.ptr[i]` NOTHING BOUNDS KEEPS ITS GUARD, AND THE GUARD FIRES (DEF-425's I2, landing 177c; `bounds_open.npk`'s twin). The index is the caller's and no fact relates
+// it to the header's length, so the row stays `open`, the verified build holds the trap, and `OutOfBounds` (94) is the answer at run time, at -O0 and at -O2.
+mod:bounds_header_ptr_open;
+
+func:read_one = int64(string:s, int64:i) never fails {
+    pass (s.ptr[i] => int64);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    string:s = string_concat("ab", "cde");
+    int64:v = raw read_one(s, 5i64);
+    exit (v =>! int32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)    { exit 93i32; },
+        (OutOfBounds)    { exit 94i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (HeapOom)        { exit 92i32; },
+        (Unreachable)    { exit 95i32; },
+        (WildLeak)       { exit 96i32; },
+        (StackExhausted) { exit 97i32; },
+        (MachineFault)   { exit 98i32; },
+        (DecreasesViolated) { exit 99i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 9i32;
+};

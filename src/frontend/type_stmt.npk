@@ -1464,6 +1464,8 @@ func:check_for = NIL(ExprTyper->:e, StmtNode:s) never fails {
         string:b3 = string_concat(b2, raw type_display(e.types, e.interns, bt));
         discard(raw te_error(e, raw TYPE_MISMATCH(), string_concat(b3, "`"), bd.span));
     }
+    // AN ELEMENT ENTERS THE BINDING AS A STORE'S VALUE DOES (D-361): `for (int64->:p in wa)` over a `wild` array held a `wild` value with no cast on the page, where `wa[0i64]` is TYPE-097.
+    if (!is_iter) { drop check_wild_into_plain(e, raw stmt_for_iter(e.ast, s), bt); }
     // THE IMPLICIT `next` IS A CALL (DEF-396): in a `pure` body it is held to
     // the same D-221 rule as an explicit `it.next()`. Only an Iterator
     // implementor is routed here; a range/slice/array iterates with no user call.
@@ -2458,6 +2460,7 @@ pub func:note_sealed_decl = NIL(ExprTyper->:e, int32:st, int32:fname) never fail
 // TYPE-079 WHERE A WRITE FORM MEETS A PLACE: true when reported; the caller then
 // types as invalid and says nothing more (D-240).
 pub func:refuse_sealed_write = bool(ExprTyper->:e, ExprId:place, string:what, Span:at) never fails {
+    if (raw refuse_header_ptr_place(e, place, what, at)) { pass true; }
     int32:hit = raw place_sealed_access(e, place, 64i32);
     if (hit == 0i32) { pass false; }
     ExprNode:hn = raw ast_expr(e.ast, ExprId{ index: hit });
@@ -2465,6 +2468,31 @@ pub func:refuse_sealed_write = bool(ExprTyper->:e, ExprId:place, string:what, Sp
     int32:st = bt;
     if ((raw type_kind(e.types, bt)) == (raw TY_POINTER())) { st = raw type_elem(e.types, bt); }
     drop report_sealed(e, st, (raw expr_name(hn)) =>! int32, what, at);
+    pass true;
+};
+
+// A WRITE OR AN ADDRESS THROUGH A HEADER'S `.ptr[i]` (DEF-425's I2, landing 177c; `wild` or not, R3 of the second rulings): the read is the header's own checked index,
+// and a write form has no such reading -- `x[i]`, its header's own element access, is what a slice or a `buffer` writes with; a `string`'s
+// bytes are written by nothing (D-351). True when reported. The path is walked, so a field of the element is the element.
+pub func:refuse_header_ptr_place = bool(ExprTyper->:e, ExprId:place, string:what, Span:at) never fails {
+    ExprId:p = place;
+    for (int32:fuel in 0i32...300i32) {   // above the parser's 256 levels (PARSE-012): no tree that parses reaches the end below
+        if (raw expr_is_none(p)) { pass false; }
+        ExprNode:n = raw ast_expr(e.ast, p);
+        if (n.kind == ExprKind.ExprIndexExpr) {
+            ExprId:b = raw expr_lhs(n);
+            if (raw header_ptr_read(e.ast, e.interns, e.expr_types, e.types, b)) {
+                discard(raw te_error(e, raw TYPE_INDEX_PLAIN(), string_concat(what, " through a header's `.ptr[i]`, which has no bound for a write form (DEF-425): write `x[i]`, the header's own element access; a `string`'s bytes are written by nothing"), at));
+                pass true;
+            }
+            p = b;
+            continue;
+        }
+        if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprDerefExpr)) { p = raw expr_operand(n); continue; }
+        pass false;
+    }
+    // Past the fuel the path can't be read, and only rights are at stake: the closed direction (R3).
+    discard(raw te_error(e, raw TYPE_INDEX_PLAIN(), string_concat(what, " through a path too deep to read for a header's `.ptr[i]` (DEF-425): name a part of it first"), at));
     pass true;
 };
 
@@ -2684,6 +2712,7 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
         pass NIL;
     }
 
+    e.ptr_ok = target.index;   // `x.ptr = v` is TYPE-079's, below, one report (D-240)
     int32:want = raw type_of_expr(e, target);
     if (!(raw require_place(e, target, s.span))) { pass NIL; }
     // A WRITE INTO A VIEW OR A FROZEN SELECTOR (D-266, 1.5.2h): the compound

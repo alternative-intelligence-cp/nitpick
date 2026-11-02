@@ -34,7 +34,7 @@ thread async func:runner = NIL(int32:_~v) joins JOIN_5S {
     fd:f = open(c, 1089i64, 420i64) ?! EProbe;
     int64:n = 0i64;
     while (n < 1000000000i64) decreases 1000000000i64 - n {                        // the stop is what ends this
-        Result<int64>:w = write(f, ONE.ptr, 1i64);     // one byte, no allocation
+        Result<int64>:w = write(f, ONE.ptr, ONE.len);     // one byte, no allocation
         n = n + 1i64;
     }
     discard(close(f) ?| NIL);

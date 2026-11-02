@@ -478,7 +478,7 @@ func:emit_family_vtable = NIL(ExprEmitter->:x, DiagList->:diags,
         args_start: fvi.args_start, args_count: fvi.args_count };
     x.tr.generics = fvg;
     x.tr.enclosing = fvg;
-    int32:fvself = raw type_subst(x.tr,
+    int32:fvself = raw type_subst_ctx(x.tr,
                        raw resolve_type(x.tr, fvtgt, x.scope),
                        fvg, fvd.span, 64i32, x.fe.ctx.impls);
 
@@ -533,7 +533,7 @@ func:emit_family_instance = NIL(ExprEmitter->:x, DiagList->:diags,
     int32:fam_saved_impl = x.cur_impl;
     x.cur_impl = inst.owner_impl;
     // `Self` is THIS instantiation's target.
-    x.tr.self_type = raw type_subst(x.tr,
+    x.tr.self_type = raw type_subst_ctx(x.tr,
                          raw resolve_type(x.tr, tgt, home),
                          g, d.span, 64i32, x.fe.ctx.impls);
 
@@ -1181,7 +1181,7 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
                              wild ObTable->:obl, bool:verify_on) never fails {
     int64:before = raw diaglist_count(diags);
     LlCtx:c = raw llctx_init(@g.ast, types, interns);
-    drop llctx_set_impls(@c, impls, tr);
+    drop llctx_set_impls(@c, impls, tr =>! wild TypeResolver->);   // the crossing (DEF-423): the context lives inside this call, under the caller's `tr`
     if (verify_on) { drop llctx_set_obl(@c, obl); }
     drop build_modmap(g, @c);
     drop build_vtmap(g, tr, @c);
@@ -1339,6 +1339,8 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
         if (raw fninst_is_template(@g.ast, @c, inst)) {
             fi = fi + 1i32;
         } else {
+        // THE ONE SITE THAT SEES EVERY FUNCTION INSTANCE (TYPE-107): `outer<U>` calling `putg::<U>` is `putg<string->>` only here.
+        drop check_wild_instance(tr, inst.decl, inst.args_start, inst.args_count, inst.at);
         if (inst.owner_impl != 0i32) {
             // AN IMPL-OWNED INSTANTIATION, emitted at its IMPL's home scope
             // with the impl's parameters and `Self` bound (1.0.4b, here since

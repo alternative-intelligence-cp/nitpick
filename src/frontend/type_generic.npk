@@ -59,10 +59,20 @@ func:SUBST_FUEL = int32() never fails { pass 64i32; };
 // must agree — the shape this compiler's own notes call out as having cost it
 // defects repeatedly (`expr_types.npk`'s header lists four).
 //
-// `impls` MAY BE NULL, and the backend passes NULL deliberately: see
+// `impls` MAY BE `NIL`, and the backend passes `NIL` deliberately: see
 // `assoc_binding_of`.
+pub func:impls_opt = ImplTable->?(wild ImplTable->:t) never fails {
+    if (t == NULL) { pass NIL; }
+    pass (t =>! ImplTable->);
+};
+// The backend's road: its context holds the table `wild`, `NULL` until `llctx_set_impls`.
+pub func:type_subst_ctx = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
+                                int32:fuel, wild ImplTable->:impls) never fails {
+    pass (raw type_subst(r, t, g, at, fuel, raw impls_opt(impls)));
+};
+
 pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
-                            int32:fuel, wild ImplTable->:impls) never fails {
+                            int32:fuel, ImplTable->?:impls) never fails {
     if (fuel <= 0i32) { pass t; }
     if (t == 0i32) { pass t; }
     if (g.params_count == 0i32) { pass t; }
@@ -238,7 +248,7 @@ func:subst_param = int32(TypeResolver->:r, int32:t, GenericScope:g) never fails 
 };
 
 func:subst_instance = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
-                            int32:fuel, wild ImplTable->:impls) never fails {
+                            int32:fuel, ImplTable->?:impls) never fails {
     int32:n = raw type_args_count_of(r.types, t);
     if (n == 0i32) { pass t; }
     int32:start = raw type_args_start_of(r.types, t);
@@ -292,7 +302,7 @@ func:type_name_of_decl = int32(TypeResolver->:r, int32:decl) never fails {
 };
 
 func:subst_func = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
-                            int32:fuel, wild ImplTable->:impls) never fails {
+                            int32:fuel, ImplTable->?:impls) never fails {
     int32:ret = raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
     int32:n = raw type_param_count_of(r.types, t);
     int32:start = raw type_param_start_of(r.types, t);
@@ -314,7 +324,7 @@ func:subst_func = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
 };
 
 func:subst_dyn = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
-                            int32:fuel, wild ImplTable->:impls) never fails {
+                            int32:fuel, ImplTable->?:impls) never fails {
     int32:n = raw type_dyn_count(r.types, t);
     int32:start = raw type_dyn_start(r.types, t);
     int32:mark = raw ast_scratch_mark(r.ast);
@@ -376,6 +386,7 @@ func:check_one_instance = NIL(ImplTable->:impls, BoundTable->:bounds,
 
     int32:astart = raw type_args_start_of(r.types, e.type_id);
     int32:acount = raw type_args_count_of(r.types, e.type_id);
+    drop check_wild_instance(r, decl, astart, acount, e.at);
 
     for (int32:i in 0i32...acount) {
         // ARITY WAS ALREADY DECIDED at the annotation, where the counts are, so a

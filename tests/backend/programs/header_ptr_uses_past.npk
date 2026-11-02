@@ -1,0 +1,166 @@
+// expect-exit: 0
+//
+// EVERY READ ROAD OVER A HEADER'S `.ptr[i]` TRAPS PAST ITS BOUND, `wild` HEADER INCLUDED (DEF-425's I2, the second rulings R2, R3): a member read, through a pointer, `<-`, a field, a call's result, a ternary's base, a range's
+// base, a `pick`'s selector, an empty view, an empty string, a parenthesised form. `xc1` and `xc2` are R3's: a `wild` header's `.ptr[i]` is the header's own checked index, so an empty or null block now traps where it read before, and `xc3` is the spelling
+// beside it, `w[i]`, the same trap. Each case runs in a child of this program, whose own `failsafe` reads `OutOfBounds` as 98; a case that returns reads as its cell's value instead, so a missing guard is seen.
+mod:header_ptr_uses_past;
+
+use "../../../lib/nproc.npk".*;
+
+error:E9;
+
+mod:p2c_ctl_index_empty_view = {
+func:f = int64() never fails { uint8[16]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 9u8, 9u8, 9u8, 9u8, 9u8, 9u8, 9u8, 9u8]; uint8[]:e = b[8i64...8i64]; pass (e.ptr[0i64] => int64) - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:p19_paren_ptr_index_past = {
+func:f = int64() never fails { uint8[16]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 9u8, 9u8, 9u8, 9u8, 9u8, 9u8, 9u8, 9u8]; uint8[]:e = b[8i64...8i64]; pass (((e.ptr))[5i64] => int64) - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:r18_ptr_zero_empty = {
+func:f = int64() never fails { string:s = ""; pass (s.ptr[0i64] => int64) + 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:r06_member_read_past = {
+struct:C = { int64:n; };
+func:f = int64() never fails { C[2]:a = [C{ n: 0i64 }, C{ n: 0i64 }]; C[]:v = a[0i64...2i64]; pass v.ptr[5i64].n + 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:r08_through_pointer_past = {
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; uint8[]->:pv = @v; pass (pv.ptr[9i64] => int64) + 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:r09_deref_past = {
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; uint8[]->:pv = @v; pass ((<-pv).ptr[9i64] => int64) + 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:r10_field_past = {
+struct:S = { uint8[]:v; };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; S:s = S{ v: v }; pass (s.v.ptr[9i64] => int64) + 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:r11_call_result_past = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { pass ((raw mks()).ptr[9i64] => int64) + 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:r12_ternary_base_past = {
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; pass ((is (true) : v : v).ptr[9i64] => int64) + 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:r13_range_base_past = {
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; pass (v[0i64...4i64].ptr[5i64] => int64) + 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:r14_pick_selector_past = {
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; pick (v.ptr[9i64]) { (*) { pass 7i64; } } pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xc1_r17_past_end = {
+func:f = int64() never fails { wild int8->:a = alloc(16i64); discard(memset(a, 1i64, 16i64)); wild uint8[]:w = #wild_slice<uint8>(a, 16i64); int64:k = (w.ptr[16i64] => int64); dalloc(a); pass k + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xc2_r17_empty = {
+func:f = int64() never fails { wild int8->:a = alloc(16i64); discard(memset(a, 1i64, 16i64)); wild uint8[]:w = #wild_slice<uint8>(a, 0i64); int64:k = (w.ptr[0i64] => int64); dalloc(a); pass k + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xc3_ctl_w_index_past = {
+func:f = int64() never fails { wild int8->:a = alloc(16i64); discard(memset(a, 1i64, 16i64)); wild uint8[]:w = #wild_slice<uint8>(a, 16i64); int64:k = (w[16i64] => int64); dalloc(a); pass k + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+
+func:drive = int32(int64:which) never fails {
+    if (which == 1i64) { pass raw p2c_ctl_index_empty_view.cell_main(); }
+    if (which == 2i64) { pass raw p19_paren_ptr_index_past.cell_main(); }
+    if (which == 3i64) { pass raw r18_ptr_zero_empty.cell_main(); }
+    if (which == 4i64) { pass raw r06_member_read_past.cell_main(); }
+    if (which == 5i64) { pass raw r08_through_pointer_past.cell_main(); }
+    if (which == 6i64) { pass raw r09_deref_past.cell_main(); }
+    if (which == 7i64) { pass raw r10_field_past.cell_main(); }
+    if (which == 8i64) { pass raw r11_call_result_past.cell_main(); }
+    if (which == 9i64) { pass raw r12_ternary_base_past.cell_main(); }
+    if (which == 10i64) { pass raw r13_range_base_past.cell_main(); }
+    if (which == 11i64) { pass raw r14_pick_selector_past.cell_main(); }
+    if (which == 12i64) { pass raw xc1_r17_past_end.cell_main(); }
+    if (which == 13i64) { pass raw xc2_r17_empty.cell_main(); }
+    if (which == 14i64) { pass raw xc3_ctl_w_index_past.cell_main(); }
+    pass 4i32;
+};
+
+func:args_of = ProcArgs(string:exe, string:a) {
+    ProcArgs:pa = raw args_init();
+    args_push(@pa, exe) ?! E9;
+    args_push(@pa, a) ?! E9;
+    pass pa;
+};
+
+async func:child = int64(Path:self, ProcArgs->:env, string:which) {
+    ProcArgs:a = args_of(self.text, which) ?! E9;
+    Proc:p = proc_spawn(self, @a, env) ?! E9;
+    ProcExit:x = (await proc_wait(move(p), raw duration_secs(10i64))) ?! E9;
+    drop args_free(@a);
+    if (!x.exited) { pass 255i64; }
+    pass x.status;
+};
+
+func:case_of = int64(string:w) never fails {
+    if (string_equals(w, "1")) { pass 1i64; }
+    if (string_equals(w, "2")) { pass 2i64; }
+    if (string_equals(w, "3")) { pass 3i64; }
+    if (string_equals(w, "4")) { pass 4i64; }
+    if (string_equals(w, "5")) { pass 5i64; }
+    if (string_equals(w, "6")) { pass 6i64; }
+    if (string_equals(w, "7")) { pass 7i64; }
+    if (string_equals(w, "8")) { pass 8i64; }
+    if (string_equals(w, "9")) { pass 9i64; }
+    if (string_equals(w, "10")) { pass 10i64; }
+    if (string_equals(w, "11")) { pass 11i64; }
+    if (string_equals(w, "12")) { pass 12i64; }
+    if (string_equals(w, "13")) { pass 13i64; }
+    if (string_equals(w, "14")) { pass 14i64; }
+    pass 0i64;
+};
+
+async func:main = int32(cstring[]:argv) {
+    if (argv.len == 2i64) {
+        string:w = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+        exit (raw drive(raw case_of(w)));
+    }
+    string:sp = string_from_bytes(argv[0i64].ptr, argv[0i64].len);
+    Path:self = path_parse(sp) ?! E9;
+    ProcArgs:env = raw args_init();
+    cstring[]:mine = environ();
+    for (int64:i in 0i64...mine.len) { args_push_cstring(@env, mine[i]) ?! E9; }
+
+    string[14]:cases = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"];
+    for (int64:c in 0i64...14i64) {
+        int64:r = (await child(self, @env, cases[c])) ?! E9;
+        if (r != 98i64) { exit ((10i64 + c) =>! int32); }   // the case's position, 0 based, from 10
+    }
+    drop args_free(@env);
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (DeadlineExceeded) { exit 89i32; },
+        (header_ptr_uses_past.E9) { exit 89i32; },
+        (nproc.EProcArgs) { exit 89i32; },
+        (nproc.EProcDeadline) { exit 89i32; },
+        (nproc.EProcSpawn) { exit 89i32; },
+        (nproc.EProcWait) { exit 89i32; },
+        (prelude.BadPath) { exit 89i32; },
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

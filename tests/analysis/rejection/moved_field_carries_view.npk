@@ -18,7 +18,7 @@ struct:P = { int32->:p; int64:n; };
 
 func:view_out = string() never fails {
     uint8[8]:buf = [104u8, 105u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
-    H:h = H{ v: string_from_bytes(@buf[0i64], 2i64), n: 0i64 };
+    H:h = H{ v: string_from_bytes((@buf[0i64]) =>! wild uint8->, 2i64), n: 0i64 };
     string:t = move(h.v);
     pass t;
 };

@@ -1,0 +1,457 @@
+// expect-exit: 0
+//
+// WHAT THE `wild` DOOR LEAVES LEGAL, AND WHAT IT READS (DEF-423, DEF-425, landing 177c): each module is one cell of the review, its own `main` now `cell_main`,
+// each with the value it read alone. A failure exits with the cell's position in `main`'s list. A header's `.ptr[i]` read past its length, the other half of I2, is `header_ptr_past.npk`.
+mod:wild_door_reads;
+
+// THE RULED LIST (rulings section 4): `p0c`, `r7`, `r10`, the written cast `ra6b`. `i2a`: the index `setq(@s)` re-assigns `s` to "wxyz", `ptr` and `len` load after the index, so the read is `w` of the new block: 119 - 30 + 60 = 149. Before the fix this cell read the freed block's poison, 200.
+mod:p0c_slice_ptr_memset_ok = {
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; discard(memset(v.ptr, 0i64, v.len)); pass 5i64 + (v[0i64] => int64); };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:r7_plain_ptr_index_ctl = {
+func:f = int64() never fails { int64:i = 5i64; int64->:p = @i; pass p[0i64]; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:r10_wild_alloc_index_ctl = {
+func:f = int64() never fails { wild uint8->:w = alloc(8i64) =>! wild uint8->; w[0i64] = 1u8; pass 5i64 + ((w[0i64] => int64) - 1i64); };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:ra6b_wild_param_cast_ctl = {
+struct:H = { string:s; };
+struct:L = { wild string->:items; int64:n; };
+func:mk = H() never fails { pass H{ s: string_concat("ab", "cde") }; };
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:setw = NIL(wild H->->:pp, wild H->:v) never fails { <-pp = v; pass NIL; };
+func:bump = NIL(int64->:p) never fails { (<-p) = (<-p) + 1i64; pass NIL; };
+func:take = NIL(wild string->:x) never fails { string:t = move(<-x); pass NIL; };
+func:f = int64() never fails { string:s = raw mks(); drop take((@s) =>! wild string->); pass s.len; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:i2a_load_before_index = {
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:f = int64() never fails { string:s = raw mk(); int64:r = (s.ptr[raw setq(@s)] => int64) - 30i64; pass r; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+
+// I1 AND I2'S READS: the constant 0, a `wild` pointer at any index, a pointer to an array, a header's own checked read by every base the emitter forms.
+mod:i1_zero = {
+func:f = int64() never fails { int64:x = 65i64; int64->:p = @x; pass p[0i64] - 60i64 + 0i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:i1_wild_any = {
+func:f = int64() never fails { wild int64->:p = alloc(16i64) =>! wild int64->; p[1i64] = 5i64; pass p[1i64]; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:i1_ptr_to_array = {
+func:f = int64() never fails { int64[2]:a = [1i64, 5i64]; int64[2]->:p = @a; pass (<-p)[1i64]; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:a3_range_view_ptr_read = {
+func:f = int64() never fails { buffer:o = buffer_new(8i64); pass (o[0i64...2i64].ptr[1i64] => int64) + 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:a12_lending_pick = {
+enum:En = { Aa(int64); Bb; };
+func:f = int64() never fails { En[1]:b = [En.Aa(5i64)]; En[]:v = b[0i64...1i64]; pick (v.ptr[0i64]) { (Aa(n)) { pass n; }, (*) { pass 0i64; } } pass 0i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:a16_through_pointer_read = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string:s = raw mks(); string->:q = @s; pass (q.ptr[0i64] => int64) - 92i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:a17_wild_header_read = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { wild string->:w = alloc(32i64) =>! wild string->; (<-w) = raw mks(); pass ((<-w).ptr[1i64] => int64) - 93i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:a19_string_elem_view = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string[1]:b = [raw mks()]; string[]:v = b[0i64...1i64]; pass (string_bytes(v.ptr[0i64])).len; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:a20_cstring_terminator = {
+error:E5_a20_cstring_terminator;
+func:f = int64() never fails { cstring:c = to_cstring("abcde") ?! E5_a20_cstring_terminator; pass (c.ptr[c.len] => int64) + 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:a22_elem_of_index_ptr = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string[1]:b = [raw mks()]; pass (b[0i64].ptr[0i64] => int64) - 92i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:b1_buffer_read = {
+func:f = int64() never fails { buffer:b = buffer_new(8i64); int64:r = (b.ptr[7i64] => int64) * 0i64; pass r; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e1_view_local = {
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; pass v.ptr[1i64] - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e2_call_slice = {
+func:mkv = int64[](int64[]:v) never fails { pass v; };
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; pass (raw mkv(v)).ptr[1i64] - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e3_ternary_slices = {
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; bool:c = true; pass (is (c) : v : v).ptr[1i64] - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e5_call_string = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; pass ((raw mks()).ptr[1i64] => int64) - 98i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e6_literal_string = {
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; pass ("abc".ptr[1i64] => int64) - 98i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e7_struct_member = {
+struct:Hv = { int64[]:v; };
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; Hv:h = Hv{ v: v }; pass h.v.ptr[1i64] - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e7b_nested_member = {
+struct:Hv = { int64[]:v; };
+struct:Hw = { Hv:i; };
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; Hw:h = Hw{ i: Hv{ v: v } }; pass h.i.v.ptr[1i64] - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e7c_ptr_member = {
+struct:Hv = { int64[]:v; };
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; Hv:h = Hv{ v: v }; Hv->:q = @h; pass q.v.ptr[1i64] - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e7d_call_member = {
+struct:Hv = { int64[]:v; };
+func:mkhv = Hv(int64[]:v) never fails { pass Hv{ v: v }; };
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; pass (raw mkhv(v)).v.ptr[1i64] - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e8_through_pointer = {
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; int64[]->:q = @v; pass q.ptr[1i64] - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e9_deref = {
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; int64[]->:q = @v; pass (<-q).ptr[1i64] - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e10_array_of_slices = {
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; int64[][1]:aa = [v]; pass aa[0i64].ptr[1i64] - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e11_cast_slice = {
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; pass (v => int64[]).ptr[1i64] - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e12_list_of_slices = {
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; List<int64[]>:l = raw list_init::<int64[]>(2i64); drop list_push(@l, v); pass l[0i64].ptr[1i64] - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e13_range_view = {
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; pass (v[1i64...3i64]).ptr[1i64] - 3i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e14_index_side_effect = {
+func:bump = int64(int64->:i) never fails { <-i = (<-i) + 1i64; pass <-i; };
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; int64:i = 0i64; pass v.ptr[raw bump(@i)] - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e16_i32_index = {
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; int32:i = 1i32; pass v.ptr[i] - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:e17_u8_index = {
+func:f = int64() never fails { int64[3]:b = [1i64, 2i64, 3i64]; int64[]:v = b[0i64...3i64]; uint8:i = 1u8; pass v.ptr[i] - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:i1d_zero_ok = {
+func:f = int64() never fails { int64:a = 5i64; int64->:p = @a; pass p[0i64] - 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+
+// W1'S LEGAL NEIGHBOURS: a written cast, a `wild` pointer into a `wild` slot, `wildx` beside `wild`, a generic over a value with no address in it, a `pick` selector and a ternary's condition, which no value of the slot passes through, and a `wild` array of integers.
+mod:e11_wild_int_array_addr_ok = {
+func:f = int64() never fails { wild int64[1]:arr = [5i64]; int64[1]->:pa = @arr; pass (<-pa)[0i64]; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:g4_generic_wret_ok = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:wret<T> = wild T->(wild T->:c) never fails { pass c; };
+func:f = int64() never fails { wild string->:w0 = alloc(32i64) =>! wild string->; (<-w0) = raw mks(); wild string->:w = raw wret::<string>(w0); pass (<-w).len + 0i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:g10_container_int_ok = {
+func:putg<T> = NIL(wild T->:c, move T:v) never fails { <-c = move(v); pass NIL; };
+func:f = int64() never fails { wild int64->:c = alloc(8i64) =>! wild int64->; drop putg::<int64>(c, 5i64); pass c[0i64]; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:h2_slice_write_own_len_ok = {
+func:f = int64() never fails { uint8[4]:b = [1u8, 2u8, 3u8, 4u8]; uint8[]:v = b[0i64...4i64]; discard(memset(v.ptr, 0i64, v.len)); pass 65i64 - 60i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:h8_mcpy_both_own = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string:s = raw mks(); uint8[5]:d = [0u8, 0u8, 0u8, 0u8, 0u8]; uint8[]:dv = d[0i64...5i64]; discard(mcpy((dv.ptr) =>! wild uint8->, s.ptr, s.len)); pass s.len; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:n4_atomic_wild_ok = {
+func:f = int64() never fails { wild int64->:c = alloc(8i64) =>! wild int64->; atomic_from_ptr::<int64>(c).store(5i64); pass atomic_from_ptr::<int64>(c).load(); };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:n5_ptr_add_wild_ok = {
+func:f = int64() never fails { wild string->:c = alloc(64i64) =>! wild string->; wild string->:d = #ptr_add<string>(c, 1i64); pass 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:n6_wild_ptr_int_ok = {
+func:f = int64() never fails { wild int64->:d = #wild_ptr<int64>(4096i64); pass 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:n7_null_cmp_ok = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string:s = raw mks(); if (s.ptr != NULL) { pass s.len; } pass 0i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:n8_cast_slot_ok = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:take = NIL(wild string->:x) never fails { string:t = move(<-x); pass NIL; };
+func:f = int64() never fails { string:s = raw mks(); drop take((@s) =>! wild string->); pass s.len; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:p2_selector_not_judged_ok = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string:s = raw mks(); string->?:o = @s; wild string->:w = pick (1i64) { (1i64) { give NULL; }, (*) { give NULL; } }; pass s.len; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:p4_ternary_cond_ok = {
+func:f = int64() never fails { wild string->:n = NULL; wild string->:w = is (n == NULL) : n : NULL; pass 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:t3_receiver_wild_ok = {
+struct:M = { int64:k; };
+impl:M = {
+    func:setk = NIL(M->:self, int64:v) never fails { self.k = v; pass NIL; };
+    func:getk = int64(M->:self) never fails { pass self.k; };
+    func:byv = int64(M:self, wild string->:x) never fails { string:t = move(<-x); pass self.k; };
+    func:wself = int64(wild M->:self) never fails { pass self.k; };
+    func:wxself = int64(wildx M->:self) never fails { pass self.k; };
+};
+func:f = int64() never fails { wild M->:p = alloc(8i64) =>! wild M->; p.k = 5i64; pass raw p.wself(); };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:w5_wildx_to_wild_ok = {
+func:f = int64() never fails { wildx string->:p = NULL; wild string->:q = p; pass 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:w6_wild_to_wildx_ok = {
+func:f = int64() never fails { wild string->:p = NULL; wildx string->:q = p; pass 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:sp1_same_index_ok = {
+func:f = int64() never fails { uint8[2]:b0 = [65u8, 66u8]; uint8[]:u0 = b0[0i64...2i64]; uint8[][3]:vv = [u0, u0, u0]; int64:i = 1i64; string:s = string_from_bytes(vv[i].ptr, vv[i].len); pass s.len - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:sp7_cast_count_ok = {
+func:f = int64() never fails { uint8[2]:b0 = [65u8, 66u8]; uint8[]:u0 = b0[0i64...2i64]; uint8[][3]:vv = [u0, u0, u0]; int64:i = 1i64; string:s = string_from_bytes(u0.ptr, u0.len => int64); pass s.len - 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:t2_handle_legal = {
+func:rt<T> = T(move T:v) never fails { wild T->:c = alloc(64i64) =>! wild T->; <-c = move(v); T:o = move(<-c); dalloc(c); pass move(o); };
+func:f = int64() never fails { int64:n = raw rt::<int64>(5i64); pass n - 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+
+// A RANGE IS `wild` ONLY OVER A VALUE OF `wild` PROVENANCE (or by its written cast), AND A BY-VALUE `wild` ARRAY'S RANGE STAYS LEGAL WHERE NO SLOT TAKES IT AS `wild`.
+mod:b1_range_wild_slice_ok = {
+func:used = int64(wild int64[]:v) never fails { pass v[1i64]; };
+func:f = int64() never fails { wild int64->:b = alloc(32i64) =>! wild int64->; wild int64[]:v = #wild_slice<int64>(b, 4i64); v[1i64] = 5i64; int64:r = raw used(v[0i64...4i64]); dalloc(b); pass r - 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:b2_range_wild_ptr_to_array_ok = {
+func:used = int64(wild int64[]:v) never fails { pass v[1i64]; };
+func:f = int64() never fails { wild int64[4]->:b = alloc(32i64) =>! wild int64[4]->; (<-b)[1i64] = 5i64; int64:r = raw used((<-b)[0i64...4i64]); dalloc(b); pass r - 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:b3_range_wild_ptr_field_array_ok = {
+struct:Pa = { int64[4]:a; };
+func:used = int64(wild int64[]:v) never fails { pass v[1i64]; };
+func:f = int64() never fails { wild Pa->:b = alloc(32i64) =>! wild Pa->; b.a[1i64] = 5i64; int64:r = raw used(b.a[0i64...4i64]); dalloc(b); pass r - 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:b4_range_wild_ptr_wild_field_ok = {
+struct:Fa = { wild int64[4]:a; };
+func:used = int64(wild int64[]:v) never fails { pass v[1i64]; };
+func:f = int64() never fails { wild Fa->:b = alloc(32i64) =>! wild Fa->; b.a[1i64] = 5i64; int64:r = raw used(b.a[0i64...4i64]); dalloc(b); pass r - 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:b5_range_cast_ok = {
+func:used = int64(wild int64[]:v) never fails { pass v[1i64]; };
+func:f = int64() never fails { int64[4]:arr = [5i64, 5i64, 5i64, 5i64]; int64:r = raw used(arr[0i64...4i64] =>! wild int64[]); pass r - 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:b6_range_wild_array_cast_ok = {
+func:used = int64(wild int64[]:v) never fails { pass v[1i64]; };
+func:f = int64() never fails { wild int64[4]:arr = [5i64, 5i64, 5i64, 5i64]; int64:r = raw used(arr[0i64...4i64] =>! wild int64[]); pass r - 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:b7_range_wild_array_local_read_ok = {
+func:f = int64() never fails { wild int64[4]:arr = [5i64, 5i64, 5i64, 5i64]; int64[]:s = arr[0i64...4i64]; pass s[1i64] - 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:b8_range_wild_array_plain_param_ok = {
+func:usedp = int64(int64[]:v) never fails { pass v[1i64]; };
+func:f = int64() never fails { wild int64[4]:arr = [5i64, 5i64, 5i64, 5i64]; int64:r = raw usedp(arr[0i64...4i64]); pass r - 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+
+// A COMPARISON IS NO SLOT: a `wild` slot's address compared either way round, in a ternary's arm, and `NULL` against a `wild` pointer. A door inside an operand is `wild_door.npk`'s.
+mod:c1_left_ok = {
+func:g = bool(int64->->:q) never fails { wild int64->:w = alloc(8i64) =>! wild int64->; bool:r = (@w) == q; dalloc(w); pass r; };
+func:f = int64() never fails { int64->:z = alloc(8i64) =>! int64->; int64->:y = z; bool:b = raw g(@y); pass 0i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:c2_right_ok = {
+func:g = bool(int64->->:q) never fails { wild int64->:w = alloc(8i64) =>! wild int64->; bool:r = q == (@w); dalloc(w); pass r; };
+func:f = int64() never fails { int64->:z = alloc(8i64) =>! int64->; int64->:y = z; bool:b = raw g(@y); pass 0i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:c3_left_ne_ok = {
+func:g = bool(int64->->:q) never fails { wild int64->:w = alloc(8i64) =>! wild int64->; bool:r = (@w) != q; dalloc(w); pass r; };
+func:f = int64() never fails { int64->:z = alloc(8i64) =>! int64->; int64->:y = z; bool:b = raw g(@y); pass 0i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:c4_right_ne_ok = {
+func:g = bool(int64->->:q) never fails { wild int64->:w = alloc(8i64) =>! wild int64->; bool:r = q != (@w); dalloc(w); pass r; };
+func:f = int64() never fails { int64->:z = alloc(8i64) =>! int64->; int64->:y = z; bool:b = raw g(@y); pass 0i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:c5_ternary_arm_ok = {
+func:g = bool(int64->->:q) never fails { wild int64->:w = alloc(8i64) =>! wild int64->; bool:r = (is (true) : (@w) : q) == q; dalloc(w); pass r; };
+func:f = int64() never fails { int64->:z = alloc(8i64) =>! int64->; int64->:y = z; bool:b = raw g(@y); pass 0i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:c6_right_ternary_arm_ok = {
+func:g = bool(int64->->:q) never fails { wild int64->:w = alloc(8i64) =>! wild int64->; bool:r = q == (is (true) : (@w) : q); dalloc(w); pass r; };
+func:f = int64() never fails { int64->:z = alloc(8i64) =>! int64->; int64->:y = z; bool:b = raw g(@y); pass 0i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:c17_null_wild_ok = {
+func:g = bool() never fails { wild int64->:w = alloc(8i64) =>! wild int64->; bool:b = w == NULL; dalloc(w); pass b; };
+func:f = int64() never fails { bool:b = raw g(); pass 0i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:w4c_addr_compare_plain = {
+func:f = int64() never fails { wild int64->:w = alloc(8i64) =>! wild int64->; int64->:q = w =>! int64->; int64->->:qq = @q; bool:b = (@w) == qq; dalloc(w); pass 0i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+
+// W4'S ROAD: `(@w) =>! T->->` is refused, a plain cast does not change whether a slot is `wild`; the two named crossings stay legal (BORROW-013 still reads through them, `wild_door.npk`'s `w4_double_cast_held`). And a plain-pointer function stays a value.
+mod:w4_double_cast_ok = {
+func:f = int64() never fails { wild int64->:w = alloc(8i64) =>! wild int64->; <-w = 5i64; int64:r = 0i64; { int64->->:pp = ((@w) =>! wild int64->->) =>! int64->->; r = <-(<-pp); } dalloc(w); pass r; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:fv8_plain_function_value = {
+func:g = int64(int64->:p) never fails { pass 5i64; };
+func:f = int64() never fails { func int64(int64->):fv = g; int64:a = 1i64; pass 0i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw p0c_slice_ptr_memset_ok.cell_main()) != 65i32) { exit 1i32; }
+    if ((raw r7_plain_ptr_index_ctl.cell_main()) != 65i32) { exit 2i32; }
+    if ((raw r10_wild_alloc_index_ctl.cell_main()) != 65i32) { exit 3i32; }
+    if ((raw ra6b_wild_param_cast_ctl.cell_main()) != 60i32) { exit 4i32; }
+    if ((raw i2a_load_before_index.cell_main()) != 149i32) { exit 5i32; }
+    if ((raw i1_zero.cell_main()) != 65i32) { exit 6i32; }
+    if ((raw i1_wild_any.cell_main()) != 65i32) { exit 7i32; }
+    if ((raw i1_ptr_to_array.cell_main()) != 65i32) { exit 8i32; }
+    if ((raw a3_range_view_ptr_read.cell_main()) != 65i32) { exit 9i32; }
+    if ((raw a12_lending_pick.cell_main()) != 65i32) { exit 10i32; }
+    if ((raw a16_through_pointer_read.cell_main()) != 65i32) { exit 11i32; }
+    if ((raw a17_wild_header_read.cell_main()) != 65i32) { exit 12i32; }
+    if ((raw a19_string_elem_view.cell_main()) != 65i32) { exit 13i32; }
+    if ((raw a20_cstring_terminator.cell_main()) != 65i32) { exit 14i32; }
+    if ((raw a22_elem_of_index_ptr.cell_main()) != 65i32) { exit 15i32; }
+    if ((raw b1_buffer_read.cell_main()) != 60i32) { exit 16i32; }
+    if ((raw e1_view_local.cell_main()) != 60i32) { exit 17i32; }
+    if ((raw e2_call_slice.cell_main()) != 60i32) { exit 18i32; }
+    if ((raw e3_ternary_slices.cell_main()) != 60i32) { exit 19i32; }
+    if ((raw e5_call_string.cell_main()) != 60i32) { exit 20i32; }
+    if ((raw e6_literal_string.cell_main()) != 60i32) { exit 21i32; }
+    if ((raw e7_struct_member.cell_main()) != 60i32) { exit 22i32; }
+    if ((raw e7b_nested_member.cell_main()) != 60i32) { exit 23i32; }
+    if ((raw e7c_ptr_member.cell_main()) != 60i32) { exit 24i32; }
+    if ((raw e7d_call_member.cell_main()) != 60i32) { exit 25i32; }
+    if ((raw e8_through_pointer.cell_main()) != 60i32) { exit 26i32; }
+    if ((raw e9_deref.cell_main()) != 60i32) { exit 27i32; }
+    if ((raw e10_array_of_slices.cell_main()) != 60i32) { exit 28i32; }
+    if ((raw e11_cast_slice.cell_main()) != 60i32) { exit 29i32; }
+    if ((raw e12_list_of_slices.cell_main()) != 60i32) { exit 30i32; }
+    if ((raw e13_range_view.cell_main()) != 60i32) { exit 31i32; }
+    if ((raw e14_index_side_effect.cell_main()) != 60i32) { exit 32i32; }
+    if ((raw e16_i32_index.cell_main()) != 60i32) { exit 33i32; }
+    if ((raw e17_u8_index.cell_main()) != 60i32) { exit 34i32; }
+    if ((raw i1d_zero_ok.cell_main()) != 60i32) { exit 35i32; }
+    if ((raw e11_wild_int_array_addr_ok.cell_main()) != 65i32) { exit 36i32; }
+    if ((raw g4_generic_wret_ok.cell_main()) != 65i32) { exit 37i32; }
+    if ((raw g10_container_int_ok.cell_main()) != 65i32) { exit 38i32; }
+    if ((raw h2_slice_write_own_len_ok.cell_main()) != 65i32) { exit 39i32; }
+    if ((raw h8_mcpy_both_own.cell_main()) != 65i32) { exit 40i32; }
+    if ((raw n4_atomic_wild_ok.cell_main()) != 65i32) { exit 41i32; }
+    if ((raw n5_ptr_add_wild_ok.cell_main()) != 65i32) { exit 42i32; }
+    if ((raw n6_wild_ptr_int_ok.cell_main()) != 65i32) { exit 43i32; }
+    if ((raw n7_null_cmp_ok.cell_main()) != 65i32) { exit 44i32; }
+    if ((raw n8_cast_slot_ok.cell_main()) != 60i32) { exit 45i32; }
+    if ((raw p2_selector_not_judged_ok.cell_main()) != 65i32) { exit 46i32; }
+    if ((raw p4_ternary_cond_ok.cell_main()) != 65i32) { exit 47i32; }
+    if ((raw t3_receiver_wild_ok.cell_main()) != 65i32) { exit 48i32; }
+    if ((raw w5_wildx_to_wild_ok.cell_main()) != 65i32) { exit 49i32; }
+    if ((raw w6_wild_to_wildx_ok.cell_main()) != 65i32) { exit 50i32; }
+    if ((raw sp1_same_index_ok.cell_main()) != 60i32) { exit 51i32; }
+    if ((raw sp7_cast_count_ok.cell_main()) != 60i32) { exit 52i32; }
+    if ((raw t2_handle_legal.cell_main()) != 60i32) { exit 53i32; }
+    if ((raw b1_range_wild_slice_ok.cell_main()) != 60i32) { exit 54i32; }
+    if ((raw b2_range_wild_ptr_to_array_ok.cell_main()) != 60i32) { exit 55i32; }
+    if ((raw b3_range_wild_ptr_field_array_ok.cell_main()) != 60i32) { exit 56i32; }
+    if ((raw b4_range_wild_ptr_wild_field_ok.cell_main()) != 60i32) { exit 57i32; }
+    if ((raw b5_range_cast_ok.cell_main()) != 60i32) { exit 58i32; }
+    if ((raw b6_range_wild_array_cast_ok.cell_main()) != 60i32) { exit 59i32; }
+    if ((raw b7_range_wild_array_local_read_ok.cell_main()) != 60i32) { exit 60i32; }
+    if ((raw b8_range_wild_array_plain_param_ok.cell_main()) != 60i32) { exit 61i32; }
+    if ((raw c1_left_ok.cell_main()) != 60i32) { exit 62i32; }
+    if ((raw c2_right_ok.cell_main()) != 60i32) { exit 63i32; }
+    if ((raw c3_left_ne_ok.cell_main()) != 60i32) { exit 64i32; }
+    if ((raw c4_right_ne_ok.cell_main()) != 60i32) { exit 65i32; }
+    if ((raw c5_ternary_arm_ok.cell_main()) != 60i32) { exit 66i32; }
+    if ((raw c6_right_ternary_arm_ok.cell_main()) != 60i32) { exit 67i32; }
+    if ((raw c17_null_wild_ok.cell_main()) != 60i32) { exit 68i32; }
+    if ((raw w4c_addr_compare_plain.cell_main()) != 60i32) { exit 69i32; }
+    if ((raw w4_double_cast_ok.cell_main()) != 65i32) { exit 70i32; }
+    if ((raw fv8_plain_function_value.cell_main()) != 60i32) { exit 71i32; }
+    // Some cells keep what they allocated, and a `wild` block outliving `exit 0` is `WildLeak` (D-151).
+    wild_release_all();
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (wild_door_reads.E5_a20_cstring_terminator) { exit 89i32; },
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

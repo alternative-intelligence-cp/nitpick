@@ -208,7 +208,7 @@ async func:main = int32(cstring[]:argv) {
     TypeResolver:tr = raw tyres_init(@f.g.ast, @f.types, @f.g.tab, @f.it,
                                      @f.diags, @einst);
     bool:emitted = raw emit_all(@w, @f.g, @f.types, @f.it, @f.ets, @tr,
-                                    @f.fninsts, @f.im, @f.diags, @obl, verify_on);
+                                    @f.fninsts, (@f.im) =>! wild ImplTable->, @f.diags, (@obl) =>! wild ObTable->, verify_on);   // the crossing (DEF-423): both tables outlive the emission, `f` and `obl` being this frame's own
     if (!emitted) {
         await diag_report_stderr(@f.diags, @f.g.sm) ?| NIL;
         exit 1i32;

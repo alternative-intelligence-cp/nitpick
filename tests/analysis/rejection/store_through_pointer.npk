@@ -160,7 +160,7 @@ func:ctl_block_ends = int32(S->:p) never fails {
 // each, on 177a and on this landing's compiler.
 struct:L__whole_store = { wild string->:items; int64:n; };
 func:c_ra4b_whole_struct_store = int64() never fails { string[2]:arr = [string_concat("ab", "cde"), string_concat("ab", "cde")]; wild L__whole_store->:lp = alloc(16i64) =>! wild L__whole_store->; (<-lp) = L__whole_store{ items: (@arr[0i64]) =>! wild string->, n: 0i64 }; string:t = move(<-lp.items); pass arr[0i64].len; };
-func:c_rc7c_whole_struct_ptr_add = int64() never fails { string[2]:arr = [string_concat("ab", "cde"), string_concat("ab", "cde")]; wild L__whole_store->:lp = alloc(16i64) =>! wild L__whole_store->; (<-lp) = L__whole_store{ items: #ptr_add<string>(@arr[0i64], 0i64), n: 0i64 }; string:t = move(<-lp.items); pass arr[0i64].len; };
+func:c_rc7c_whole_struct_ptr_add = int64() never fails { string[2]:arr = [string_concat("ab", "cde"), string_concat("ab", "cde")]; wild L__whole_store->:lp = alloc(16i64) =>! wild L__whole_store->; (<-lp) = L__whole_store{ items: #ptr_add<string>((@arr[0i64]) =>! wild string->, 0i64), n: 0i64 }; string:t = move(<-lp.items); pass arr[0i64].len; };
 
 func:main = int32(cstring[]:_~argv) {
     S:s = S{ s: string_concat("a", "b") };

@@ -27,7 +27,7 @@ struct:Box = { buffer:body; int64:len; };
 // 1. an assignment over the buffer while its view lives: BORROW-015
 func:assign_under_view = uint8() never fails {
     buffer:x = buffer_new(8i64);
-    uint8[]:v = #wild_slice<uint8>(x.ptr, 8i64);
+    uint8[]:v = #wild_slice<uint8>(x.ptr =>! wild uint8->, 8i64);
     x = buffer_new(16i64);
     pass v[0i64];
 };
@@ -35,7 +35,7 @@ func:assign_under_view = uint8() never fails {
 // 2. a `move` out of it: BORROW-015
 func:move_under_view = uint8() never fails {
     buffer:x = buffer_new(8i64);
-    uint8[]:v = #wild_slice<uint8>(x.ptr, 8i64);
+    uint8[]:v = #wild_slice<uint8>(x.ptr =>! wild uint8->, 8i64);
     buffer:y = move(x);
     discard(y.len);
     pass v[0i64];
@@ -44,12 +44,12 @@ func:move_under_view = uint8() never fails {
 // 3. a `pass` of such a view out of a LOCAL's frame: BORROW-001
 func:view_of_local = uint8[]() never fails {
     buffer:b = buffer_new(8i64);
-    pass #wild_slice<uint8>(b.ptr, b.len);
+    pass #wild_slice<uint8>(b.ptr =>! wild uint8->, b.len);
 };
 
 // 4. the view through a pointer parameter travels up: the CALLER's overwrite
 //    under it is BORROW-015 (the callee is a control)
-func:view_through = uint8[](Box->:bx) never fails { pass #wild_slice<uint8>(bx.body.ptr, bx.len); };
+func:view_through = uint8[](Box->:bx) never fails { pass #wild_slice<uint8>(bx.body.ptr =>! wild uint8->, bx.len); };
 func:caller_writes = uint8() never fails {
     Box:bx = Box{ body: buffer_new(4i64), len: 4i64 };
     uint8[]:w = raw view_through(@bx);
@@ -61,7 +61,7 @@ func:caller_writes = uint8() never fails {
 func:grow = NIL(buffer->:p) never fails { (<-p) = buffer_new(32i64); pass NIL; };
 func:writer_under_view = uint8() never fails {
     buffer:x = buffer_new(8i64);
-    uint8[]:v = #wild_slice<uint8>(x.ptr, 8i64);
+    uint8[]:v = #wild_slice<uint8>(x.ptr =>! wild uint8->, 8i64);
     drop grow(@x);
     pass v[0i64];
 };
@@ -70,7 +70,7 @@ func:writer_under_view = uint8() never fails {
 func:inner_block = uint8() never fails {
     buffer:x = buffer_new(8i64);
     uint8:k = 0u8;
-    { uint8[]:v = #wild_slice<uint8>(x.ptr, 8i64); k = v[0i64]; }
+    { uint8[]:v = #wild_slice<uint8>(x.ptr =>! wild uint8->, 8i64); k = v[0i64]; }
     x = buffer_new(16i64);
     pass (k + x[0i64]);
 };

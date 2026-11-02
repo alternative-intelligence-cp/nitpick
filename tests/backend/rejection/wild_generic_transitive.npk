@@ -1,0 +1,42 @@
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 17:54
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 18:56
+// TYPE-107'S TWIN: AN INSTANCE ONLY A GENERIC BODY FORMS (DEF-423's generic road, ruled 2026-11-02). `outer<U>` and `outer2<U>` have no `wild` in them and are instantiated at a
+// plain pointer and at a struct holding one, which is legal where they are written, so `tools/check` has nothing to judge: the instance `rt<string->>` is formed by the emitter's
+// worklist, from `rt::<U>` in `outer`'s body, and it is refused there, at that site. This is why this suite exists: `tools/check` reads this file silently (a known gap, stated in
+// TYPE_REFERENCE), the compiler refuses it. Inside `rt` the door reads a `T`, so the address would enter a `wild` slot with no `=>!`, and the concrete frame never names `wild`.
+// The instances the checker sees are `tests/types/rejection/wild_generic_instance.npk`, the legal ones `tests/accept/wild_generic_instance_ok.npk`.
+mod:wild_generic_transitive;
+
+struct:H = { string->:q; };
+
+func:rt<T> = T(move T:v) never fails { wild T->:c = alloc(8i64) =>! wild T->; <-c = move(v); T:o = move(<-c); dalloc(c); pass move(o); };
+func:rt2<T> = T(move T:v) never fails { wild T->:c = alloc(8i64) =>! wild T->; <-c = move(v); T:o = move(<-c); dalloc(c); pass move(o); };
+
+func:outer<U> = U(move U:v) never fails { pass raw rt::<U>(move(v)); };
+func:outer2<U> = U(move U:v) never fails { pass raw rt2::<U>(move(v)); };
+
+func:a_plain_pointer = string->(string->:q) never fails { pass raw outer::<string->>(q); };
+func:b_struct_holding_one = H(H:h) never fails { pass raw outer2::<H>(h); };
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

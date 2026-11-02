@@ -47,6 +47,7 @@ use "../../frontend/type_layout.npk".*;
 use "../../frontend/type_names.npk".*;
 use "../../frontend/symbols.npk".*;
 use "../../frontend/parse_decl.npk".*;
+use "../../frontend/analysis/wild_places.npk".*;   // header_ptr_read: a header's `.ptr[i]` (DEF-425)
 use "../../frontend/builtins.npk".*;  // builtin_views, builtin_sig_param_move (D-246)
 use "../../frontend/parser.npk".*;    // QUAL_MOVE (D-246)
 use "../../frontend/parse_decorate.npk".*;
@@ -9586,7 +9587,7 @@ func:fninst_concrete = FnInstance(ExprEmitter->:x, FnInstance:e, ExprId:call) ne
     // never goes through; the direct self-call is the checker's (TYPE-018 at
     // the call, `type_generic_call`), so what arrives here is the indirect shape.
     if (raw inst_args_too_deep(x, e.decl, w, cn.span)) { pass e; }
-    int32:ft = raw type_subst(x.tr, e.type_id,
+    int32:ft = raw type_subst_ctx(x.tr, e.type_id,
                                 raw subst_emitted_scope(x.fe.ctx), cn.span,
                                 raw SUBST_FUEL_LL(), x.fe.ctx.impls);
     drop fninst_record(x.fninsts, x.ast, e.decl, w.start, w.count,
@@ -10547,12 +10548,7 @@ func:index_base_place = PlaceVal(ExprEmitter->:x, ExprId:bid) never fails {
     PlaceVal:p = raw addr_of(x, bid);
     if (p.state == (raw LL_OK())) { pass p; }
     if (!(raw rooted_in_temporary(x, bid))) { pass p; }
-    IrVal:v = raw emit_expr(x, bid);
-    if (!(raw iv_is_ok(v))) { pass (raw pv_from_iv(move(v))); }
-    string:slot = raw irw_temp(x.fe.w);
-    drop irw_alloca(x.fe.w, slot, v.ll);
-    drop irw_line(x.fe.w, raw cat5("store ", v.ll, " ", v.ref, string_concat(", ptr ", slot)));
-    pass (raw pv(move(slot), v.type_id));
+    pass (raw spill_value(x, bid));
 };
 
 // Is the expression under every member access and index of `id` something
@@ -10574,6 +10570,56 @@ func:rooted_in_temporary = bool(ExprEmitter->:x, ExprId:id) never fails {
         pass true;
     }
     pass false;
+};
+
+// A HEADER'S `.ptr[i]` IS THE HEADER'S OWN CHECKED READ (DEF-425's I2, landing 177c; a write form through one is TYPE-106). `ptr`
+// and `len` load after the index is evaluated, the `List` arm's order, so an index that re-points the header is read against what it left.
+// A `cstring` has its terminator, `i <= len`; a `string`, a `buffer` and a slice `i < len`. A range is a value no place holds.
+func:addr_of_header_elem = PlaceVal(ExprEmitter->:x, ExprNode:n, int32:elem_tid, string:etext) never fails {
+    ExprId:hb = raw expr_operand(raw ast_expr(x.ast, raw expr_lhs(n)));
+    ExprNode:bn = raw ast_expr(x.ast, hb);
+    bool:view = (bn.kind == ExprKind.ExprIndexExpr) && ((raw ast_expr(x.ast, raw expr_rhs(bn))).kind == ExprKind.ExprRangeExpr);
+    PlaceVal:hp = is (view) : (raw spill_value(x, hb)) : (raw index_base_place(x, hb));
+    if (hp.state != (raw LL_OK())) { pass hp; }
+    int32:htid = hp.type_id;
+    string:haddr = move(hp.addr);
+    if ((raw type_kind(x.fe.ctx.types, htid)) == (raw TY_POINTER())) {
+        string:loaded = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(loaded, " = load ptr, ptr ", haddr));
+        haddr = move(loaded);
+        htid = raw type_elem(x.fe.ctx.types, htid);
+    }
+    LlType:hll = raw ll_type(x.fe.ctx, htid);
+    if (!(raw ll_is_ok(hll))) { pass (raw pv_broken(n.span)); }
+    IrVal:ix = raw emit_expr(x, raw expr_rhs(n));
+    if (!(raw iv_is_ok(ix))) { pass (raw pv_from_iv(move(ix))); }
+    string:idx64 = raw index_as_i64(x, ix);
+    string:lp = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(lp, " = getelementptr ", hll.text, ", ptr ", string_concat(haddr, ", i32 0, i32 1")));
+    string:hlen = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(hlen, " = load i64, ptr ", lp));
+    if ((raw type_kind(x.fe.ctx.types, htid)) == (raw TY_CSTRING())) {
+        string:bound = raw irw_temp(x.fe.w);
+        drop irw_line(x.fe.w, raw cat3(bound, " = add i64 1, ", hlen));
+        hlen = move(bound);
+    }
+    drop emit_bounds_guard(x, idx64, hlen, (raw expr_rhs(n)).index, n.span);
+    string:dp = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(dp, " = getelementptr ", hll.text, ", ptr ", string_concat(haddr, ", i32 0, i32 0")));
+    string:data = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat3(data, " = load ptr, ptr ", dp));
+    string:r = raw irw_temp(x.fe.w);
+    drop irw_line(x.fe.w, raw cat5(r, " = getelementptr ", etext, ", ptr ", raw cat4(data, ", i64 ", idx64, "")));
+    pass (raw pv(move(r), elem_tid));
+};
+
+func:spill_value = PlaceVal(ExprEmitter->:x, ExprId:bid) never fails {
+    IrVal:v = raw emit_expr(x, bid);
+    if (!(raw iv_is_ok(v))) { pass (raw pv_from_iv(move(v))); }
+    string:slot = raw irw_temp(x.fe.w);
+    drop irw_alloca(x.fe.w, slot, v.ll);
+    drop irw_line(x.fe.w, raw cat5("store ", v.ll, " ", v.ref, string_concat(", ptr ", slot)));
+    pass (raw pv(move(slot), v.type_id));
 };
 
 func:addr_of_place = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
@@ -10749,6 +10795,7 @@ func:addr_of_place = PlaceVal(ExprEmitter->:x, ExprId:id) never fails {
             pass (raw pv(move(r), elem_tid));
         }
         if (okind == (raw TY_POINTER())) {
+            if (raw header_ptr_read(x.ast, x.interns, x.et, x.fe.ctx.types, raw expr_lhs(n))) { pass (raw addr_of_header_elem(x, n, elem_tid, ell.text)); }
             IrVal:ov = raw emit_expr(x, raw expr_lhs(n));
             if (!(raw iv_is_ok(ov))) { pass (raw pv_from_iv(move(ov))); }
             IrVal:ix = raw emit_expr(x, raw expr_rhs(n));

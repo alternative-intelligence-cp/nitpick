@@ -1,0 +1,230 @@
+// expect-exit: 0
+//
+// WHAT STAYS LEGAL IN THE ARGUMENT BETWEEN A WRITING SLOT'S `.ptr` AND ITS `.len`, AND WHAT EACH READS (DEF-469, landing 177c; `tests/analysis/rejection/wild_door_middle.npk` is its other half).
+// One block of 1s: `small` views its first 4 bytes, `big` the last 64, from offset 64. Each cell returns 10 * byte[10] + byte[64]: 11 the old pair wrote (4 bytes at 0), 17 the new pair wrote (64 bytes at 64).
+// 71, the mixed pair, is what the refused cells read before the rule, so a cell reading 71 here is the hole back. A failure exits with the cell's position in `main`'s list.
+mod:wild_door_middle_ok;
+
+func:repoint = int64(uint8[]->:b, uint8[]:big) never fails { <-b = big; pass 7i64; };
+func:rep_src = wild uint8->(uint8[]->:b, uint8[]:big, wild uint8->:src) never fails { <-b = big; pass src; };
+func:regrow = int64(buffer->:b) never fails { <-b = buffer_new(64i64); pass 7i64; };
+struct:Holder = { wild uint8->:p; };
+
+func:c1_memset_lit = int64() never fails {
+    wild uint8->:w = alloc(128i64) =>! wild uint8->;
+    discard(memset(w, 1i64, 128i64));
+    uint8[]:small = #wild_slice<uint8>(w, 4i64);
+    uint8[]:big = #wild_slice<uint8>(#ptr_add<uint8>(w, 64i64), 64i64);
+    wild uint8->:src = alloc(128i64) =>! wild uint8->;
+    discard(memset(src, 7i64, 128i64));
+    uint8[]:b = small;
+    discard(memset(b.ptr, 7i64, b.len));
+    int64:g = (<-(#ptr_add<uint8>(w, 10i64))) => int64;
+    int64:h = (<-(#ptr_add<uint8>(w, 64i64))) => int64;
+    dalloc(src);
+    dalloc(w);
+    pass (g * 10i64) + h;
+};
+
+func:c2_memset_before = int64() never fails {
+    wild uint8->:w = alloc(128i64) =>! wild uint8->;
+    discard(memset(w, 1i64, 128i64));
+    uint8[]:small = #wild_slice<uint8>(w, 4i64);
+    uint8[]:big = #wild_slice<uint8>(#ptr_add<uint8>(w, 64i64), 64i64);
+    wild uint8->:src = alloc(128i64) =>! wild uint8->;
+    discard(memset(src, 7i64, 128i64));
+    uint8[]:b = small;
+    int64:v = raw repoint(@b, big); discard(memset(b.ptr, v, b.len));
+    int64:g = (<-(#ptr_add<uint8>(w, 10i64))) => int64;
+    int64:h = (<-(#ptr_add<uint8>(w, 64i64))) => int64;
+    dalloc(src);
+    dalloc(w);
+    pass (g * 10i64) + h;
+};
+
+func:c3_mcpy_before = int64() never fails {
+    wild uint8->:w = alloc(128i64) =>! wild uint8->;
+    discard(memset(w, 1i64, 128i64));
+    uint8[]:small = #wild_slice<uint8>(w, 4i64);
+    uint8[]:big = #wild_slice<uint8>(#ptr_add<uint8>(w, 64i64), 64i64);
+    wild uint8->:src = alloc(128i64) =>! wild uint8->;
+    discard(memset(src, 7i64, 128i64));
+    uint8[]:b = small;
+    wild uint8->:s2 = raw rep_src(@b, big, src); discard(mcpy(b.ptr, s2, b.len));
+    int64:g = (<-(#ptr_add<uint8>(w, 10i64))) => int64;
+    int64:h = (<-(#ptr_add<uint8>(w, 64i64))) => int64;
+    dalloc(src);
+    dalloc(w);
+    pass (g * 10i64) + h;
+};
+
+func:c4_mcpy_wildsrc = int64() never fails {
+    wild uint8->:w = alloc(128i64) =>! wild uint8->;
+    discard(memset(w, 1i64, 128i64));
+    uint8[]:small = #wild_slice<uint8>(w, 4i64);
+    uint8[]:big = #wild_slice<uint8>(#ptr_add<uint8>(w, 64i64), 64i64);
+    wild uint8->:src = alloc(128i64) =>! wild uint8->;
+    discard(memset(src, 7i64, 128i64));
+    uint8[]:b = small;
+    discard(mcpy(b.ptr, src, b.len));
+    int64:g = (<-(#ptr_add<uint8>(w, 10i64))) => int64;
+    int64:h = (<-(#ptr_add<uint8>(w, 64i64))) => int64;
+    dalloc(src);
+    dalloc(w);
+    pass (g * 10i64) + h;
+};
+
+func:c5_memset_binary = int64() never fails {
+    wild uint8->:w = alloc(128i64) =>! wild uint8->;
+    discard(memset(w, 1i64, 128i64));
+    uint8[]:small = #wild_slice<uint8>(w, 4i64);
+    uint8[]:big = #wild_slice<uint8>(#ptr_add<uint8>(w, 64i64), 64i64);
+    wild uint8->:src = alloc(128i64) =>! wild uint8->;
+    discard(memset(src, 7i64, 128i64));
+    uint8[]:b = small;
+    int64:k = 3i64; discard(memset(b.ptr, k + 4i64, b.len));
+    int64:g = (<-(#ptr_add<uint8>(w, 10i64))) => int64;
+    int64:h = (<-(#ptr_add<uint8>(w, 64i64))) => int64;
+    dalloc(src);
+    dalloc(w);
+    pass (g * 10i64) + h;
+};
+
+func:c6_memset_index = int64() never fails {
+    wild uint8->:w = alloc(128i64) =>! wild uint8->;
+    discard(memset(w, 1i64, 128i64));
+    uint8[]:small = #wild_slice<uint8>(w, 4i64);
+    uint8[]:big = #wild_slice<uint8>(#ptr_add<uint8>(w, 64i64), 64i64);
+    wild uint8->:src = alloc(128i64) =>! wild uint8->;
+    discard(memset(src, 7i64, 128i64));
+    uint8[]:b = small;
+    int64[2]:vals = [7i64, 9i64]; discard(memset(b.ptr, vals[0i64], b.len));
+    int64:g = (<-(#ptr_add<uint8>(w, 10i64))) => int64;
+    int64:h = (<-(#ptr_add<uint8>(w, 64i64))) => int64;
+    dalloc(src);
+    dalloc(w);
+    pass (g * 10i64) + h;
+};
+
+func:c7_memset_deref = int64() never fails {
+    wild uint8->:w = alloc(128i64) =>! wild uint8->;
+    discard(memset(w, 1i64, 128i64));
+    uint8[]:small = #wild_slice<uint8>(w, 4i64);
+    uint8[]:big = #wild_slice<uint8>(#ptr_add<uint8>(w, 64i64), 64i64);
+    wild uint8->:src = alloc(128i64) =>! wild uint8->;
+    discard(memset(src, 7i64, 128i64));
+    uint8[]:b = small;
+    int64:seven = 7i64; int64->:pv = @seven; discard(memset(b.ptr, <-pv, b.len));
+    int64:g = (<-(#ptr_add<uint8>(w, 10i64))) => int64;
+    int64:h = (<-(#ptr_add<uint8>(w, 64i64))) => int64;
+    dalloc(src);
+    dalloc(w);
+    pass (g * 10i64) + h;
+};
+
+func:c8_mcpy_path = int64() never fails {
+    wild uint8->:w = alloc(128i64) =>! wild uint8->;
+    discard(memset(w, 1i64, 128i64));
+    uint8[]:small = #wild_slice<uint8>(w, 4i64);
+    uint8[]:big = #wild_slice<uint8>(#ptr_add<uint8>(w, 64i64), 64i64);
+    wild uint8->:src = alloc(128i64) =>! wild uint8->;
+    discard(memset(src, 7i64, 128i64));
+    uint8[]:b = small;
+    Holder:hd = Holder{ p: src }; discard(mcpy(b.ptr, hd.p, b.len));
+    int64:g = (<-(#ptr_add<uint8>(w, 10i64))) => int64;
+    int64:h = (<-(#ptr_add<uint8>(w, 64i64))) => int64;
+    dalloc(src);
+    dalloc(w);
+    pass (g * 10i64) + h;
+};
+
+func:c9_mcpy_cast_path = int64() never fails {
+    wild uint8->:w = alloc(128i64) =>! wild uint8->;
+    discard(memset(w, 1i64, 128i64));
+    uint8[]:small = #wild_slice<uint8>(w, 4i64);
+    uint8[]:big = #wild_slice<uint8>(#ptr_add<uint8>(w, 64i64), 64i64);
+    wild uint8->:src = alloc(128i64) =>! wild uint8->;
+    discard(memset(src, 7i64, 128i64));
+    uint8[]:b = small;
+    uint8[]:t = #wild_slice<uint8>(src, 4i64); discard(mcpy(b.ptr, t.ptr =>! wild uint8->, b.len));
+    int64:g = (<-(#ptr_add<uint8>(w, 10i64))) => int64;
+    int64:h = (<-(#ptr_add<uint8>(w, 64i64))) => int64;
+    dalloc(src);
+    dalloc(w);
+    pass (g * 10i64) + h;
+};
+
+func:c10_mmov_wildsrc = int64() never fails {
+    wild uint8->:w = alloc(128i64) =>! wild uint8->;
+    discard(memset(w, 1i64, 128i64));
+    uint8[]:small = #wild_slice<uint8>(w, 4i64);
+    uint8[]:big = #wild_slice<uint8>(#ptr_add<uint8>(w, 64i64), 64i64);
+    wild uint8->:src = alloc(128i64) =>! wild uint8->;
+    discard(memset(src, 7i64, 128i64));
+    uint8[]:b = small;
+    discard(mmov(b.ptr, src, b.len));
+    int64:g = (<-(#ptr_add<uint8>(w, 10i64))) => int64;
+    int64:h = (<-(#ptr_add<uint8>(w, 64i64))) => int64;
+    dalloc(src);
+    dalloc(w);
+    pass (g * 10i64) + h;
+};
+
+// No `wild`, no `=>!`, no `#`: two views of one array, handed in by the caller. 10 * a[8] + a[0]: 11 the old pair, 17 the new pair; the refused cell `n1` read 71.
+func:nowild = NIL(uint8[]:s, bool:hoist) never fails {
+    uint8[]:b = s[2i64...4i64];
+    if (hoist) { int64:v = raw repoint(@b, s); discard(memset(b.ptr, v, b.len)); pass NIL; }
+    discard(memset(b.ptr, 7i64, b.len));
+    pass NIL;
+};
+func:nc1_memset_lit = int64() never fails {
+    uint8[16]:a = [1u8,1u8,1u8,1u8,1u8,1u8,1u8,1u8,1u8,1u8,1u8,1u8,1u8,1u8,1u8,1u8];
+    drop nowild(a[0i64...8i64], false);
+    pass ((a[8i64] => int64) * 10i64) + (a[0i64] => int64);
+};
+func:nc2_memset_before = int64() never fails {
+    uint8[16]:a = [1u8,1u8,1u8,1u8,1u8,1u8,1u8,1u8,1u8,1u8,1u8,1u8,1u8,1u8,1u8,1u8];
+    drop nowild(a[0i64...8i64], true);
+    pass ((a[8i64] => int64) * 10i64) + (a[0i64] => int64);
+};
+// A `buffer` replaced BEFORE the call: the write lands in the live buffer, 7. The refused cell `n2` read 0.
+func:nd_memset_buffer_ctl = int64() never fails {
+    buffer:b = buffer_new(4i64);
+    int64:v = raw regrow(@b);
+    discard(memset(b.ptr, v, b.len));
+    pass (b[0i64] => int64);
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c1_memset_lit()) != 11i64) { exit 1i32; }
+    if ((raw c2_memset_before()) != 17i64) { exit 2i32; }
+    if ((raw c3_mcpy_before()) != 17i64) { exit 3i32; }
+    if ((raw c4_mcpy_wildsrc()) != 11i64) { exit 4i32; }
+    if ((raw c5_memset_binary()) != 11i64) { exit 5i32; }
+    if ((raw c6_memset_index()) != 11i64) { exit 6i32; }
+    if ((raw c7_memset_deref()) != 11i64) { exit 7i32; }
+    if ((raw c8_mcpy_path()) != 11i64) { exit 8i32; }
+    if ((raw c9_mcpy_cast_path()) != 11i64) { exit 9i32; }
+    if ((raw c10_mmov_wildsrc()) != 11i64) { exit 10i32; }
+    if ((raw nc1_memset_lit()) != 11i64) { exit 11i32; }
+    if ((raw nc2_memset_before()) != 17i64) { exit 12i32; }
+    if ((raw nd_memset_buffer_ctl()) != 7i64) { exit 13i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1259,7 +1259,8 @@ unverifiable address, and as greppable. *[2026-10-17, landing 128 (D-341): a
 `.ptr` (`#wild_slice<uint8>(x.ptr, n)`) it is a borrow of `x`, frozen while it
 lives (D-325) and refused at a `pass` out of `x`'s frame; over a bare `wild`
 pointer it views the pointee and freezes nothing of the frame. The words "in
-`wild` context only" were struck by D-315.]*
+`wild` context only" were struck by D-315.]* *[1.6.1e landing 177c, DEF-423's W3: the operand takes its written cast now, `#wild_slice<uint8>(x.ptr =>! wild uint8->, n)`,
+and the view stays rooted at `x` through it (BORROW-015 at an assignment over `x`).]*
 
 `T[]` **never owns**. Growable owning sequences are a library concern, per D-041.
 
@@ -1379,14 +1380,38 @@ identical.
 > allocations without changing the representation.
 
 **Indexing a pointer** (`p[i]`) is the i-th `T` in memory from `p`: pointer
-arithmetic, unchecked, since a thin pointer carries no bound. **It is refused
+arithmetic, unchecked, since a thin pointer carries no bound. **So it belongs to
+`wild` (D-038, D-355; 1.6.1e landing 177c, DEF-425):** a plain
+pointer's `p[k]` and `@p[k]` are refused unless `k` is the constant 0
+(`NITPICK-TYPE-106`), and a pointer of `wild` provenance keeps them. Indexing agrees now: a plain pointer's `p[k]` past 0 is TYPE-106. A plain pointer left null by an unwritten `$$m` claim still reads with no bound (DEF-470, 177d). **It is refused
 where the pointee is itself indexed** (1.5.8b step 1b, `NITPICK-TYPE-082`).
 That covers an array (`int64[8]->`), a slice (`T[]->`) and a `List<T>->`. For
 those, `p[i]` has a second reading, the pointee's own element, which is almost
 always the one meant, and a slip between the two was an unchecked wild access
 that type-checked. D-098 auto-dereferences only where there is one reading
-(`.`). Here the element is spelled `(<-p)[i]`, one level brought back. A
-pointer to a scalar or a struct keeps its indexing.
+(`.`). Here the element is spelled `(<-p)[i]`, one level brought back.
+
+**A header's `x.ptr[i]`** (`x` a `string`, `cstring`, `buffer` or slice, in a `wild` slot or not, or a pointer to one;
+1.6.1e landing 177c, DEF-425; one predicate, `header_ptr_read`, since the rebuild's R3): a READ is the header's own checked index, with no source
+change. The index is evaluated first, then `len` and `ptr` are loaded, as a `List`'s
+element is, and past the bound it traps `OutOfBounds`. The bound is per kind: a
+`cstring` is `i <= len`, because it has a terminator; a `string`, a `buffer` and a
+slice are `i < len`. It carries a `bounds` row, the proof `x[i]` uses. A WRITE FORM OR AN ADDRESS, whatever
+the path below the element: `x.ptr[i] = v`, `@x.ptr[i]`, `$$i` and `$$m` of it, a pointer receiver, a `move` or a `pass` out, is `NITPICK-TYPE-106`: write `x[i]` (a `string`'s bytes
+are written by nothing). A header in a `wild` slot is no exception: `w.ptr[i]` and `w[i]` are the same checked read, so an empty or null block traps.
+When `i` makes a call, or is anything else but an integer literal, a name, a path, `<-p`, an index, a two-operand operator or a cast of those, `x.ptr[i]` stands only over a header whose own storage can't die under
+the index: a by-value local, parameter or module binding, or a field or frame-array element of one, no node of the path of pointer type. Anywhere else, behind a pointer, a `List`'s or slice's element, a `pick`'s binding or a value no name holds, it is TYPE-106:
+by the time it loads the header can be gone, and loading it first reads a freed block if the index re-assigns the string. A name doesn't help inside a callee. Compute the index first, `int64:i = ...;`. With a constant index every header stays legal.
+
+**A header's `.ptr` has five uses** (I3, 1.6.1e landing 177c's rebuild; DEF-425, DEF-264). With no cast, and `x.ptr` in that position with only parentheses around it, it is:
+(1) the base of an index; (2) an operand of a comparison (`==`, `!=`; an ordering is TYPE-008 as any pointer's); (3) the operand of `=>!`;
+(4) an argument the `wild` door's W3 admits (MEMORY_REFERENCE's 177c note); (5) an argument of `sys`, a kernel register, when the header isn't `fixed`:
+a `fixed` header's `.ptr` there is the write D-287 refuses, spelled `fv.ptr =>! uint8->`. **Anything else is `NITPICK-TYPE-106`,** unless the slot's own code comes first: `<-x.ptr` read or written,
+`x.ptr.f` read or written, a receiver, a checked cast's operand, an arm of a ternary, `??` or `?|`, `move`, `give`, `discard(x.ptr)`. A header's own write forms keep TYPE-079: `x.ptr = v`, `@x.ptr`, `$$m x.ptr`, one report each.
+A user struct's field named `ptr` isn't a header. So a `fixed` header's `.ptr` enters no write form without a written `=>!`.
+*[The sentence "A pointer to a scalar or a struct keeps its indexing", here from 1.5.8b
+step 1b, came out at landing 177c (management_14's rulings §2). It let a plain pointer
+run over the stack with nothing written. The rebuild changed two sentences of this paragraph: I2's "not in a `wild` slot" and "Over a header in a `wild` slot, `.ptr[i]` is `wild`'s index, unchecked" came out at R3, and W2's and W3's text stands as first written, W2 (e) true since R1 stopped W3's role at every transparent form.]*
 
 ---
 
@@ -1969,9 +1994,9 @@ managed regime reclaims it at scope exit.
 
 ```nitpick
 buffer:buf = buffer_new(1024i64);          // 1024 zeroed bytes, len == cap
-<-(#ptr_add<int32>(buf.ptr, 0i64)) = 42i32; // a typed write, the general way
-int32:back = <-(#ptr_add<int32>(buf.ptr, 0i64));
-uint8:b0 = buf.ptr[0i64];                  // byte reads index the ptr (unchecked: a pointer carries no length)
+<-(#ptr_add<int32>(buf.ptr =>! wild int32->, 0i64)) = 42i32; // a typed write, the general way; the cast is W3's (DEF-423)
+int32:back = <-(#ptr_add<int32>(buf.ptr =>! wild int32->, 0i64));
+uint8:b0 = buf.ptr[0i64];                  // the header's own checked read (DEF-425, §10): `OutOfBounds` past `len`
 buf[1i64] = 7u8;                           // the CHECKED byte place (D-341, landing 128): bounds-checked against len
 uint8[]:head = buf[0i64...4i64];           // the CHECKED byte view: lo <= hi <= len, a borrow of buf (D-249), frozen (D-325)
 ```
@@ -1986,7 +2011,7 @@ The surface, exactly (1.3.7 landed this MINIMALLY):
   (D-150). The count is `int64` by declaration — a signature-less builtin
   adopts nothing (the `sys` rule).
 - Members `.ptr` (`uint8->`, of WILD provenance: the allocator's block pointer, so it
-  enters a plain binding only as `b.ptr =>! uint8->`, D-361, landing 121), `.len`, `.cap` — the string's trio with the
+  enters a plain binding only as `b.ptr =>! uint8->`, D-361, landing 121; that provenance is for `NULL` and the plain slots: a `wild` slot takes it uncast only by DEF-423's W3, MEMORY_REFERENCE's 177c note; its five uses are §10's), `.len`, `.cap` — the string's trio with the
   string's meanings; `cap == 0` is the same ownership bit, so the drop body
   is SHARED with the string's.
 - The **scope-exit drop is the reclaim** (D-183): a buffer is move-only
@@ -2009,7 +2034,10 @@ The surface, exactly (1.3.7 landed this MINIMALLY):
   already exercises (D-187). The result stays in the manual regime (D-361, 1.6.1e
   landing 121): dereferenced in place as above, or stored in a `wild` binding, it
   needs nothing; written into a PLAIN pointer binding, parameter or field it is
-  `NITPICK-TYPE-097` unless spelled `#ptr_add<T>(…) =>! T->`, the crossing.
+  `NITPICK-TYPE-097` unless spelled `#ptr_add<T>(…) =>! T->`, the crossing. Its operand
+  is a `wild` slot, so a header's `.ptr` takes its written cast there, `buf.ptr =>! wild T->`
+  (`NITPICK-BORROW-011` otherwise; 1.6.1e landing 177c, DEF-423's W3: it has no count, so the
+  header's `.len` can't bound it); a view over the cast stays rooted at the header.
 - `==` refuses as the string's does (D-169): the trio would compare the
   address, not the bytes.
 
@@ -2294,6 +2322,8 @@ Everything below follows from that one sentence, and nothing beyond it is part o
   headers' `ptr` (a `string`'s, `cstring`'s, slice's or `buffer`'s) is such a place:
   the allocator's block pointer, null for an empty body (§23), the shape the
   prelude's `List` declares as `hidden wild T->:items` -- so `b.ptr != NULL` stands.
+  *[1.6.1e landing 177c: for `NULL`'s question and TYPE-097 alone. At a `wild` slot a header's `.ptr` isn't of `wild`
+  provenance: DEF-423's W3, MEMORY_REFERENCE's 177c note.]*
 - **A plain `T->` always points at something (D-355).** `NULL` written where a plain
   pointer is expected -- a local's or a module binding's initialiser, an assignment,
   a plain parameter's argument, a plain field in a literal, `pass NULL` from a plain
@@ -2322,13 +2352,25 @@ Everything below follows from that one sentence, and nothing beyond it is part o
   pointer (or an `Optional` of one): a local's or a module binding's initialiser, an
   assignment (a binding, a field through any path, an element), a `pass` or a
   `Result{ value: … }` from a plain `T->()`, a call's argument (a user function's, a
-  builtin's, a function value's, a prelude generic's such as `list_push`'s), a struct
-  literal's field (a generic instance's included), through a ternary's arms and a
-  `??`/`?|` default, a fixed array literal's elements. The crossing `v =>! T->` is the
+  builtin's, a function value's, a prelude generic's such as `list_push`'s), a variant's
+  payload, a struct literal's field (a generic instance's included), a `for`'s binding over
+  a `wild` array or view; through a ternary's arms, both sides of `??` and `?|`, `?!`, `??!`,
+  `raw`, `await`, `relay`, `move`, a spread, `?.` over a `wild` field, a dereference of a `wild`
+  place, an element of a value no binding holds, a `wild` view's `.ptr[i]`; a fixed array
+  literal's elements, and a whole `wild` array into a slot whose elements are plain pointers.
+  A value too deep to read is refused the same way, past the parser's own depth (no tree that
+  parses reaches it). A function with a `wild` return is no value (TYPE-100): a function type
+  carries no qualifier. NOT ASKED YET: a `Result<T->>` slot (DEF-479); an arena's, a
+  `shared_arena`'s, a `Mutex`'s and a `RwLock`'s pointer element (DEF-481); an atomic's
+  (DEF-391). The crossing `v =>! T->` is the
   author's assertion that the pointer points at something a program may read (the
-  TOS marker, as every `=>!` is), and a `wild` slot takes the value as it is. NOT
-  covered, listed for the fuzzer's family: a pick expression's `give`, and a method
-  call's receiver (`c.get()` on a `wild Cell->` hands the body a plain `Self->`).
+  TOS marker, as every `=>!` is), and a `wild` slot takes the value as it is. Also a pick
+  expression's `give` in a plain slot, judged as a ternary's arm is; a `wild` value as a
+  method's receiver over a plain parameter (`c.get()` on a `wild Cell->`); a method's declared
+  `wild` return; a checked cast whose target is `wild` or whose operand has `wild` provenance; and
+  a slice whose element holds a pointer, over a `wild` place or from `#wild_slice<T>` (a view of
+  bytes stays legal). *[This read "NOT covered, listed for the fuzzer's family: a pick expression's
+  `give`, and a method call's receiver", and named no `?|` left side, `?!`, dereference or `for`, until 1.6.1e landing 177c's rebuild: DEF-477, DEF-423, D-361's note.]*
 - NOT valid as a general "no value" — that's `NIL`
 - IR: `ptr null`
 - A store through a `NULL` pointer (a `wild` one, since landing 119), or a load from one
@@ -2477,7 +2519,7 @@ level, because `q.x` does.
 | Operator | Meaning | IR | Notes |
 |---|---|---|---|
 | `expr => T` | checked cast | `sext`/`zext`/`trunc`/`sitofp`/... | Bounds checked |
-| `expr =>! T` | unchecked cast | same but no bounds check | TOS auditable |
+| `expr =>! T` | unchecked cast | same but no bounds check | TOS auditable. Beside `=>!` and `wild`, `sys` is a road no rule checks: its arguments are kernel registers, with no bound and no direction, and nothing on the page but the word `sys` says so (D-048's note, DEF-478) |
 
 ### Range
 | Operator | Meaning | Notes |

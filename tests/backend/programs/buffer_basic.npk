@@ -20,8 +20,8 @@ func:main = int32(cstring[]:_~argv) {
     if (b.ptr[15i64] != 0u8)                     { exit 13i32; }
 
     // Writes through the general mechanism, reads through the trio.
-    <-(#ptr_add<uint8>(b.ptr, 0i64)) = 7u8;
-    <-(#ptr_add<uint8>(b.ptr, 15i64)) = 9u8;
+    <-(#ptr_add<uint8>(b.ptr =>! wild uint8->, 0i64)) = 7u8;
+    <-(#ptr_add<uint8>(b.ptr =>! wild uint8->, 15i64)) = 9u8;
     if (b.ptr[0i64] != 7u8)                      { exit 14i32; }
     if (b.ptr[3i64] != 0u8)                      { exit 15i32; }
     if (b.ptr[15i64] != 9u8)                     { exit 16i32; }
@@ -39,10 +39,10 @@ func:main = int32(cstring[]:_~argv) {
     buffer:w = buffer_new(64i64);
     int64:i = 0i64;
     while (i < 8i64) decreases 8i64 - i {
-        <-(#ptr_add<int64>(w.ptr, i)) = i * 100i64;
+        <-(#ptr_add<int64>(w.ptr =>! wild int64->, i)) = i * 100i64;
         i = i + 1i64;
     }
-    if ((<-(#ptr_add<int64>(w.ptr, 5i64))) != 500i64) { exit 17i32; }
+    if ((<-(#ptr_add<int64>(w.ptr =>! wild int64->, 5i64))) != 500i64) { exit 17i32; }
 
     // `n <= 0` is the empty non-owning buffer, not an error.
     buffer:e0 = buffer_new(0i64);
@@ -54,13 +54,13 @@ func:main = int32(cstring[]:_~argv) {
     // An inner scope's buffer drops at its exit; the registry stays clean.
     {
         buffer:inner = buffer_new(4096i64);
-        <-(#ptr_add<uint8>(inner.ptr, 4095i64)) = 1u8;
+        <-(#ptr_add<uint8>(inner.ptr =>! wild uint8->, 4095i64)) = 1u8;
         if (inner.ptr[4095i64] != 1u8)           { exit 21i32; }
     }
 
     // A buffer MOVES like the owner it is; the source dies at the move.
     buffer:m0 = buffer_new(8i64);
-    <-(#ptr_add<uint8>(m0.ptr, 2i64)) = 42u8;
+    <-(#ptr_add<uint8>(m0.ptr =>! wild uint8->, 2i64)) = 42u8;
     buffer:m1 = move(m0);
     if (m1.ptr[2i64] != 42u8)                    { exit 22i32; }
 

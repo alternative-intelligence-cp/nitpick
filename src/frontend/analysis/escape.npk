@@ -2209,12 +2209,13 @@ func:escape_slice_targets_through_pointer = bool(Escape->:x, ExprId:base, int32:
 // Does a value of type `t` hold a member of type `want` inside it -- a struct's field, an
 // inline array's or a `List`'s element, transitively, fuel-bounded (DEF-330)? A pointer
 // member is not followed: what it points at is other storage. Fuel out answers yes.
-func:escape_type_holds = bool(Escape->:x, int32:t, int32:want, int32:fuel) decreases fuel never fails {
+pub func:escape_type_holds = bool(Escape->:x, int32:t, int32:want, int32:fuel) decreases fuel never fails {
     if ((t == 0i32) || (want == 0i32)) { pass false; }
     if (t == want) { pass true; }
     if (fuel <= 0i32) { pass true; }
     int32:k = raw type_kind(x.types, t);
-    if (k == (raw TY_ARRAY())) { pass (raw escape_type_holds(x, raw type_elem(x.types, t), want, fuel - 1i32)); }
+    if ((k == (raw TY_ARRAY())) || (k == (raw TY_OPTIONAL()))) { pass (raw escape_type_holds(x, raw type_elem(x.types, t), want, fuel - 1i32)); }
+    if (k == (raw TY_ENUM())) { pass (raw enum_has_payload(x.ast, x.types, t)); }   // a payload may be `want`: the closed direction, as the fuel's end (R12)
     if (k != (raw TY_STRUCT())) { pass false; }
     if (raw type_is_list(x.tr, t)) { pass (raw escape_type_holds(x, raw list_elem_type(x.tr, t), want, fuel - 1i32)); }
     int32:sdi = raw type_decl(x.types, t);
@@ -3814,11 +3815,6 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) never fails {
     // though the expression `p` is just a name.
     if (s.kind == StmtKind.StmtVarDeclStmt) {
         ExprId:init = raw stmt_decl_init(x.ast, s);
-        // A `wild` DECLARATION IS A STORE SITE (D-223): `wild int32->:p = @x;`
-        // puts a frame address where the manual regime expects heap.
-        if (((raw stmt_quals(x.ast, s)) & (raw QUAL_WILD())) != 0i32) {
-            drop check_wild_store_decl(x, init, s.span);
-        }
         if (!(raw expr_is_none(init))) {
             bool:init_borrowy = raw escape_expr(x, init, raw ESCAPE_DEPTH());
             if (raw verdict_borrowy(x, init, init_borrowy)) {
@@ -4340,7 +4336,7 @@ func:borrows_only_param_rooted = bool(Escape->:x, ExprId:id, int32:depth) never 
 
 // A BARE BUILTIN CALL -- `string_bytes(s)`, `alloc(n)` -- is an ordinary call
 // whose callee is an identifier RESOLUTION LEFT UNBOUND (`a == 0`), the shape
-// `wild_provenance` already keys on; the `#` forms are `ExprBuiltinExpr`. Its
+// `expr_wild_provenance` already keys on; the `#` forms are `ExprBuiltinExpr`. Its
 // name, or "" for any other call.
 func:bare_builtin_name = string(Escape->:x, ExprNode:n) never fails {
     if (n.kind != ExprKind.ExprCallExpr) { pass ""; }
@@ -4758,69 +4754,23 @@ func:ident_holds = bool(Escape->:x, int32:sym_index) never fails {
 // it is closed here rather than by making rule B stricter, because the store is
 // where the mistake actually is.
 //
-// WILD PROVENANCE IS A WHITELIST, not a borrow blacklist: `=>! wild …->`, a
-// read of a `QUAL_WILD` place, a builtin whose signature hands back wild
-// storage, or `NULL`. Everything else — a plain pointer parameter, a plain-slot
-// read, a call this walk cannot see through — is provenance-UNKNOWN and
-// refuses. Fails closed by construction, and the door where the store is truly
-// meant is D-019's `=>! wild T->`.
-func:wild_provenance = bool(Escape->:x, ExprId:id, int32:d) never fails {
-    // ONE READING (1.6.1d step 3): the whitelist lives in `wild_places.npk`,
-    // because the emitter asks the same question of a store's pointer (DEF-120:
-    // a pointee is dropped before it is overwritten only where the pointer
-    // names managed storage), and two spellings of one predicate would drift.
-    pass (raw expr_wild_provenance(x.ast, x.tab, x.tr.interns, x.etypes, x.types, id, d));
-};
-
-// Is this place a `wild`-qualified slot? (`wild_places.npk`, as above.)
-func:place_is_wild = bool(Escape->:x, ExprId:id) never fails {
-    pass (raw place_wild(x.ast, x.tab, x.etypes, x.types, id));
-};
-
-// Is the named field of this struct type `wild`-qualified? (`wild_places.npk`.)
-func:field_named_is_wild = bool(Escape->:x, int32:sty, int32:fname) never fails {
-    pass (raw field_named_wild(x.ast, x.types, sty, fname));
-};
-
-// The declaration form of the store check: there is no destination EXPRESSION
-// to inspect — the slot is the binding being declared, and its `wild` came from
-// the statement's qualifiers, which the caller has already read.
-func:check_wild_store_decl = NIL(Escape->:x, ExprId:val, Span:at) never fails {
-    if (raw expr_is_none(val)) { pass NIL; }
-    int32:vt = raw exprtypes_get(x.etypes, val);
-    if (vt == 0i32) { pass NIL; }
-    if ((raw type_kind(x.types, vt)) != (raw TY_POINTER())) { pass NIL; }
-    if (raw wild_provenance(x, val, raw ESCAPE_DEPTH())) { pass NIL; }
-    drop escape_err(x, raw BORROW_WILD_STORE(),
-        "a borrow cannot initialise a `wild` binding (D-223): wild memory is manually managed, and a frame address is not manual memory — `dalloc` on one frees a stack address. Qualifiers are not part of the type, so nothing else here would have said so. Initialise from wild storage, or write `=>! wild T->` to state that you accept the surrender of tracking (D-019)",
-        at);
-    pass NIL;
-};
-
-// The store check itself: a wild destination demands wild provenance.
-func:check_wild_store = NIL(Escape->:x, ExprId:dest, ExprId:val,
-                            Span:at) never fails {
-    if (raw expr_is_none(val)) { pass NIL; }
-    if (!(raw place_is_wild(x, dest))) { pass NIL; }
-    int32:vt = raw exprtypes_get(x.etypes, val);
-    if (vt == 0i32) { pass NIL; }
-    if ((raw type_kind(x.types, vt)) != (raw TY_POINTER())) { pass NIL; }
-    if (raw wild_provenance(x, val, raw ESCAPE_DEPTH())) { pass NIL; }
-    drop escape_err(x, raw BORROW_WILD_STORE(),
-        "a borrow cannot be stored in a `wild` slot (D-223): wild memory is manually managed, and a frame address is not manual memory — `dalloc` on one frees a stack address. Qualifiers are not part of the type, so nothing else here would have said so. Store wild storage, or write `=>! wild T->` to state that you accept the surrender of tracking (D-019)",
-        at);
+// THE `wild` DOOR'S REFUSALS, REPORTED (DEF-423, landing 177c; D-223 amended). The typer judged each value where it entered its slot
+// (`wild_door`, the one judge, which replaced the store hooks here); the report stands in the analyses, as BORROW-011 always has, so
+// that it silences none of them. Called once, from the driver, after the reporting walk.
+pub func:escape_report_door = NIL(Escape->:x) never fails {
+    int64:cnt = x.etypes.door.count;
+    for (int64:i in 0i64...cnt) {
+        ExprNode:vn = raw ast_expr(x.ast, ExprId{ index: x.etypes.door[i] });
+        drop escape_err(x, raw BORROW_WILD_STORE(),
+            "this value enters a `wild` slot, or hands a plain pointer a `wild` slot's address, and it is not of `wild` provenance (D-223): wild memory is manually managed, and a borrow or a managed pointer is not manual memory -- `dalloc` on one frees what its owner frees again, and a callee may vacate what its caller still reads. Qualifiers are not part of the type, so nothing else here would have said so. Hand it wild storage, or write `=>! wild T->` to state that you accept the surrender of tracking (D-019); a header's `.ptr` enters uncast only at a builtin's slot with that header's own `.len` as the count and no call, ternary, `pick` or write in an argument between them (put that argument in a local first); a plain `T->->` over a `wild` slot's address takes both named crossings, `((@w) =>! wild T->->) =>! T->->`",
+            vn.span);
+    }
     pass NIL;
 };
 
 func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
     ExprId:tgt = raw stmt_target(s);
     ExprId:val = raw stmt_assigned(s);
-
-    // D-223, BEFORE the borrow-store rules below: those ask whether the VALUE
-    // is a borrow the analysis has marked, and the laundering shape this closes
-    // is one where it is not (a param-rooted interior borrow, unmarked by the
-    // 0.8.1 exemption). The destination's qualifier is what decides here.
-    drop check_wild_store(x, tgt, val, s.span);
 
     // The target is walked too: `rec[raw f(@i)] = 0i32` can break a rule inside
     // an index expression that no rule about the assignment itself would catch.
@@ -5738,17 +5688,10 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
     if (n.kind == ExprKind.ExprStructLiteralExpr) {
         bool:found = false;
         int32:cnt = raw expr_list_count(n);
-        // THE LITERAL IS A STORE SITE TOO (D-223): `Box{ p: @x }` puts a frame
-        // address in a wild slot exactly as `b.p = @x` does, and the field's
-        // qualifier is readable right here. The window alternates NAME, VALUE.
-        int32:lit_ty = raw exprtypes_get(x.etypes, id);
+        // The window alternates NAME, VALUE.
         int32:i = 1i32;
         while (i < cnt) decreases cnt - i {
             ExprId:v = ExprId{ index: raw ast_id_at(x.ast, raw expr_list_start(n), i) };
-            int32:fname = raw ast_id_at(x.ast, raw expr_list_start(n), i - 1i32);
-            if (raw field_named_is_wild(x, lit_ty, fname)) {
-                drop check_wild_store_decl(x, v, n.span);
-            }
             if (raw escape_expr(x, v, d)) { found = true; }
             i = i + 2i32;
         }
@@ -6481,8 +6424,11 @@ func:type_reachable_in_walk = bool(Escape->:x, int32:t, int32:src,
 // `escape_connect`'s blanket `carries_pointer` filter.
 //
 // A slot counts only if it is a NON-`wild` pointer. Wild slots are excluded
-// because BORROW-011 closes them outright: a borrow cannot be stored in one at
-// all, so a wild slot is not a place a borrow can end up. That exclusion is
+// because the `wild` door closes them (BORROW-011; DEF-423, landing 177c: until
+// then this premise was false, the store hooks reaching only part of the slots):
+// a borrow enters one only by a written `=>! wild T->`, the surrender of tracking
+// (D-019), or as `#wild_ptr` from an integer, or as a byte header's `.ptr` at a builtin's reading or writing slot with
+// its own `.len` beside it (W3, `door_header_admits`), so a wild slot is not a place a borrow can end up unstated. That exclusion is
 // what lets the engine tables — Ast, SymbolTable, DiagList, TokenList,
 // InternTable, every one of whose pointer slots is wild by convention — stop
 // being destinations, which is why the four migrated tests compile as written.

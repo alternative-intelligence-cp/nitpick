@@ -136,6 +136,7 @@ use "../../frontend/type_resolve.npk".*;
 use "../../../lib/nhash.npk".*;
 use "../ir/ir_types.npk".*;
 use "../cast_bounds.npk".*;   // D-306's bounds, in the SMT spelling (1.5.8b step 5); len_ceiling_text (D-308 SS7, step 6c)
+use "../../frontend/analysis/wild_places.npk".*;   // header_ptr_read: a header's `.ptr[i]` (DEF-425)
 use "../../frontend/builtins.npk".*;   // builtin_caller_len (D-308 SS7, 1.5.8b step 6c)
 use "./smt_writer.npk".*;
 use "./smt_kinds.npk".*;
@@ -5463,6 +5464,9 @@ func:enc_k_member_access_simd = ArmTerm(Encoder->:e, ExprId:id, ExprNode:n, int3
 // container's length term; a range view's ONE row is the pair's. The
 // value read out stays opaque: what an element HOLDS is nobody's fact.
 func:enc_k_index_expr = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never fails {
+    if (raw header_ptr_read(e.ast, e.interns, e.et, e.types, raw expr_lhs(n))) {
+        pass (raw enc_k_header_elem(e, id, n, ty, raw expr_operand(raw ast_expr(e.ast, raw expr_lhs(n)))));
+    }
     int32:bty2 = raw ty_of(e, raw expr_lhs(n));
     Term:ibase = raw enc_expr(e, raw expr_lhs(n));
     ExprNode:rn2 = raw ast_expr(e.ast, raw expr_rhs(n));
@@ -5493,6 +5497,21 @@ func:enc_k_index_expr = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty) never
     if ((raw type_kind(e.types, bty2)) != (raw TY_POINTER())) {
         drop record_bounds(e, iidx, ilen, (raw expr_rhs(n)).index, n.span);
     }
+    drop enc_alias_site(e, id);
+    pass (raw term_opaque(e, ty));
+};
+
+// A HEADER'S `.ptr[i]` IS THE HEADER'S OWN CHECKED READ (DEF-425's I2, `addr_of_header_elem`): one `bounds` row at the emitter's key,
+// against the header's length, one more for a `cstring`'s terminator; behind a pointer the length has no term, and the row stays open.
+func:enc_k_header_elem = Term(Encoder->:e, ExprId:id, ExprNode:n, int32:ty, ExprId:hdr) never fails {
+    int32:hty = raw ty_of(e, hdr);
+    Term:hbase = raw enc_expr(e, hdr);
+    Term:iidx = raw enc_expr(e, raw expr_rhs(n));
+    drop memo_put(e, (raw expr_rhs(n)).index, iidx);
+    Term:ilen = raw term_none();
+    if (raw has_len_term(e, hty)) { ilen = raw container_len(e, hdr, hbase, hty); }
+    if (ilen.ok && ((raw type_kind(e.types, hty)) == (raw TY_CSTRING()))) { ilen = raw term_app2("+", ilen, raw term_lit("1", false), false); }
+    drop record_bounds(e, iidx, ilen, (raw expr_rhs(n)).index, n.span);
     drop enc_alias_site(e, id);
     pass (raw term_opaque(e, ty));
 };

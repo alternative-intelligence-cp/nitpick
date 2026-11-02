@@ -4027,7 +4027,7 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
     FnSig:sg = raw fn_signature(x.tr, did, name, x.scope);
     int32:succ = sg.success;
     if (specialize) {
-        succ = raw type_subst(x.tr, succ, g, d.span, 64i32, x.fe.ctx.impls);
+        succ = raw type_subst_ctx(x.tr, succ, g, d.span, 64i32, x.fe.ctx.impls);
     }
 
     // THE SYMBOL'S MODULE IS THE IMPL'S FOR A METHOD (1.4.7, D-229 stage 2;
@@ -4135,7 +4135,7 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         x.tr.generics = psaved;
         x.tr.enclosing = pesaved;
         if (specialize) {
-            pt = raw type_subst(x.tr, pt, g, pd.span, 64i32, x.fe.ctx.impls);
+            pt = raw type_subst_ctx(x.tr, pt, g, pd.span, 64i32, x.fe.ctx.impls);
         }
         LlType:pl = raw fnem_param(x.fe, raw decl_name(pd), pt,
                         ((raw param_quals(pd)) & (raw QUAL_MOVE())) != 0i32);
@@ -4166,7 +4166,7 @@ func:emit_function_body_subst = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d,
         x.tr.generics = vsaved;
         x.tr.enclosing = vesaved;
         if (specialize) {
-            vt = raw type_subst(x.tr, vt, g, vn.span, 64i32, x.fe.ctx.impls);
+            vt = raw type_subst_ctx(x.tr, vt, g, vn.span, 64i32, x.fe.ctx.impls);
         }
         LlType:vl = raw fnem_param(x.fe, raw decl_name(vn), vt, false);
         if (!(raw ll_is_ok(vl))) { pass (raw iv_from_ll_at(x, vl, vt, vn.span)); }

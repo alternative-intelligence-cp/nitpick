@@ -140,8 +140,8 @@ func:ctl_after_block = int32() never fails {
 // (rc7a_holder_ptr_add). `NITPICK-BORROW-009`, one report each, on 177a and on this landing's compiler.
 struct:L__holder_value = { wild string->:items; int64:n; };
 func:setl__holder_value = NIL(wild L__holder_value->:l, wild string->:x) never fails { l.items = x; pass NIL; };
-func:c_ra4a_callee_holder_value = int64() never fails { string[2]:arr = [raw fresh(), raw fresh()]; wild L__holder_value->:lp = alloc(16i64) =>! wild L__holder_value->; drop setl__holder_value(lp, @arr[0i64]); string:t = move(<-lp.items); pass arr[0i64].len; };
-func:c_rc7a_holder_ptr_add = int64() never fails { string[2]:arr = [raw fresh(), raw fresh()]; wild L__holder_value->:lp = alloc(16i64) =>! wild L__holder_value->; drop setl__holder_value(lp, #ptr_add<string>(@arr[0i64], 0i64)); string:t = move(<-lp.items); pass arr[0i64].len; };
+func:c_ra4a_callee_holder_value = int64() never fails { string[2]:arr = [raw fresh(), raw fresh()]; wild L__holder_value->:lp = alloc(16i64) =>! wild L__holder_value->; drop setl__holder_value(lp, (@arr[0i64]) =>! wild string->); string:t = move(<-lp.items); pass arr[0i64].len; };
+func:c_rc7a_holder_ptr_add = int64() never fails { string[2]:arr = [raw fresh(), raw fresh()]; wild L__holder_value->:lp = alloc(16i64) =>! wild L__holder_value->; drop setl__holder_value(lp, #ptr_add<string>((@arr[0i64]) =>! wild string->, 0i64)); string:t = move(<-lp.items); pass arr[0i64].len; };
 
 func:main = int32(cstring[]:_~argv) {
     exit 0i32;

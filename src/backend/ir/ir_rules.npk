@@ -313,7 +313,7 @@ pub func:emit_checked_entry = IrVal(ExprEmitter->:x, string:sym, List<int32>:pru
 pub func:body_sym = string(string:sym) never fails {
     if (sym.len == 0i64) { pass ""; }
     if (sym.ptr[sym.len - 1i64] == 34u8) {
-        pass (string_concat(string_from_bytes(sym.ptr, sym.len - 1i64), ".body\""));
+        pass (string_concat(string_from_bytes(sym.ptr =>! wild uint8->, sym.len - 1i64), ".body\""));
     }
     pass (string_concat(sym, ".body"));
 };
@@ -520,7 +520,7 @@ func:fn_contract_kind_count = int32(ExprEmitter->:x, DeclNode:d, int32:kind) nev
 pub func:req_sym = string(string:sym) never fails {
     if (sym.len == 0i64) { pass ""; }
     if (sym.ptr[sym.len - 1i64] == 34u8) {
-        pass (string_concat(string_from_bytes(sym.ptr, sym.len - 1i64), ".req\""));
+        pass (string_concat(string_from_bytes(sym.ptr =>! wild uint8->, sym.len - 1i64), ".req\""));
     }
     pass (string_concat(sym, ".req"));
 };
@@ -569,7 +569,7 @@ pub func:emit_req_fn = IrVal(ExprEmitter->:x, DeclId:did, DeclNode:d, string:fna
 pub func:measure_sym = string(string:sym) never fails {
     if (sym.len == 0i64) { pass ""; }
     if (sym.ptr[sym.len - 1i64] == 34u8) {
-        pass (string_concat(string_from_bytes(sym.ptr, sym.len - 1i64), ".measure\""));
+        pass (string_concat(string_from_bytes(sym.ptr =>! wild uint8->, sym.len - 1i64), ".measure\""));
     }
     pass (string_concat(sym, ".measure"));
 };

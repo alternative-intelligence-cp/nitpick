@@ -1,0 +1,124 @@
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 32:66
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 33:60
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 42:66
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 43:60
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 52:66
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 53:60
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 60:69
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 67:117
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 69:95
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 70:60
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 102:77
+// A GENERIC'S `wild` WORD (R10, landing 177c's rebuild): a `#` sigil that reads storage, `=>!` and the `wild` token each count as the word, so a generic spelling none of them keeps its D-225
+// reading and one spelling any is refused at an instance whose type argument holds an address (`NITPICK-TYPE-107`). `g6` is an impl's method; its TYPE-046 is the cell's own spelling. The concrete twin is
+// the crossing as written, with the pointer type on the page, and stays legal: DEF-425's row. `header_ptr_uses_ok.npk`'s `g3`, `xe2` are the int instances.
+mod:wild_generic_words;
+mod:g1_no_word_ptr_add = {
+struct:Cell = { wild int8->:blk; };
+func:clob = int64() never fails { int64[16]:z = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass z[3i64]; };
+func:put<T> = NIL(Cell->:c, move T:v) never fails { <-(#ptr_add<T>(c.blk, 0i64)) = move(v); pass NIL; };
+func:get<T> = T(Cell->:c) never fails { pass (<-(#ptr_add<T>(c.blk, 0i64))); };
+func:stash = NIL(Cell->:c) never fails { int32:x = 7i32; drop put::<int32->>(c, @x); pass NIL; };
+func:rd = int64(Cell->:c) never fails { int32->:q = raw get::<int32->>(c); int64:d = raw clob(); pass ((<-q) => int64) + d - d; };
+func:f = int64() never fails { Cell:c = Cell{ blk: alloc(16i64) }; drop stash(@c); int64:seen = raw rd(@c); dalloc(c.blk); pass seen; };
+func:cell_main = int32() { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:g2_no_word_wild_slice = {
+struct:Cell = { wild int8->:blk; };
+func:clob = int64() never fails { int64[16]:z = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass z[3i64]; };
+func:put<T> = NIL(Cell->:c, move T:v) never fails { T[]:s = #wild_slice<T>(c.blk, 1i64); s[0i64] = move(v); pass NIL; };
+func:get<T> = T(Cell->:c) never fails { T[]:s = #wild_slice<T>(c.blk, 1i64); pass s[0i64]; };
+func:stash = NIL(Cell->:c) never fails { int32:x = 7i32; drop put::<int32->>(c, @x); pass NIL; };
+func:rd = int64(Cell->:c) never fails { int32->:q = raw get::<int32->>(c); int64:d = raw clob(); pass ((<-q) => int64) + d - d; };
+func:f = int64() never fails { Cell:c = Cell{ blk: alloc(16i64) }; drop stash(@c); int64:seen = raw rd(@c); dalloc(c.blk); pass seen; };
+func:cell_main = int32() { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:g4_ctl_with_word = {
+struct:Cell = { wild int8->:blk; };
+func:clob = int64() never fails { int64[16]:z = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass z[3i64]; };
+func:put<T> = NIL(Cell->:c, move T:v) never fails { wild T->:w = #ptr_add<T>(c.blk, 0i64); <-w = move(v); pass NIL; };
+func:get<T> = T(Cell->:c) never fails { pass (<-(#ptr_add<T>(c.blk, 0i64))); };
+func:stash = NIL(Cell->:c) never fails { int32:x = 7i32; drop put::<int32->>(c, @x); pass NIL; };
+func:rd = int64(Cell->:c) never fails { int32->:q = raw get::<int32->>(c); int64:d = raw clob(); pass ((<-q) => int64) + d - d; };
+func:f = int64() never fails { Cell:c = Cell{ blk: alloc(16i64) }; drop stash(@c); int64:seen = raw rd(@c); dalloc(c.blk); pass seen; };
+func:cell_main = int32() { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xe1_generic_alloc_crossing = {
+func:clob = int64() never fails { int64[16]:z = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass z[3i64]; };
+func:keep<T> = T->(move T:v) never fails { T->:p = alloc(16i64) =>! T->; <-p = move(v); pass p; };
+func:stash = int32->->() never fails { int32:x = 7i32; pass raw keep::<int32->>(@x); };
+func:f = int64() never fails { int32->->:h = raw stash(); int64:d = raw clob(); pass ((<-(<-h)) => int64) + d - d; };
+};
+mod:g6_impl_method_with_word = {
+struct:Cell = { wild int8->:blk; };
+func:clob = int64() never fails { int64[16]:z = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass z[3i64]; };
+struct:Bx2<T> = { T:v; };
+impl:<T>:Bx2<T> = { func:stashb = NIL(Bx2<T>->:self, Cell->:c) never fails { wild T->:w = #ptr_add<T>(c.blk, 0i64); <-w = self.v; pass NIL; }; };
+func:get<T> = T(Cell->:c) never fails { pass (<-(#ptr_add<T>(c.blk, 0i64))); };
+func:stash = NIL(Cell->:c) never fails { int32:x = 7i32; Bx2<int32->>:b = Bx2{ v: @x }; drop b.stashb(c); pass NIL; };
+func:rd = int64(Cell->:c) never fails { int32->:q = raw get::<int32->>(c); int64:d = raw clob(); pass ((<-q) => int64) + d - d; };
+func:f = int64() never fails { Cell:c = Cell{ blk: alloc(16i64) }; drop stash(@c); int64:seen = raw rd(@c); dalloc(c.blk); pass seen; };
+func:cell_main = int32() { pass (((raw f()) + 60i64) =>! int32); };
+};
+
+// R10'S CLOSED CHOICE, A LEGAL SHAPE REFUSED: A MACRO'S `#m(...)` IN A GENERIC COUNTS AS THE WORD, BECAUSE ITS BODY ISN'T IN THE DECLARATION'S TOKENS. HERE THE MACRO NEVER TOUCHES `T` AND THE PROGRAM READ 65 BEFORE THE RULING. PINNED SO THAT RELAXING IT LATER SHOWS UP.
+mod:t18_macro_stmt_no_T = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:takex = NIL(wildx string->:x) never fails { string:t = move(<-x); pass NIL; };
+func:idp = string->(string->:q) never fails { pass q; };
+func:rdb = int64(uint8->:p) never fails { pass (<-p) => int64; };
+struct:H = { string->:q; };
+struct:W = { wild string->:p; };
+struct:WX = { wildx string->:p; };
+struct:M = { int64:k; };
+struct:Ma = { int64[2]:a; int64:k; };
+enum:En = { Aa(int64); Bb; };
+impl:M = {
+    func:setk = NIL(M->:self, int64:v) never fails { self.k = v; pass NIL; };
+    func:getk = int64(M->:self) never fails { pass self.k; };
+    func:byv = int64(M:self, wild string->:x) never fails { string:t = move(<-x); pass self.k; };
+    func:wself = int64(wild M->:self) never fails { pass self.k; };
+    func:wxself = int64(wildx M->:self) never fails { pass self.k; };
+};
+trait:Tw = { func:tm = int64(wild Self->:self) never fails; func:tb = int64(Self:self, wild string->:x) never fails; };
+impl:M:Tw = { func:tm = int64(wild M->:self) never fails { pass self.k; }; func:tb = int64(M:self, wild string->:x) never fails { string:t = move(<-x); pass self.k; }; };
+func:putg<T> = NIL(wild T->:c, move T:v) never fails { <-c = move(v); pass NIL; };
+struct:G<T> = { T:p; };
+func:hg<T> = G<T>(move T:v) never fails { G<T>:g = G{ p: move(v) }; pass move(g); };
+func:wret<T> = wild T->(wild T->:c) never fails { pass c; };
+macro:wm = () { wild int8->:c = alloc(8i64) =>! wild int8->; dalloc(c); };
+func:noword<T> = T(move T:v) never fails { #wm(); pass move(v); };
+func:f = int64() never fails { string:s = raw mks(); string->:q = raw noword::<string->>(@s); pass q.len; pass s.len; };
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -92,8 +92,20 @@ pub struct:ExprTyper = {
     // at every node that is not transparent (`null_ctx_passes`), so a wild slot's context
     // reaches a `NULL` through a ternary's arm, a `??`/`?|` default, a pick expression's
     // `give` or an array literal's element -- never into a nested call's argument, a literal's
-    // field or a cast's operand, which set their own.
+    // field or a cast's operand, which set their own. 3 admits `NULL` and judges nothing (a cast's
+    // operand, a comparison's: no value enters a slot there); 4 judges and leaves `NULL` to its own
+    // rule (a sigil's pointer operand). 1 and 4 are the `wild` door's (`wild_door`, DEF-423).
     int32:null_ctx;
+    // THE BUILTIN SLOT A HEADER'S `.ptr` MAY ENTER UNCAST (DEF-423's W3; `door_header_admits`): 0 none, 1 reading, 2 writing, with
+    // the call's count argument. Reset with `null_ctx`, so it never reaches a nested slot.
+    int32:door_role;
+    ExprId:door_count;
+    // The context a pick expression's `give`s take: the pick's own (`type_pick_expr`), since its selector, guards and the other
+    // statements of its arms are no value of the slot.
+    int32:give_ctx;
+    int32:give_free;   // the pick whose parent says it is no slot (`=>!`, a comparison, an index's base, a register): its `give`s are not judged as a plain slot's (R9)
+    // The one `.ptr` node its parent has said is in a position of I3's (`type_of_expr`): the base of an index, a comparison's operand, `=>!`'s. Read at the node's entry, so a nested expression's own word costs nothing.
+    int32:ptr_ok;
 
     // THE SCOPE NAMES ARE LOOKED UP IN. It lives on the typer rather than being
     // threaded through every walk function for the same reason `expected` does:
@@ -273,7 +285,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                                  FnInstTable->:fninsts,
                                  ExprTypes->:expr_types) never fails {
     ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
-                             diags: diags, expected: 0i32, expect_refused: false, null_ctx: 0i32, scope: scope,
+                             diags: diags, expected: 0i32, expect_refused: false, null_ctx: 0i32, door_role: 0i32, door_count: raw expr_none(), give_ctx: 0i32, give_free: 0i32, ptr_ok: 0i32, scope: scope,
                              fn_success: 0i32, fn_decl: 0i32, fn_terminal: false, fn_never_fails: false, in_defer: false, fn_is_async: false, fn_gives: false, give_operand: 0i32, await_operand: 0i32, return_lit: 0i32, callee_typing: 0i32, arm_depth: 0i32, givex_depth: 0i32,
                              counted_depth: 0i32,
                              contract_ctx: 0i32, rules_subject: 0i32,
@@ -1440,7 +1452,7 @@ func:type_sentinel = int32(ExprTyper->:e, ExprNode:n) never fails {
             // code: the plain slot, an `Optional` slot (the present-null hole: this built an
             // Optional HOLDING a null pointer until this landing), a comparison against a
             // plain pointer (always `false`).
-            if (e.null_ctx == 1i32) { pass want; }
+            if ((e.null_ctx == 1i32) || (e.null_ctx == 3i32)) { pass want; }
             if (e.null_ctx == 2i32) {
                 pass (raw te_error(e, raw TYPE_NULL_PLAIN_POINTER(),
                     "`NULL` is no pointer, and a plain `T->` always points at something (D-355): `p == NULL` is a question a plain pointer always answers `false` -- a pointer that may be absent is the Optional `T->?`, tested with `== NIL`; `NULL` keeps its meaning in a `wild` pointer context alone",
@@ -2280,7 +2292,8 @@ func:type_cast_expr = int32(ExprTyper->:e, ExprNode:n, bool:unchecked) never fai
     // `NULL =>! wild T->` is a wild context by the cast's own qualifier (D-355); a cast to a
     // plain pointer gives the sentinel nothing.
     int32:nsv = e.null_ctx;
-    e.null_ctx = raw null_ctx_of_quals(raw expr_cast_quals(n));
+    e.null_ctx = (raw null_ctx_of_quals(raw expr_cast_quals(n))) * 3i32;
+    if (unchecked) { e.ptr_ok = (raw expr_operand(n)).index; }   // I3: `x.ptr =>! T->` states the crossing; a checked cast states nothing
     int32:from = raw type_of_expr(e, raw expr_operand(n));
     e.null_ctx = nsv;
     e.expected = saved;
@@ -3158,9 +3171,97 @@ pub func:fn_ret_wild = bool(ExprTyper->:e) never fails {
 pub func:null_ctx_against = int32(ExprTyper->:e, TokenKind:op, ExprId:other) never fails {
     if ((op != TokenKind.OpEqEq) && (op != TokenKind.OpNotEq)) { pass 0i32; }
     if (raw expr_wild_provenance(e.ast, e.tab, e.interns, e.expr_types, e.types, other, 16i32)) {
-        pass 1i32;
+        pass 3i32;
     }
     pass 2i32;
+};
+
+// THE `wild` DOOR (DEF-423, landing 177c; D-223 amended): a pointer, slice or view not of `wild` provenance enters a `wild` slot only
+// through `v =>! wild T->`, or `#wild_ptr` from an integer. The slots are every store, `pass` and `return` in a `wild`-returning
+// function, every call's `wild` parameter and a sigil builtin's pointer operand, and every one of them marks itself by the context
+// `type_of_expr` passes here, so there is ONE judge, whatever the pointee; `wildx` counts as `wild`. A gate on the VALUE'S type alone,
+// so a `pick` selector or a ternary's condition is not judged. The typer marks and the analyses report (`NITPICK-BORROW-011`,
+// `escape_report_door`), so a refusal here silences no analysis. The second half is W4: `@` of a `wild` slot of pointer or slice
+// type enters no plain slot, where a plain `T->->` would write it unjudged.
+pub func:wild_door = NIL(ExprTyper->:e, ExprId:id, int32:t, int32:ctx, int32:role) never fails {
+    if ((ctx == 2i32) || (ctx == 3i32)) { pass NIL; }
+    if ((ctx == 1i32) || (ctx == 4i32)) {
+        if (!(raw door_gated(e, t))) { pass NIL; }
+        if (raw door_wild(e.ast, e.tab, e.interns, e.expr_types, e.types, id, 16i32)) { pass NIL; }
+        if (raw door_header_admits(e, id, role)) { pass NIL; }
+        drop list_push(@e.expr_types.door, id.index);
+        pass NIL;
+    }
+    ExprNode:n = raw ast_expr(e.ast, id);
+    if ((n.kind != ExprKind.ExprAddressOfExpr) && (n.kind != ExprKind.ExprBorrowExpr)) { pass NIL; }
+    if (!(raw place_wild(e.ast, e.tab, e.expr_types, e.types, raw expr_operand(n)))) { pass NIL; }
+    if (raw door_gated(e, raw exprtypes_get(e.expr_types, raw expr_operand(n)))) { drop list_push(@e.expr_types.door, id.index); }
+    pass NIL;
+};
+
+// A pointer, a slice, or an `Optional` or `Result` of one.
+pub func:door_gated = bool(ExprTyper->:e, int32:t0) never fails {
+    int32:t = t0;
+    if (t == 0i32) { pass false; }
+    int32:k = raw type_kind(e.types, t);
+    for (int32:fuel in 0i32...8i32) {
+        if ((k != (raw TY_ARRAY())) && (k != (raw TY_OPTIONAL())) && (k != (raw TY_RESULT()))) { break; }
+        t = raw type_elem(e.types, t);
+        k = raw type_kind(e.types, t);
+    }
+    pass (k == (raw TY_POINTER())) || (k == (raw TY_SLICE())) || (k == (raw TY_ARRAY())) || (k == (raw TY_OPTIONAL())) || (k == (raw TY_RESULT()));
+};
+
+// W3: A HEADER'S `.ptr` ENTERS A `wild` SLOT UNCAST ONLY AT A BUILTIN WITH A KNOWN ROLE, with the same header's own `.len` as the count
+// (spelled twice, no call inside), and over bytes, so `.len` is a byte count. A writing slot takes a non-`fixed` slice or `buffer` alone.
+func:door_header_admits = bool(ExprTyper->:e, ExprId:id, int32:role) never fails {
+    if (role == 0i32) { pass false; }
+    if (!(raw header_ptr_read(e.ast, e.interns, e.expr_types, e.types, id))) { pass false; }
+    ExprId:b = raw expr_operand(raw ast_expr(e.ast, id));
+    int32:hb = raw exprtypes_get(e.expr_types, b);
+    if ((raw type_kind(e.types, hb)) == (raw TY_POINTER())) { hb = raw type_elem(e.types, hb); }
+    int32:hk = raw type_kind(e.types, hb);
+    if (hk == (raw TY_SLICE())) {
+        int32:el = raw type_elem(e.types, hb);
+        if ((el != (raw tt_int(e.types, 8i32, false))) && (el != (raw tt_int(e.types, 8i32, true)))) { pass false; }
+    }
+    if (role == 2i32) {
+        if ((hk != (raw TY_SLICE())) && (hk != (raw TY_BUFFER()))) { pass false; }
+        if (raw header_fixed(e, b)) { pass false; }
+    }
+    ExprNode:c = raw ast_expr(e.ast, e.door_count);
+    if ((c.kind == ExprKind.ExprCastExpr) || (c.kind == ExprKind.ExprUncheckedCastExpr)) { c = raw ast_expr(e.ast, raw expr_operand(c)); }
+    if (c.kind != ExprKind.ExprMemberAccessExpr) { pass false; }
+    if (!(raw string_eq(raw intern_get(e.interns, c.payload =>! int32), "len"))) { pass false; }
+    pass (raw door_same_spelling(e, b, raw expr_operand(c), 16i32));
+};
+
+// A `fixed` HEADER, W3's writing slot's question and `sys`'s (R2): a read-only view's own type, or a `fixed` place. D-287 is the reason: a write through it would be one no rule sees.
+pub func:header_fixed = bool(ExprTyper->:e, ExprId:b) never fails {
+    int32:hb = raw exprtypes_get(e.expr_types, b);
+    if ((raw type_kind(e.types, hb)) == (raw TY_POINTER())) { hb = raw type_elem(e.types, hb); }
+    pass (raw type_slice_fixed(e.types, hb)) || (raw place_fixed(e, b, 64i32));
+};
+
+// The same expression spelled twice, structurally, with no call or other effect inside it.
+pub func:door_same_spelling = bool(ExprTyper->:e, ExprId:a, ExprId:b, int32:fuel) decreases fuel never fails {
+    if (fuel <= 0i32) { pass false; }
+    ExprNode:x = raw ast_expr(e.ast, a);
+    ExprNode:y = raw ast_expr(e.ast, b);
+    if (x.kind != y.kind) { pass false; }
+    if (x.kind == ExprKind.ExprIdentifierExpr) { pass (x.a != 0i32) && (x.a == y.a); }
+    if (x.kind == ExprKind.ExprIntLiteral) { pass x.payload == y.payload; }
+    if (x.kind == ExprKind.ExprMemberAccessExpr) { pass (x.payload == y.payload) && (raw door_same_spelling(e, raw expr_operand(x), raw expr_operand(y), fuel - 1i32)); }
+    if (x.kind == ExprKind.ExprDerefExpr) { pass (raw door_same_spelling(e, raw expr_operand(x), raw expr_operand(y), fuel - 1i32)); }
+    if ((x.kind == ExprKind.ExprCastExpr) || (x.kind == ExprKind.ExprUncheckedCastExpr)) {
+        TypeResolver:r = raw etyper_resolver(e);
+        if ((raw resolve_type(@r, raw expr_cast_type(x), e.scope)) != (raw resolve_type(@r, raw expr_cast_type(y), e.scope))) { pass false; }
+        pass (raw door_same_spelling(e, raw expr_operand(x), raw expr_operand(y), fuel - 1i32));
+    }
+    if ((x.kind == ExprKind.ExprIndexExpr) || ((x.kind == ExprKind.ExprBinaryExpr) && (x.payload == y.payload))) {
+        pass (raw door_same_spelling(e, raw expr_lhs(x), raw expr_lhs(y), fuel - 1i32)) && (raw door_same_spelling(e, raw expr_rhs(x), raw expr_rhs(y), fuel - 1i32));
+    }
+    pass false;
 };
 
 // A VALUE OF WILD PROVENANCE ENTERS A PLAIN POINTER SLOT ONLY THROUGH `=>! T->` (D-361, 1.6.1e
@@ -3173,9 +3274,9 @@ pub func:null_ctx_against = int32(ExprTyper->:e, TokenKind:op, ExprId:other) nev
 // is asked, right after the value is typed), the value's provenance is D-120's one walk
 // (`expr_wild_provenance`), and the crossing is the explicit `v =>! T->`, whose plain target the
 // walk answers `false` for: the author's assertion, the TOS marker as every `=>!` is. A ternary's
-// arms and a `??`/`?|` default are looked into (a value can arrive through them, the walk stops at
-// the node); a pick expression's `give`s and a method receiver are not (listed in the
-// landing's record, the fuzzer's family); a fixed array literal's elements are. `NULL` is excluded: its own rule reports it, one mistake one report (D-240).
+// arms and both sides of a `??`/`?|` are looked into (a value can arrive through them, the walk stops at
+// the node), a checked cast's operand and every form below; a pick expression's `give` is asked where it is typed (`type_give_operand`),
+// a method's receiver at its call (R8, R9 of 177c's second rulings); a fixed array literal's elements are. `NULL` is excluded: its own rule reports it, one mistake one report (D-240).
 // A `#ptr_add` result's sentence names the builtin: BUILTIN_REFERENCE's "legal only in `wild`
 // context", enforced here where the result would leave the manual regime.
 pub func:check_wild_into_plain = NIL(ExprTyper->:e, ExprId:v, int32:slot) never fails {
@@ -3186,23 +3287,29 @@ pub func:check_wild_into_plain = NIL(ExprTyper->:e, ExprId:v, int32:slot) never 
     if ((raw type_kind(e.types, st)) == (raw TY_OPTIONAL())) { st = raw type_elem(e.types, st); }
     // A FIXED ARRAY OF POINTERS takes its literal's elements one by one (`int32->[2]:a = [w, w]`):
     // the slot's type is the array's, the values are the elements'.
+    // A whole array entering is asked at its element's slot, so a nested literal, an `Optional` element and a `wild` array's own value each get the question (`int64->[2]:x = wa;` had no cast on the page).
     if ((raw type_kind(e.types, st)) == (raw TY_ARRAY())) {
-        if ((raw type_kind(e.types, raw type_elem(e.types, st))) != (raw TY_POINTER())) { pass NIL; }
         ExprNode:an = raw ast_expr(e.ast, v);
-        if (an.kind != ExprKind.ExprArrayLiteralExpr) { pass NIL; }
+        if (an.kind != ExprKind.ExprArrayLiteralExpr) { drop check_wild_into_plain(e, v, raw type_elem(e.types, st)); pass NIL; }
         for (int32:ai in 0i32...(raw expr_list_count(an))) {
-            drop wild_into_plain_at(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(an), ai) }, 8i32);
+            drop check_wild_into_plain(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(an), ai) }, raw type_elem(e.types, st));
         }
         pass NIL;
     }
-    if ((raw type_kind(e.types, st)) != (raw TY_POINTER())) { pass NIL; }
-    drop wild_into_plain_at(e, v, 8i32);
+    // A SLICE WHOSE ELEMENT HOLDS A POINTER is a plain slot for what it writes, `v[0i64] = q` (R6 of 177c's second rulings; `int64->[]:v = a[0i64...1i64]` over a frame's `wild` array put a
+    // frame address in its `wild` cell, `a1r` freed it, 74). A view of bytes, or of anything holding no pointer, writes no address: it stays out of this check.
+    TypeResolver:wr = raw etyper_resolver(e);
+    if (((raw type_kind(e.types, st)) != (raw TY_POINTER()))
+        && (((raw type_kind(e.types, st)) != (raw TY_SLICE())) || (!(raw type_contains_borrow(@wr, raw type_elem(e.types, st), 0i32, 64i32))))) { pass NIL; }
+    drop wild_into_plain_at(e, v, 300i32);   // above the parser's 256 levels (PARSE-012): no tree reaches the walk's end, nine nested ternaries hid a `wild` arm at the old 8
     pass NIL;
 };
 
 func:wild_into_plain_at = NIL(ExprTyper->:e, ExprId:v, int32:d) never fails {
-    if (d <= 0i32) { pass NIL; }
+    // Past the fuel the value can't be read, and a fuel that answers safe when it runs out is DEF-430's fault: the closed direction, as `refuse_header_ptr_place` has it.
+    if (d <= 0i32) { discard(raw te_error(e, raw TYPE_WILD_INTO_PLAIN(), "a value too deep to read for its provenance enters a plain pointer slot (D-361): name a part of it first", (raw ast_expr(e.ast, v)).span)); pass NIL; }
     if (raw expr_is_none(v)) { pass NIL; }
+    if ((raw exprtypes_get(e.expr_types, v)) == 0i32) { pass NIL; }   // already refused (D-240), `.ptr`'s own question among them
     ExprNode:n = raw ast_expr(e.ast, v);
     if (n.kind == ExprKind.ExprSentinelLiteral) { pass NIL; }
     if (n.kind == ExprKind.ExprTernaryExpr) {
@@ -3211,10 +3318,24 @@ func:wild_into_plain_at = NIL(ExprTyper->:e, ExprId:v, int32:d) never fails {
         pass NIL;
     }
     if ((n.kind == ExprKind.ExprNullCoalesceExpr) || (n.kind == ExprKind.ExprSafeUnwrapExpr)) {
+        drop wild_into_plain_at(e, raw expr_lhs(n), d - 1i32);
         drop wild_into_plain_at(e, raw expr_rhs(n), d - 1i32);
         pass NIL;
     }
-    if (!(raw expr_wild_provenance(e.ast, e.tab, e.interns, e.expr_types, e.types, v, 16i32))) { pass NIL; }
+    // EVERY FORM WHOSE VALUE IS ITS OPERAND'S ASKS THE OPERAND, AND SO DOES A DEREFERENCE AND AN ELEMENT OF A VALUE NO BINDING HOLDS (R15 of 177c's second rulings): `rw(a) ?! E5`, `await aw(a)`,
+    // `<-blk`, `(raw mka(a))[0i64]` each held a `wild` value with no cast on the page. Only this check asks, for R7's reason; a `List`'s element stays a plain slot (R5).
+    if ((n.kind == ExprKind.ExprEmphaticUnwrapExpr) || (n.kind == ExprKind.ExprEmphaticCoalesceExpr) || (n.kind == ExprKind.ExprAwaitExpr) || (n.kind == ExprKind.ExprMoveExpr)
+        || (n.kind == ExprKind.ExprRawUnwrapExpr) || (n.kind == ExprKind.ExprRelayExpr) || (n.kind == ExprKind.ExprDerefExpr) || (n.kind == ExprKind.ExprSpreadExpr)) { drop wild_into_plain_at(e, raw expr_operand(n), d - 1i32); pass NIL; }
+    if ((n.kind == ExprKind.ExprIndexExpr) && (raw header_ptr_read(e.ast, e.interns, e.expr_types, e.types, raw expr_lhs(n)))) { drop wild_into_plain_at(e, raw expr_operand(raw ast_expr(e.ast, raw expr_lhs(n))), d - 1i32); pass NIL; }
+    if ((n.kind == ExprKind.ExprIndexExpr) && ((raw ast_expr(e.ast, raw expr_lhs(n))).kind != ExprKind.ExprIdentifierExpr) && ((raw ast_expr(e.ast, raw expr_lhs(n))).kind != ExprKind.ExprMemberAccessExpr)
+        && ((raw type_kind(e.types, raw exprtypes_get(e.expr_types, raw expr_lhs(n)))) != (raw TY_STRUCT()))) { drop wild_into_plain_at(e, raw expr_lhs(n), d - 1i32); pass NIL; }
+    // A CHECKED CAST KEEPS ITS OPERAND'S PROVENANCE AT THIS CHECK, AND A `wild` TARGET STATES IT (R7 of 177c's second rulings): `gp((@w) => wild string->->, @s)` hid `@w`, a frame address
+    // freed (`a3b`, 74); only `=>! T->` crosses. Only this check asks: in `expr_wild_provenance` the same answer relaxed TYPE-104 (`xg2`, a `move` through a plain parameter) and TYPE-032 and
+    // stopped a store's drop, because to those readers `wild` provenance is a surrender of tracking, and a checked cast surrenders none.
+    if ((n.kind == ExprKind.ExprCastExpr) && (((raw expr_cast_quals(n)) & ((raw QUAL_WILD()) | (raw QUAL_WILDX()))) == 0i32)) { drop wild_into_plain_at(e, raw expr_operand(n), d - 1i32); pass NIL; }
+    if ((n.kind != ExprKind.ExprCastExpr) && (!(raw expr_wild_provenance(e.ast, e.tab, e.interns, e.expr_types, e.types, v, 16i32)))
+        && (!((n.kind == ExprKind.ExprSafeNavExpr) && (raw place_wild(e.ast, e.tab, e.expr_types, e.types, v))))
+        && (!((n.kind == ExprKind.ExprBuiltinExpr) && (raw string_eq(raw intern_get(e.interns, n.payload =>! int32), "wild_slice"))))) { pass NIL; }
     string:m = "a value of wild provenance -- a `wild` place's, an allocator's or `#ptr_add`'s result, an `=>! wild` cast -- enters a plain pointer slot only through the explicit crossing `v =>! T->` (D-361): a plain `T->` always points at something a program may read, and that is the author's assertion to make, or the slot is declared `wild`";
     if (n.kind == ExprKind.ExprBuiltinExpr) {
         if (raw string_eq(raw intern_get(e.interns, n.payload =>! int32), "ptr_add")) {
@@ -3465,7 +3586,10 @@ func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
         }
         int32:pae = raw resolve_type(@r,
                         TypeId{ index: raw ast_id_at(e.ast, start, 0i32) }, e.scope);
+        int32:pasv = e.null_ctx;
+        e.null_ctx = 4i32;
         int32:pap = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 1i32) });
+        e.null_ctx = pasv;
         int32:pao = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 2i32) });
         if (!(raw type_is_invalid(e.types, pap))) {
             if ((raw type_kind(e.types, pap)) != (raw TY_POINTER())) {
@@ -3496,7 +3620,10 @@ func:type_builtin = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
         }
         int32:elem = raw resolve_type(@r,
                           TypeId{ index: raw ast_id_at(e.ast, start, 0i32) }, e.scope);
+        int32:wssv = e.null_ctx;
+        e.null_ctx = 4i32;
         int32:ptr = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 1i32) });
+        e.null_ctx = wssv;
         int32:len = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 2i32) });
         if (!(raw type_is_invalid(e.types, ptr))) {
             if ((raw type_kind(e.types, ptr)) != (raw TY_POINTER())) {
@@ -3861,6 +3988,17 @@ func:type_vector_ctor = int32(ExprTyper->:e, ExprNode:n) never fails {
 // same rule the array literal uses, and for the same reason: choosing a "common"
 // type would need a widening rule, and D-092 says there is not one.
 func:type_pick_expr = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
+    int32:gcsv = e.give_ctx;
+    e.give_ctx = e.null_ctx;
+    if (e.ptr_ok == id.index) { e.give_free = id.index; }
+    e.null_ctx = 0i32;
+    e.door_role = 0i32;
+    int32:pt = raw type_pick_expr_arms(e, id, n);
+    e.give_ctx = gcsv;
+    pass pt;
+};
+
+func:type_pick_expr_arms = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     int32:pselt = raw type_of_expr(e, raw pickx_selector(n));
     int32:start = raw pickx_arm_start(n);
     int32:cnt = raw pickx_arm_count(n);
@@ -3934,7 +4072,12 @@ pub func:type_give_operand = NIL(ExprTyper->:e, StmtNode:s) never fails {
     ExprNode:pn = raw ast_expr(e.ast, ExprId{ index: e.givex_pick[top] });
     int32:saved = e.expected;
     e.expected = cur;
+    int32:nsv = e.null_ctx;
+    e.null_ctx = e.give_ctx;
     int32:got = raw type_of_expr(e, ExprId{ index: s.a });
+    // A `give`'S VALUE IS JUDGED AS A TERNARY'S ARM IS (DEF-477, R9 of 177c's second rulings): the pick's slot is plain here, or no `wild` one, unless its parent says it is no slot at all.
+    if (e.give_free != e.givex_pick[top]) { drop check_wild_into_plain(e, ExprId{ index: s.a }, got); }
+    e.null_ctx = nsv;
     // `give` hands the arm's value to the pick's slot (D-183): an owning PLACE
     // given bare would leave two owners — the binding and the slot — and one
     // drop later frees the other's body. The slot that stayed unwired while
@@ -4371,9 +4514,22 @@ pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id) never fails {
     // expression's `give` or an array literal's element, and through nothing else -- a call,
     // a literal, a cast, an operator set their own for their own slots.
     int32:nsaved = e.null_ctx;
-    if (!(raw null_ctx_passes((raw ast_expr(e.ast, id)).kind))) { e.null_ctx = 0i32; }
+    int32:rsaved = e.door_role;
+    bool:ptr_admitted = e.ptr_ok == id.index;
+    bool:judged = !(raw null_ctx_passes((raw ast_expr(e.ast, id)).kind));
+    // W3's role stops at every transparent form as a `NULL`'s context does not: a `.ptr` in an arm is no argument (R1 of 177c's second rulings),
+    // and `door_call_wild` asks only the literal first argument, so a builtin's result stays what its destination was judged to be.
+    if (judged) { e.null_ctx = 0i32; } e.door_role = 0i32;
     int32:t = raw type_of_expr_inner(e, id);
     e.null_ctx = nsaved;
+    e.door_role = rsaved;
+    // I3: A HEADER'S `.ptr`, WITH NO CAST, HAS FIVE USES (DEF-425, R2 of 177c's second rulings). The one question, here at the node: is my parent the base of an index, a comparison,
+    // `=>!` or a register of `sys` (each says so, `ptr_ok`), or a `wild` slot, where the door decides and W3's roles are its one admission? Every other road is refused because nobody listed it:
+    // `<-x.ptr`, `x.ptr.f`, a receiver, a checked cast, an arm of a ternary or `??`, `move`, `give`, a plain slot, `$$i`. `x.ptr = v`, `@x.ptr` and `$$m x.ptr` say so too, TYPE-079 being theirs, one
+    // report (D-240), and `sys` refuses a `fixed` header itself. A user struct's field named `ptr` is no header, `header_ptr_read`.
+    if ((!ptr_admitted) && (nsaved != 1i32) && (nsaved != 4i32) && (raw header_ptr_read(e.ast, e.interns, e.expr_types, e.types, id))) {
+        t = raw te_error(e, raw TYPE_INDEX_PLAIN(), "a header's `.ptr` has five uses, with `x.ptr` itself in the position (DEF-425): `x.ptr[i]`, the header's own checked read; a comparison; the operand of `=>!`, which states the crossing; a builtin's byte argument counted by the same header's `.len`; and a register of `sys`, unless the header is `fixed`. Anything else walks or writes past what the header bounds: write `x[i]`, or `x.ptr =>! wild T->` with what you assert", (raw ast_expr(e.ast, id)).span);
+    }
     // A SLICE READ OFF A `fixed` PLACE IS THE READ-ONLY VIEW (D-348 (ii), D-350;
     // DEF-246's fourth face): `h.view` over a `fixed Holder:h` carries the rights
     // of the storage it was read from, as a range of fixed storage does
@@ -4393,6 +4549,7 @@ pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id) never fails {
         }
     }
     drop exprtypes_set(e.expr_types, id, t);
+    if (judged) { drop wild_door(e, id, t, nsaved, rsaved); }
     // A COPY OF A PLACE THROUGH AN OPERATOR IS REFUSED WHEREVER IT STANDS (DEF-419, landing 177a): the emitter registers the operator's value as a temporary and drops it
     // (`temp_producer`), so an arm that is a place's own value is freed under its owner: `fs(is (b) : t : t, 0i64)`, `(o ?? t).len`, `(relay r).len` double-freed (the heap
     // check's Unreachable, 74 on 175 and 176b) and read the poison (170) or another string's bytes (81) before it. A CAST stays the move slot's: its value is its operand's.
@@ -4948,6 +5105,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
     // --- the pointer family (OP_REFERENCE §0 level 5) -----------------------------
     if (n.kind == ExprKind.ExprAddressOfExpr) {
         if (!(raw require_place_operand(e, raw expr_operand(n), "@"))) { pass 0i32; }
+        e.ptr_ok = (raw expr_operand(n)).index;   // `@x.ptr` is TYPE-079's, below, one report (D-240)
         int32:t = raw type_of_expr(e, raw expr_operand(n));
         if (t == 0i32) { pass 0i32; }
         drop note_ptr_store(e, raw expr_operand(n), raw expr_none());   // DEF-416 (3)(b): an address of a pointer slot is a store this walk cannot see (q4)
@@ -4998,6 +5156,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
     // distinction is about where the value may travel, not about what it is.
     if (n.kind == ExprKind.ExprBorrowExpr) {
         if (!(raw require_place_operand(e, raw expr_operand(n), "a borrow"))) { pass 0i32; }
+        if (raw borrow_is_mut(n)) { e.ptr_ok = (raw expr_operand(n)).index; }   // `$$m x.ptr` is TYPE-079's, below; `$$i x.ptr` is no write form and no use of a `.ptr`
         int32:t = raw type_of_expr(e, raw expr_operand(n));
         if (t == 0i32) { pass 0i32; }
         if (raw borrow_is_mut(n)) { drop note_ptr_store(e, raw expr_operand(n), raw expr_none()); }   // DEF-416 (3)(b): `$$m` of a pointer slot, as `@` (q4)
@@ -5035,6 +5194,8 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         // (D-286), so only the exclusive claim is a write form here.
         if (raw borrow_is_mut(n)) {
             if (raw refuse_sealed_write(e, raw expr_operand(n), "claim (`$$m`)", n.span)) { pass 0i32; }
+        } else {
+            if (raw refuse_header_ptr_place(e, raw expr_operand(n), "claim (`$$i`)", n.span)) { pass 0i32; }
         }
         pass (raw tt_pointer(e.types, t));
     }
@@ -5200,7 +5361,9 @@ func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     // over a wild place stands, `p == NULL` over a plain pointer is refused with its own
     // sentence, and under any other operator `NULL` has no pointer context of its own.
     int32:nsv = e.null_ctx;
+    bool:cmp = (op == TokenKind.OpEqEq) || (op == TokenKind.OpNotEq) || (op == TokenKind.OpLt) || (op == TokenKind.OpLtEq) || (op == TokenKind.OpGt) || (op == TokenKind.OpGtEq) || (op == TokenKind.OpSpaceship);
     if (raw takes_type_from_context(e, raw expr_lhs(n))) {
+        if (cmp) { e.ptr_ok = (raw expr_rhs(n)).index; }   // I3: an operand of a comparison; an ordering of pointers is TYPE-008, its own code, one report
         rt = raw type_of_expr(e, raw expr_rhs(n));
         if (rt != 0i32) { e.expected = rt; }
         e.null_ctx = raw null_ctx_against(e, op, raw expr_rhs(n));
@@ -5208,9 +5371,12 @@ func:type_binary = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
         e.null_ctx = nsv;
         e.expected = saved;
     } else {
+        // A comparison's left operand is no slot either, as its right is not (`(@w) == q`; a door inside the operand sets its own context).
+        if (cmp) { e.null_ctx = 2i32; e.ptr_ok = (raw expr_lhs(n)).index; }
         lt = raw type_of_expr(e, raw expr_lhs(n));
         if (lt != 0i32) { e.expected = lt; }
         e.null_ctx = raw null_ctx_against(e, op, raw expr_lhs(n));
+        if (cmp) { e.ptr_ok = (raw expr_rhs(n)).index; }
         rt = raw type_of_expr(e, raw expr_rhs(n));
         e.null_ctx = nsv;
         e.expected = saved;

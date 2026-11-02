@@ -139,6 +139,18 @@ stage = "compile"
 kind = "positive"
 path = "tests/backend"
 
+# WHAT ONLY EMISSION REFUSES. A correct-looking program the checker cannot judge and the compiler must:
+# TYPE-107's twin (landing 177c), an instance only a generic body forms, which the emitter's worklist alone
+# sees. `tests/backend/` holds the emitter's unit tests, which are not rejection cases; this is the one place
+# `kind = "negative"` stands since the last rung fell (1.5.4, S-47, D-271).
+# What the suite checks is the compiler's reports against the file's expectations. Nothing checks which stage refused or that the file passes
+# `tools/check`, so each file says in its own comment why no earlier stage can make its report.
+[[test]]
+name = "emission"
+stage = "compile"
+kind = "negative"
+path = "tests/backend/rejection"
+
 # The REAL parser over every source in the tree, each file once. A rejection
 # test the real parser cannot read is testing the wrong stage (D-085);
 # tests/grammar/ is parse-only by design and exists to be swept here; the

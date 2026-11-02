@@ -11,7 +11,7 @@
 // expect-error: NITPICK-BORROW-015
 // expect-error-at: 117:5
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 126:47
+// expect-error-at: 126:64
 // expect-error: NITPICK-BORROW-015
 // expect-error-at: 137:9
 // expect-error: NITPICK-BORROW-015
@@ -61,7 +61,7 @@ struct:Box = { string:s; int32:t; };
 struct:Doc = { string:text; string:cur; };
 struct:Lex = { string:text; };
 struct:Ctx = { Box->:b; };
-func:take = string(Box->:b) never fails { pass string_from_bytes(b.s.ptr, 5i64); };
+func:take = string(Box->:b) never fails { pass string_from_bytes(b.s.ptr =>! wild uint8->, 5i64); };
 func:through = string(move string:x) never fails { pass x; };
 func:bump = NIL(string->:p) never fails { <-p = string_concat("x", "y"); pass NIL; };
 func:pair = NIL(string:v, string->:p) never fails { <-p = string_concat("x", "y"); pass NIL; };
@@ -71,7 +71,7 @@ func:ctx_init = Ctx(Box->:b) never fails { pass Ctx{ b: b }; };
 // (1) the six lines of 1.6.0 step 5b: the root reassigned while the view lives
 func:reassign = NIL() never fails {
     string:d = string_concat("hello", " world");
-    string:s = string_from_bytes(d.ptr, 5i64);
+    string:s = string_from_bytes(d.ptr =>! wild uint8->, 5i64);
     d = string_concat("xyzzy", "!");
     pass NIL;
 };
@@ -79,7 +79,7 @@ func:reassign = NIL() never fails {
 // (2) `@d` handed to a callee while the view lives
 func:address_out = NIL() never fails {
     string:d = string_concat("hello", " world");
-    string:s = string_from_bytes(d.ptr, 5i64);
+    string:s = string_from_bytes(d.ptr =>! wild uint8->, 5i64);
     drop bump(@d);
     pass NIL;
 };
@@ -87,7 +87,7 @@ func:address_out = NIL() never fails {
 // (3) `$$m d` while the view lives
 func:exclusive = NIL() never fails {
     string:d = string_concat("hello", " world");
-    string:s = string_from_bytes(d.ptr, 5i64);
+    string:s = string_from_bytes(d.ptr =>! wild uint8->, 5i64);
     drop bump($$m d);
     pass NIL;
 };
@@ -112,7 +112,7 @@ func:laundered = NIL() never fails {
 // (6) a view local moved through a pass-through call, the root written after
 func:moved_through = NIL() never fails {
     string:d = string_concat("hello", " world");
-    string:w = string_from_bytes(d.ptr, 5i64);
+    string:w = string_from_bytes(d.ptr =>! wild uint8->, 5i64);
     string:v = raw through(move(w));
     d = string_concat("xyzzy", "!");
     pass NIL;
@@ -123,7 +123,7 @@ func:moved_through = NIL() never fails {
 // no view, by its mutation summary)
 func:call_arg = NIL() never fails {
     string:d = string_concat("hello", " world");
-    drop pair(string_from_bytes(d.ptr, 5i64), @d);
+    drop pair(string_from_bytes(d.ptr =>! wild uint8->, 5i64), @d);
     pass NIL;
 };
 
@@ -135,7 +135,7 @@ func:loop_outer = NIL() never fails {
     string:s = string_concat("", "");
     for (int32:i in 0i32...2i32) {
         d = string_concat("abc", "def");
-        s = string_from_bytes(d.ptr, 3i64);
+        s = string_from_bytes(d.ptr =>! wild uint8->, 3i64);
     }
     pass NIL;
 };
@@ -144,7 +144,7 @@ func:loop_outer = NIL() never fails {
 func:pushed = NIL() never fails {
     string:d = string_concat("hello", " world");
     List<string>:vs = raw list_init::<string>(2i64);
-    drop list_push(@vs, string_from_bytes(d.ptr, 5i64));
+    drop list_push(@vs, string_from_bytes(d.ptr =>! wild uint8->, 5i64));
     d = string_concat("xyzzy", "!");
     pass NIL;
 };
@@ -156,18 +156,18 @@ func:pushed = NIL() never fails {
 // very storage it overwrites refuses at the store (BORROW-002)
 func:self_wire = NIL() never fails {
     Doc:doc = Doc{ text: string_concat("hello", " world"), cur: string_concat("", "") };
-    doc.cur = string_from_bytes(doc.text.ptr, 5i64);
+    doc.cur = string_from_bytes(doc.text.ptr =>! wild uint8->, 5i64);
     doc.text = string_concat("xyzzy", "!");
     pass NIL;
 };
 func:self_wire_ptr = NIL(Doc->:d) never fails {
-    d.cur = string_from_bytes(d.text.ptr, 5i64);
+    d.cur = string_from_bytes(d.text.ptr =>! wild uint8->, 5i64);
     d.text = string_concat("xyzzy", "!");
     pass NIL;
 };
 func:self_overwrite = NIL() never fails {
     Doc:doc = Doc{ text: string_concat("hello", " world"), cur: string_concat("", "") };
-    doc.text = string_from_bytes(doc.text.ptr, 5i64);
+    doc.text = string_from_bytes(doc.text.ptr =>! wild uint8->, 5i64);
     pass NIL;
 };
 
@@ -177,7 +177,7 @@ func:self_overwrite = NIL() never fails {
 // protects the argument through the callee's summary -- the compiler's own
 // lexer idiom -- so the two callees below carry no code and their CALLERS do
 func:byval_addr = int32->(int32:x) never fails { pass @x; };
-func:byval_view = string(string:x) never fails { pass string_from_bytes(x.ptr, 5i64); };
+func:byval_view = string(string:x) never fails { pass string_from_bytes(x.ptr =>! wild uint8->, 5i64); };
 func:byval_literal = Lex(string:text) never fails { pass Lex{ text: string_from_bytes(text.ptr, text.len) }; };
 func:byval_caller = NIL() never fails {
     string:d = string_concat("hello", " world");
@@ -213,7 +213,7 @@ func:list_of_addresses = List<int32->>() never fails {
 // (a) the copy, then the write
 func:copy_then_write = NIL() never fails {
     string:d = string_concat("hello", " world");
-    string:c = string_concat("", string_from_bytes(d.ptr, 5i64));
+    string:c = string_concat("", string_from_bytes(d.ptr =>! wild uint8->, 5i64));
     d = string_concat("xyzzy", "!");
     pass NIL;
 };
@@ -221,7 +221,7 @@ func:copy_then_write = NIL() never fails {
 // (b) the view in an inner block, the write after it
 func:inner_block = NIL() never fails {
     string:d = string_concat("hello", " world");
-    { string:s = string_from_bytes(d.ptr, 5i64); int64:n = s.len; }
+    { string:s = string_from_bytes(d.ptr =>! wild uint8->, 5i64); int64:n = s.len; }
     d = string_concat("xyzzy", "!");
     pass NIL;
 };
@@ -229,7 +229,7 @@ func:inner_block = NIL() never fails {
 // (c) a read of the root, a lent read of it, and a disjoint field written
 func:reads_stay = NIL() never fails {
     Box:d = Box{ s: string_concat("hello", " world"), t: 1i32 };
-    string:v = string_from_bytes(d.s.ptr, 5i64);
+    string:v = string_from_bytes(d.s.ptr =>! wild uint8->, 5i64);
     int64:n = d.s.len;
     int64:m = raw read_len(d.s);
     d.t = 5i32;
@@ -251,7 +251,7 @@ func:disjoint_ranges = NIL() never fails {
 
 // (e) a pointer root's own reassignment leaves the viewed pointee alone
 func:pointer_root = NIL(Box->:b, Box->:other) never fails {
-    string:v = string_from_bytes(b.s.ptr, 5i64);
+    string:v = string_from_bytes(b.s.ptr =>! wild uint8->, 5i64);
     b = other;
     pass NIL;
 };
@@ -267,7 +267,7 @@ func:address_kept = NIL() never fails {
 
 // (g) a callee's view of the pointee, its block ended before the write
 func:callee_view_ok = NIL(Box->:b) never fails {
-    { string:v = string_from_bytes(b.s.ptr, 5i64); int64:n = v.len; }
+    { string:v = string_from_bytes(b.s.ptr =>! wild uint8->, 5i64); int64:n = v.len; }
     b.s = string_concat("new", "!");
     pass NIL;
 };

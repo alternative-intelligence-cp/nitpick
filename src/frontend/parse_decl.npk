@@ -79,14 +79,35 @@ pub func:DECL_DERIVED = int32() never fails   { pass 4096i32; };
 // They shift up so they never collide with the visibility and modifier bits.
 pub func:DECL_RET_WILD = int32() never fails  { pass 64i32; };
 pub func:DECL_RET_WILDX = int32() never fails { pass 128i32; };
-// 256 (`DECL_RET_STACK`) and 1024 (`DECL_RET_FIXED`) are FREE since landing 103
-// (DEF-247): both were set by `p_return_quals` and read by nothing.
+// 1024 (`DECL_RET_FIXED`) is FREE since landing 103 (DEF-247): it was set by
+// `p_return_quals` and read by nothing, as 256 (`DECL_RET_STACK`) was until this one took it.
+// THE WORD IS WRITTEN IN THIS FUNCTION'S, STRUCT'S OR ENUM'S DECLARATION, ANYWHERE (TYPE-107, DEF-423's generic road;
+// `check_wild_instance` reads it): the tokens the declaration took are read once, here, so a body, a macro's body and
+// a nested type count and no walker of declarations exists to fall behind a new node. A `#` form that reads storage (`sigil_reads_no_storage`) and `=>!` count as the word.
+pub func:DECL_HAS_WILD = int32() never fails  { pass 256i32; };
 // `thread` (D-181): this function is a THREAD BODY — it owns an executor and
 // the arena its task frames come from (D-034), which is what makes it a
 // different kind of function from a task rather than the same one used
 // differently (D-032's pinning). 512 since 1.5.2b step 0: from 1.1.9 it was
 // 2048, the bit `DECL_DISCARDED` holds (OPEN_DECISIONS §6's 1.5.2 item).
 pub func:DECL_THREAD = int32() never fails    { pass 512i32; };
+
+// The `#` forms that name no storage. Any other counts as the word (R10 of 177c's second rulings): `#ptr_add<T>`, `#wild_slice<T>`, `#wild_ptr<T>` form a `wild` place with no keyword
+// (`g1`, `g2` kept a frame address in a heap block), and `#m(...)` is a macro whose body this declaration's tokens don't hold, so it says nothing and is closed. `=>!` counts too
+// (`p_wild_since`; `T->:p = alloc(16i64) =>! T->` is `xe1`, the same keeping), a numeric one with it: the closed direction, 0 sites over the 5,454 files.
+func:sigil_reads_no_storage = bool(string:name) never fails {
+    pass (raw string_eq(name, "size_of")) || (raw string_eq(name, "sqrt")) || (raw string_eq(name, "unreachable"));
+};
+
+func:p_wild_since = int32(Parser->:p, int64:from) never fails {
+    for (int64:i in from...p.pos) {
+        TokenKind:k = (raw tokenlist_at(p.tokens, i)).kind;
+        if ((k == TokenKind.KwWild) || (k == TokenKind.KwWildx) || (k == TokenKind.OpFatArrowUnchecked)
+                || ((k == TokenKind.Hash) && ((raw tokenlist_at(p.tokens, i + 1i64)).kind == TokenKind.Ident)
+                    && (!(raw sigil_reads_no_storage(raw intern_get(p.interns, ((raw tokenlist_at(p.tokens, i + 1i64)).payload) =>! int32)))))) { pass (raw DECL_HAS_WILD()); }
+    }
+    pass 0i32;
+};
 
 func:p_return_quals = int32(Parser->:p) never fails {
     int32:q = 0i32;
@@ -1132,6 +1153,7 @@ pub func:p_declared_name = Token(Parser->:p) never fails {
 
 
 func:p_parse_func = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) never fails {
+    int64:w0 = p.pos;
     discard(raw p_expect(p, TokenKind.KwFunc));
     discard(raw p_expect(p, TokenKind.PColon));
     Token:name = raw p_declared_name(p);
@@ -1209,12 +1231,13 @@ func:p_parse_func = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs) never
     IdSpan:w = raw ast_scratch_commit(p.ast, mark);
 
     pass (raw ast_add_decl(p.ast, DeclKind.DeclFunctionDecl, sp,
-                             flags, w.start, w.count, name.payload));
+                             flags | (raw p_wild_since(p, w0)), w.start, w.count, name.payload));
 };
 
 // struct and enum: one shape, two member rules.
 func:p_parse_record = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs,
                              bool:is_struct) never fails {
+    int64:w0 = p.pos;
     discard(raw p_advance(p));
     discard(raw p_expect(p, TokenKind.PColon));
     Token:name = raw p_declared_name(p);
@@ -1257,7 +1280,7 @@ func:p_parse_record = DeclId(Parser->:p, Span:sp, int32:flags, IdSpan:attrs,
     DeclKind:kind = DeclKind.DeclEnumDecl;
     if (is_struct) { kind = DeclKind.DeclStructDecl; }
     IdSpan:none = raw idspan_empty();
-    pass (raw p_finish_item(p, sp, kind, flags, name.payload,
+    pass (raw p_finish_item(p, sp, kind, flags | (raw p_wild_since(p, w0)), name.payload,
                               generics, members, attrs, none));
 };
 

@@ -1,0 +1,675 @@
+// expect-exit: 0
+//
+// WHAT THE REBUILD OF LANDING 177c LEAVES LEGAL, AND WHAT IT READS (the second rulings' must-stay-legal lists): each module is one cell, with the value it read alone. A failure exits with the cell's position in
+// `main`'s list. `tests/types/rejection/header_ptr_uses.npk`, `wild_into_plain_roads.npk`, `wild_generic_words.npk` and `tests/analysis/rejection/wild_door_roads.npk` are the refusals beside them.
+mod:header_ptr_uses_ok;
+
+// R1, R2: W3'S ARGUMENTS AND I3'S USES: A `wild` POINTER THROUGH `memset`, THE CROSSING, A COMPARISON, `string_from_bytes`, `memset` OVER A HEADER'S OWN `.len`; `==`, `!=`, `NULL`.
+mod:d7_ctl_wild_memset_keeps = {
+func:f = int64() never fails { wild int8->:a = alloc(8i64); dalloc(memset(a, 0i64, 8i64)); pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:l1_ptr_crossing_legal = {
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; uint8->:p = v.ptr =>! uint8->; pass ((<-p) => int64) + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:l2_ptr_compare_legal = {
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; pass is (v.ptr != NULL) : 7i64 : 0i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:l3_string_from_bytes_legal = {
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; string:t = string_from_bytes(v.ptr, v.len); pass t.len - 1i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:l4_memset_legal = {
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; discard(memset(v.ptr, 1i64, v.len)); pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xb6_ctl_ptr_eq = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string:s = raw mks(); string:t = raw mks(); if (s.ptr == t.ptr) { pass 0i64; } pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xb7_ctl_ptr_ne_null = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string:s = raw mks(); string:t = raw mks(); if (s.ptr != NULL) { pass 7i64; } pass 0i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xb8_ctl_null_eq_ptr = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string:s = raw mks(); string:t = raw mks(); if (NULL == s.ptr) { pass 0i64; } pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xo1_discard_ptr_crossing = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string:s = raw mks(); fixed uint8[]:v = string_bytes(s); discard(v.ptr =>! uint8->); pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+
+// R3, R14: A READ `x.ptr[i]` IS THE HEADER'S OWN CHECKED INDEX, `wild` HEADER INCLUDED (`r17`). WITH A CALL IN THE INDEX IT STANDS ONLY OVER A HEADER WHOSE OWN STORAGE CAN'T DIE UNDER IT: A BY-VALUE LOCAL, PARAMETER OR MODULE BINDING, OR A FIELD OR FRAME-ARRAY ELEMENT OF ONE (`q13c` READS THE NEW BLOCK, 89); A CONSTANT INDEX NEEDS NONE OF THAT; A `for` BINDING IS A COPY IN THE FRAME (`q61`). THE ORDINARY BRACKET COPIES THE HEADER FIRST AND READS THE RIGHT VALUE (`q23`, `q28`, `q37`, `q8c`).
+mod:r16_in_bounds_ctl = {
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; pass (v.ptr[7i64] => int64) + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:r17_wild_header_ctl = {
+func:f = int64() never fails { wild int8->:a = alloc(16i64); discard(memset(a, 1i64, 16i64)); wild uint8[]:w = #wild_slice<uint8>(a, 16i64); int64:k = (w.ptr[3i64] => int64); dalloc(a); pass k + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:q8c_ctl_deref_copy = {
+func:grow2 = int64(List<uint8[]>->:l, uint8[]:seed) never fails { for (int64:i in 0i64...4096i64) { drop list_push(l, seed); } pass 0i64; };
+func:idp = uint8[]->(uint8[]->:p) never fails { pass p; };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; List<uint8[]>:l = raw list_init::<uint8[]>(1i64); drop list_push(@l, v); int64:k = ((<-(raw idp(@l[0i64])))[raw grow2(@l, v)] => int64); pass k + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:q13c_ctl_named_ptr_index_frees = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:clr = int64(string->:p) never fails { <-p = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass 0i64; };
+func:f = int64() never fails { string:s = raw mks(); pass (s.ptr[raw clr(@s)] => int64) - 90i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xf4_ctl_byval_call_const_index = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { pass ((raw mks()).ptr[0i64] => int64) - 90i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xf5_ctl_rootless_const_index = {
+func:gets = uint8[][](List<uint8[]>->:l) never fails { pass (<-l)[0i64...1i64]; };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; List<uint8[]>:l = raw list_init::<uint8[]>(1i64); drop list_push(@l, v); pass ((raw gets(@l))[0i64].ptr[0i64] => int64) + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xa6r_ctl_field_read_ptr_elem = {
+struct:C = { int64:n; };
+func:f = int64() never fails { C[1]:a = [C{ n: 7i64 }]; C[]:v = a[0i64...1i64]; pass v.ptr[0i64].n; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xa6v_ctl_byval_recv_ptr_elem = {
+struct:C = { int64:n; };
+impl:C = { func:bump = NIL(C->:self) never fails { self.n = self.n + 1i64; pass NIL; }; func:rd = int64(C:self) never fails { pass self.n; }; };
+func:f = int64() never fails { C[1]:a = [C{ n: 7i64 }]; C[]:v = a[0i64...1i64]; pass raw v.ptr[0i64].rd(); };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:q23_ordinary_bracket_pointer_param = {
+func:grow2 = int64(List<uint8[]>->:l, uint8[]:seed) never fails { for (int64:i in 0i64...4096i64) { drop list_push(l, seed); } pass 0i64; };
+func:idp = uint8[]->(uint8[]->:p) never fails { pass p; };
+func:viao = int64(uint8[]->:h, List<uint8[]>->:l, uint8[]:v) never fails { pass ((<-h)[raw grow2(l, v)] => int64); };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; List<uint8[]>:l = raw list_init::<uint8[]>(1i64); drop list_push(@l, v); int64:k = raw viao(raw idp(@l[0i64]), @l, v); pass k + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:q28_ordinary_field_behind_param = {
+struct:SV_q28 = { uint8[]:h; };
+func:gs = int64(List<SV_q28>->:l, uint8[]:v) never fails { for (int64:i in 0i64...4096i64) { drop list_push(l, SV_q28{ h: v }); } pass 0i64; };
+func:ids2 = SV_q28->(SV_q28->:p) never fails { pass p; };
+func:viag = int64(SV_q28->:s, List<SV_q28>->:l, uint8[]:v) never fails { pass (s.h[raw gs(l, v)] => int64); };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; List<SV_q28>:l = raw list_init::<SV_q28>(1i64); drop list_push(@l, SV_q28{ h: v }); int64:k = raw viag(raw ids2(@l[0i64]), @l, v); pass k + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:q29c_ctl_index_first = {
+func:grow2 = int64(List<uint8[]>->:l, uint8[]:seed) never fails { for (int64:i in 0i64...4096i64) { drop list_push(l, seed); } pass 0i64; };
+func:idp = uint8[]->(uint8[]->:p) never fails { pass p; };
+func:viai = int64(uint8[]->:h, List<uint8[]>->:l, uint8[]:v) never fails { int64:i = raw grow2(l, v); pass (v[i] => int64); };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; List<uint8[]>:l = raw list_init::<uint8[]>(1i64); drop list_push(@l, v); int64:k = raw viai(raw idp(@l[0i64]), @l, v); pass k + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:q30c_ctl_local_header_call = {
+func:zero = int64() never fails { pass 0i64; };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; pass (v.ptr[raw zero()] => int64) + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:q31c_ctl_struct_field_local_call = {
+struct:S = { uint8[]:v; };
+func:zero = int64() never fails { pass 0i64; };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; S:st = S{ v: v }; pass (st.v.ptr[raw zero()] => int64) + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:q32_struct_by_value_param_grows = {
+struct:SV_q32 = { uint8[]:h; };
+func:gs = int64(List<SV_q32>->:l, uint8[]:v) never fails { for (int64:i in 0i64...4096i64) { drop list_push(l, SV_q32{ h: v }); } pass 0i64; };
+func:viav = int64(SV_q32:s, List<SV_q32>->:l, uint8[]:v) never fails { pass (s.h.ptr[raw gs(l, v)] => int64); };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; List<SV_q32>:l = raw list_init::<SV_q32>(1i64); drop list_push(@l, SV_q32{ h: v }); int64:k = raw viav(l[0i64], @l, v); pass k + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:q33_slice_by_value_param_grows = {
+func:grow2 = int64(List<uint8[]>->:l, uint8[]:seed) never fails { for (int64:i in 0i64...4096i64) { drop list_push(l, seed); } pass 0i64; };
+func:vias = int64(uint8[]:h, List<uint8[]>->:l, uint8[]:v) never fails { pass (h.ptr[raw grow2(l, v)] => int64); };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; List<uint8[]>:l = raw list_init::<uint8[]>(1i64); drop list_push(@l, v); int64:k = raw vias(l[0i64], @l, v); pass k + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:q34_big_struct_by_value_param_grows = {
+struct:SB_q34 = { uint8[]:h; int64:a; int64:b; int64:c; int64:d; int64:e; int64:f; };
+func:gb2 = int64(List<SB_q34>->:l, uint8[]:v) never fails { for (int64:i in 0i64...4096i64) { drop list_push(l, SB_q34{ h: v, a: 0i64, b: 0i64, c: 0i64, d: 0i64, e: 0i64, f: 0i64 }); } pass 0i64; };
+func:viab = int64(SB_q34:s, List<SB_q34>->:l, uint8[]:v) never fails { pass (s.h.ptr[raw gb2(l, v)] => int64); };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; List<SB_q34>:l = raw list_init::<SB_q34>(1i64); drop list_push(@l, SB_q34{ h: v, a: 0i64, b: 0i64, c: 0i64, d: 0i64, e: 0i64, f: 0i64 }); int64:k = raw viab(l[0i64], @l, v); pass k + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:q35_big_struct_ordinary_index = {
+struct:SB_q35 = { uint8[]:h; int64:a; int64:b; int64:c; int64:d; int64:e; int64:f; };
+func:gb2 = int64(List<SB_q35>->:l, uint8[]:v) never fails { for (int64:i in 0i64...4096i64) { drop list_push(l, SB_q35{ h: v, a: 0i64, b: 0i64, c: 0i64, d: 0i64, e: 0i64, f: 0i64 }); } pass 0i64; };
+func:viac = int64(SB_q35:s, List<SB_q35>->:l, uint8[]:v) never fails { pass (s.h[raw gb2(l, v)] => int64); };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; List<SB_q35>:l = raw list_init::<SB_q35>(1i64); drop list_push(@l, SB_q35{ h: v, a: 0i64, b: 0i64, c: 0i64, d: 0i64, e: 0i64, f: 0i64 }); int64:k = raw viac(l[0i64], @l, v); pass k + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:q37_deref_two_params_ordinary = {
+func:grow2 = int64(List<uint8[]>->:l, uint8[]:seed) never fails { for (int64:i in 0i64...4096i64) { drop list_push(l, seed); } pass 0i64; };
+func:idl = List<uint8[]>->(List<uint8[]>->:p) never fails { pass p; };
+func:viae = int64(List<uint8[]>->:a, List<uint8[]>->:b, uint8[]:v) never fails { pass ((<-a)[0i64][raw grow2(b, v)] => int64); };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; List<uint8[]>:l = raw list_init::<uint8[]>(1i64); drop list_push(@l, v); int64:k = raw viae(raw idl(@l), @l, v); pass k + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:q60c_ctl_pick_param_const = {
+enum:ES = { A(string); Z; };
+func:grow4 = int64(List<ES>->:l) never fails { for (int64:i in 0i64...4096i64) { drop list_push(l, ES.A(string_concat("x", "y"))); } pass 0i64; };
+func:viapick = int64(ES->:p, List<ES>->:l) never fails { int64:k = 0i64; int64:g = raw grow4(l); pick (<-p) { (ES.A(h)) { k = (h.ptr[0i64] => int64); }, (ES.Z) { k = 9i64; } } pass k - 60i64; };
+func:f = int64() never fails { List<ES>:l = raw list_init::<ES>(1i64); drop list_push(@l, ES.A(string_concat("Cb", "c"))); List<ES>:m = raw list_init::<ES>(1i64); drop list_push(@m, ES.A(string_concat("Cb", "c"))); pass raw viapick(@m[0i64], @l); };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:q61_for_binding_param_range_grows = {
+func:grow2 = int64(List<uint8[]>->:l, uint8[]:seed) never fails { for (int64:i in 0i64...4096i64) { drop list_push(l, seed); } pass 0i64; };
+func:idl2 = List<uint8[]>->(List<uint8[]>->:p) never fails { pass p; };
+func:viafor = int64(List<uint8[]>->:a, List<uint8[]>->:l, uint8[]:v) never fails { int64:k = 0i64; for (uint8[]:h in (<-a)[0i64...1i64]) { k = (h.ptr[raw grow2(l, v)] => int64); } pass k; };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; List<uint8[]>:l = raw list_init::<uint8[]>(1i64); drop list_push(@l, v); int64:k = raw viafor(raw idl2(@l), @l, v); pass k + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wq3c_frame_array_elem_call = {
+func:zero = int64() never fails { pass 0i64; };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; uint8[][1]:arr = [v]; pass (arr[0i64].ptr[raw zero()] => int64) + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wq4c_range_frame_array_call = {
+func:zero = int64() never fails { pass 0i64; };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; pass (b[0i64...8i64].ptr[raw zero()] => int64) + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wq5c_module_binding_call = {
+func:zero = int64() never fails { pass 0i64; };
+fixed string:G = "Cde";
+func:f = int64() never fails { pass (G.ptr[raw zero()] => int64) - 60i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wq6c_consuming_pick_const = {
+enum:ES = { A(string); Z; };
+func:f = int64() never fails { ES:o = ES.A(string_concat("Cb", "c")); int64:k = 0i64; pick (move(o)) { (ES.A(h)) { k = (h.ptr[0i64] => int64); }, (ES.Z) { k = 9i64; } } pass k - 60i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wq7c_self_by_value_call = {
+func:zero = int64() never fails { pass 0i64; };
+struct:SV = { uint8[]:h; };
+impl:SV = { func:m = int64(Self:self) never fails { pass (self.h.ptr[raw zero()] => int64); }; };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; SV:s = SV{ h: b[0i64...8i64] }; pass (raw s.m()) + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wq9c_wild_by_value_header_call = {
+func:zero = int64() never fails { pass 0i64; };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; wild uint8[]:w = b[0i64...8i64] =>! wild uint8[]; pass (w.ptr[raw zero()] => int64) + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wq12c_plain_index_behind_pointer = {
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; uint8[]->:h = @v; int64:i = 0i64; pass (h.ptr[i + 1i64] => int64) + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wq13c_const_index_behind_pointer = {
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; uint8[]->:h = @v; pass (h.ptr[0i64] => int64) + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wq17c_nested_by_value_field_call = {
+func:zero = int64() never fails { pass 0i64; };
+struct:SV = { uint8[]:h; };
+struct:OV = { SV:i; };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; OV:o = OV{ i: SV{ h: b[0i64...8i64] } }; pass (o.i.h.ptr[raw zero()] => int64) + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wq21c_ordinary_bracket_array_of_pointers = {
+func:grow2 = int64(List<uint8[]>->:l, uint8[]:seed) never fails { for (int64:i in 0i64...4096i64) { drop list_push(l, seed); } pass 0i64; };
+func:idp = uint8[]->(uint8[]->:p) never fails { pass p; };
+func:viaa = int64(uint8[]->:h, List<uint8[]>->:l, uint8[]:v) never fails { uint8[]->[1]:arr = [h]; pass ((<-(arr[0i64]))[raw grow2(l, v)] => int64); };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; List<uint8[]>:l = raw list_init::<uint8[]>(1i64); drop list_push(@l, v); int64:k = raw viaa(raw idp(@l[0i64]), @l, v); pass k + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+
+// R5: A PLAIN ELEMENT, AN ELEMENT OF A `wild` POINTER ARRAY, BYTES; `wl[i] = v` AND `<-(wl[i]) = v` ARE STORES WITH THEIR OWN READING OF THE OLD VALUE.
+mod:w4c_ctl_plain_list_elem_zero = {
+func:f = int64() never fails { int64[1]:a = [5i64]; List<int64->>:l = raw list_init::<int64->>(1i64); drop list_push(@l, @a[0i64]); pass l[0i64][0i64] + 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:a1u_bytes_view_legal = {
+func:f = int64() never fails { wild int8->:a = alloc(16i64); discard(memset(a, 1i64, 16i64)); int8[]:s = #wild_slice<int8>(a, 16i64); int64:k = (s[3i64] => int64); dalloc(a); pass k + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:a6c_ctl_plain_callee = {
+func:gw3 = NIL(wild int64->->:c, int64:v) never fails { pass NIL; };
+func:f = int64() never fails { wild int64->->:blk = alloc(32i64) =>! wild int64->->; drop gw3(@blk[1i64], 5i64); dalloc(blk); pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:a6_over_refusal_generic_inference = {
+func:gw2<T> = NIL(wild int64->->:c, T:v) never fails { pass NIL; };
+func:f = int64() never fails { wild int64->->:blk = alloc(32i64) =>! wild int64->->; drop gw2(@blk[1i64], 5i64); dalloc(blk); pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xi1_wl_store = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { List<string>:l = raw list_init::<string>(1i64); drop list_push(@l, raw mks()); wild List<string>:wl = move(l); wl[0i64] = string_concat("wx", "yz"); pass wl[0i64].len + 3i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xi2_ctl_l_store = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { List<string>:l = raw list_init::<string>(1i64); drop list_push(@l, raw mks()); l[0i64] = string_concat("wx", "yz"); pass l[0i64].len + 3i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xi3_wl_deref_store = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string:s = raw mks(); List<string->>:l = raw list_init::<string->>(1i64); drop list_push(@l, @s); wild List<string->>:wl = move(l); <-(wl[0i64]) = string_concat("wx", "yz"); pass s.len + 3i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xi4_ctl_l_deref_store = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string:s = raw mks(); List<string->>:l = raw list_init::<string->>(1i64); drop list_push(@l, @s); <-(l[0i64]) = string_concat("wx", "yz"); pass s.len + 3i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+
+// R6, R7, R8: A `wild` SLOT OVER `#wild_slice<T>`, BYTES IN A PLAIN SLOT, THE CROSSING; A CHECKED CAST'S STORE KEEPS ITS DROP (`xg4`); A METHOD'S `wild` RETURN RELAXES TYPE-032 AS A FUNCTION'S DOES AND ITS STORE STOPS DROPPING (`xg1d`, `xh1`).
+mod:xd3_ctl_wild_slice_ptrs_wild = {
+func:f = int64() never fails { int64:x = 5i64; wild int8->:blk8 = alloc(32i64); discard(memset(blk8, 0i64, 32i64)); wild int64->->:blk = blk8 =>! wild int64->->; wild int64->[]:v = #wild_slice<int64->>(blk, 4i64); dalloc(blk8); pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xd4_ctl_wild_slice_bytes_plain = {
+func:f = int64() never fails { wild int8->:blk8 = alloc(32i64); discard(memset(blk8, 7i64, 32i64)); uint8[]:v = #wild_slice<uint8>(blk8, 4i64); int64:k = (v[0i64] => int64); dalloc(blk8); pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xd8_ws_crossing = {
+struct:H = { int64->:p; };
+func:puth = NIL(H[]:v, int64->:q) never fails { v[0i64] = H{ p: q }; pass NIL; };
+func:a1w = NIL(int64->:q) never fails { wild H->:w = calloc(2i64, 24i64) =>! wild H->; H[]:ws = #wild_slice<H>(w, 2i64) =>! H[]; drop puth(ws, q); dalloc(w); pass NIL; };
+func:f = int64() never fails { int64:x = 5i64; drop a1w(@x); pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xg4_store_via_checked_wild = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string:s = raw mks(); string->:p = @s; <-(p => wild string->) = raw mks(); pass s.len + 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xg5_ctl_store_plain = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string:s = raw mks(); string->:p = @s; <-p = raw mks(); pass s.len + 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xg1d_retype_method_wild = {
+struct:H = { int64:n; };
+impl:H = { func:getw = wild int64->(H:self) never fails { pass alloc(32i64) =>! wild int64->; }; };
+func:f = int64() never fails { H:h = H{ n: 1i64 }; uint8->:p = (raw h.getw()) =>! uint8->; pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xh1_store_via_method_wild = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+struct:H = { int64:n; };
+impl:H = { func:getw = wild string->(H:self) never fails { pass alloc(32i64) =>! wild string->; }; };
+func:f = int64() never fails { H:h = H{ n: 1i64 }; wild string->:w = raw h.getw(); discard(memset(w =>! wild int8->, 0i64, 32i64)); <-(raw h.getw()) = raw mks(); pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xm2c_ctl_move_fn_fresh = {
+func:fresh = wild string->() never fails { wild int8->:b = alloc(32i64); discard(memset(b, 0i64, 32i64)); pass b =>! wild string->; };
+func:f = int64() never fails { string:t = move(<-(raw fresh())); pass t.len + 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+
+// R9: A `give` WITH THE CROSSING WRITTEN, A PLAIN VALUE, A `wild` SLOT.
+mod:xk1_give_crossing_legal = {
+func:f = int64() never fails { wild int8->:bk = alloc(16i64); discard(memset(bk, 7i64, 16i64)); wild int64->:w = bk =>! wild int64->; int64:j = 1i64; int64->:p = (pick (j) { (*) { give w; } }) =>! int64->; int64:k = (<-p) & 7i64; dalloc(bk); pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xk3_ctl_give_plain_ok = {
+func:f = int64() never fails { int64:x = 7i64; int64->:q = @x; int64:j = 1i64; int64->:p = pick (j) { (*) { give q; } }; pass <-p; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xk4_give_wild_slot_ok = {
+func:f = int64() never fails { wild int8->:bk = alloc(16i64); discard(memset(bk, 7i64, 16i64)); wild int64->:w = bk =>! wild int64->; int64:j = 1i64; wild int64->:p = pick (j) { (*) { give w; } }; int64:k = (<-p) & 7i64; dalloc(bk); pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xk9_give_two_arms_crossing = {
+func:f = int64() never fails { wild int8->:bk = alloc(16i64); discard(memset(bk, 7i64, 16i64)); wild int64->:w = bk =>! wild int64->; int64:j = 1i64; int64->:p = (pick (j) { (1i64) { give w; }, (*) { give w; } }) =>! int64->; int64:k = (<-p) & 7i64; dalloc(bk); pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+
+// R10: THE INT INSTANCES OF THE WORD'S GENERICS.
+mod:g3_ctl_no_word_int64 = {
+struct:Cell = { wild int8->:blk; };
+func:put<T> = NIL(Cell->:c, move T:v) never fails { <-(#ptr_add<T>(c.blk, 0i64)) = move(v); pass NIL; };
+func:get<T> = T(Cell->:c) never fails { pass (<-(#ptr_add<T>(c.blk, 0i64))); };
+func:f = int64() never fails { Cell:c = Cell{ blk: alloc(16i64) }; drop put::<int64>(@c, 7i64); int64:seen = raw get::<int64>(@c); dalloc(c.blk); pass seen; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xe2_ctl_generic_alloc_int = {
+func:keep<T> = T->(move T:v) never fails { T->:p = alloc(16i64) =>! T->; <-p = move(v); pass p; };
+func:f = int64() never fails { int32->:h = raw keep::<int32>(7i32); pass ((<-h) => int64); };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+
+// R15, R16, R17: THE WRITTEN CROSSING, AND A PLAIN VALUE THROUGH EVERY ROAD THE WALK NOW ASKS: `??!`, `?.`, A DEREFERENCE, A `for`, A LIST'S ELEMENT, `??`'S RIGHT SIDE, A `Result` LITERAL, `relay`, A PLAIN FUNCTION AS A VALUE, A SPREAD, A VARIANT'S PAYLOAD, AND A PLAIN NEST 250 TERNARIES DEEP.
+mod:p79c_ctl_cross_explicit = {
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = a =>! int64->; int64:k = <-p; dalloc(a); pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:p83c_ctl_result_of_plain_call = {
+func:rp = int64->(int64->:a) { pass a; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; Result<int64->>:r = rp(@y); int64->:p = r ?| q; int64:k = (<-p) + 6i64; dalloc(a); pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wa1c_coalesce_trap_plain_ctl = {
+error:E5_wa1c_coalesce_trap_plain_ctl;
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->?:o = q; int64->:p = o ??! E5_wa1c_coalesce_trap_plain_ctl; int64:k = <-p; dalloc(a); pass k + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wa2c_safenav_plain_field_ctl = {
+struct:HP3 = { int64->:w; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; HP3?:h = HP3{ w: q }; int64->:p = (h?.w) ?? q; int64:k = <-p; dalloc(a); pass k + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wa28c_cross_deref_ctl = {
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; wild int64->->:blk = alloc(8i64) =>! wild int64->->; blk[0i64] = a; int64->:p = (<-blk) =>! int64->; int64:k = <-p; dalloc(a); dalloc(blk); pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wb18c_for_wild_ints_ctl = {
+func:f = int64() never fails { wild int64[2]:wa = [7i64, 7i64]; int64:k = 0i64; for (int64:p in wa) { k = p; } pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wb22_list_elem_wild_call_ctl = {
+func:mkl = wild List<int64->>(int64->:q) never fails { List<int64->>:l = raw list_init::<int64->>(1i64); drop list_push(@l, q); pass move(l); };
+func:f = int64() never fails { int64:y = 7i64; int64->:p = (raw mkl(@y))[0i64]; pass (<-p); };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wn1c_coalesce_right_plain_ctl = {
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->?:o = q; int64->:p = o ?? q; dalloc(a); pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wn2c_result_literal_plain_ctl = {
+func:g = int64->(int64->:a) { return Result{ value: a }; };
+func:f = int64() never fails { pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wn4c_relay_plain_ctl = {
+func:rp3 = int64->(int64->:a) { pass a; };
+func:g = int64(int64->:a) { int64->:p = relay rp3(a); pass <-p; };
+func:f = int64() never fails { pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wd13_fnvalue_plain_ctl = {
+func:pl = int64->(int64->:x) never fails { pass x; };
+func:f = int64() never fails { int64:y = 7i64; func int64->(int64->) never fails:g = pl; int64->:p = raw g(@y); int64:k = <-p; pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:we9c_spread_of_slice_plain_ctl = {
+func:vs = int64(..*int64->[]:xs) never fails { pass <-(xs[0i64]); };
+func:f = int64() never fails { int64:y = 7i64; int64->[1]:pa = [@y]; int64:k = raw vs(..^(pa[0i64...1i64])); pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:we11c_enum_payload_plain_ctl = {
+enum:EP = { A(int64->); Z; };
+func:rd = int64(EP:e) never fails { pick (e) { (EP.A(x)) { pass <-x; }, (EP.Z) { pass 9i64; } } pass 8i64; };
+func:f = int64() never fails { int64:y = 7i64; EP:ep = EP.A(@y); int64:k = raw rd(ep); pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wm250c_deep_ternary_plain = {
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : (is (true) : q : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q) : q); int64:k = <-p; dalloc(a); pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+
+// DEF-480: AN ADDRESS WITH NO HOLDER LEFT WHEN THE FREE RUNS IS NO CONFLICT: A SCOPED HOLDER, A CLAIM IN AN ARGUMENT, A PLAIN PLACE, A `wild` LOCAL'S OWN ARRAY.
+mod:wd18c_addr_plain_ctl = {
+func:f = int64() never fails { int64:y = 7i64; int64->:r = @y; int64->:p = @(<-r); int64:k = <-p; pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wf8_claim_i_after_free_read_ok = {
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; { int64->:p = $$i (<-a); int64:j = <-p; discard(j); } dalloc(a); pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wf8a_addr_after_free_read_ok = {
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; { int64->:p = @(<-a); int64:j = <-p; discard(j); } dalloc(a); pass 7i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wf7_claim_i_local_wild_array = {
+func:f = int64() never fails { wild int64[2]:wa = [7i64, 7i64]; int64->:p = $$i wa[0i64]; int64:k = <-p; pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wd19_arg_claim_i_inside_wild = {
+func:t = int64(int64->:x) never fails { pass <-x; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64:k = raw t($$i (<-a)); dalloc(a); pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+
+// THE CONTROLS OF WHAT STAYS OPEN: DEF-319'S READ RIGHT (`q44c`, `q46`, `q47`, `q48`, `q49c`, `q50c`), DEF-481'S AND DEF-391'S PLAIN ELEMENT.
+mod:q44c_ctl_grow_first_then_call_ptr = {
+func:idq = List<int64>->(List<int64>->:p) never fails { pass p; };
+func:growq = int64(List<List<int64>>->:ll) never fails { for (int64:i in 0i64...4096i64) { drop list_push(ll, raw list_init::<int64>(1i64)); } pass 0i64; };
+func:twor = int64(int64:n, List<int64>->:a) never fails { pass (<-a)[0i64] + n; };
+func:f = int64() never fails { List<List<int64>>:ll = raw list_init::<List<int64>>(1i64); List<int64>:i0 = raw list_init::<int64>(1i64); drop list_push(@i0, 7i64); drop list_push(@ll, move(i0)); int64:k = raw twor(raw growq(@ll), raw idq(@ll[0i64])); pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:q46_elem_of_call_ptr_later_grow = {
+func:idq = List<int64>->(List<int64>->:p) never fails { pass p; };
+func:growq = int64(List<List<int64>>->:ll) never fails { for (int64:i in 0i64...4096i64) { drop list_push(ll, raw list_init::<int64>(1i64)); } pass 0i64; };
+func:rde = int64(int64->:e, int64:n) never fails { pass (<-e) + n; };
+func:f = int64() never fails { List<List<int64>>:ll = raw list_init::<List<int64>>(1i64); List<int64>:i0 = raw list_init::<int64>(1i64); drop list_push(@i0, 7i64); drop list_push(@ll, move(i0)); int64:k = raw rde(@(<-(raw idq(@ll[0i64])))[0i64], raw growq(@ll)); pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:q47_ptr_of_elem_later_grow = {
+func:growq = int64(List<List<int64>>->:ll) never fails { for (int64:i in 0i64...4096i64) { drop list_push(ll, raw list_init::<int64>(1i64)); } pass 0i64; };
+func:eidq = int64->(List<int64>->:p) never fails { pass @(<-p)[0i64]; };
+func:rde = int64(int64->:e, int64:n) never fails { pass (<-e) + n; };
+func:f = int64() never fails { List<List<int64>>:ll = raw list_init::<List<int64>>(1i64); List<int64>:i0 = raw list_init::<int64>(1i64); drop list_push(@i0, 7i64); drop list_push(@ll, move(i0)); int64:k = raw rde(raw eidq(@ll[0i64]), raw growq(@ll)); pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:q48_binop_call_ptr_then_grow = {
+func:idq = List<int64>->(List<int64>->:p) never fails { pass p; };
+func:growq = int64(List<List<int64>>->:ll) never fails { for (int64:i in 0i64...4096i64) { drop list_push(ll, raw list_init::<int64>(1i64)); } pass 0i64; };
+func:f = int64() never fails { List<List<int64>>:ll = raw list_init::<List<int64>>(1i64); List<int64>:i0 = raw list_init::<int64>(1i64); drop list_push(@i0, 7i64); drop list_push(@ll, move(i0)); int64:k = (<-(raw idq(@ll[0i64])))[0i64] + raw growq(@ll) + (<-(raw idq(@ll[0i64])))[0i64]; pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:q49c_ctl_no_grow = {
+func:idq = List<int64>->(List<int64>->:p) never fails { pass p; };
+func:two = int64(List<int64>->:a, int64:n) never fails { pass (<-a)[0i64] + n; };
+func:f = int64() never fails { List<List<int64>>:ll = raw list_init::<List<int64>>(1i64); List<int64>:i0 = raw list_init::<int64>(1i64); drop list_push(@i0, 7i64); drop list_push(@ll, move(i0)); int64:k = raw two(raw idq(@ll[0i64]), 5i64); pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:q50c_ctl_bracket_local_header = {
+func:gl = int64(List<int64>->:a) never fails { drop list_push(a, 1i64); pass 0i64; };
+func:f = int64() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); int64:k = l[raw gl(@l)]; pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wk1c_list_push_plain_ctl = {
+func:f = int64() never fails { int64:y = 7i64; List<int64->>:l = raw list_init::<int64->>(1i64); drop list_push(@l, @y); int64->:p = l[0i64]; int64:k = <-p; pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wk3c_arena_put_plain_ctl = {
+error:E5_wk3c_arena_put_plain_ctl;
+func:f = int64() never fails { int64:y = 7i64; arena<int64->>:ar = arena_make(2i64); Handle<int64->>:h = ar.alloc(); ar.put(h, @y) ?! E5_wk3c_arena_put_plain_ctl; int64->:p = ar.get(h) ?! E5_wk3c_arena_put_plain_ctl; int64:k = <-p; pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wk4c_shared_arena_plain_ctl = {
+error:E5_wk4c_shared_arena_plain_ctl;
+func:f = int64() never fails { int64:y = 7i64; shared_arena<int64->>:s = shared_arena_make(4i64); Handle<int64->>:h = s.alloc(@y); int64->:p = s.get(h) ?! E5_wk4c_shared_arena_plain_ctl; int64:k = <-p; pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:wd1c_atomic_store_plain_ctl = {
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; int64:z = 7i64; atomic<int64->>:at = q; at.store(@z); int64->:p = at.load(); int64:k = <-p; pass k; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+
+// `sys`: A REGISTER: A PLAIN VIEW'S `.ptr`, A `string`'S (DEF-478 NAMES WHAT THAT LEAVES OPEN), THE CROSSING OF A `fixed` ONE, PARENTHESES, THROUGH A POINTER. A USER STRUCT'S FIELD NAMED `ptr` ISN'T A HEADER.
+mod:k3_sys_string_ptr_write = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { int32[2]:fds = [0i32, 0i32]; int64:r0 = sys(22i64, @fds[0i64]) ?| 0i64; string:q = string_concat("q", "qqqqqqq"); int64:w0 = sys(1i64, (fds[1i64] => int64), q.ptr, 8i64) ?| 0i64; string:s = raw mks(); int64:r1 = sys(0i64, (fds[0i64] => int64), s.ptr, 1i64) ?| 0i64; pass (string_bytes(s)[0i64] => int64) - 106i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:k4_sys_plain_addr_write = {
+func:f = int64() never fails { int32[2]:fds = [0i32, 0i32]; int64:r0 = sys(22i64, @fds[0i64]) ?| 0i64; string:q = string_concat("q", "qqqqqqq"); int64:w0 = sys(1i64, (fds[1i64] => int64), q.ptr, 8i64) ?| 0i64; int64:x = 5i64; int64:r1 = sys(0i64, (fds[0i64] => int64), @x, 1i64) ?| 0i64; pass (x & 255i64) - 106i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:k5_sys_plain_view_ptr_write = {
+func:f = int64() never fails { int32[2]:fds = [0i32, 0i32]; int64:r0 = sys(22i64, @fds[0i64]) ?| 0i64; string:q = string_concat("q", "qqqqqqq"); int64:w0 = sys(1i64, (fds[1i64] => int64), q.ptr, 8i64) ?| 0i64; uint8[2]:b = [1u8, 1u8]; uint8[]:v = b[0i64...2i64]; int64:r1 = sys(0i64, (fds[0i64] => int64), v.ptr, 1i64) ?| 0i64; pass (b[0i64] => int64) - 106i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:k6_sys_fixed_crossing_legal = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { int32[2]:fds = [0i32, 0i32]; int64:r0 = sys(22i64, @fds[0i64]) ?| 0i64; string:q = string_concat("q", "qqqqqqq"); int64:w0 = sys(1i64, (fds[1i64] => int64), q.ptr, 8i64) ?| 0i64; string:s = raw mks(); fixed uint8[]:fv = string_bytes(s); int64:w1 = sys(1i64, (fds[1i64] => int64), fv.ptr =>! uint8->, fv.len) ?| 0i64; pass w1 + 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:k8_sys_ctl_in_view = {
+func:f = int64() never fails { int32[2]:fds = [0i32, 0i32]; int64:r0 = sys(22i64, @fds[0i64]) ?| 0i64; string:q = string_concat("q", "qqqqqqq"); int64:w0 = sys(1i64, (fds[1i64] => int64), q.ptr, 8i64) ?| 0i64; uint8[2]:b = [1u8, 1u8]; uint8[]:v = b[0i64...1i64]; int64:r1 = sys(0i64, (fds[0i64] => int64), v.ptr, v.len) ?| 0i64; pass (b[1i64] => int64) + 6i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xn1_sys_paren = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string:s = raw mks(); int64:n = sys(1i64, 2i64, (s.ptr), s.len) ?| 0i64; pass n + 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xt2_sys_fixed_crossing = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:wr = int64(fixed uint8[]:fv) never fails { pass sys(1i64, 2i64, fv.ptr =>! uint8->, fv.len) ?| 0i64; };
+func:f = int64() never fails { string:s = raw mks(); pass (raw wr(string_bytes(s))) + 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xt4_sys_plain_string = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:f = int64() never fails { string:s = raw mks(); int64:n = sys(1i64, 2i64, s.ptr, s.len) ?| 0i64; pass n + 2i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xt6_sys_plain_through_ptr = {
+func:f = int64() never fails { uint8[2]:b = [1u8, 1u8]; uint8[]:v = b[0i64...2i64]; uint8[]->:p = @v; int64:n = sys(1i64, 2i64, p.ptr, 2i64) ?| 0i64; pass n + 5i64; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xs9_struct_field_named_ptr_write = {
+struct:U = { int64:ptr; };
+func:f = int64() never fails { U:u = U{ ptr: 5i64 }; u.ptr = 7i64; pass u.ptr; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:xs10_struct_field_named_ptr_addr = {
+struct:U = { int64:ptr; };
+func:f = int64() never fails { U:u = U{ ptr: 7i64 }; int64->:q = @u.ptr; pass <-q; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw d7_ctl_wild_memset_keeps.cell_main()) != 67i32) { exit 1i32; }
+    if ((raw l1_ptr_crossing_legal.cell_main()) != 67i32) { exit 2i32; }
+    if ((raw l2_ptr_compare_legal.cell_main()) != 67i32) { exit 3i32; }
+    if ((raw l3_string_from_bytes_legal.cell_main()) != 67i32) { exit 4i32; }
+    if ((raw l4_memset_legal.cell_main()) != 67i32) { exit 5i32; }
+    if ((raw xb6_ctl_ptr_eq.cell_main()) != 67i32) { exit 6i32; }
+    if ((raw xb7_ctl_ptr_ne_null.cell_main()) != 67i32) { exit 7i32; }
+    if ((raw xb8_ctl_null_eq_ptr.cell_main()) != 67i32) { exit 8i32; }
+    if ((raw xo1_discard_ptr_crossing.cell_main()) != 67i32) { exit 9i32; }
+    if ((raw r16_in_bounds_ctl.cell_main()) != 67i32) { exit 10i32; }
+    if ((raw r17_wild_header_ctl.cell_main()) != 67i32) { exit 11i32; }
+    if ((raw q8c_ctl_deref_copy.cell_main()) != 67i32) { exit 12i32; }
+    if ((raw q13c_ctl_named_ptr_index_frees.cell_main()) != 89i32) { exit 13i32; }
+    if ((raw xf4_ctl_byval_call_const_index.cell_main()) != 67i32) { exit 14i32; }
+    if ((raw xf5_ctl_rootless_const_index.cell_main()) != 67i32) { exit 15i32; }
+    if ((raw xa6r_ctl_field_read_ptr_elem.cell_main()) != 67i32) { exit 16i32; }
+    if ((raw xa6v_ctl_byval_recv_ptr_elem.cell_main()) != 67i32) { exit 17i32; }
+    if ((raw q23_ordinary_bracket_pointer_param.cell_main()) != 67i32) { exit 18i32; }
+    if ((raw q28_ordinary_field_behind_param.cell_main()) != 67i32) { exit 19i32; }
+    if ((raw q29c_ctl_index_first.cell_main()) != 67i32) { exit 20i32; }
+    if ((raw q30c_ctl_local_header_call.cell_main()) != 67i32) { exit 21i32; }
+    if ((raw q31c_ctl_struct_field_local_call.cell_main()) != 67i32) { exit 22i32; }
+    if ((raw q32_struct_by_value_param_grows.cell_main()) != 67i32) { exit 23i32; }
+    if ((raw q33_slice_by_value_param_grows.cell_main()) != 67i32) { exit 24i32; }
+    if ((raw q34_big_struct_by_value_param_grows.cell_main()) != 67i32) { exit 25i32; }
+    if ((raw q35_big_struct_ordinary_index.cell_main()) != 67i32) { exit 26i32; }
+    if ((raw q37_deref_two_params_ordinary.cell_main()) != 67i32) { exit 27i32; }
+    if ((raw q60c_ctl_pick_param_const.cell_main()) != 67i32) { exit 28i32; }
+    if ((raw q61_for_binding_param_range_grows.cell_main()) != 67i32) { exit 29i32; }
+    if ((raw wq3c_frame_array_elem_call.cell_main()) != 67i32) { exit 30i32; }
+    if ((raw wq4c_range_frame_array_call.cell_main()) != 67i32) { exit 31i32; }
+    if ((raw wq5c_module_binding_call.cell_main()) != 67i32) { exit 32i32; }
+    if ((raw wq6c_consuming_pick_const.cell_main()) != 67i32) { exit 33i32; }
+    if ((raw wq7c_self_by_value_call.cell_main()) != 67i32) { exit 34i32; }
+    if ((raw wq9c_wild_by_value_header_call.cell_main()) != 67i32) { exit 35i32; }
+    if ((raw wq12c_plain_index_behind_pointer.cell_main()) != 67i32) { exit 36i32; }
+    if ((raw wq13c_const_index_behind_pointer.cell_main()) != 67i32) { exit 37i32; }
+    if ((raw wq17c_nested_by_value_field_call.cell_main()) != 67i32) { exit 38i32; }
+    if ((raw wq21c_ordinary_bracket_array_of_pointers.cell_main()) != 67i32) { exit 39i32; }
+    if ((raw w4c_ctl_plain_list_elem_zero.cell_main()) != 67i32) { exit 40i32; }
+    if ((raw a1u_bytes_view_legal.cell_main()) != 67i32) { exit 41i32; }
+    if ((raw a6c_ctl_plain_callee.cell_main()) != 67i32) { exit 42i32; }
+    if ((raw a6_over_refusal_generic_inference.cell_main()) != 67i32) { exit 43i32; }
+    if ((raw xi1_wl_store.cell_main()) != 67i32) { exit 44i32; }
+    if ((raw xi2_ctl_l_store.cell_main()) != 67i32) { exit 45i32; }
+    if ((raw xi3_wl_deref_store.cell_main()) != 67i32) { exit 46i32; }
+    if ((raw xi4_ctl_l_deref_store.cell_main()) != 67i32) { exit 47i32; }
+    if ((raw xd3_ctl_wild_slice_ptrs_wild.cell_main()) != 67i32) { exit 48i32; }
+    if ((raw xd4_ctl_wild_slice_bytes_plain.cell_main()) != 67i32) { exit 49i32; }
+    if ((raw xd8_ws_crossing.cell_main()) != 67i32) { exit 50i32; }
+    if ((raw xg4_store_via_checked_wild.cell_main()) != 67i32) { exit 51i32; }
+    if ((raw xg5_ctl_store_plain.cell_main()) != 67i32) { exit 52i32; }
+    if ((raw xg1d_retype_method_wild.cell_main()) != 67i32) { exit 53i32; }
+    if ((raw xh1_store_via_method_wild.cell_main()) != 67i32) { exit 54i32; }
+    if ((raw xm2c_ctl_move_fn_fresh.cell_main()) != 67i32) { exit 55i32; }
+    if ((raw xk1_give_crossing_legal.cell_main()) != 67i32) { exit 56i32; }
+    if ((raw xk3_ctl_give_plain_ok.cell_main()) != 67i32) { exit 57i32; }
+    if ((raw xk4_give_wild_slot_ok.cell_main()) != 67i32) { exit 58i32; }
+    if ((raw xk9_give_two_arms_crossing.cell_main()) != 67i32) { exit 59i32; }
+    if ((raw g3_ctl_no_word_int64.cell_main()) != 67i32) { exit 60i32; }
+    if ((raw xe2_ctl_generic_alloc_int.cell_main()) != 67i32) { exit 61i32; }
+    if ((raw p79c_ctl_cross_explicit.cell_main()) != 67i32) { exit 62i32; }
+    if ((raw p83c_ctl_result_of_plain_call.cell_main()) != 67i32) { exit 63i32; }
+    if ((raw wa1c_coalesce_trap_plain_ctl.cell_main()) != 67i32) { exit 64i32; }
+    if ((raw wa2c_safenav_plain_field_ctl.cell_main()) != 67i32) { exit 65i32; }
+    if ((raw wa28c_cross_deref_ctl.cell_main()) != 67i32) { exit 66i32; }
+    if ((raw wb18c_for_wild_ints_ctl.cell_main()) != 67i32) { exit 67i32; }
+    if ((raw wb22_list_elem_wild_call_ctl.cell_main()) != 67i32) { exit 68i32; }
+    if ((raw wn1c_coalesce_right_plain_ctl.cell_main()) != 67i32) { exit 69i32; }
+    if ((raw wn2c_result_literal_plain_ctl.cell_main()) != 67i32) { exit 70i32; }
+    if ((raw wn4c_relay_plain_ctl.cell_main()) != 67i32) { exit 71i32; }
+    if ((raw wd13_fnvalue_plain_ctl.cell_main()) != 67i32) { exit 72i32; }
+    if ((raw we9c_spread_of_slice_plain_ctl.cell_main()) != 67i32) { exit 73i32; }
+    if ((raw we11c_enum_payload_plain_ctl.cell_main()) != 67i32) { exit 74i32; }
+    if ((raw wm250c_deep_ternary_plain.cell_main()) != 61i32) { exit 75i32; }
+    if ((raw wd18c_addr_plain_ctl.cell_main()) != 67i32) { exit 76i32; }
+    if ((raw wf8_claim_i_after_free_read_ok.cell_main()) != 67i32) { exit 77i32; }
+    if ((raw wf8a_addr_after_free_read_ok.cell_main()) != 67i32) { exit 78i32; }
+    if ((raw wf7_claim_i_local_wild_array.cell_main()) != 67i32) { exit 79i32; }
+    if ((raw wd19_arg_claim_i_inside_wild.cell_main()) != 67i32) { exit 80i32; }
+    if ((raw q44c_ctl_grow_first_then_call_ptr.cell_main()) != 67i32) { exit 81i32; }
+    if ((raw q46_elem_of_call_ptr_later_grow.cell_main()) != 67i32) { exit 82i32; }
+    if ((raw q47_ptr_of_elem_later_grow.cell_main()) != 67i32) { exit 83i32; }
+    if ((raw q48_binop_call_ptr_then_grow.cell_main()) != 74i32) { exit 84i32; }
+    if ((raw q49c_ctl_no_grow.cell_main()) != 72i32) { exit 85i32; }
+    if ((raw q50c_ctl_bracket_local_header.cell_main()) != 67i32) { exit 86i32; }
+    if ((raw wk1c_list_push_plain_ctl.cell_main()) != 67i32) { exit 87i32; }
+    if ((raw wk3c_arena_put_plain_ctl.cell_main()) != 67i32) { exit 88i32; }
+    if ((raw wk4c_shared_arena_plain_ctl.cell_main()) != 67i32) { exit 89i32; }
+    if ((raw wd1c_atomic_store_plain_ctl.cell_main()) != 67i32) { exit 90i32; }
+    if ((raw k3_sys_string_ptr_write.cell_main()) != 67i32) { exit 91i32; }
+    if ((raw k4_sys_plain_addr_write.cell_main()) != 67i32) { exit 92i32; }
+    if ((raw k5_sys_plain_view_ptr_write.cell_main()) != 67i32) { exit 93i32; }
+    if ((raw k6_sys_fixed_crossing_legal.cell_main()) != 67i32) { exit 94i32; }
+    if ((raw k8_sys_ctl_in_view.cell_main()) != 67i32) { exit 95i32; }
+    if ((raw xn1_sys_paren.cell_main()) != 67i32) { exit 96i32; }
+    if ((raw xt2_sys_fixed_crossing.cell_main()) != 67i32) { exit 97i32; }
+    if ((raw xt4_sys_plain_string.cell_main()) != 67i32) { exit 98i32; }
+    if ((raw xt6_sys_plain_through_ptr.cell_main()) != 67i32) { exit 99i32; }
+    if ((raw xs9_struct_field_named_ptr_write.cell_main()) != 67i32) { exit 100i32; }
+    if ((raw xs10_struct_field_named_ptr_addr.cell_main()) != 67i32) { exit 101i32; }
+    // Some cells keep what they allocated, and a `wild` block outliving `exit 0` is `WildLeak` (D-151).
+    wild_release_all();
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StaleHandle) { exit 89i32; },
+        (header_ptr_uses_ok.E5_wa1c_coalesce_trap_plain_ctl) { exit 89i32; },
+        (header_ptr_uses_ok.E5_wk3c_arena_put_plain_ctl) { exit 89i32; },
+        (header_ptr_uses_ok.E5_wk4c_shared_arena_plain_ctl) { exit 89i32; },
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -192,14 +192,14 @@ func:ternary_views_of_other_string = int64() never fails {
     string:e = string_concat("hello", " there");
     int64:z = 0i64;
     bool:c = (z == 0i64);
-    pass (raw pair(is (c) : string_from_bytes(e.ptr, 5i64) : string_from_bytes(e.ptr, 3i64), @d));
+    pass (raw pair(is (c) : string_from_bytes(e.ptr =>! wild uint8->, 5i64) : string_from_bytes(e.ptr =>! wild uint8->, 3i64), @d));
 };
 
 // 18. (DEF-338) a same-type cast of a view of ANOTHER string beside the write
 func:cast_view_of_other_string = int64() never fails {
     string:d = string_concat("hello", " world");
     string:e = string_concat("hello", " there");
-    pass (raw pair(string_from_bytes(e.ptr, 5i64) =>! string, @d));
+    pass (raw pair(string_from_bytes(e.ptr =>! wild uint8->, 5i64) =>! string, @d));
 };
 
 func:main = int32(cstring[]:_~argv) {

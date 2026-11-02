@@ -16,7 +16,7 @@
 //
 // WILD PROVENANCE IS A WHITELIST, not a borrow blacklist: `=>! wild …->`, a
 // read of a `QUAL_WILD` place, a builtin whose signature hands back wild
-// storage, a user function declaring a wild return, or `NULL`. Everything else
+// storage, a user function or method declaring a wild return, or `NULL`. Everything else
 // — a plain pointer parameter, a plain-slot read, a call this walk cannot see
 // through — is provenance-UNKNOWN and answers `false`. For the escape analysis
 // `false` refuses (fail closed); for the emitter `false` means "a managed
@@ -51,6 +51,8 @@ pub func:expr_wild_provenance = bool(Ast->:ast, SymbolTable->:tab, InternTable->
         if (((raw expr_cast_quals(n)) & (raw QUAL_WILDX())) != 0i32) { pass true; }
         pass false;
     }
+    // A METHOD'S DECLARED `wild` RETURN COUNTS AS AN IDENTIFIER'S DOES (DEF-477, R9): `int64->:p = raw h.getw();` had no `=>!` on the page.
+    if (n.kind == ExprKind.ExprMethodCallExpr) { pass (raw door_call_wild(ast, tab, interns, etypes, types, id, n)); }
     // NULL is no address at all, so it cannot be a frame address (D-006).
     if (n.kind == ExprKind.ExprSentinelLiteral) { pass true; }
     // A builtin that HANDS BACK wild storage is the origin of every legitimate
@@ -132,14 +134,128 @@ pub func:expr_wild_provenance = bool(Ast->:ast, SymbolTable->:tab, InternTable->
     pass false;
 };
 
+// THE DOOR'S PROVENANCE (DEF-423, landing 177c; D-223 amended). What a `wild` slot takes with no cast, whatever the pointee, and
+// what a plain pointer's index asks (DEF-425). `expr_wild_provenance` above keeps its answers for its own readers (TYPE-032,
+// TYPE-097, `b.ptr != NULL`, the emitter's store, TYPE-104's walk); this one differs in three ways. A header's `.ptr` is never
+// wild here: the door's `door_header_admits` is that value's one road. The `mcpy` family's result is its destination's. An address
+// counts only when it lands inside a wild pointee. Closed at the end.
+pub func:door_wild = bool(Ast->:ast, SymbolTable->:tab, InternTable->:interns, ExprTypes->:etypes, TypeTable->:types,
+                          ExprId:id, int32:d) decreases d never fails {
+    if (raw expr_is_none(id)) { pass true; }
+    if (d <= 0i32) { pass false; }
+    ExprNode:n = raw ast_expr(ast, id);
+    ExprKind:k = n.kind;
+    if (k == ExprKind.ExprSentinelLiteral) { pass true; }
+    if (k == ExprKind.ExprUncheckedCastExpr) { pass ((raw expr_cast_quals(n)) & ((raw QUAL_WILD()) | (raw QUAL_WILDX()))) != 0i32; }
+    if ((k == ExprKind.ExprCallExpr) || (k == ExprKind.ExprMethodCallExpr)) { pass (raw door_call_wild(ast, tab, interns, etypes, types, id, n)); }
+    // A sigil's pointer operand was judged at its own slot, so its result answers yes and the mistake has one report (D-240);
+    // `#wild_ptr` is the integer road, and `#wild_slice`, absent from the signature table's wild returns, is a view of what it was handed.
+    if (k == ExprKind.ExprBuiltinExpr) {
+        string:bn = raw intern_get(interns, raw builtin_name(n));
+        pass (raw string_eq(bn, "wild_slice")) || (raw builtin_returns_wild(bn));
+    }
+    if (k == ExprKind.ExprIdentifierExpr) { pass (raw place_wild(ast, tab, etypes, types, id)); }
+    // A range is a view of what it ranges over, so it lands as an address does: `arr[0...4]` over a frame's `wild` array is a frame address.
+    if ((k == ExprKind.ExprIndexExpr) && ((raw ast_expr(ast, raw expr_rhs(n))).kind == ExprKind.ExprRangeExpr)) { pass (raw door_place_step(ast, tab, interns, etypes, types, id, d - 1i32)); }
+    if (k == ExprKind.ExprIndexExpr) { pass (raw place_wild(ast, tab, etypes, types, id)); }
+    if (k == ExprKind.ExprMemberAccessExpr) {
+        if (raw header_ptr_read(ast, interns, etypes, types, id)) { pass false; }
+        pass (raw place_wild(ast, tab, etypes, types, id));
+    }
+    if (k == ExprKind.ExprAddressOfExpr) { pass (raw door_place_step(ast, tab, interns, etypes, types, raw expr_operand(n), d - 1i32)); }
+    if ((k == ExprKind.ExprMoveExpr) || (k == ExprKind.ExprRawUnwrapExpr) || (k == ExprKind.ExprRelayExpr) || (k == ExprKind.ExprEmphaticUnwrapExpr)
+        || (k == ExprKind.ExprEmphaticCoalesceExpr) || (k == ExprKind.ExprAwaitExpr)) {
+        pass (raw door_wild(ast, tab, interns, etypes, types, raw expr_operand(n), d - 1i32));
+    }
+    if (k == ExprKind.ExprTernaryExpr) {
+        pass (raw door_wild(ast, tab, interns, etypes, types, raw expr_rhs(n), d - 1i32)) && (raw door_wild(ast, tab, interns, etypes, types, raw expr_third(n), d - 1i32));
+    }
+    if ((k == ExprKind.ExprNullCoalesceExpr) || (k == ExprKind.ExprSafeUnwrapExpr)) {
+        pass (raw door_wild(ast, tab, interns, etypes, types, raw expr_lhs(n), d - 1i32)) && (raw door_wild(ast, tab, interns, etypes, types, raw expr_rhs(n), d - 1i32));
+    }
+    pass false;
+};
+
+// A call's value: the declaration the call resolved to says, a method's as an identifier's; a function value says nothing and is closed.
+func:door_call_wild = bool(Ast->:ast, SymbolTable->:tab, InternTable->:interns, ExprTypes->:etypes, TypeTable->:types,
+                           ExprId:id, ExprNode:n) never fails {
+    int32:cdecl = raw exprtypes_callee(etypes, id);
+    if (n.kind == ExprKind.ExprCallExpr) {
+        ExprId:cal = raw expr_callee(n);
+        if (raw expr_is_none(cal)) { pass false; }
+        ExprNode:cn = raw ast_expr(ast, cal);
+        if (cn.kind == ExprKind.ExprIdentifierExpr) {
+            if (cn.a == 0i32) {
+                string:bn = raw intern_get(interns, cn.payload =>! int32);
+                if (!(raw builtin_returns_wild(bn))) { pass false; }
+                // THE `mcpy` FAMILY HANDS BACK ITS DESTINATION (rulings W2 (e)). A destination the door admitted as a header's
+                // `.ptr` is no wild block; any other was judged at its own slot, so the mistake has one report (D-240).
+                if ((raw string_eq(bn, "mcpy")) || (raw string_eq(bn, "mmov")) || (raw string_eq(bn, "memset"))) {
+                    if ((raw expr_list_count(n)) < 1i32) { pass false; }
+                    pass !(raw header_ptr_read(ast, interns, etypes, types, ExprId{ index: raw ast_id_at(ast, raw expr_list_start(n), 0i32) }));
+                }
+                pass true;
+            }
+            Symbol:cs = raw symtab_get(tab, cn.a);
+            if (cs.origin_kind == (raw SYM_DECL())) { cdecl = cs.origin; }
+        }
+    }
+    if (cdecl == 0i32) { pass false; }
+    DeclNode:cd = raw ast_decl(ast, DeclId{ index: cdecl });
+    if (cd.kind != DeclKind.DeclFunctionDecl) { pass false; }
+    pass (raw decl_has(cd, raw DECL_RET_WILD())) || (raw decl_has(cd, raw DECL_RET_WILDX()));
+};
+
+// AN ADDRESS LANDS WHERE THE LAST DEREFERENCE ON ITS PATH LANDS (rulings W2 (d)): an index, a `<-` or an auto-dereferencing member
+// whose base is a pointer or slice VALUE. Wild when that base is; a path with no such step is a frame address, a `wild` binding's
+// own included (`@h.wf`, `@w`, `@arr[0]` over a frame's `wild T->[N]`).
+pub func:door_place_step = bool(Ast->:ast, SymbolTable->:tab, InternTable->:interns, ExprTypes->:etypes, TypeTable->:types,
+                            ExprId:id, int32:d) decreases d never fails {
+    if (d <= 0i32) { pass false; }
+    ExprNode:n = raw ast_expr(ast, id);
+    ExprId:b = raw expr_operand(n);
+    if (n.kind == ExprKind.ExprDerefExpr) { pass (raw door_wild(ast, tab, interns, etypes, types, b, d - 1i32)); }
+    if (n.kind == ExprKind.ExprIndexExpr) { b = raw expr_lhs(n); }
+    if ((n.kind != ExprKind.ExprIndexExpr) && (n.kind != ExprKind.ExprMemberAccessExpr)) { pass false; }
+    int32:bk = raw type_kind(types, raw exprtypes_get(etypes, b));
+    if ((bk == (raw TY_POINTER())) || ((bk == (raw TY_SLICE())) && (n.kind == ExprKind.ExprIndexExpr))) {
+        pass (raw door_wild(ast, tab, interns, etypes, types, b, d - 1i32));
+    }
+    pass (raw door_place_step(ast, tab, interns, etypes, types, b, d - 1i32));
+};
+
+// `x.ptr`, the compiler-known header's block pointer, `x` a `string`, `cstring`, slice or `buffer` or a pointer to one, `wild` or not. THE ONE PREDICATE of I2 and I3 (DEF-425):
+// `x.ptr[i]` over it is the header's own checked read, what `x[i]` does, a write form or an address through it is TYPE-106, and I3 gives the value itself four uses (`type_of_expr`).
+pub func:header_ptr_read = bool(Ast->:ast, InternTable->:interns, ExprTypes->:etypes, TypeTable->:types, ExprId:id) never fails {
+    if (raw expr_is_none(id)) { pass false; }
+    ExprNode:n = raw ast_expr(ast, id);
+    if (n.kind != ExprKind.ExprMemberAccessExpr) { pass false; }
+    if (!(raw string_eq(raw intern_get(interns, n.payload =>! int32), "ptr"))) { pass false; }
+    pass (raw header_kind_of(types, raw exprtypes_get(etypes, raw expr_operand(n)))) != 0i32;
+};
+
+// The header kind of a base's type, through one pointer, or 0.
+pub func:header_kind_of = int32(TypeTable->:types, int32:t0) never fails {
+    int32:t = t0;
+    if (t == 0i32) { pass 0i32; }
+    if ((raw type_kind(types, t)) == (raw TY_POINTER())) { t = raw type_elem(types, t); }
+    int32:k = raw type_kind(types, t);
+    if ((k == (raw TY_STRING())) || (k == (raw TY_CSTRING())) || (k == (raw TY_SLICE())) || (k == (raw TY_BUFFER()))) { pass k; }
+    pass 0i32;
+};
+
 // Is this PLACE a `wild`-qualified slot? A local's qualifier rides its
 // declaration, a parameter's its parameter, a field's the field decl — the
-// three spellings a store site can see. An element is its array's.
+// three spellings a store site can see. An element is its array's, its slice's or its pointer's; a `List`'s,
+// or any other indexable struct's, is a plain slot of its own, whatever the struct's binding says (R5 of 177c's
+// second rulings: `wild List<int64->>:wl = move(l); dalloc(wl[0i64]);` freed a frame address).
 pub func:place_wild = bool(Ast->:ast, SymbolTable->:tab, ExprTypes->:etypes,
                            TypeTable->:types, ExprId:id) never fails {
     if (raw expr_is_none(id)) { pass false; }
     ExprNode:n = raw ast_expr(ast, id);
     if (n.kind == ExprKind.ExprIndexExpr) {
+        int32:ibk = raw type_kind(types, raw exprtypes_get(etypes, raw expr_lhs(n)));
+        if ((ibk != (raw TY_ARRAY())) && (ibk != (raw TY_SLICE())) && (ibk != (raw TY_POINTER()))) { pass false; }
         pass (raw place_wild(ast, tab, etypes, types, raw expr_lhs(n)));
     }
     if (n.kind == ExprKind.ExprIdentifierExpr) {
@@ -170,9 +286,10 @@ pub func:place_wild = bool(Ast->:ast, SymbolTable->:tab, ExprTypes->:etypes,
         }
         pass false;
     }
-    if (n.kind == ExprKind.ExprMemberAccessExpr) {
+    if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr)) {
         int32:base = raw exprtypes_get(etypes, raw expr_operand(n));
         if (base == 0i32) { pass false; }
+        if ((raw type_kind(types, base)) == (raw TY_OPTIONAL())) { base = raw type_elem(types, base); }
         if ((raw type_kind(types, base)) == (raw TY_POINTER())) {
             base = raw type_elem(types, base);
         }
@@ -197,7 +314,7 @@ pub func:field_named_wild = bool(Ast->:ast, TypeTable->:types, int32:sty,
         DeclNode:m = raw ast_decl(ast, raw item_member(ast, sd, i));
         if (m.kind == DeclKind.DeclFieldDecl) {
             if ((raw decl_name(m)) == fname) {
-                pass (((raw field_quals(m)) & (raw QUAL_WILD())) != 0i32);
+                pass (((raw field_quals(m)) & ((raw QUAL_WILD()) | (raw QUAL_WILDX()))) != 0i32);
             }
         }
         i = i + 1i32;

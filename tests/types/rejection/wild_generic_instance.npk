@@ -1,0 +1,65 @@
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 43:20
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 51:64
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 52:63
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 53:54
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 54:76
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 55:74
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 56:73
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 57:55
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 58:72
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 59:56
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 60:90
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 61:47
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 63:96
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 64:74
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 65:54
+// A generic instance whose type argument is or holds a plain pointer or slice, into a declaration that has `wild` in it
+// (TYPE-107; DEF-423's generic road, ruled 2026-11-02). Inside the body the door reads a `T`, so the address would enter a
+// `wild` slot with no `=>!`, and the concrete frame may never name `wild`. Where each instance is written is where it is
+// refused. An instance only a generic body forms (`outer<U>` -> `rt<U>`) is refused by the emitter's worklist, not by the
+// checker: `tests/backend/rejection/wild_generic_transitive.npk` holds that twin. One instance is one report, at the site that first forms it, so each case here
+// forms its own. The legal instances are in `tests/accept/wild_generic_instance_ok.npk`.
+mod:wild_generic_instance;
+
+func:rt<T> = T(move T:v) never fails { wild T->:c = alloc(8i64) =>! wild T->; <-c = move(v); T:o = move(<-c); dalloc(c); pass move(o); };
+func:rtx<T> = NIL(wildx T->:c, move T:v) never fails { <-c = move(v); pass NIL; };
+func:stz<T> = NIL(int64:a, move T:v) never fails { <-(#wild_ptr<T>(a)) = move(v); pass NIL; };
+struct:Vw<T> = { wild T->:items; };
+struct:Wrap<T> = { Vw<T>:inner; };
+struct:G<T> = { T:p; };
+struct:H = { string->:q; };
+struct:Sv = { fixed uint8[]:v; };
+enum:Ep = { Aa(string->); Bb; };
+struct:Gm<T> = { T:p; };
+impl:<T>:Gm<T> = { func:m = T(move Gm<T>:self) never fails { wild T->:c = alloc(8i64) =>! wild T->; <-c = move(self.p); T:o = move(<-c); dalloc(c); pass move(o); }; };
+
+func:a_written = string->(string->:q) never fails { pass raw rt::<string->>(q); };
+func:b_inferred = int32->(int32->:q) never fails { pass raw rt(q); };
+func:c_holds_field = H(H:h) never fails { pass raw rt::<H>(h); };
+func:d_holds_generic = G<string->>(G<string->>:g) never fails { pass raw rt::<G<string->>>(g); };
+func:e_holds_array = string->[1](string->[1]:a) never fails { pass raw rt::<string->[1]>(a); };
+func:f_holds_optional = string->?(string->?:o) never fails { pass raw rt::<string->?>(o); };
+func:g_holds_enum = Ep(Ep:e) never fails { pass raw rt::<Ep>(e); };
+func:h_slice = fixed uint8[](fixed uint8[]:v) never fails { pass raw rt::<fixed uint8[]>(v); };
+func:i_holds_slice = Sv(Sv:v) never fails { pass raw rt::<Sv>(v); };
+func:j_function_value = func int64(int64)(func int64(int64):fv) never fails { pass raw rt::<func int64(int64)>(fv); };
+func:k_struct = NIL(string->:q) never fails { Vw<string->>:st = Vw{ items: NULL }; pass NIL; };
+func:l_wrapped = NIL(int32->:q) never fails { Wrap<int32->>:w = Wrap{ inner: Vw{ items: NULL } }; pass NIL; };
+func:m_method_body = string->(string->:q) never fails { Gm<string->>:h = Gm{ p: q }; pass raw h.m(); };
+func:n_wildx = NIL(wildx string->->:c, string->:q) never fails { drop rtx::<string->>(c, q); pass NIL; };
+func:o_sigil = NIL(string->:q) never fails { drop stz::<string->>(4096i64, q); pass NIL; };

@@ -115,6 +115,28 @@ func:impl_push = NIL(ImplTable->:t, int32:target, int32:trait_id, int32:decl,
 
 // --- building ----------------------------------------------------------------------------
 
+// A GENERIC INSTANCE WHOSE ARGUMENT CARRIES AN ADDRESS, INTO A DECLARATION THAT SAYS `wild` (TYPE-107; DEF-423's generic
+// road, ruled 2026-11-02 10:32 and 10:40). Inside a generic body the door reads a `T`, and a `T` is no pointer, so
+// `v` enters `wild T->` unasked; the concrete frame may never name `wild`. The one question every instance can be asked,
+// by the two sites that see every instance: an argument that is or holds a pointer or a slice at any depth, a function
+// value, or a type past the fuel, against a declaration the parser marked. An owner holds no borrow (`string` stays legal).
+// The prelude's own declarations are exempt: `List` hands out no `wild T`. An impl's method has no symbol and so no
+// home scope, and its span's file answers for it as for anything: `graph_load_prelude` adds file 0 before anything else
+// is read, and were that to move, `List<string->>` would be refused everywhere.
+pub func:check_wild_instance = NIL(TypeResolver->:r, int32:decl, int32:start, int32:count, Span:at) never fails {
+    DeclNode:d = raw ast_decl(r.ast, DeclId{ index: decl });
+    if ((d.span.file == 0i32) || (!(raw decl_has(d, raw DECL_HAS_WILD())))) { pass NIL; }
+    for (int32:i in 0i32...count) {
+        int32:a = raw ast_id_at(r.ast, start, i);
+        if (((raw type_kind(r.types, a)) == (raw TY_FUNC())) || (raw type_contains_borrow(r, a, 0i32, 64i32))) {
+            drop diaglist_push(r.diags, raw diag_error(raw TYPE_WILD_INSTANCE(),
+                "this generic's declaration has `wild`, a `#` form that reads storage, or `=>!` in it, and a type argument here is or holds a plain pointer or slice: inside it the address would enter a `wild` slot with no `=>!` (D-223). Instantiate it at a type that owns its data, or write the `wild` slot in a function that names the concrete pointer type",
+                at));
+        }
+    }
+    pass NIL;
+};
+
 // Walk a module's declarations and record every `impl`. The target and the trait
 // are RESOLVED HERE rather than at each use, so that two impls on the same type
 // compare as one integer and coherence does not depend on how the annotation was
@@ -1741,6 +1763,11 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
     // function TYPE carries no `move`, so `same_signature` cannot compare it;
     // the two DECLARATIONS are compared here, parameter by parameter, in both
     // directions, before the shape.
+    if (((raw decl_has(tf, raw DECL_RET_WILD())) != (raw decl_has(f, raw DECL_RET_WILD()))) || ((raw decl_has(tf, raw DECL_RET_WILDX())) != (raw decl_has(f, raw DECL_RET_WILDX())))) {
+        string:wr1 = string_concat("`", raw intern_get(r.interns, raw decl_name(f)));
+        drop diaglist_push(r.diags, raw diag_error(raw TYPE_IMPL_INCOMPLETE(), string_concat(wr1, "`'s return differs from the trait's in its `wild` or `wildx` qualifier: a return's regime is part of the signature (DEF-423) -- a caller through a bound or a `dyn` reads the value's provenance off the TRAIT's declaration"), f.span));
+        pass NIL;
+    }
     int32:tpn = raw fn_param_count(r.ast, tf);
     int32:ipn = raw fn_param_count(r.ast, f);
     if (tpn == ipn) {
@@ -1749,6 +1776,16 @@ func:check_signature = NIL(TypeResolver->:r, ImplEntry:e, int32:trait_fn,
             DeclNode:ip = raw ast_decl(r.ast, raw fn_param(r.ast, f, pi));
             bool:t_move = ((raw param_quals(tp)) & (raw QUAL_MOVE())) != 0i32;
             bool:i_move = ((raw param_quals(ip)) & (raw QUAL_MOVE())) != 0i32;
+            // AND `wild` EXACTLY WHERE THE TRAIT'S IS (DEF-423's W5, both directions): a call through a bound or a `dyn` reads the TRAIT's
+            // declaration, so a `wild` the impl adds is a slot its callers never judge, and a `wild` it drops refuses what they hand it.
+            int32:wq = (raw QUAL_WILD()) | (raw QUAL_WILDX());
+            if (((raw param_quals(tp)) & wq) != ((raw param_quals(ip)) & wq)) {
+                string:wm1 = string_concat("`", raw intern_get(r.interns, raw decl_name(f)));
+                string:wm2 = string_concat(wm1, "`'s parameter `");
+                string:wm3 = string_concat(wm2, raw intern_get(r.interns, raw decl_name(ip)));
+                drop diaglist_push(r.diags, raw diag_error(raw TYPE_IMPL_INCOMPLETE(), string_concat(wm3, "` differs from the trait's in its `wild` or `wildx` qualifier: a parameter's regime is part of the signature (DEF-423) -- a caller through a bound or a `dyn` judges its argument by the TRAIT's declaration"), ip.span));
+                pass NIL;
+            }
             if (t_move != i_move) {
                 string:mv1 = string_concat("`",
                     raw intern_get(r.interns, raw decl_name(f)));
@@ -2004,17 +2041,16 @@ func:same_after_self = bool(TypeResolver->:r, int32:want, int32:got,
 // survives to lowering means the frontend missed it, and `ll_type` fails closed
 // on it — which is the answer wanted there, not a substitution that papers over
 // it.
-pub func:assoc_binding_of = int32(TypeResolver->:r, wild ImplTable->:t,
+pub func:assoc_binding_of = int32(TypeResolver->:r, ImplTable->?:t0,
                                   int32:base, int32:trait_decl, int32:name) never fails {
-    if (t == NULL)        { pass 0i32; }
+    if (t0 == NIL)        { pass 0i32; }
     if (base == 0i32)     { pass 0i32; }
     if (trait_decl == 0i32) { pass 0i32; }
+    // The default is never taken, the `NIL` test above says so; `??!` would say it better and is newer than the snapshot that builds this file (D-205).
+    ImplTable->:t = t0 ?? ((NULL =>! wild ImplTable->) =>! ImplTable->);
     int32:i = 0i32;
     while ((i => int64) < t.v.count) decreases t.v.count - (i => int64) {
-        // THE CROSSING (D-361, 1.6.1e landing 121): `t` is this function's `wild` parameter and
-        // `impl_at` takes the table plain; the cast is the author's assertion that it points at a
-        // live table, which the `NULL` test above has just made true.
-        ImplEntry:e = raw impl_at(t =>! ImplTable->, i);
+        ImplEntry:e = raw impl_at(t, i);
         if (!e.blanket) {
             if (e.target == base) {
                 if ((raw type_decl_of(r.types, e.trait_id)) == trait_decl) {

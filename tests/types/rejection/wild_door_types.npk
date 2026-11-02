@@ -1,0 +1,283 @@
+// expect-error: NITPICK-TYPE-014
+// expect-error-at: 78:14
+// expect-error: NITPICK-TYPE-014
+// expect-error-at: 86:15
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 87:91
+// expect-error: NITPICK-TYPE-014
+// expect-error-at: 108:39
+// expect-error: NITPICK-TYPE-014
+// expect-error-at: 130:39
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 137:32
+// expect-error: NITPICK-TYPE-100
+// expect-error-at: 137:57
+// expect-error: NITPICK-TYPE-100
+// expect-error-at: 141:62
+// expect-error: NITPICK-TYPE-100
+// expect-error-at: 145:57
+// expect-error: NITPICK-TYPE-100
+// expect-error-at: 150:46
+// expect-error: NITPICK-TYPE-100
+// expect-error-at: 155:46
+// expect-error: NITPICK-TYPE-100
+// expect-error-at: 159:57
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 164:67
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 167:63
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 170:58
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 173:62
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 176:50
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 179:45
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 182:110
+// expect-error: NITPICK-TYPE-001
+// expect-error-at: 186:100
+// expect-error: NITPICK-TYPE-096
+// expect-error-at: 190:104
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 198:86
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 202:80
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 205:73
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 213:116
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 219:104
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 225:61
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 230:61
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 236:67
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 243:79
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 250:42
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 256:40
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 261:32
+// THE `wild` DOOR'S REFUSALS AT THE TYPE STAGE (DEF-423, landing 177c): W5's two, the `NULL` context the door shares, and TYPE-107's generic road.
+// Each module below is one cell. `tests/analysis/rejection/wild_door.npk` holds the door's BORROW-011 family: a TYPE report here stops the analyses
+// in this file, which is why the two are two files.
+mod:wild_door_types;
+
+// W5: AN IMPL'S PARAMETERS AND RETURN ARE `wild` EXACTLY WHERE ITS TRAIT'S ARE, IN BOTH DIRECTIONS (TYPE-014).
+mod:h2a_impl_drops_wild_return_dyn = {
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:take = NIL(wild string->:p) never fails { string:t = move(<-p); pass NIL; };
+trait:G = { func:get = wild string->(Self->:self, string->:q) never fails; };
+struct:K = { int64:n; };
+impl:K:G = { func:get = string->(K->:self, string->:q) never fails { pass q; }; };
+func:f = int64() never fails { string:s = raw mk(); dyn G:d = K{ n: 0i64 }; drop take(raw d.get(@s)); pass s.len + 2i64; };
+};
+mod:h2c_impl_adds_wild_return_plain_trait = {
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:take = NIL(wild string->:p) never fails { string:t = move(<-p); pass NIL; };
+trait:G2 = { func:get = string->(Self->:self, string->:q) never fails; };
+struct:K = { int64:n; };
+impl:K:G2 = { func:get = wild string->(K->:self, string->:q) never fails { pass q; }; };
+func:f = int64() never fails { string:s = raw mk(); K:k = K{ n: 0i64 }; string->:r = raw k.get(@s); pass s.len + 2i64; };
+};
+mod:x_impl_adds_wild = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+struct:W = { wild string->:p; };
+struct:WA = { wild string->[1]:a; };
+struct:WO = { wild string->?:o; };
+struct:WW = { W:i; };
+struct:M = { int64:k; };
+trait:Tr = { func:tt = NIL(Self->:self, wild string->:x) never fails; };
+impl:M = {
+    func:idm = string->(M->:self, string->:q) never fails { pass q; };
+    func:tk = NIL(M->:self, wild string->:x) never fails { string:t = move(<-x); pass NIL; };
+};
+impl:M:Tr = { func:tt = NIL(M->:self, wild string->:x) never fails { string:t = move(<-x); pass NIL; }; };
+func:gp = NIL(string->->:c, string->:q) never fails { <-c = q; pass NIL; };
+func:gw = NIL(wild string->->:c, string->:q) never fails { <-c = q; pass NIL; };
+func:gpo = NIL(string->?->:c, string->:q) never fails { <-c = q; pass NIL; };
+func:gg<T> = NIL(T->:c, move T:v) never fails { <-c = move(v); pass NIL; };
+func:gt<T> = NIL(wild T->:x) never fails { T:t = move(<-x); pass NIL; };
+trait:Pt = { func:ut = NIL(Self->:self, string->:x) never fails; };
+impl:M:Pt = { func:ut = NIL(M->:self, wild string->:x) never fails { string:t = move(<-x); pass NIL; }; };
+func:f = int64() never fails { string:s = raw mks(); M:m2 = M{ k: 1i64 }; drop m2.ut(@s); pass s.len; };
+};
+mod:x_impl_adds_wild_dyn = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+struct:W = { wild string->:p; };
+struct:WA = { wild string->[1]:a; };
+struct:WO = { wild string->?:o; };
+struct:WW = { W:i; };
+struct:M = { int64:k; };
+trait:Tr = { func:tt = NIL(Self->:self, wild string->:x) never fails; };
+impl:M = {
+    func:idm = string->(M->:self, string->:q) never fails { pass q; };
+    func:tk = NIL(M->:self, wild string->:x) never fails { string:t = move(<-x); pass NIL; };
+};
+impl:M:Tr = { func:tt = NIL(M->:self, wild string->:x) never fails { string:t = move(<-x); pass NIL; }; };
+func:gp = NIL(string->->:c, string->:q) never fails { <-c = q; pass NIL; };
+func:gw = NIL(wild string->->:c, string->:q) never fails { <-c = q; pass NIL; };
+func:gpo = NIL(string->?->:c, string->:q) never fails { <-c = q; pass NIL; };
+func:gg<T> = NIL(T->:c, move T:v) never fails { <-c = move(v); pass NIL; };
+func:gt<T> = NIL(wild T->:x) never fails { T:t = move(<-x); pass NIL; };
+trait:Pt = { func:ut = NIL(Self->:self, string->:x) never fails; };
+impl:M:Pt = { func:ut = NIL(M->:self, wild string->:x) never fails { string:t = move(<-x); pass NIL; }; };
+func:f = int64() never fails { string:s = raw mks(); dyn Pt:d2 = M{ k: 1i64 }; drop d2.ut(@s); pass s.len; };
+};
+
+// W5: A FUNCTION WITH A `wild` PARAMETER IS NOT A VALUE (TYPE-100): a function type carries no qualifier, so a call through one would not see the slot.
+mod:fv1_generic_wild_param = {
+func:g<T> = int64(wild T->:p) never fails { pass 5i64; };
+func:f = int64() never fails { func int64(int64->):fv = g; pass 0i64; };
+};
+mod:fv3_module_member_value = {
+mod:inner = { pub func:g = int64(wild int64->:p) never fails { pass 5i64; }; };
+func:f = int64() never fails { func int64(int64->):fv = inner.g; pass 0i64; };
+};
+mod:fv4_plain_function = {
+func:g = int64(wild int64->:p) never fails { pass 5i64; };
+func:f = int64() never fails { func int64(int64->):fv = g; pass 0i64; };
+};
+mod:fv5_struct_field_fv = {
+func:g = int64(wild int64->:p) never fails { pass 5i64; };
+struct:Fs = { func int64(int64->):h; };
+func:f = int64() never fails { Fs:s = Fs{ h: g }; pass 0i64; };
+};
+mod:fv6_callback_arg = {
+func:g = int64(wild int64->:p) never fails { pass 5i64; };
+func:call = int64(func int64(int64->):h) never fails { pass 0i64; };
+func:f = int64() never fails { pass raw call(g); };
+};
+mod:fv7_wildx_function = {
+func:g = int64(wildx int64->:p) never fails { pass 5i64; };
+func:f = int64() never fails { func int64(int64->):fv = g; pass 0i64; };
+};
+
+// `NULL` KEEPS ITS OWN RULE AT A SIGIL'S OPERAND AND IN A COMPARISON (TYPE-096, TYPE-001), WHEREVER THE DOOR LETS A VALUE THROUGH.
+mod:n1_ptr_add_null = {
+func:f = int64() never fails { wild string->:p = #ptr_add<string>(NULL, 1i64); pass 5i64; };
+};
+mod:n2_atomic_null = {
+func:f = int64() never fails { pass (atomic_from_ptr::<int64>(NULL).load()) + 5i64; };
+};
+mod:c14_null_left_ternary_first = {
+func:g = bool(int64->:p) never fails { pass (is (true) : NULL : p) == p; };
+};
+mod:c14b_null_left_ternary_second = {
+func:g = bool(int64->:p) never fails { pass (is (true) : p : NULL) == p; };
+};
+mod:c15_null_right_plain = {
+func:g = bool(int64->:p) never fails { pass p == NULL; };
+};
+mod:c16_null_left_plain = {
+func:g = bool(int64->:p) never fails { pass NULL == p; };
+};
+mod:c18_null_wild_ternary_base = {
+func:g = bool() never fails { wild int64->:w = alloc(8i64) =>! wild int64->; bool:b = (is (true) : w : w) == NULL; dalloc(w); pass b; };
+func:f = int64() never fails { bool:b = raw g(); pass 0i64; };
+};
+mod:c19_null_left_ternary_wild_first = {
+func:g = bool() never fails { wild int64->:w = alloc(8i64) =>! wild int64->; bool:b = (is (true) : NULL : w) == w; dalloc(w); pass b; };
+func:f = int64() never fails { bool:b = raw g(); pass 0i64; };
+};
+mod:c19b_null_left_ternary_wild_second = {
+func:g = bool() never fails { wild int64->:w = alloc(8i64) =>! wild int64->; bool:b = (is (true) : w : NULL) == w; dalloc(w); pass b; };
+func:f = int64() never fails { bool:b = raw g(); pass 0i64; };
+};
+
+// AN ARRAY IS NOT A SLICE, SO IT IS NO ROAD INTO A `wild` SLICE EITHER (TYPE-007).
+mod:g2_array_to_slice_wild = {
+func:kp = NIL(wild int64[]:v) never fails { pass NIL; };
+func:kb = NIL(wild fixed uint8[]:v) never fails { pass NIL; };
+func:f = int64() never fails { wild int64[4]:arr = [5i64, 5i64, 5i64, 5i64]; drop kp(arr); pass 0i64; };
+};
+mod:g6_store_array_to_wild_slice = {
+struct:Ws = { wild int64[]:v; };
+func:f = int64() never fails { int64[4]:arr = [5i64, 5i64, 5i64, 5i64]; Ws:w = Ws{ v: arr }; pass 0i64; };
+};
+mod:g7_init_array_to_wild_slice = {
+func:f = int64() never fails { int64[4]:arr = [5i64, 5i64, 5i64, 5i64]; wild int64[]:s = arr; pass 0i64; };
+};
+
+// TYPE-107 ON THE ATTACK'S SHAPES (the shapes of `wild_generic_instance.npk` are its own). `t1_ownedfd` is DEF-454's over-refusal, kept as it stands today: `type_contains_borrow` counts an `OwnedFd`.
+mod:g1_generic_wild_store = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:take = NIL(wild string->:x) never fails { string:t = move(<-x); pass NIL; };
+func:putg<T> = NIL(wild T->:c, move T:v) never fails { <-c = move(v); pass NIL; };
+func:f = int64() never fails { string:s = raw mks(); wild string->->:c = alloc(8i64) =>! wild string->->; drop putg::<string->>(c, @s); drop take(c[0i64]); pass s.len; };
+};
+mod:g1b_generic_wild_store_param = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:take = NIL(wild string->:x) never fails { string:t = move(<-x); pass NIL; };
+func:putg<T> = NIL(wild T->:c, move T:v) never fails { <-c = move(v); pass NIL; };
+func:g = int64(string->:q) never fails { wild string->->:c = alloc(8i64) =>! wild string->->; drop putg::<string->>(c, q); drop take(c[0i64]); pass 0i64; };
+func:f = int64() never fails { string:s = raw mks(); int64:r = raw g(@s); pass s.len + r; };
+};
+mod:g6_generic_wild_t_local = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:pl<T> = NIL(move T:v) never fails { wild T:w = move(v); pass NIL; };
+func:f = int64() never fails { string:s = raw mks(); drop pl::<string->>(@s); pass s.len; };
+};
+mod:g7_wild_t_param = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:wp<T> = NIL(wild T:v) never fails { pass NIL; };
+func:f = int64() never fails { string:s = raw mks(); drop wp::<string->>(@s); pass s.len; };
+};
+mod:g8_generic_wild_return = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:take = NIL(wild string->:x) never fails { string:t = move(<-x); pass NIL; };
+func:wrr<T> = wild T(move T:v) never fails { pass move(v); };
+func:g = int64(string->:q) never fails { wild string->:x = raw wrr::<string->>(q); drop take(x); pass 0i64; };
+func:f = int64() never fails { string:s = raw mks(); int64:r = raw g(@s); pass s.len + r; };
+};
+mod:g9_generic_wild_return_frame = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:take = NIL(wild string->:x) never fails { string:t = move(<-x); pass NIL; };
+func:wrr<T> = wild T(move T:v) never fails { pass move(v); };
+func:f = int64() never fails { string:s = raw mks(); wild string->:x = raw wrr::<string->>(@s); drop take(x); pass s.len; };
+};
+mod:g11_generic_struct_field_road = {
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:take = NIL(wild string->:x) never fails { string:t = move(<-x); pass NIL; };
+struct:Vw<T> = { wild T->:items; };
+impl:<T>:Vw<T> = { func:put = NIL(Vw<T>->:self, move T:v) never fails { <-self.items = move(v); pass NIL; }; };
+func:g = int64(string->:q) never fails { Vw<string->>:st = Vw{ items: alloc(8i64) =>! wild string->-> }; drop st.put(q); drop take(st.items[0i64]); pass 0i64; };
+func:f = int64() never fails { string:s = raw mks(); int64:r = raw g(@s); pass s.len + r; };
+};
+mod:t1_ownedfd = {
+func:rt<T> = T(move T:v) never fails { wild T->:c = alloc(64i64) =>! wild T->; <-c = move(v); T:o = move(<-c); dalloc(c); pass move(o); };
+struct:Fh = { OwnedFd:h; };
+func:g = NIL(move Fh:x) { Fh:y = raw rt::<Fh>(move(x)); pass NIL; };
+};
+mod:t3_no_word_returns_vw = {
+struct:Vw<T> = { wild T->:items; };
+func:mkvw<U> = Vw<U>() never fails { pass Vw{ items: NULL }; };
+func:f = int64() never fails { Vw<string->>:w = raw mkvw::<string->>(); pass 0i64; };
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

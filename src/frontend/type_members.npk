@@ -36,6 +36,7 @@ use "./expr_types.npk".*;
 use "./type_trait.npk".*;
 use "./type_generic.npk".*;
 use "./builtins.npk".*;   // the generated signature table (D-201)
+use "./analysis/wild_places.npk".*;   // door_wild: a plain pointer's index, a `wild` receiver (DEF-425, DEF-423)
 
 // --- the dispatcher ----------------------------------------------------------------------
 //
@@ -577,10 +578,11 @@ func:te_no_member = int32(ExprTyper->:e, int32:base, int32:name, Span:at) never 
 // obligation the backend emits; what this decides is the element type and that
 // the index is an integer.
 //
-// A POINTER IS INDEXABLE AND CARRIES NO LENGTH (D-038), so `p[i]` cannot be
-// bounds-checked and is the one indexing form that is unchecked. That is why
-// slices exist and why a slice is the type a function should take.
+// A POINTER CARRIES NO LENGTH (D-038), so `p[i]` cannot be bounds-checked: a plain
+// pointer's past 0 is TYPE-106 (DEF-425), and a `wild` pointer's is the one indexing form
+// that is unchecked. That is why slices exist and why a slice is the type a function should take.
 pub func:type_index = int32(ExprTyper->:e, ExprNode:n) never fails {
+    e.ptr_ok = (raw expr_lhs(n)).index;   // I3: the base of an index
     int32:base = raw type_of_expr(e, raw expr_lhs(n));
 
     int32:saved = e.expected;
@@ -683,6 +685,22 @@ pub func:type_index = int32(ExprTyper->:e, ExprNode:n) never fails {
             pass (raw te_error(e, raw TYPE_INDEX_POINTER(),
                 string_concat(q3, "` in memory -- not the value it points at: write `(<-p)[i]` for the element (D-098: one level brought back is spelled where there are two readings)"),
                 n.span));
+        }
+        // I2'S ORDER (177c's second rulings, R4, R14): `ptr` and `len` load after the index, right only for a header whose own storage a call in that index can't take. On any other path the index can
+        // free the header under the read (`h.ptr[raw grow2(l, v)]`, `h` a pointer parameter, read a freed header, 97), a name doesn't help inside a callee, and loading it first would make `q11` read a
+        // freed block. So neither load order is right: an index with an effect over such a base is refused. `door_same_spelling` is the file's test for an expression with no effect in it.
+        if ((raw header_ptr_read(e.ast, e.interns, e.expr_types, e.types, raw expr_lhs(n))) && (!(raw header_storage_stays(e, raw expr_operand(raw ast_expr(e.ast, raw expr_lhs(n))), 64i32)))
+            && (!(raw door_same_spelling(e, raw expr_rhs(n), raw expr_rhs(n), 16i32)))) {
+            pass (raw te_error(e, raw TYPE_INDEX_PLAIN(), "the index runs before this header's `ptr` and `len` load, and the header is reached through a pointer, a `List`'s or slice's element, a `pick`'s binding or a value no name holds, so a call in the index can free it under the read and no analysis can see that (DEF-425): compute the index first, `int64:i = ...;`", n.span));
+        }
+        // A PLAIN POINTER HAS ONE ELEMENT (DEF-425's I1, landing 177c): `p[k]` and `@p[k]` walk from a plain pointer with no bound to check,
+        // so only the constant 0 or a pointer of `wild` provenance is indexed. A header's `.ptr[i]` is the header's own checked read (I2), `wild` header included.
+        if (!(raw index_is_zero(e, raw expr_rhs(n), 8i32))) {
+            if ((!(raw header_ptr_read(e.ast, e.interns, e.expr_types, e.types, raw expr_lhs(n))))
+                && !(raw door_wild(e.ast, e.tab, e.interns, e.expr_types, e.types, raw expr_lhs(n), 16i32))) {
+                string:i1 = string_concat("`p[i]` walks past what this plain `", raw type_display(e.types, e.interns, base));
+                pass (raw te_error(e, raw TYPE_INDEX_PLAIN(), string_concat(i1, "` points at, with no length to check it against (DEF-425): a plain pointer has one element, `p[0]` or `<-p`; a run of them is a slice, `List` or array, and the manual regime's walk is a pointer of `wild` provenance"), n.span));
+            }
         }
         pass pel;
     }
@@ -1233,7 +1251,10 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
             int32:afel = raw resolve_type(@afr,
                 TypeId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), 0i32) },
                 e.scope);
+            int32:afsv = e.null_ctx;
+            e.null_ctx = 4i32;   // `wild T->`, its one parameter (BUILTIN_REFERENCE): the door judges it, and `NULL` stays refused
             int32:afp = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast, start, 0i32) });
+            e.null_ctx = afsv;
             if (afp != 0i32) {
                 if (!(raw type_is_invalid(e.types, afp))) {
                     if ((raw type_kind(e.types, afp)) != (raw TY_POINTER())) {
@@ -1371,7 +1392,12 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
                         ssn.span));
                     spread_refused = true;
                 }
+                e.ptr_ok = sa.index;   // I3's fifth use: a kernel register (D-048, DEF-478); `@x` is one with any count, so a plain header's `.ptr` gives the kernel nothing more
                 int32:sat = raw type_of_expr(e, sa);
+                // A `fixed` HEADER'S `.ptr` IS NOT ONE (R2): `@` of a `fixed` binding is TYPE-071, "a write through `@` would be one no rule sees", and a read syscall through it is that write.
+                if ((raw header_ptr_read(e.ast, e.interns, e.expr_types, e.types, sa)) && (raw header_fixed(e, raw expr_operand(raw ast_expr(e.ast, sa))))) {
+                    discard(raw te_error(e, raw TYPE_INDEX_PLAIN(), "a `fixed` header's `.ptr` is no kernel register (DEF-425, D-287): a read syscall through it writes what `fixed` promises nothing writes, and `sys` has no direction -- write `x.ptr =>! uint8->`, which states the crossing", (raw ast_expr(e.ast, sa)).span));
+                }
                 // A REFUSED `..^` ARGUMENT IS NOT ALSO FIT-CHECKED (D-240, whose own
                 // case this is, applied to `sys`'s register check as it was to the
                 // general argument path; found by D-332's count rule): the operand is
@@ -1555,6 +1581,7 @@ func:check_ctor_args = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
         e.expected = pt;
         int32:at = raw type_of_expr(e, ExprId{ index: raw ast_id_at(e.ast,
                                           start, i) });
+        drop check_wild_into_plain(e, ExprId{ index: raw ast_id_at(e.ast, start, i) }, pt);   // D-361: a variant's payload is a slot (`EP.A(raw rw(a))`, `we11b`, R17)
         e.expected = saved;
         if (at != 0i32) {
             if (!(raw type_is_invalid(e.types, at))) {
@@ -2049,6 +2076,7 @@ func:infer_from_args = NIL(ExprTyper->:e, TypeResolver->:r, ExprNode:n,
                            int32:start, int32:count) never fails {
     if (!(raw type_is_func(e.types, generic_ft))) { pass NIL; }
     int32:np = raw type_param_count_of(e.types, generic_ft);
+    int64:door0 = e.expr_types.door.count;
     for (int32:i in 0i32...count) {
         if (i < np) {
             ExprId:a = ExprId{ index: raw ast_id_at(e.ast, start, i) };
@@ -2064,6 +2092,8 @@ func:infer_from_args = NIL(ExprTyper->:e, TypeResolver->:r, ExprNode:n,
             }
         }
     }
+    // This pass is speculative, at context 0: `check_args` types each argument at its slot's own context and judges it there (R12; `a6` was refused for a door entry nothing removed).
+    drop list_truncate(@e.expr_types.door, door0);
     pass NIL;
 };
 
@@ -2818,7 +2848,49 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
         }
     }
     drop exprtypes_set_callee_ft(e.expr_types, id, ft);
+    // A `wild` RECEIVER IS A `wild` PARAMETER'S SLOT (DEF-423): a pointer or a view is judged as the value it is; any other receiver
+    // of a `Self->` parameter is handed by its address, which is judged where the address lands, as `@r` is (W2 (d)).
+    ExprId:wrv = raw expr_operand(n);
+    int32:wrt = raw exprtypes_get(e.expr_types, wrv);
+    if (raw param_is_wild(e, raw exprtypes_callee(e.expr_types, id), 0i32)) {
+        if (raw door_gated(e, wrt)) {
+            drop wild_door(e, wrv, wrt, 1i32, 0i32);
+        } else {
+            if (ptr_recv && !(raw door_place_step(e.ast, e.tab, e.interns, e.expr_types, e.types, wrv, 16i32))) {
+                drop list_push(@e.expr_types.door, wrv.index);
+            }
+        }
+    } else {
+        // A RECEIVER IS AN ARGUMENT (R8 of 177c's second rulings). A pointer passes its value, D-361's question (`w.rd1()`, `rd1(w)`'s twin, TYPE-097); any other `Self->` receiver passes its
+        // address, and an auto-referenced `wild` slot of pointer or slice type is W4's `@` (`a.seta(@s)`, `seta(@a, @s)`'s twin, 62).
+        if ((raw type_kind(e.types, wrt)) == (raw TY_POINTER())) {
+            drop check_wild_into_plain(e, wrv, p0);
+        } else {
+            if (ptr_recv && (raw place_wild(e.ast, e.tab, e.expr_types, e.types, wrv)) && (raw door_gated(e, wrt))) { drop list_push(@e.expr_types.door, wrv.index); }
+        }
+    }
     pass (raw check_args(e, ft, start, count, 1i32, n.span, raw exprtypes_callee(e.expr_types, id)));
+};
+
+// Can a call in an index not take this header's own storage (R14)? A by-value local, parameter or module binding, or a field or frame-array element of one. Any node of pointer type is a pointer
+// step, on the path's top as below it (`st.hp`, `arr[0i64]` of pointers); a `pick`'s binding is a view; a `List`'s or slice's element and a value no name holds answer no, as everything else does.
+func:header_storage_stays = bool(ExprTyper->:e, ExprId:p, int32:fuel) decreases fuel never fails {
+    if (fuel <= 0i32) { pass false; }
+    if ((raw type_kind(e.types, raw exprtypes_get(e.expr_types, p))) == (raw TY_POINTER())) { pass false; }
+    ExprNode:n = raw ast_expr(e.ast, p);
+    if (n.kind == ExprKind.ExprIdentifierExpr) { pass (n.a != 0i32) && ((raw symtab_get(e.tab, n.a)).origin_kind != (raw SYM_PAT())); }
+    if (n.kind == ExprKind.ExprMemberAccessExpr) { pass (raw header_storage_stays(e, raw expr_operand(n), fuel - 1i32)); }
+    if ((n.kind == ExprKind.ExprIndexExpr) && ((raw type_kind(e.types, raw exprtypes_get(e.expr_types, raw expr_lhs(n)))) == (raw TY_ARRAY()))) { pass (raw header_storage_stays(e, raw expr_lhs(n), fuel - 1i32)); }
+    pass false;
+};
+
+// The constant 0, as an index writes it: a literal, or a cast of one.
+func:index_is_zero = bool(ExprTyper->:e, ExprId:i, int32:fuel) decreases fuel never fails {
+    if (fuel <= 0i32) { pass false; }
+    ExprNode:n = raw ast_expr(e.ast, i);
+    if (n.kind == ExprKind.ExprIntLiteral) { pass n.payload == 0i64; }
+    if ((n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr)) { pass (raw index_is_zero(e, raw expr_operand(n), fuel - 1i32)); }
+    pass false;
 };
 
 // Arity and argument types. `skip` is 1 for a UFCS call, whose first parameter
@@ -2848,7 +2920,7 @@ func:param_is_move = bool(ExprTyper->:e, int32:cdecl, int32:idx) never fails {
 
 // Is the callee's parameter at `idx` declared `wild`/`wildx` (D-355)? Its argument slot
 // admits `NULL` then; an unknown callee's (a function value's) never does.
-func:param_is_wild = bool(ExprTyper->:e, int32:cdecl, int32:idx) never fails {
+pub func:param_is_wild = bool(ExprTyper->:e, int32:cdecl, int32:idx) never fails {
     if (cdecl == 0i32) { pass false; }
     DeclNode:d = raw ast_decl(e.ast, DeclId{ index: cdecl });
     if (d.kind != DeclKind.DeclFunctionDecl) { pass false; }
@@ -2872,6 +2944,12 @@ pub func:refuse_move_fn_value = NIL(ExprTyper->:e, int32:did, int32:ft, Span:at)
     if (d.kind != DeclKind.DeclFunctionDecl) { pass NIL; }
     int32:np = raw fn_param_count(e.ast, d);
     for (int32:i in 0i32...np) {
+        // A FUNCTION WITH A `wild` PARAMETER IS NOT A VALUE EITHER (DEF-423's W5): a function type carries no qualifier, so a call through the
+        // value would hand the parameter a plain address nothing judges.
+        if (raw param_is_wild(e, did, i)) {
+            discard(raw te_error(e, raw TYPE_MOVE_FN_VALUE(), "a function with a `wild` parameter is not a value (DEF-423): a function type carries no qualifier, so a call through it would put a plain address in the `wild` slot unjudged; call the function by name, or wrap it in one whose parameters are plain", at));
+            pass NIL;
+        }
         if (raw param_is_move(e, did, i)) {
             string:m1 = string_concat("a function with a `move` parameter (here its parameter ", int_to_string(i => int64));
             string:m2 = string_concat(m1, ") is not a value (DEF-372): a function type carries no `move`, so a call through the value would hand the argument to a parameter that drops it while the caller drops it too. Call the function by name, or wrap it in a function whose parameter is not `move` and pass that");
@@ -2879,6 +2957,8 @@ pub func:refuse_move_fn_value = NIL(ExprTyper->:e, int32:did, int32:ft, Span:at)
             pass NIL;
         }
     }
+    // NOR IS ONE WITH A `wild` RETURN (D-361; R17 of 177c's second rulings, `wc8`): the same reason read the other way, a call through the value hands a plain slot a `wild` value with no cast on the page.
+    if ((raw decl_has(d, raw DECL_RET_WILD())) || (raw decl_has(d, raw DECL_RET_WILDX()))) { discard(raw te_error(e, raw TYPE_MOVE_FN_VALUE(), "a function with a `wild` return is not a value (D-361): a function type carries no qualifier, so a call through it would put a `wild` value in a plain slot with no cast on the page; call it by name", at)); }
     pass NIL;
 };
 
@@ -3195,12 +3275,31 @@ func:type_builtin_regular = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
         // qualifier is read off the one signature table's text, as the type is.
         int32:nsv = e.null_ctx;
         e.null_ctx = 0i32;
+        int32:rsv = e.door_role;
+        ExprId:csv = e.door_count;
+        e.door_role = 0i32;
         if (i < want) {
-            if (raw builtin_text_wild(raw builtin_sig_param(name, i))) { e.null_ctx = 1i32; }
+            if (raw builtin_text_wild(raw builtin_sig_param(name, i))) {
+                e.null_ctx = 1i32;
+                // W3 (DEF-423): the slots a header's `.ptr` may enter uncast. Reading: `string_from_bytes`, `write`, a `mcpy` or `mmov` source;
+                // writing: `read`, `memset`, a `mcpy` or `mmov` destination. The count is the argument after the pointer; a copy's is position 2.
+                bool:cpy = (raw string_eq(name, "mcpy")) || (raw string_eq(name, "mmov"));
+                if ((raw string_eq(name, "string_from_bytes")) || (raw string_eq(name, "write")) || (cpy && (i == 1i32))) { e.door_role = 1i32; }
+                if ((raw string_eq(name, "read")) || (raw string_eq(name, "memset")) || (cpy && (i == 0i32))) { e.door_role = 2i32; }
+                int32:cp = i + 1i32;
+                if (raw string_eq(name, "memset") || (cpy && (i == 0i32))) { cp = 2i32; }
+                if (cp >= count) { e.door_role = 0i32; }
+                // A destination's middle argument runs BETWEEN the two reads (DEF-469): the emitter reads `.ptr`, runs it, then reads `.len`, so a call, a ternary, a `pick` or a write there
+                // pairs an old `.ptr` with a new `.len`. It is held to the spelling test, which reads no effect; the other slots have nothing between.
+                if ((e.door_role != 0i32) && (i == 0i32) && (cp == 2i32) && !(raw door_same_spelling(e, ExprId{ index: raw ast_id_at(e.ast, start, 1i32) }, ExprId{ index: raw ast_id_at(e.ast, start, 1i32) }, 16i32))) { e.door_role = 0i32; }
+                if (e.door_role != 0i32) { e.door_count = ExprId{ index: raw ast_id_at(e.ast, start, cp) }; }
+            }
         }
         int32:got = raw type_of_expr(e, a);
         drop check_wild_into_plain(e, a, pt);   // D-361
         e.null_ctx = nsv;
+        e.door_role = rsv;
+        e.door_count = csv;
         e.expected = saved;
         // A SPREAD ARGUMENT WAS REFUSED ABOVE, BY NAME; measuring the collection
         // against the register it cannot become would be a second report of

@@ -64,7 +64,7 @@ func:main = int32(cstring[]:_~argv) {
     if ((t3.get(at[0i32...3i32]) ?! BadIndex) != 2.5f64) { exit 25i32; }
     if ((t3.get(origin[0i32...3i32]) ?! BadIndex) != 0.0f64) { exit 26i32; }
     // The flat offset is row-major: [1][2][3] of 2×3×4 is cell 23, the last.
-    <-(#ptr_add<flt64>(t3.cells.ptr, 23i64)) = 9.0f64;
+    <-(#ptr_add<flt64>(t3.cells.ptr =>! wild flt64->, 23i64)) = 9.0f64;
     if ((t3.get(at[0i32...3i32]) ?! BadIndex) != 9.0f64) { exit 27i32; }
 
     int64[9]:s9 = [2i64, 1i64, 1i64, 1i64, 1i64, 1i64, 1i64, 1i64, 3i64];

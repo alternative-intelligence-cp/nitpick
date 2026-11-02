@@ -493,7 +493,7 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // before any question is asked of it. Collecting and checking module by module
     // would make the answer depend on the order the graph happened to load in.
     // THE ORPHAN RULE READS THE FILES' TREES (D-359, landing 124): the source manager, before the first impl.
-    drop impltable_set_sources(@f.im, @f.g.sm);
+    drop impltable_set_sources(@f.im, (@f.g.sm) =>! wild SourceManager->);   // the crossing (DEF-423): the table keeps it, and `f` holds both for the compile
     int32:m = 0i32;
     while (m < nmods) decreases nmods - m {
         ModuleEntry:e3 = raw graph_at(@f.g, m);
@@ -533,6 +533,11 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // earlier would ask the impl table a question while it was still being filled
     // (D-108).
     drop check_instantiations(@f.inst, @f.im, @f.bd, @tr);
+    // A function instance a body records under a type parameter answers at the emitter's worklist; these are the ones written here (TYPE-107).
+    for (int32:fwi in 0i32...(raw fninst_count(@f.fninsts))) {
+        FnInstance:fwe = raw fninst_at(@f.fninsts, fwi);
+        drop check_wild_instance(@tr, fwe.decl, fwe.args_start, fwe.args_count, fwe.at);
+    }
     // What the decide pass has judged. Anything recorded after this point
     // is swept below, once every pass that can record has run.
     int32:decided = raw inst_count(@f.inst);
@@ -574,6 +579,7 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     }
     drop escape_report_mode(@esc);
     drop escape_walk(@esc, @f.g);
+    drop escape_report_door(@esc);
     // THE REFS DUMP (DEF-275's reading tool): the state after the fixpoint, before the
     // aliasing walk reads it; `npkc FILE --dump-refs OUT` writes the text.
     if (f.dump_refs) { f.refs_dump = raw escape_dump(@esc); }
