@@ -1,0 +1,81 @@
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 37:78
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 37:108
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 41:81
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 41:108
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 46:79
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 46:110
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 48:91
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 52:68
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 55:61
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 59:47
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 64:62
+// `$$m` OF A BINDING NOT ASSIGNED ON EVERY PATH WHOSE TYPE DROPS NOTHING IS NITPICK-ASSIGN-001 (DEF-345, D-366; landing 177b). D-004's
+// out-parameter pattern -- "pass `$$m` of the destination downward" -- hands the callee storage to WRITE, and a callee that writes nothing
+// leaves the slot as it found it. For a type that drops, the slot is the zeroed vacant value and every later read is defined
+// (`claim_unassigned_drop_ok.npk`; the accept file `definite_assignment.npk`). For a type that drops nothing the slot is whatever the frame
+// held: `pass x` read it (85, the low byte of a sibling's 1431655765; `d345_dm1`, `d345_struct_nodrop`), a vacant `Error` reached `fail`
+// (74, `vt_err_plain`), a vacant enum reached a `pick` (74, `vt_pick_plain`) -- the trap road DEF-381/DEF-385 built, closed now before it
+// is reached. A binding assigned on ONE path is the same claim (`d345_maybe`); a pointer drops nothing (`d345_ptr_nodrop`); an unbounded
+// generic `T` counts as non-dropping, the closed direction (`d345_generic`). One report per `$$m` site (D-332): both arms of `c_dm1`,
+// `c_dm2` and `c_struct_nodrop`. The cells: `.internal/probes177b/cells345/`; management_13's `MANAGEMENT/probes/177b-def345/`.
+mod:claim_unassigned_nodrop;
+error:E5;
+func:scribble = NIL(int32->:p) never fails { <-p = 1431655765i32; pass NIL; };
+func:nowrite = NIL(int32->:p) never fails { pass NIL; };
+// d345_dm1: one arm's callee writes nothing; on 177a the program exited 85, a sibling frame's byte.
+func:c_dm1 = int32(bool:w) never fails { int32:x; if (w) { drop scribble($$m x); } else { drop nowrite($$m x); } pass x; };
+func:fillall = NIL(uint8[16]->:b) never fails { for (int64:i in 0i64...16i64) { (<-b)[i] = 85u8; } pass NIL; };
+func:half = NIL(uint8[16]->:b) never fails { (<-b)[0i64] = 1u8; pass NIL; };
+// d345_dm2: an array, one arm's callee writes one element; 85 on 177a.
+func:c_dm2 = uint8(bool:w) never fails { uint8[16]:b; if (w) { drop fillall($$m b); } else { drop half($$m b); } pass b[15i64]; };
+struct:P = { int32:a; int32:b; };
+func:wrp = NIL(P->:p) never fails { p.a = 85i32; p.b = 85i32; pass NIL; };
+func:nowritep = NIL(P->:p) never fails { pass NIL; };
+// d345_struct_nodrop: a struct of scalars; 85 on 177a.
+func:c_struct_nodrop = int32(bool:w) never fails { P:x; if (w) { drop wrp($$m x); } else { drop nowritep($$m x); } pass x.b; };
+// d345_maybe: assigned on one path only; 3 on 177a.
+func:c_maybe = int32(bool:b) never fails { int32:x; if (b) { x = 3i32; } drop nowrite($$m x); pass x; };
+struct:H = { int64:k; };
+func:nowriteh = NIL(H->->:p) never fails { pass NIL; };
+// d345_ptr_nodrop: a pointer binding; its read through on 177a was whatever the frame held.
+func:c_ptr_nodrop = int64() never fails { H->:x; drop nowriteh($$m x); pass x.k; };
+func:gw<T> = NIL(T->:p) never fails { pass NIL; };
+// d345_generic: an unbounded `T` counts as non-dropping (closed): refused in the generic body, once.
+func:c_generic<T> = T() never fails { T:x; drop gw::<T>($$m x); pass x; };
+struct:S = { Error:e; };
+func:wn = NIL(S->:out) never fails { pass NIL; };
+// vt_err_plain: the vacant zero `Error` through `fail` -- DEF-381's trap (74) on 177a, refused before it now.
+func:c_err_plain = int64() { S:s; drop wn($$m s); fail s.e; };
+enum:Col = { Red = 1i32; Blue = 2i32; };
+struct:SC = { Col:c; };
+func:wnc = NIL(SC->:out) never fails { pass NIL; };
+// vt_pick_plain: the vacant enum through a `pick` -- DEF-385's trap (74) on 177a, refused before it now.
+func:c_pick_plain = int64() never fails { SC:s; drop wnc($$m s); int32:v = pick (s.c) { (Col.Red) { give 10i32; }, (Col.Blue) { give 20i32; } }; pass v => int64; };
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,43 @@
+mod:face3_nested_spawn;
+error:E1;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+func:clobber = int64(int64:a) never fails {
+    int64[16]:junk = [a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a];
+    int64:s = 0i64;
+    for (int64:i in 0i64...16i64) { s = s +% junk[i]; }
+    pass s;
+};
+thread async func:stash2 = NIL(Mutex<Barrier<1i32, 5i32>->, 3i32>->:dst, Barrier<1i32, 5i32>->:q) joins J2 {
+    Guard<Barrier<1i32, 5i32>->>:g = await dst.acquire(raw duration_ms(500i64)) ?! E1;
+    g.value = q;
+    pass NIL;
+};
+thread async func:stash = NIL(Mutex<Barrier<1i32, 5i32>->, 3i32>->:dst, Barrier<1i32, 5i32>->:q) joins J2 {
+    { drop stash2(dst, q); }
+    pass NIL;
+};
+async func:mk = Mutex<Barrier<1i32, 5i32>->, 3i32>(Barrier<1i32, 5i32>->:ext) {
+    Barrier<1i32, 5i32>:b = barrier() ?! E1;
+    Mutex<Barrier<1i32, 5i32>->, 3i32>:v = mutex(ext) ?! E1;
+    { drop stash(@v, @b); }
+    pass move(v);
+};
+async func:main = int32(cstring[]:_~argv) {
+    Barrier<1i32, 5i32>:outside = barrier() ?! E1;
+    Mutex<Barrier<1i32, 5i32>->, 3i32>:r = await mk(@outside) ?! E1;
+    int64:c = raw clobber(7i64);
+    if (c == 0i64) { exit 12i32; }
+    { Guard<Barrier<1i32, 5i32>->>:g = await r.acquire(raw duration_ms(500i64)) ?! E1;
+      await g.value.arrive(raw duration_ms(500i64)) ?! E1; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest){exit 91i32;},(HeapOom){exit 92i32;},(Unreachable){exit 95i32;},
+        (WildLeak){exit 96i32;},(StackExhausted){exit 106i32;},(MachineFault){exit 107i32;},
+        (IntOverflow){exit 108i32;},(OutOfBounds){exit 109i32;},(LimitViolated){exit 110i32;},
+        (DecreasesViolated){exit 111i32;},(DeadlineExceeded){exit 112i32;},(StaleHandle){exit 113i32;},
+        (E1){exit 114i32;},(*){exit 99i32;}
+    }
+    exit 9i32;
+};

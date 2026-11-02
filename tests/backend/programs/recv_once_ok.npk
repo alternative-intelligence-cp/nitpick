@@ -27,6 +27,15 @@ func:idp = Cell->(Cell->:p, int64->:c) never fails { (<-c) = (<-c) + 1i64; pass 
 func:make = Cell() never fails { pass Cell{ v: 5i64 }; };
 func:bump_p = wild int64->(int64->:c, wild int64->:cell) never fails { (<-c) = (<-c) + 1i64; pass cell; };
 func:mkd = dyn Dget(int64->:c) never fails { (<-c) = (<-c) + 1i64; pass Cell{ v: 5i64 }; };
+// THE COUNTERS INSIDE THE RECEIVERS (management_12's review A of landing 176b): each case below puts a side effect INSIDE the
+// receiver expression where one is admitted, and `main` reads the counter at 1 -- a receiver formed twice would read 2. Cases
+// 8, 9, 10, 11, 12 and 17 admit none: a call, claim or address under a PLACE receiver of a `Self->` method -- an index, a
+// dereference, a field, a ternary -- is recv_twice's TYPE-103 until DEF-414's emitter fix, so those test the value alone.
+func:bump1 = int64(int64->:c) never fails { (<-c) = (<-c) + 1i64; pass 1i64; };
+func:bump_u32 = uint32(int64->:c) never fails { (<-c) = (<-c) + 1i64; pass 7u32; };
+func:make_c = Cell(int64->:c) never fails { (<-c) = (<-c) + 1i64; pass Cell{ v: 5i64 }; };
+func:ida = atomic<int64>->(atomic<int64>->:p, int64->:c) never fails { (<-c) = (<-c) + 1i64; pass p; };
+func:idw = W->(W->:p, int64->:c) never fails { (<-c) = (<-c) + 1i64; pass p; };
 func:mk_list = List<Cell>() never fails {
     List<Cell>:l = raw list_init::<Cell>(4i64);
     drop list_push(@l, Cell{ v: 1i64 });
@@ -47,15 +56,16 @@ func:byval_index = int64() never fails {
     int64:v = raw a[(raw bump(@count))].peek();
     pass count + v - 5i64;
 };
-// 3. a derived by-value `eq` on a variant constructor
+// 3. a derived by-value `eq` on a variant constructor whose payload is a counted call: the counter reads 1
 func:variant_eq = int64() never fails {
-    bool:r = HirKind.Literal(7u32).eq(HirKind.Literal(7u32)) ?! E5;
+    int64:count = 0i64;
+    bool:r = HirKind.Literal((raw bump_u32(@count))).eq(HirKind.Literal(7u32)) ?! E5;
     bool:q = HirKind.Literal(7u32).eq(HirKind.ClassRef(7i32)) ?! E5;
-    if (r && (!q)) { pass 1i64; }
-    pass 2i64;
+    if (r && (!q)) { pass count; }
+    pass count + 10i64;
 };
-// 4. a call result as a by-value receiver
-func:byval_call = int64() never fails { pass raw (raw make()).peek(); };
+// 4. a counted call result as a by-value receiver: the counter reads 1
+func:byval_call = int64() never fails { int64:count = 0i64; int64:v = raw (raw make_c(@count)).peek(); pass count + v - 5i64; };
 // 5. the atomic intercept, the addressed road: a side-effecting index, load then store, each once
 func:atomic_inline = int64() never fails {
     atomic<int64>[2]:aa = [5i64, 6i64];
@@ -64,13 +74,14 @@ func:atomic_inline = int64() never fails {
     aa[(raw bump(@count))].store(7i64);
     pass count + v - 5i64;
 };
-// 6. the atomic intercept's pointer road
+// 6. the atomic intercept's pointer road: a counted pointer-typed call result, load then store, each once; then the plain pointer local
 func:atomic_ptr = int64() never fails {
     atomic<int64>:a = 5i64;
     atomic<int64>->:ap = @a;
-    int64:v = ap.load();
-    ap.store(7i64);
-    pass v + ap.load() - 12i64;
+    int64:count = 0i64;
+    int64:v = (<-(raw ida(ap, @count))).load();
+    (<-(raw ida(ap, @count))).store(7i64);
+    pass count + v + ap.load() - 14i64;
 };
 // 7. `atomic_from_ptr` with a side-effecting pointer argument: once each
 func:atomic_from_pointer = int64() never fails {
@@ -84,39 +95,43 @@ func:atomic_from_pointer = int64() never fails {
     dalloc(raw_cell);
     pass count + v + w - 11i64;
 };
-// 8. a plain index
+// 8. a plain index (a counted call in the index, `l[(raw bump1(@count))].get()`, is TYPE-103 as in 10; the case tests the value)
 func:index_plain = int64() never fails {
     List<Cell>:l = raw mk_list();
     int64:i = 1i64;
     pass raw l[i].get();
 };
-// 9. an arithmetic index
+// 9. an arithmetic index (a counted call in it is TYPE-103 as in 10; the case tests the value)
 func:index_arith = int64() never fails {
     List<Cell>:l = raw mk_list();
     int64:i = 1i64;
     pass raw l[i - 1i64].get();
 };
-// 10. a dereferenced pointer local
+// 10. a dereferenced pointer local (a counted call under the dereference, `(<-(raw idp(p, @count))).get()`, is recv_twice's
+//     TYPE-103 until DEF-414's emitter fix: the place receiver would be formed twice; the case tests the value)
 func:deref_local = int64() never fails {
     Cell:c = Cell{ v: 5i64 };
     Cell->:p = @c;
     pass raw (<-p).get();
 };
-// 11. a field
+// 11. a field (a counted call under it, `(<-(raw idw(@w, @count))).x.get()`, is TYPE-103 as in 10; the case tests the value)
 func:field_plain = int64() never fails {
     W:w = W{ x: Cell{ v: 3i64 } };
     pass raw w.x.get();
 };
-// 12. a pointer local
+// 12. a pointer local (chosen by a counted condition, `(is ((raw bump(@count)) == 0i64) : p : p).get()`, it is TYPE-103 as in 10;
+//     the case tests the value)
 func:ptr_local = int64() never fails {
     Cell:c = Cell{ v: 5i64 };
     Cell->:p = @c;
     pass raw p.get();
 };
-// 13. a trait-qualified call on a plain place
+// 13. a trait-qualified call whose receiver is a counted call result: the counter reads 1
 func:trait_call = int64() never fails {
     Cell:c = Cell{ v: 5i64 };
-    pass raw Getter.get(@c);
+    int64:count = 0i64;
+    int64:v = raw Getter.get((raw idp(@c, @count)));
+    pass count + v - 5i64;
 };
 // 14. the `dyn` exemption: a side-effecting call result of `dyn` type (`via_dyn` forms it once)
 func:dyn_call_result = int64() never fails {
@@ -124,14 +139,15 @@ func:dyn_call_result = int64() never fails {
     int64:v = raw (raw mkd(@count)).getd();
     pass count + v - 5i64;
 };
-// 15. a `move(d)` of a `dyn` local as the receiver
+// 15. a `move(d)` of a `dyn` local as the receiver: the counter is the maker's (the receiver has no part to count); a receiver
+//     formed twice would move `d` twice, a double free the run would show
 func:dyn_move = int64() never fails {
     int64:count = 0i64;
     dyn Dget:d = raw mkd(@count);
     int64:v = raw (move(d)).getd();
     pass count + v - 5i64;
 };
-// 16. a `dyn` local
+// 16. a `dyn` local: the counter is the maker's, as in 15
 func:dyn_local = int64() never fails {
     int64:count = 0i64;
     dyn Dget:d = raw mkd(@count);
@@ -144,7 +160,7 @@ func:index_literal_hoisted = int64() never fails {
     int64:count = 0i64;
     int64[2]:ix = [(raw bump(@count)), 1i64];
     int64:i = ix[1i64];
-    int64:v = raw a[i].get();
+    int64:v = raw a[i].get();   // a counted call INSIDE the index, `a[ix[(raw bump1(@count))]].get()`, is TYPE-103 as in 10
     pass count + v - 6i64;
 };
 // 18. an index read off a bound array with no call in it stays none: 6, and no hoisting is tested
@@ -157,7 +173,7 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw ptr_result()) != 1i64)          { exit 11i32; }
     if ((raw byval_index()) != 1i64)         { exit 12i32; }
     if ((raw variant_eq()) != 1i64)          { exit 13i32; }
-    if ((raw byval_call()) != 5i64)          { exit 14i32; }
+    if ((raw byval_call()) != 1i64)          { exit 14i32; }
     if ((raw atomic_inline()) != 2i64)       { exit 15i32; }
     if ((raw atomic_ptr()) != 0i64)          { exit 16i32; }
     if ((raw atomic_from_pointer()) != 2i64) { exit 17i32; }
@@ -166,7 +182,7 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw deref_local()) != 5i64)         { exit 20i32; }
     if ((raw field_plain()) != 3i64)         { exit 21i32; }
     if ((raw ptr_local()) != 5i64)           { exit 22i32; }
-    if ((raw trait_call()) != 5i64)          { exit 23i32; }
+    if ((raw trait_call()) != 1i64)          { exit 23i32; }
     if ((raw dyn_call_result()) != 1i64)     { exit 24i32; }
     if ((raw dyn_move()) != 1i64)            { exit 25i32; }
     if ((raw dyn_local()) != 1i64)           { exit 26i32; }

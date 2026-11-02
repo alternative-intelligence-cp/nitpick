@@ -1,0 +1,252 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 102:156
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 104:155
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 107:205
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 110:184
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 113:205
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 117:278
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 119:104
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 123:246
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 125:106
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 129:131
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 132:232
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 134:231
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 136:175
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 140:260
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 142:154
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 146:213
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 150:212
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 155:232
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 159:245
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 163:243
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 165:249
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 167:161
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 170:245
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 173:288
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 175:270
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 177:103
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 180:112
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 184:125
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 184:125
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 188:149
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 188:149
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 192:135
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 192:135
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 197:179
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 197:179
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 204:231
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 204:231
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 208:496
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 217:98
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 218:93
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 227:160
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 229:184
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 231:157
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 234:125
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 234:125
+// A `for` OVER A NAMED ARRAY OR SLICE OF OWNERS HOLDS A VIEW OF THAT PLACE FOR ITS BODY (DEF-421, landing 177b; `push_for_place_party`, alias.npk). The binding is a shallow copy of each element
+// (`emit_for_indexed`), so a write-capable access AT the place, ABOVE it or BELOW it -- an element or whole-array store, a store through a held address or pointer, a callee handed `@o` or `self`, a `$$m`
+// claim, a prefix `o = …`/`o.i = …`, an element's `list_push(@a[0], …)` -- is `NITPICK-BORROW-015` for the loop's frame. Every refused cell read FREED bytes on 175, 176b and 177a (83: the first byte of a
+// freed string; 140: a freed `List` body) or was a leak masking one (`s1_slice_param_write`, 67: a store through a plain slice never drops the old owner, DEF-422). A binding, a field, an element, a
+// dereference, a pointer parameter's pointee, a parenthesised place, a `self` field and a generic `T[2]` (an unbounded `T` counts as dropping) are one road. OVER-REFUSED ON PURPOSE, THE POST-180 LIST:
+// a write in a `defer` body (`fa_defer`), a dead write after the last read (`fa_dead_write`), another element written (`fa_other_elem`: the next iteration binds it), a `T: Copy` element (`e3d_copy_param`:
+// the pass reads no bound; management_13's closed choice, 2026-11-01 16:07). The legal twins are `tests/backend/programs/for_array_owner_ok.npk`. The cells: `.internal/probes177b/cells421*/`,
+// `MANAGEMENT/probes/177-review-c/` (the row's), `MANAGEMENT/probes/177b-def421/` (management_13's); the results `.internal/probes177b/out421_1/`.
+mod:for_array_owner;
+error:E5;
+// fa_arr_owner; on 177a: exit=83.
+func:c_fa_arr_owner = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; int64:r = 0i64; for (string:x in a) { a[0i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// fa_arr_whole; on 177a: exit=83.
+func:c_fa_arr_whole = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; int64:r = 0i64; for (string:x in a) { a = [string_concat("wx", "yz"), string_concat("uv", "wz")]; string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// fa_arr_ptr; on 177a: exit=83.
+func:sete__fa_arr_ptr = int64(string->:p) never fails { <-p = string_concat("wx", "yz"); pass 0i64; };
+func:c_fa_arr_ptr = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; int64:r = 0i64; string->:q = @a[0i64]; for (string:x in a) { discard(raw sete__fa_arr_ptr(q)); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// fa_arr_addr; on 177a: exit=83.
+func:sete__fa_arr_addr = int64(string->:p) never fails { <-p = string_concat("wx", "yz"); pass 0i64; };
+func:c_fa_arr_addr = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; int64:r = 0i64; for (string:x in a) { discard(raw sete__fa_arr_addr(@a[0i64])); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// fa_field_arr; on 177a: exit=83.
+struct:OA__fa_field_arr = { string[2]:arr; int64:z; };
+func:c_fa_field_arr = int64() never fails { OA__fa_field_arr:o = OA__fa_field_arr{ arr: [string_concat("ab", "cde"), string_concat("fg", "hij")], z: 0i64 }; int64:r = 0i64; for (string:x in o.arr) { o.arr[0i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// fa_field_arr_ptr; on 177a: exit=83.
+struct:OA__fa_field_arr_ptr = { string[2]:arr; int64:z; };
+func:seto__fa_field_arr_ptr = int64(OA__fa_field_arr_ptr->:p) never fails { p.arr[0i64] = string_concat("wx", "yz"); pass 0i64; };
+func:c_fa_field_arr_ptr = int64() never fails { OA__fa_field_arr_ptr:o = OA__fa_field_arr_ptr{ arr: [string_concat("ab", "cde"), string_concat("fg", "hij")], z: 0i64 }; int64:r = 0i64; OA__fa_field_arr_ptr->:h = @o; for (string:x in o.arr) { discard(raw seto__fa_field_arr_ptr(h)); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// fa_deref_arr; on 177a: exit=83.
+func:g__fa_deref_arr = int64(string[2]->:p) never fails { int64:r = 0i64; for (string:x in <-p) { (<-p)[0i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+func:c_fa_deref_arr = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; pass raw g__fa_deref_arr(@a); };
+// fa_struct_elem; on 177a: exit=83.
+struct:S__fa_struct_elem = { string:t; int64:k; };
+func:c_fa_struct_elem = int64() never fails { S__fa_struct_elem[2]:a = [S__fa_struct_elem{ t: string_concat("ab", "cde"), k: 1i64 }, S__fa_struct_elem{ t: string_concat("fg", "hij"), k: 2i64 }]; int64:r = 0i64; for (S__fa_struct_elem:x in a) { a[0i64] = S__fa_struct_elem{ t: string_concat("wx", "yz"), k: 3i64 }; string:junk = string_concat("qq", "qq"); r = (string_bytes(x.t)[0i64] => int64) - 90i64; break; } pass r; };
+// fa_param_move_arr; on 177a: exit=83.
+func:g__fa_param_move_arr = int64(move string[2]:a) never fails { int64:r = 0i64; for (string:x in a) { a[0i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+func:c_fa_param_move_arr = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; pass raw g__fa_param_move_arr(move(a)); };
+// fa_field_arr_ptrparam; on 177a: exit=83.
+struct:OA__fa_field_arr_ptrparam = { string[2]:arr; int64:z; };
+func:g__fa_field_arr_ptrparam = int64(OA__fa_field_arr_ptrparam->:o) never fails { int64:r = 0i64; for (string:x in o.arr) { o.arr[0i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+func:c_fa_field_arr_ptrparam = int64() never fails { OA__fa_field_arr_ptrparam:o = OA__fa_field_arr_ptrparam{ arr: [string_concat("ab", "cde"), string_concat("fg", "hij")], z: 0i64 }; pass raw g__fa_field_arr_ptrparam(@o); };
+// fa_elem_index; on 177a: exit=83.
+func:c_fa_elem_index = int64() never fails { string[2][2]:m = [[string_concat("kl", "mno"), string_concat("pq", "rst")], [string_concat("ab", "cde"), string_concat("fg", "hij")]]; int64:r = 0i64; for (string:x in m[1i64]) { m[1i64][0i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// fa_arr_of_arr; on 177a: exit=83.
+func:c_fa_arr_of_arr = int64() never fails { string[2][2]:m = [[string_concat("ab", "cde"), string_concat("fg", "hij")], [string_concat("kl", "mno"), string_concat("pq", "rst")]]; int64:r = 0i64; for (string[2]:row in m) { m[0i64][0i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(row[0i64])[0i64] => int64) - 90i64; break; } pass r; };
+// fa_nested; on 177a: exit=83.
+func:c_fa_nested = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; int64:r = 0i64; for (string:x in a) { for (string:y in a) { a[0i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } break; } pass r; };
+// fa_sub_addr; on 177a: exit=83.
+struct:S__fa_sub_addr = { string:t; int64:k; };
+func:sete__fa_sub_addr = int64(string->:p) never fails { <-p = string_concat("wx", "yz"); pass 0i64; };
+func:c_fa_sub_addr = int64() never fails { S__fa_sub_addr[2]:a = [S__fa_sub_addr{ t: string_concat("ab", "cde"), k: 1i64 }, S__fa_sub_addr{ t: string_concat("fg", "hij"), k: 2i64 }]; int64:r = 0i64; for (S__fa_sub_addr:x in a) { discard(raw sete__fa_sub_addr(@a[0i64].t)); string:junk = string_concat("qq", "qq"); r = (string_bytes(x.t)[0i64] => int64) - 90i64; break; } pass r; };
+// t4_paren; on 177a: exit=83.
+func:c_t4_paren = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; int64:r = 0i64; for (string:x in (a)) { a[0i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// t5_paren_field; on 177a: exit=83.
+struct:OA__t5_paren_field = { string[2]:arr; int64:z; };
+struct:OB__t5_paren_field = { OA__t5_paren_field:i; int64:y; };
+func:c_t5_paren_field = int64() never fails { OA__t5_paren_field:o = OA__t5_paren_field{ arr: [string_concat("ab", "cde"), string_concat("fg", "hij")], z: 0i64 }; int64:r = 0i64; for (string:x in (o.arr)) { o.arr[0i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// p1_prefix_assign; on 177a: exit=83.
+struct:OA__p1_prefix_assign = { string[2]:arr; int64:z; };
+struct:OB__p1_prefix_assign = { OA__p1_prefix_assign:i; int64:y; };
+func:c_p1_prefix_assign = int64() never fails { OA__p1_prefix_assign:o = OA__p1_prefix_assign{ arr: [string_concat("ab", "cde"), string_concat("fg", "hij")], z: 0i64 }; int64:r = 0i64; for (string:x in o.arr) { o = OA__p1_prefix_assign{ arr: [string_concat("wx", "yz"), string_concat("wx", "yz")], z: 1i64 }; string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// p2_prefix_addr; on 177a: exit=83.
+struct:OA__p2_prefix_addr = { string[2]:arr; int64:z; };
+struct:OB__p2_prefix_addr = { OA__p2_prefix_addr:i; int64:y; };
+func:seto__p2_prefix_addr = NIL(OA__p2_prefix_addr->:p) never fails { p.arr[0i64] = string_concat("wx", "yz"); pass NIL; };
+func:c_p2_prefix_addr = int64() never fails { OA__p2_prefix_addr:o = OA__p2_prefix_addr{ arr: [string_concat("ab", "cde"), string_concat("fg", "hij")], z: 0i64 }; int64:r = 0i64; for (string:x in o.arr) { drop seto__p2_prefix_addr(@o); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// p3_deep_chain; on 177a: exit=83.
+struct:OA__p3_deep_chain = { string[2]:arr; int64:z; };
+struct:OB__p3_deep_chain = { OA__p3_deep_chain:i; int64:y; };
+func:c_p3_deep_chain = int64() never fails { OB__p3_deep_chain:o = OB__p3_deep_chain{ i: OA__p3_deep_chain{ arr: [string_concat("ab", "cde"), string_concat("fg", "hij")], z: 0i64 }, y: 0i64 }; int64:r = 0i64; for (string:x in o.i.arr) { o.i.arr[0i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// p4_deep_prefix; on 177a: exit=83.
+struct:OA__p4_deep_prefix = { string[2]:arr; int64:z; };
+struct:OB__p4_deep_prefix = { OA__p4_deep_prefix:i; int64:y; };
+func:c_p4_deep_prefix = int64() never fails { OB__p4_deep_prefix:o = OB__p4_deep_prefix{ i: OA__p4_deep_prefix{ arr: [string_concat("ab", "cde"), string_concat("fg", "hij")], z: 0i64 }, y: 0i64 }; int64:r = 0i64; for (string:x in o.i.arr) { o.i = OA__p4_deep_prefix{ arr: [string_concat("wx", "yz"), string_concat("wx", "yz")], z: 1i64 }; string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// e1_list_elem; on 177a: exit=140.
+func:c_e1_list_elem = int64() never fails { List<int64>[2]:a = [raw list_init::<int64>(1i64), raw list_init::<int64>(1i64)]; drop list_push(@a[0i64], 97i64); int64:r = 0i64; for (List<int64>:x in a) { for (int64:i in 0i64...64i64) { drop list_push(@a[0i64], i); } List<int64>:junk = raw list_init::<int64>(1i64); r = x[0i64] - 90i64; break; } pass r; };
+// e2b_opt_elem_nr; on 177a: exit=67.
+func:c_e2b_opt_elem_nr = int64() never fails { string?[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; int64:r = 0i64; for (string?:x in a) { a[0i64] = string_concat("wx", "yz"); r = 7i64; break; } pass r; };
+// r1_self_field; on 177a: exit=83.
+struct:OA__r1_self_field = { string[2]:arr; int64:z; };
+impl:OA__r1_self_field = { func:w0 = NIL(OA__r1_self_field->:self) never fails { self.arr[0i64] = string_concat("wx", "yz"); pass NIL; }; func:it = int64(OA__r1_self_field->:self) never fails { int64:r = 0i64; for (string:x in self.arr) { drop self.w0(); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; }; };
+func:c_r1_self_field = int64() never fails { OA__r1_self_field:o = OA__r1_self_field{ arr: [string_concat("ab", "cde"), string_concat("fg", "hij")], z: 0i64 }; pass raw o.it(); };
+// t12_arr_addr_held; on 177a: exit=83.
+func:c_t12_arr_addr_held = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; string[2]:b = [string_concat("ab", "cde"), string_concat("fg", "hij")]; bool:c = true; int32:i = 0i32; string[2]->:p = @a; int64:r = 0i64; for (string:x in a) { (<-p)[0i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// t13_for_in_arm; on 177a: exit=83.
+func:c_t13_for_in_arm = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; string[2]:b = [string_concat("ab", "cde"), string_concat("fg", "hij")]; bool:c = true; int32:i = 0i32; int64:r = 0i64; if (c) { for (string:x in a) { a[0i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } } pass r; };
+// s1_slice_param_write; on 177a: exit=67.
+func:g__s1_slice_param_write = int64(string[]:s) never fails { int64:r = 0i64; for (string:x in s) { s[0i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+func:c_s1_slice_param_write = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; pass raw g__s1_slice_param_write(a[0i64...2i64]); };
+// d1_deref_ptr_param; on 177a: exit=83.
+func:g__d1_deref_ptr_param = int64(string[2]->:p) never fails { int64:r = 0i64; for (string:x in (<-p)) { (<-p)[0i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+func:c_d1_deref_ptr_param = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; pass raw g__d1_deref_ptr_param(@a); };
+// e3c_generic_whole; on 177a: exit=67.
+func:cl__e3c_generic_whole<T> = NIL(T[2]->:p) never fails { pass NIL; };
+func:g__e3c_generic_whole<T> = int64(move T[2]:a) never fails { int64:r = 0i64; for (T:x in a) { drop cl__e3c_generic_whole($$m a); r = 7i64; break; } pass r; };
+func:c_e3c_generic_whole = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; pass raw g__e3c_generic_whole::<string>(move(a)); };
+// rb3a_generic_nested_array (item 5 of landing 177b's build 8: `T[2][2]`, the element `T[2]`); on 177a: exit=67.
+func:cl__rb3a_generic_nested_array<T> = NIL(T[2][2]->:p) never fails { pass NIL; };
+func:g__rb3a_generic_nested_array<T> = int64(move T[2][2]:a) never fails { int64:r = 0i64; for (T[2]:row in a) { drop cl__rb3a_generic_nested_array($$m a); r = 7i64; break; } pass r; };
+func:c_rb3a_generic_nested_array = int64() never fails { string[2][2]:a = [[string_concat("ab", "cde"), string_concat("fg", "hij")], [string_concat("ab", "cde"), string_concat("fg", "hij")]]; pass raw g__rb3a_generic_nested_array::<string>(move(a)); };
+// rb3b_generic_optional (`T?[2]`, the element `T?`); on 177a: exit=67.
+func:cl__rb3b_generic_optional<T> = NIL(T?[2]->:p) never fails { pass NIL; };
+func:g__rb3b_generic_optional<T> = int64(move T?[2]:a) never fails { int64:r = 0i64; for (T?:x in a) { drop cl__rb3b_generic_optional($$m a); r = 7i64; break; } pass r; };
+func:c_rb3b_generic_optional = int64() never fails { string?[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; pass raw g__rb3b_generic_optional::<string>(move(a)); };
+// rb3c_generic_struct (`Bx<T>[2]`, the element a generic struct holding `T`); on 177a: exit=67 (the re-spelled cell, measured on 9ef64589).
+struct:Bx__rb3c_generic_struct<T> = { T:v; };
+func:cl__rb3c_generic_struct<T> = NIL(Bx__rb3c_generic_struct<T>[2]->:p) never fails { pass NIL; };
+func:g__rb3c_generic_struct<T> = int64(move Bx__rb3c_generic_struct<T>[2]:a) never fails { int64:r = 0i64; for (Bx__rb3c_generic_struct<T>:x in a) { drop cl__rb3c_generic_struct($$m a); r = 7i64; break; } pass r; };
+func:c_rb3c_generic_struct = int64() never fails { Bx__rb3c_generic_struct<string>[2]:a = [Bx__rb3c_generic_struct{ v: string_concat("ab", "cde") }, Bx__rb3c_generic_struct{ v: string_concat("fg", "hij") }]; pass raw g__rb3c_generic_struct::<string>(move(a)); };
+// --- build 9 (management_13's cells of `probes/177b-final/`, its ruling of 23:37:38 EST, items 2 and 5): the element test's two fuel faces and the `Self` element ---
+func:mks__b9 = string() never fails { pass string_concat("ab", "cde"); };
+// re1x_generic_array_17: the element `T[1]`x16 -- `type_mentions_param`'s fuel of 16 answered NO past it and `type_drops` of a bare `T` is false, so build 8 raised
+// no party (67, as 177a; `re1x_generic_array_16` BORROW-015); `elem_may_drop` answers YES at its fuel's end; on 177a: exit=67.
+func:cl__re1x_generic_array_17<T> = NIL(T[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1]->:p) never fails { pass NIL; };
+func:g__re1x_generic_array_17<T> = int64(move T[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1]:a) never fails { int64:r = 0i64; for (T[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1]:row in a) { drop cl__re1x_generic_array_17($$m a); r = 7i64; break; } pass r; };
+func:c_re1x_generic_array_17 = int64() never fails { string[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1]:a = [[[[[[[[[[[[[[[[[raw mks__b9()]]]]]]]]]]]]]]]]]; pass raw g__re1x_generic_array_17::<string>(move(a)); };
+// rg3_concrete_array_65: a CONCRETE element `string[1]`x64 -- `type_drops`' fuel of 64 answered NO past it on build 8 (67, as 177a; `rg3_concrete_array_64` BORROW-015);
+// `elem_may_drop` walks the array levels itself and asks `type_drops` of each; on 177a: exit=67.
+func:g__rg3_concrete_array_65 = int64(move string[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1]:a) never fails { int64:r = 0i64; for (string[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1]:row in a) { a[0i64] = [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[raw mks__b9()]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]; r = 7i64; break; } pass r; };
+func:c_rg3_concrete_array_65 = int64() never fails { string[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1][1]:a = [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[raw mks__b9()]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]; pass raw g__rg3_concrete_array_65(move(a)); };
+// rg1c_self_elem_freed_read, rg1f_self_elem_slice_param: a trait's default body iterating `Self[2]` or `Self[]` and writing an element in the body -- `Self` answered NO to both of
+// build 8's questions (no party; the emitter then refused the body, EMIT-002 and RUNG-001 on 177a and build 8, so no program ran); `elem_may_drop` answers YES for `Self` as for `T`,
+// the checker's refusal first (the concrete twin `rg1d` read 83 on 177a, a freed element); on 177a: NITPICK-EMIT-002 / NITPICK-RUNG-001, the emitter's.
+struct:H__rg1c_self_elem = { string:s; };
+trait:Tr__rg1c_self_elem = {
+    func:rd = int64(Self:self) never fails;
+    func:mkn = Self(Self:self) never fails;
+    func:g = int64(Self:self, move Self[2]:a) never fails { int64:r = 0i64; for (Self:x in a) { a[0i64] = raw self.mkn(); string:junk = string_concat("qq", "qq"); r = raw x.rd(); break; } pass r; };
+    func:gs = int64(Self:self, Self[]:a) never fails { int64:r = 0i64; for (Self:x in a) { a[0i64] = raw self.mkn(); string:junk = string_concat("qq", "qq"); r = raw x.rd(); break; } pass r; };
+};
+impl:H__rg1c_self_elem:Tr__rg1c_self_elem = {
+    func:rd = int64(Self:self) never fails { pass ((string_bytes(self.s)[0i64] => int64) - 90i64); };
+    func:mkn = H__rg1c_self_elem(Self:self) never fails { pass H__rg1c_self_elem{ s: string_concat("wx", "yz") }; };
+};
+func:c_rg1c_self_elem_freed_read = int64() never fails { H__rg1c_self_elem:h = H__rg1c_self_elem{ s: raw mks__b9() }; H__rg1c_self_elem[2]:a = [H__rg1c_self_elem{ s: raw mks__b9() }, H__rg1c_self_elem{ s: raw mks__b9() }]; pass raw h.g(move(a)); };
+func:c_rg1f_self_elem_slice_param = int64() never fails { H__rg1c_self_elem:h = H__rg1c_self_elem{ s: raw mks__b9() }; H__rg1c_self_elem[2]:a = [H__rg1c_self_elem{ s: raw mks__b9() }, H__rg1c_self_elem{ s: raw mks__b9() }]; pass raw h.gs(a[0i64...2i64]); };
+// fa_defer; on 177a: exit=67.
+func:c_fa_defer = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; int64:r = 0i64; for (string:x in a) { defer { a[0i64] = string_concat("wx", "yz"); } string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// fa_dead_write; on 177a: exit=67.
+func:c_fa_dead_write = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; int64:r = 0i64; bool:nv = false; for (string:x in a) { if (nv) { a[0i64] = string_concat("wx", "yz"); } string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// fa_other_elem; on 177a: exit=67.
+func:c_fa_other_elem = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; int64:r = 0i64; for (string:x in a) { a[1i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// e3d_copy_param; on 177a: exit=67.
+func:cl__e3d_copy_param<T: Copy> = NIL(T[2]->:p) never fails { pass NIL; };
+func:g__e3d_copy_param<T: Copy> = int64(move T[2]:a) never fails { int64:r = 0i64; for (T:x in a) { drop cl__e3d_copy_param($$m a); r = 7i64; break; } pass r; };
+func:c_e3d_copy_param = int64() never fails { int64[2]:a = [1i64, 2i64]; pass raw g__e3d_copy_param::<int64>(move(a)); };
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

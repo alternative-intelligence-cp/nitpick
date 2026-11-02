@@ -19,7 +19,7 @@
 // and its arm exits 73. The legal half is `vacant_pick_trap_ok.npk`.
 mod:vacant_pick_trap;
 enum:Col = { Red = 1i32; Blue = 2i32; };
-struct:SC = { Col:c; };
+struct:SC = { Col:c; string:s; };   // the `string` since DEF-345 (landing 177b): only a DROPPING type's unassigned `$$m` is admitted, and its slot is the zeroed vacant value
 func:wn = NIL(SC->:out) never fails { pass NIL; };
 func:f = int32() never fails {
     SC:s; drop wn($$m s);

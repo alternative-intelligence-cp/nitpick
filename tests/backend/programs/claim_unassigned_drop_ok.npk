@@ -1,0 +1,53 @@
+// THE OUT-PARAMETER CLAIM OVER A DROPPING TYPE STANDS (DEF-345, D-366; landing 177b): a `$$m` of an unassigned binding whose type drops
+// reads, after a callee that writes nothing, the zeroed vacant value -- a `string` of length 0 (`c_string`, `d345_dm3`), a struct whose
+// `Error` field the callee DID write (`c_err_drop`, `vt_err_drop`'s legal half), an enum field written before the `pick` (`c_pick_drop`).
+// The refused half is tests/analysis/rejection/claim_unassigned_nodrop.npk. Every cell returns the value `main` checks; a mismatch exits 1..3.
+mod:claim_unassigned_drop_ok;
+error:E5;
+func:nowrite_s = NIL(string->:p) never fails { pass NIL; };
+func:c_string = int64() never fails { string:s; drop nowrite_s($$m s); pass s.len; };
+struct:S = { Error:e; string:n; };
+func:wn = NIL(S->:out, bool:w) never fails { if (w) { (<-out).e = E5; } pass NIL; };
+func:g = int64() { S:s; drop wn($$m s, true); fail s.e; };
+func:c_err_drop = int64() never fails { Result<int64>:r = g(); if (r.is_error) { pass 1i64; } pass 2i64; };
+enum:Col = { Red = 1i32; Blue = 2i32; };
+struct:SC = { Col:c; string:s; };
+func:wnc = NIL(SC->:out, bool:w) never fails { if (w) { (<-out).c = Col.Blue; } pass NIL; };
+func:c_pick_drop = int64() never fails { SC:s; drop wnc($$m s, true); int32:v = pick (s.c) { (Col.Red) { give 10i32; }, (Col.Blue) { give 20i32; } }; pass v => int64; };
+// A BINDING WRITTEN AT ITS BINDING IS ASSIGNED (build 8; management_13's item 4 of 2026-11-01 20:24, `rc8a`, `rc8c`: 65 on 177a, ASSIGN-001 on
+// build 7): `assign_read`'s rule, only a local can be unassigned -- a range `for`'s binding, an array `for`'s, a parameter, a consuming `pick`'s
+// binding is each written by its construct: a `for` binding has no slot (`symbol_slot` −1), a parameter and a `pick` binding an ordinal marked
+// where they are bound (review B of build 8); `$$m` of each is legal and the callee reads the value.
+func:rd = int64(int64->:p) never fails { pass <-p; };
+func:c_dm_for_range = int64() never fails { int64:r = 0i64; for (int64:x in 5i64...6i64) { r = raw rd($$m x); } pass r; };
+func:c_dm_for_array = int64() never fails { int64[2]:a = [5i64, 6i64]; int64:r = 0i64; for (int64:x in a) { r = raw rd($$m x); break; } pass r; };
+func:dm_param = int64(int64:v) never fails { pass raw rd($$m v); };
+func:c_dm_param = int64() never fails { pass raw dm_param(7i64); };
+enum:Ev = { Num(int64); Str(string); };
+func:c_dm_pick = int64() never fails { Ev:e = Ev.Num(8i64); pick (move(e)) { (Ev.Num(n)) { pass raw rd($$m n); }, (Ev.Str(s)) { pass s.len; } } pass 0i64; };   // a consuming pick needs an owning selector (TYPE-046), so a `string` variant beside the `int64` one
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c_string()) != 0i64) { exit 1i32; }
+    if ((raw c_dm_for_range()) != 5i64) { exit 4i32; }
+    if ((raw c_dm_for_array()) != 5i64) { exit 5i32; }
+    if ((raw c_dm_param()) != 7i64) { exit 6i32; }
+    if ((raw c_dm_pick()) != 8i64) { exit 7i32; }
+    if ((raw c_err_drop()) != 1i64) { exit 2i32; }
+    if ((raw c_pick_drop()) != 20i64) { exit 3i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -58,6 +58,8 @@ use "./builtins.npk".*;   // the raw/drop licence reads the builtin column (D-16
 use "./expr_types.npk".*;
 use "./analysis/wild_places.npk".*;   // expr_wild_provenance: a comparison against a wild place (D-355)
 
+// A `pass` SITE DEFERRED TO ITS FUNCTION'S END (DEF-416, landing 177b): the value, the type the message names, the statement's span.
+pub struct:PassSite = { ExprId:id; int32:ty; Span:at; };
 pub struct:ExprTyper = {
     Ast->:ast;
     TypeTable->:types;
@@ -156,6 +158,12 @@ pub struct:ExprTyper = {
     // against nothing.
     List<int32>:givex_pick;
     List<int32>:givex_cur;
+    // DEF-416 (3)(b), landing 177b: the pointer-typed locals (the symbol) and fields (minus the name) this function assigns from its own
+    // frame's storage, and those a `move` path read a pointer from -- consulted both ways, so the order of the two does not matter.
+    List<int32>:ptr_tainted;
+    List<int32>:ptr_keys;
+    List<int32>:ptr_vals;
+    List<PassSite>:pass_sites;   // the pass road's sites, judged with the move sites after the store fixpoint (DEF-416)
 
     // HOW MANY COUNTED LOOPS ENCLOSE THE EXPRESSION BEING TYPED (1.0.8). `$`
     // names the innermost one's counter; outside any, it names nothing — and
@@ -279,6 +287,10 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                              frozen: raw list_init::<int32>(8i64),
                              givex_pick: raw list_init::<int32>(8i64),
                              givex_cur: raw list_init::<int32>(8i64),
+                             ptr_tainted: raw list_init::<int32>(8i64),
+                             ptr_keys: raw list_init::<int32>(8i64),
+                             ptr_vals: raw list_init::<int32>(8i64),
+                             pass_sites: raw list_init::<PassSite>(4i64),
                              expr_types: expr_types };
     pass e;
 };
@@ -370,22 +382,24 @@ pub func:refuse_pass_of_pointee_owned = NIL(ExprTyper->:e, ExprId:id, int32:ty,
     // owning part out at every instantiation, checked once.
     if (!(raw type_owns_for_move(e, ty))) { pass NIL; }
     if (!(raw expr_is_place(e.ast, id, raw BORROW_FUEL()))) { pass NIL; }
-    PlaceRoot:r = raw place_root(e.ast, id, raw BORROW_FUEL());
-    if (r.exhausted) { pass NIL; }
-    if (raw expr_is_none(r.id)) { pass NIL; }
-    ExprNode:rn = raw ast_expr(e.ast, r.id);
-    // The whole root itself passing up is the borrowed-param rule's business;
-    // this one fires only when the path DESCENDS from a pointer — a field or
-    // element of something the frame merely points at.
-    if (r.id.index == id.index) { pass NIL; }
-    int32:rt = raw exprtypes_get(e.expr_types, r.id);
-    if (rt == 0i32) { pass NIL; }
-    if ((raw type_kind(e.types, rt)) != (raw TY_POINTER())) { pass NIL; }
+    // The whole root itself passing up is the borrowed-param rule's business; this one fires when the path DESCENDS from a pointer, a handle or
+    // a view -- a field or element of something the frame merely points at -- or, through `wild`, from storage this frame owns or cannot place:
+    // `move`'s one walker (DEF-416, landing 177b), where `place_root` stopped at a dereference and `pass (<-p).s` passed (`r416_pass_deref`, 60).
+    // RECORDED, JUDGED AT THE FUNCTION'S END (DEF-416, landing 177b): read here, while the body was still being typed and `ptr_tainted` empty,
+    // the verdict let a pointer re-pointed at a local AFTER the `pass` through (`rc5f`: `w = mcpy(@h, @h, 0) =>! wild H->; pass (<-w).s;`, 67);
+    // `check_function` asks `judge_pass_site` after the store fixpoint, as it asks the `move` sites.
+    drop list_push(@e.pass_sites, PassSite{ id: id, ty: ty, at: at });
+    pass NIL;
+};
+// THE PASS ROAD'S VERDICT, every store known. TYPE-047 at the `pass`, as before; the message says what the cells measure (`rc2a`, `rc2b`: 60 on
+// 177a, the pointee MOVED OUT and left vacant, D-225, no copy): the owner reads its vacated slot where no rule judged it.
+pub func:judge_pass_site = NIL(ExprTyper->:e, PassSite:ps) never fails {
+    if ((raw move_path_verdict(e, ps.id, 64i32)) == 0i32) { pass NIL; }
     string:m1 = string_concat("`",
-                    raw type_display(e.types, e.interns, ty));
+                    raw type_display(e.types, e.interns, ps.ty));
     discard(raw te_error(e, raw TYPE_MOVE_OF_BORROWED(),
-        string_concat(m1, "` is owned by what this pointer reaches, and `pass` would hand the caller a copy that eventually drops it — freeing the container's storage from a frame that never owned it (D-183). Return a view (`string_from_bytes(p.ptr, p.len)` for a string) or an explicit `.clone()`"),
-        at));
+        string_concat(m1, "` is owned by what this pointer reaches, and `pass` would move it out through the pointer, leaving the owner's slot vacant (D-225) where no rule judges the owner's next read (D-183, DEF-416). Return a view (`string_from_bytes(p.ptr, p.len)` for a string), an explicit `.clone()`, or move it through the name that owns it"),
+        ps.at));
     pass NIL;
 };
 
@@ -4936,6 +4950,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         if (!(raw require_place_operand(e, raw expr_operand(n), "@"))) { pass 0i32; }
         int32:t = raw type_of_expr(e, raw expr_operand(n));
         if (t == 0i32) { pass 0i32; }
+        drop note_ptr_store(e, raw expr_operand(n), raw expr_none());   // DEF-416 (3)(b): an address of a pointer slot is a store this walk cannot see (q4)
         // A `frac` MEMBER IS A VALUE (DEF-238 (a)): asked here, with the base typed.
         if (raw refuse_frac_member(e, raw expr_operand(n), "@")) { pass 0i32; }
         if (raw refuse_result_member(e, raw expr_operand(n), "@")) { pass 0i32; }   // DEF-380/382
@@ -4985,6 +5000,7 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         if (!(raw require_place_operand(e, raw expr_operand(n), "a borrow"))) { pass 0i32; }
         int32:t = raw type_of_expr(e, raw expr_operand(n));
         if (t == 0i32) { pass 0i32; }
+        if (raw borrow_is_mut(n)) { drop note_ptr_store(e, raw expr_operand(n), raw expr_none()); }   // DEF-416 (3)(b): `$$m` of a pointer slot, as `@` (q4)
         // A `frac` MEMBER IS A VALUE (DEF-238 (a)): asked here, with the base typed.
         if (raw refuse_frac_member(e, raw expr_operand(n), "a borrow")) { pass 0i32; }
         if (raw refuse_result_member(e, raw expr_operand(n), "a borrow")) { pass 0i32; }   // DEF-380/382
@@ -5049,6 +5065,14 @@ func:type_of_expr_inner = int32(ExprTyper->:e, ExprId:id) never fails {
         drop refuse_move_out_of_limited(e, raw expr_operand(n), mvt, n.span);
         drop refuse_move_out_of_sealed(e, raw expr_operand(n), mvt, n.span);
         drop refuse_move_out_of_fixed(e, raw expr_operand(n), mvt, n.span);
+        // A `move` TAKES AN OWNING PLACE (DEF-416, landing 177b): `move_path_verdict` -- no plain pointer, handle or view nearest the moved storage
+        // (`move((<-p).s)` with `p = @h` vacated `h` unjudged, 60 on 175, 176b and 177a: `p7_through_holder`), and through `wild` nothing of this
+        // frame's own nor of an origin that cannot be placed. A copy is exempt (`type_owns_for_move`, an unbounded `T` owns); a `pure` body's own
+        // refusal below is the one report of its site.
+        if ((raw type_owns_for_move(e, mvt)) && (!(e.fn_pure && (!(raw place_is_local(e, raw expr_operand(n), 64i32)))))) {
+            drop list_push(@e.ptr_keys, 0i32);   // a `move` site (key 0): judged at the function's end, every store known (`check_function`)
+            drop list_push(@e.ptr_vals, (raw expr_operand(n)).index);
+        }
         // A `pure` BODY MOVES OUT OF ONLY ITS OWN LOCALS (D-221, DEF-397; 1.6.1e,
         // landing 174): `move` of a place reached through a pointer, a borrow, a
         // slice or a handle vacates memory the caller can see -- D-325 records

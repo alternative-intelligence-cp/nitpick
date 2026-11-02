@@ -1,17 +1,19 @@
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 58:18
+// expect-error-at: 59:18
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 67:19
-// expect-error: NITPICK-BORROW-015
-// expect-error-at: 76:30
+// expect-error-at: 68:19
 // expect-error: NITPICK-BORROW-009
-// expect-error-at: 87:13
+// expect-error-at: 80:13
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 87:13
+// expect-error-at: 80:13
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 97:20
+// expect-error-at: 90:20
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 107:20
+// expect-error-at: 100:20
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 143:194
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 144:189
 // A POINTER VALUE HANDED TO A CALLEE IS CHECKED AGAINST THE VIEWS THROUGH IT
 // (DEF-275, landing 140; found by landing 138's probes). `drop clobber(@hd)` under
 // `fixed uint8[]:v = string_bytes(hd.items[0i64])` has been BORROW-015 since D-325
@@ -46,7 +48,6 @@ func:fresh = string() never fails { pass string_concat("ghij", "klmn"); };
 func:made = Holder() never fails { pass Holder{ items: [string_concat("abc", "def"), string_concat("abc", "def")], n: 0i64 }; };
 func:clobber = NIL(Holder->:h) never fails { <-h = Holder{ items: [raw fresh(), raw fresh()], n: 1i64 }; pass NIL; };
 func:set_elem = NIL(Holder->:h) never fails { h.items[0i64] = raw fresh(); pass NIL; };
-func:take_elem = string(Holder->:h) never fails { pass move(h.items[0i64]); };
 func:bump = NIL(Holder->:h) never fails { h.n = h.n + 1i64; pass NIL; };
 func:count_only = int64(Holder->:h) never fails { pass h.n; };
 
@@ -68,15 +69,7 @@ func:elem_value = int32() never fails {
     pass (v[0i64] => int32);
 };
 
-// (3) a move out of the element through the value (a write: the vacant value lands)
-func:move_value = int32() never fails {
-    Holder:hd = raw made();
-    Holder->:b = @hd;
-    fixed uint8[]:v = string_bytes(b.items[0i64]);
-    string:t = raw take_elem(b);
-    if (t.len == 0i64) { pass 1i32; }
-    pass (v[0i64] => int32);
-};
+// (3) a move out of the element through the value: TYPE-104 since landing 177b (DEF-416: a `move` takes an owning place), a cell of tests/types/rejection/move_through_pointer.npk; no cell here.
 
 // (4) an unknown callee: a function value is read as writing the whole pointee
 func:value_fn = int32() never fails {
@@ -138,6 +131,17 @@ func:ctl_after_block = int32() never fails {
     drop clobber(b);
     pass first;
 };
+
+// A CALLEE RE-POINTING A HOLDER HANDED BY VALUE, ASKED AND CLOSED HERE (landing 177b, DEF-416's review A, finding 4). DEF-416's
+// store tracking sees this frame's own stores, `@` and `$$m`; a `wild` holder from `alloc` handed to a callee by VALUE, with the
+// frame's own `@arr[0i64]` beside it, is re-pointed where the walk cannot see, and `move(<-lp.items)` then reads as a move through
+// storage from outside. The store rule refuses the call first: a view of this frame's storage stored by the callee into what the
+// pointer binding points at, the target unnameable (D-325) -- the plain address (ra4a_callee_holder_value) and `#ptr_add` over it
+// (rc7a_holder_ptr_add). `NITPICK-BORROW-009`, one report each, on 177a and on this landing's compiler.
+struct:L__holder_value = { wild string->:items; int64:n; };
+func:setl__holder_value = NIL(wild L__holder_value->:l, wild string->:x) never fails { l.items = x; pass NIL; };
+func:c_ra4a_callee_holder_value = int64() never fails { string[2]:arr = [raw fresh(), raw fresh()]; wild L__holder_value->:lp = alloc(16i64) =>! wild L__holder_value->; drop setl__holder_value(lp, @arr[0i64]); string:t = move(<-lp.items); pass arr[0i64].len; };
+func:c_rc7a_holder_ptr_add = int64() never fails { string[2]:arr = [raw fresh(), raw fresh()]; wild L__holder_value->:lp = alloc(16i64) =>! wild L__holder_value->; drop setl__holder_value(lp, #ptr_add<string>(@arr[0i64], 0i64)); string:t = move(<-lp.items); pass arr[0i64].len; };
 
 func:main = int32(cstring[]:_~argv) {
     exit 0i32;

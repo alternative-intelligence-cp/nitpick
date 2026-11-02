@@ -201,6 +201,10 @@ func:sym_held = bool(List<string>:defs, string:sym) never fails {
 };
 
 pub func:obl_keep_held = NIL(ObTable->:t, string:ir) never fails {
+    // THE TABLE'S OLD STRINGS ARE TAKEN THROUGH THE DECLARED-UNCHECKED ROAD (DEF-416, landing 177b): `t` is a plain pointer, and a
+    // `move` through one is TYPE-104 -- the pointee's owner is the caller, which reads the vacated value as whole. Each of the four moves
+    // below is followed by the whole list's reassignment at the end of this function, so the vacated slot is never read; the cast at the
+    // site says so. (A wild HOLDER local of `t` instead read as a retained borrow in every caller's summary: six BORROW-015s under 177a's own compiler while landing 177b was built.)
     List<string>:defs = raw ir_define_syms(ir);
     List<string>:olds = raw list_init::<string>(t.files.count + 1i64);
     List<string>:news = raw list_init::<string>(t.files.count + 1i64);
@@ -217,8 +221,8 @@ pub func:obl_keep_held = NIL(ObTable->:t, string:ir) never fails {
         if (!held) { continue; }
         drop list_push(@olds, raw file_number(i + 1i64));
         drop list_push(@news, raw file_number(files.count + 1i64));
-        drop list_push(@files, move(t.files[i]));
-        drop list_push(@fsyms, move(t.file_syms[i]));
+        drop list_push(@files, move((<-(t =>! wild ObTable->)).files[i]));
+        drop list_push(@fsyms, move((<-(t =>! wild ObTable->)).file_syms[i]));
         drop list_push(@fchecks, t.file_checks[i]);
         drop list_push(@fgroups, t.file_groups[i]);
         drop list_push(@fmeasured, t.file_measured[i]);
@@ -256,7 +260,7 @@ pub func:obl_keep_held = NIL(ObTable->:t, string:ir) never fails {
                 drop list_push(@rtraps, t.row_traps[r]);
                 drop list_push(@rdefer, t.row_defer[r]);
                 drop list_push(@rmult, t.row_mult[r]);
-                drop list_push(@rtail, move(t.row_tail[r]));
+                drop list_push(@rtail, move((<-(t =>! wild ObTable->)).row_tail[r]));
                 break;
             }
         }
@@ -268,7 +272,7 @@ pub func:obl_keep_held = NIL(ObTable->:t, string:ir) never fails {
         for (int64:k2 in 0i64...olds.count) {
             if (raw string_eq(string_from_bytes(olds[k2].ptr, olds[k2].len), tname)) {
                 drop list_push(@t2n, string_concat(string_from_bytes(news[k2].ptr, news[k2].len), ""));
-                drop list_push(@t2t, move(t.t2_texts[j]));
+                drop list_push(@t2t, move((<-(t =>! wild ObTable->)).t2_texts[j]));
                 break;
             }
         }

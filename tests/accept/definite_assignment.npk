@@ -10,6 +10,7 @@
 
 mod:definite_assignment;
 func:sink = NIL(int32->:slot) never fails { pass NIL; };
+func:sink_s = NIL(string->:slot) never fails { pass NIL; };
 
 // --- both paths assign -----------------------------------------------------------
 
@@ -40,12 +41,16 @@ func:early_return = int32(bool:c) never fails {
 //
 // D-004 lists this as one of the four mechanisms that replaced `gc` for returning
 // references: "pass `$$m` of the destination downward". Refusing it on an
-// unassigned binding would refuse the pattern the decision endorses.
+// unassigned binding would refuse the pattern the decision endorses -- for a type
+// that DROPS: its slot is the zeroed vacant value, and a callee that writes nothing
+// leaves a defined value behind. Over a type that drops nothing the same claim is
+// NITPICK-ASSIGN-001 since DEF-345 (landing 177b; D-366): the slot is whatever the
+// frame held, and `pass x` read it -- tests/analysis/rejection/claim_unassigned_nodrop.npk.
 
 func:out_parameter = int32() never fails {
-    int32:x;
-    drop sink($$m x);
-    pass x;
+    string:x;
+    drop sink_s($$m x);
+    pass (x.len =>! int32);
 };
 
 // --- an exhaustive `pick` where every arm assigns -----------------------------------

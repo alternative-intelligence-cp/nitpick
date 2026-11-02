@@ -1,0 +1,607 @@
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 173:247
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 178:250
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 183:274
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 189:227
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 194:279
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 199:248
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 205:225
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 209:183
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 213:266
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 217:132
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 221:74
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 226:143
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 230:196
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 234:233
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 239:283
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 244:336
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 249:110
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 253:95
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 257:308
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 261:272
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 271:121
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 291:53
+// expect-error: NITPICK-TYPE-047
+// expect-error-at: 295:65
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 300:182
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 308:167
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 316:206
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 324:236
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 332:205
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 340:206
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 348:183
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 356:200
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 364:244
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 372:264
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 380:291
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 397:15
+// expect-error: NITPICK-TYPE-047
+// expect-error-at: 414:5
+// expect-error: NITPICK-TYPE-047
+// expect-error-at: 420:12
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 434:22
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 448:68
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 455:66
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 462:69
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 469:79
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 475:117
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 482:119
+// expect-error: NITPICK-TYPE-047
+// expect-error-at: 488:60
+// expect-error: NITPICK-TYPE-047
+// expect-error-at: 495:51
+// expect-error: NITPICK-TYPE-047
+// expect-error-at: 502:63
+// expect-error: NITPICK-TYPE-047
+// expect-error-at: 509:70
+// expect-error: NITPICK-TYPE-047
+// expect-error-at: 516:61
+// expect-error: NITPICK-TYPE-047
+// expect-error-at: 523:87
+// expect-error: NITPICK-TYPE-047
+// expect-error-at: 530:56
+// expect-error: NITPICK-TYPE-037
+// expect-error-at: 537:61
+// expect-error: NITPICK-TYPE-047
+// expect-error-at: 537:68
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 545:213
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 549:222
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 553:242
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 556:227
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 559:159
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 564:214
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 569:196
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 575:212
+// expect-error: NITPICK-TYPE-047
+// expect-error-at: 579:133
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 583:139
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 586:138
+// expect-error: NITPICK-TYPE-104
+// expect-error-at: 588:121
+// A `move` TAKES AN OWNING PLACE (DEF-416, landing 177b; `NITPICK-TYPE-104`, `move_path_verdict` in type_stmt.npk, judged after the function's walk). A `move` whose place reaches its
+// value through a PLAIN pointer, a handle or a view -- `move(p.s)`, `move((<-p).s)`, `move(<-p)`, `move(h.items[i])` through `Holder->:h`, a slice local of a local, a `Self->` receiver's
+// field, a generic `T` behind a pointer, a pick arm's or a struct literal's `move(p.s)` -- leaves the pointee's owner reading a slot VACATED where no rule judged the owner (p7_through_holder 60 on 175, 176b and 177a: the
+// owner's length read 0; lo_ptr_move 65 and m1 65 are `t.len + 60`, q1 70 its program's own sum -- the pointee is moved out and left vacant, D-225, no copy and no
+// double free: management_13's cells rc2c, ra2c, rc2a of 2026-11-01, build 8's correction of this line), or a store after the move that drops freed bytes (q1_store_after_move, q4_by_callee, q6_copy_order,
+// q7_init_order: management_13's cells, 2026-11-01). THE ROAD OUT OF A POINTEE is the DECLARED-UNCHECKED one: `move((<-(p =>! wild T->)).s)` (the cast asserts the pointee is the author's, D-019;
+// m14/m14b run right) or a `wild`-qualified slot, judged by ORIGIN -- a wild pointer or `#wild_slice` local whose address is this frame's (`@local` stored into it, a re-pointed wild local: m13,
+// q9, q10, r416b_wild_local_root, r416c_wild_derived) is refused, one from a parameter, a global, `NULL`, `alloc` or `#ptr_add` is not. A `pass` of such a place is the same refusal on the pass
+// road, `NITPICK-TYPE-047` (m11, r416_pass_deref, r416b_pass_*, r416b_call_deref, r416b_local_ptr, r416c_return_lit; r416b_return_lit's TYPE-037 is 177a's). The copy-typed element and field
+// are exempt (a copy is no move: m7, k1). OVER-REFUSED ON PURPOSE, THE POST-180 LIST: `k2_realloc_field_ok` (a bare `alloc` call's result in a field, not read by `ptr_from_outside`) and
+// `q11_wild_slice_copy_ok` (a `#wild_slice` copied into a second plain slice local); management_13's ruling of 16:57 EST. [DATED 2026-11-01 18:28 EST, build 7: `k2_realloc_field_ok` is LEGAL now, in the `_ok`;
+// the bare `alloc` call is read as an origin (the omission below); `q11` stays on the post-180 list.] The legal twins are `tests/backend/programs/move_through_pointer_ok.npk`.
+// The cells: `.internal/probes177b/cells416*/` (the seat's grid and probes), `MANAGEMENT/probes/177b-def416/` (management_13's); the results `.internal/probes177b/out_b6/`.
+// ADDED AT management_13's RULING OF 17:59:32 EST: the twelve attempts to launder a frame's own address through `src/`'s inline road, `move((<-(X =>! wild H->)).s)` with X an `@h`, a copy of
+// it, a wild local of it, a field's address, a call given `@h`, `any->` first, a ternary with an `@h` arm, a holder's field, a parameter re-pointed before the move and one re-pointed after it in a
+// loop (`i1`-`i12`: ten TYPE-104; `i4_cast_param_ok` and `i5_cast_copy_of_param`, a plain parameter or a copy of it with the slot restored, legal, in the `_ok`); and the LOCK's old spellings of
+// `tests/analysis/rejection/spawn_lends.npk` (landing 173 to 177a, BORROW-001 by DEF-393(a)'s `lends` mark then): `pass move(<-sp)` after a spawn stored a frame borrow into the lock is TYPE-104
+// (`lk1`), `pass <-sp` TYPE-047 (`lk2`); the BY-VALUE `pass move(v)` of that lock is accepted today, DEF-395's face 1 (landing 179), parked whole in `tests/parked/def395-by-value/`.
+// ADDED AFTER CHAIN 1 (build 7, 18:28 EST): the walk had two omissions, found by the tree's own emission -- a bare `alloc`/`ralloc`/`aalloc` call or a user
+// allocator declaring a wild return was not an ORIGIN (`ptr_from_outside` read the sigil form alone), and a builtin's or a call's result at the END of a path
+// was walked on and refused as unplaceable -- so it refused the manual regime's own pattern (tests/backend/programs/deref_store_drop.npk's case 9, `move(<-ws)`
+// over `ws = m =>! wild string->`, `m = alloc(...)`) and lib/ntensor.npk's `get` (`pass (<-(#ptr_add<T>(self.cells.ptr, off)))`). Both fixed in build 7; the
+// legal cells `pa1`, `pa4`, `al1`, `al2`, `al4` are in the `_ok`. Here: `al3`, an own address laundered through a PLAIN call and cast wild, stays TYPE-104
+// (the call is not seen through, the closed direction); `rl1`, the long form `return Result{value: <-pa}` over a pointer parameter, TYPE-047 (the pass
+// road; tests/backend/programs/result_literal_road_ok.npk's control 13 from landing 171 to 177a, retired there).
+// ADDED AT management_13's RULING OF 18:42:35 EST (the cap 135 at base; its second attempt to launder through F1 and F2, on build 7, `MANAGEMENT/probes/177b-def416/`,
+// README's last table; the seat's run `.internal/probes177b/cells8.txt`, 177a → build 7): a block from `alloc` RE-POINTED to `@o` before the move (`al5`, 65 on 177a), a user
+// allocator's cell re-pointed after the move in a loop (`al6`, 70) and through a copy (`al7`, 70); `#ptr_add` over `@arr[0]` held and inline (`pa5`, `pa6`, 65), over a LOCAL
+// struct's wild field (`pa7`, 65: `v` is no pointer, the closed direction), over a pointer parameter's field re-pointed to `@o` before and after the move (`pa9`, `pa10`,
+// BORROW-002 on 177a): TYPE-104; the pass road over own storage (`pa11`, BORROW-001 on 177a): TYPE-047. Legal, in the `_ok`: `u4` (a user allocator's cell), `pa8` (a
+// parameter's wild field under `#ptr_add`), `pa12` (the pass road over it). ACCEPTED, 65 on 177a and here, IN NEITHER TEST BY THE RULING: `u1`-`u3`,
+// `func:lie = wild string->(string->:q) { pass (q =>! wild string->); }` with `move(<-(raw lie(@o)))` -- the one trust F1 adds, the callee's own explicit `=>!`, the
+// assertion `i4` makes on a plain parameter (D-095); DEF-416's row names them, so nobody reads the road as closed.
+// ADDED AT management_13's RULING OF 01:21:29 EST (the amend of build 9; its cells `MANAGEMENT/probes/177b-b9/`): `rk7a`-`rk7c`, a frame address `@h` in each VALUE position
+// after two turbofish types (60 on 177a, the owner read vacant): TYPE-104 -- the pins of the call arm's walk over the VALUE arguments alone; its legal side, a block from
+// `alloc` at that position (`rk7t`), stands in the standalone `tests/backend/programs/generic_call_window_ok.npk`, the pin of the turbofish fix (build 8 refused both).
+mod:move_through_pointer;
+error:E1;
+error:E5;
+// q1_store_after_move; on 177a: exit=70; here: TYPE-104×1.
+struct:H__q1_store_after_move = { string:s; };
+func:mk__q1_store_after_move = H__q1_store_after_move() never fails { pass H__q1_store_after_move{ s: string_concat("ab", "cde") }; };
+func:g__q1_store_after_move = int64(wild H__q1_store_after_move->:q) never fails { H__q1_store_after_move:h = raw mk__q1_store_after_move(); wild H__q1_store_after_move->:w = q; int64:r = 0i64; for (int64:i in 0i64...2i64) { string:t = move((<-w).s); r = r + t.len; w = (@h) =>! wild H__q1_store_after_move->; } pass r; };
+func:c_q1_store_after_move = int64() never fails { wild H__q1_store_after_move->:it = alloc(24i64) =>! wild H__q1_store_after_move->; (<-it) = raw mk__q1_store_after_move(); pass raw g__q1_store_after_move(it); };
+// q2_store_before_move; on 177a: exit=65; here: TYPE-104×1.
+struct:H__q2_store_before_move = { string:s; };
+func:mk__q2_store_before_move = H__q2_store_before_move() never fails { pass H__q2_store_before_move{ s: string_concat("ab", "cde") }; };
+func:g__q2_store_before_move = int64(wild H__q2_store_before_move->:q) never fails { H__q2_store_before_move:h = raw mk__q2_store_before_move(); wild H__q2_store_before_move->:w = q; w = (@h) =>! wild H__q2_store_before_move->; string:t = move((<-w).s); pass t.len; };
+func:c_q2_store_before_move = int64() never fails { wild H__q2_store_before_move->:it = alloc(24i64) =>! wild H__q2_store_before_move->; (<-it) = raw mk__q2_store_before_move(); pass raw g__q2_store_before_move(it); };
+// q3_through_ptrptr; on 177a: BORROW-002×1 BORROW-011×1 BORROW-013×1; here: TYPE-104×1.
+struct:H__q3_through_ptrptr = { string:s; };
+func:mk__q3_through_ptrptr = H__q3_through_ptrptr() never fails { pass H__q3_through_ptrptr{ s: string_concat("ab", "cde") }; };
+func:g__q3_through_ptrptr = int64(wild H__q3_through_ptrptr->:q) never fails { H__q3_through_ptrptr:h = raw mk__q3_through_ptrptr(); wild H__q3_through_ptrptr->:w = q; wild H__q3_through_ptrptr->->:pp = @w; <-pp = (@h) =>! wild H__q3_through_ptrptr->; string:t = move((<-w).s); pass t.len; };
+func:c_q3_through_ptrptr = int64() never fails { wild H__q3_through_ptrptr->:it = alloc(24i64) =>! wild H__q3_through_ptrptr->; (<-it) = raw mk__q3_through_ptrptr(); pass raw g__q3_through_ptrptr(it); };
+// q4_by_callee; on 177a: exit=65; here: TYPE-104×1.
+struct:H__q4_by_callee = { string:s; };
+func:mk__q4_by_callee = H__q4_by_callee() never fails { pass H__q4_by_callee{ s: string_concat("ab", "cde") }; };
+func:setw__q4_by_callee = NIL(wild H__q4_by_callee->->:pp, wild H__q4_by_callee->:v) never fails { <-pp = v; pass NIL; };
+func:g__q4_by_callee = int64(wild H__q4_by_callee->:q) never fails { H__q4_by_callee:h = raw mk__q4_by_callee(); wild H__q4_by_callee->:w = q; drop setw__q4_by_callee(@w, (@h) =>! wild H__q4_by_callee->); string:t = move((<-w).s); pass t.len; };
+func:c_q4_by_callee = int64() never fails { wild H__q4_by_callee->:it = alloc(24i64) =>! wild H__q4_by_callee->; (<-it) = raw mk__q4_by_callee(); pass raw g__q4_by_callee(it); };
+// q6_copy_order; on 177a: exit=65; here: TYPE-104×1.
+struct:H__q6_copy_order = { string:s; };
+func:mk__q6_copy_order = H__q6_copy_order() never fails { pass H__q6_copy_order{ s: string_concat("ab", "cde") }; };
+func:g__q6_copy_order = int64(wild H__q6_copy_order->:q) never fails { H__q6_copy_order:h = raw mk__q6_copy_order(); wild H__q6_copy_order->:a = q; wild H__q6_copy_order->:b = q; for (int64:i in 0i64...2i64) { b = a; a = (@h) =>! wild H__q6_copy_order->; } string:t = move((<-b).s); pass t.len; };
+func:c_q6_copy_order = int64() never fails { wild H__q6_copy_order->:it = alloc(24i64) =>! wild H__q6_copy_order->; (<-it) = raw mk__q6_copy_order(); pass raw g__q6_copy_order(it); };
+// q7_init_order; on 177a: exit=70; here: TYPE-104×1.
+struct:H__q7_init_order = { string:s; };
+func:mk__q7_init_order = H__q7_init_order() never fails { pass H__q7_init_order{ s: string_concat("ab", "cde") }; };
+func:g__q7_init_order = int64(wild H__q7_init_order->:q) never fails { H__q7_init_order:h = raw mk__q7_init_order(); wild H__q7_init_order->:a = q; int64:r = 0i64; for (int64:i in 0i64...2i64) { wild H__q7_init_order->:b = a; string:t = move((<-b).s); r = r + t.len; a = (@h) =>! wild H__q7_init_order->; } pass r; };
+func:c_q7_init_order = int64() never fails { wild H__q7_init_order->:it = alloc(24i64) =>! wild H__q7_init_order->; (<-it) = raw mk__q7_init_order(); pass raw g__q7_init_order(it); };
+// q8_field_order; on 177a: BORROW-002×1; here: TYPE-104×1.
+struct:H__q8_field_order = { string:s; };
+func:mk__q8_field_order = H__q8_field_order() never fails { pass H__q8_field_order{ s: string_concat("ab", "cde") }; };
+struct:W__q8_field_order = { wild H__q8_field_order->:p; wild H__q8_field_order->:r; };
+func:g__q8_field_order = int64(W__q8_field_order->:o) never fails { H__q8_field_order:h = raw mk__q8_field_order(); for (int64:i in 0i64...2i64) { o.p = o.r; o.r = (@h) =>! wild H__q8_field_order->; } string:t = move((<-o.p).s); pass t.len; };
+func:c_q8_field_order = int64() never fails { wild H__q8_field_order->:it = alloc(24i64) =>! wild H__q8_field_order->; (<-it) = raw mk__q8_field_order(); W__q8_field_order:w = W__q8_field_order{ p: it, r: it }; pass raw g__q8_field_order(@w); };
+// q9_wild_slice_repoint_param; on 177a: exit=65; here: TYPE-104×1.
+struct:V__q9_wild_slice_repoint_param = { wild string->:items; int64:count; };
+func:g__q9_wild_slice_repoint_param = int64(V__q9_wild_slice_repoint_param->:v, string[]:p) never fails { string[]:s = #wild_slice<string>(v.items, v.count); s = p; string:t = move(s[0i64]); pass t.len; };
+func:c_q9_wild_slice_repoint_param = int64() never fails { wild string->:it = alloc(48i64) =>! wild string->; (<-it) = string_concat("ab", "cde"); V__q9_wild_slice_repoint_param:v = V__q9_wild_slice_repoint_param{ items: it, count: 1i64 }; string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; pass raw g__q9_wild_slice_repoint_param(@v, a[0i64...2i64]); };
+// q10_wild_slice_repoint_own; on 177a: exit=65; here: TYPE-104×1.
+struct:V__q10_wild_slice_repoint_own = { wild string->:items; int64:count; };
+func:g__q10_wild_slice_repoint_own = int64(V__q10_wild_slice_repoint_own->:v, string[]:p) never fails { string[2]:o = [string_concat("ab", "cde"), string_concat("fg", "hij")]; string[]:s = #wild_slice<string>(v.items, v.count); s = o[0i64...2i64]; string:t = move(s[0i64]); pass t.len; };
+func:c_q10_wild_slice_repoint_own = int64() never fails { wild string->:it = alloc(48i64) =>! wild string->; (<-it) = string_concat("ab", "cde"); V__q10_wild_slice_repoint_own:v = V__q10_wild_slice_repoint_own{ items: it, count: 1i64 }; string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; pass raw g__q10_wild_slice_repoint_own(@v, a[0i64...2i64]); };
+// q12_plain_copy_of_param; on 177a: exit=65; here: TYPE-104×1.
+struct:V__q12_plain_copy_of_param = { wild string->:items; int64:count; };
+func:g__q12_plain_copy_of_param = int64(V__q12_plain_copy_of_param->:v, string[]:p) never fails { string[]:u = p; string:t = move(u[0i64]); pass t.len; };
+func:c_q12_plain_copy_of_param = int64() never fails { wild string->:it = alloc(48i64) =>! wild string->; (<-it) = string_concat("ab", "cde"); V__q12_plain_copy_of_param:v = V__q12_plain_copy_of_param{ items: it, count: 1i64 }; string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; pass raw g__q12_plain_copy_of_param(@v, a[0i64...2i64]); };
+// lo_ptr_move; on 177a: exit=65; here: TYPE-104×1.
+func:mks__lo_ptr_move = string?() never fails { string?:o = string_concat("ab", "cde"); pass move(o); };
+func:rdo__lo_ptr_move = int64(string?->:p) never fails { string:w = move(<-p) ?? string_concat("z", "z"); pass w.len; };
+func:c_lo_ptr_move = int64() never fails { string?:o = string_concat("ab", "cde"); pass raw rdo__lo_ptr_move(@o); };
+// m1_local_addr; on 177a: exit=65; here: TYPE-104×1.
+struct:V__m1_local_addr = { wild string->:items; int64:count; };
+func:mkv__m1_local_addr = V__m1_local_addr() never fails { wild string->:it = alloc(2i64 * 24i64) =>! wild string->; (<-it) = string_concat("ab", "cde"); pass V__m1_local_addr{ items: it, count: 1i64 }; };
+func:c_m1_local_addr = int64() never fails { V__m1_local_addr:x = raw mkv__m1_local_addr(); V__m1_local_addr->:p = @x; string:t = move(p.items[0i64]); int64:r = x.items[0i64].len; pass r + t.len; };
+// m2_wild_cast; on 177a: exit=65; here: TYPE-104×1.
+struct:V__m2_wild_cast = { wild string->:items; int64:count; };
+func:mkv__m2_wild_cast = V__m2_wild_cast() never fails { wild string->:it = alloc(2i64 * 24i64) =>! wild string->; (<-it) = string_concat("ab", "cde"); pass V__m2_wild_cast{ items: it, count: 1i64 }; };
+func:c_m2_wild_cast = int64() never fails { V__m2_wild_cast:x = raw mkv__m2_wild_cast(); V__m2_wild_cast->:p = @x; wild V__m2_wild_cast->:w = p =>! wild V__m2_wild_cast->; string:t = move(w.items[0i64]); int64:r = x.items[0i64].len; pass r + t.len; };
+// m3_field_assigned; on 177a: BORROW-002×1; here: TYPE-104×1.
+struct:X__m3_field_assigned = { string:s; int64:k; };
+struct:W__m3_field_assigned = { wild X__m3_field_assigned->:lp; };
+func:g__m3_field_assigned = int64(W__m3_field_assigned->:w) never fails { X__m3_field_assigned:x = X__m3_field_assigned{ s: string_concat("ab", "cde"), k: 1i64 }; w.lp = (@x) =>! wild X__m3_field_assigned->; string:t = move((<-w.lp).s); pass x.s.len + t.len; };
+func:c_m3_field_assigned = int64() never fails { W__m3_field_assigned:w0 = W__m3_field_assigned{ lp: NULL }; pass raw g__m3_field_assigned(@w0); };
+// m3b_field_assigned_after; on 177a: BORROW-002×1; here: TYPE-104×1.
+struct:X__m3b_field_assigned_after = { string:s; int64:k; };
+struct:W__m3b_field_assigned_after = { wild X__m3b_field_assigned_after->:lp; };
+func:g__m3b_field_assigned_after = int64(W__m3b_field_assigned_after->:w) never fails { X__m3b_field_assigned_after:x = X__m3b_field_assigned_after{ s: string_concat("ab", "cde"), k: 1i64 }; int64:r = 0i64; for (int64:i in 0i64...2i64) { if (w.lp != NULL) { string:t = move((<-w.lp).s); r = r + t.len; } w.lp = (@x) =>! wild X__m3b_field_assigned_after->; } pass r + x.s.len; };
+func:c_m3b_field_assigned_after = int64() never fails { W__m3b_field_assigned_after:w0 = W__m3b_field_assigned_after{ lp: NULL }; pass raw g__m3b_field_assigned_after(@w0); };
+// m4_wild_then_plain_local; on 177a: exit=65; here: TYPE-104×1.
+struct:X__m4_wild_then_plain_local = { string:s; int64:k; };
+struct:Q__m4_wild_then_plain_local = { wild X__m4_wild_then_plain_local->:wp; };
+func:c_m4_wild_then_plain_local = int64() never fails { X__m4_wild_then_plain_local:x = X__m4_wild_then_plain_local{ s: string_concat("ab", "cde"), k: 1i64 }; Q__m4_wild_then_plain_local:q0 = Q__m4_wild_then_plain_local{ wp: (@x) =>! wild X__m4_wild_then_plain_local-> }; Q__m4_wild_then_plain_local->:q = @q0; string:t = move((<-q.wp).s); pass x.s.len + t.len; };
+// m5_plain_wild_plain; on 177a: exit=65; here: TYPE-104×1.
+struct:X__m5_plain_wild_plain = { string:s; int64:k; };
+struct:Q__m5_plain_wild_plain = { wild X__m5_plain_wild_plain->:wp; };
+struct:R__m5_plain_wild_plain = { Q__m5_plain_wild_plain->:qp; };
+func:g__m5_plain_wild_plain = int64(R__m5_plain_wild_plain->:r) never fails { string:t = move((<-(<-r.qp).wp).s); pass t.len; };
+func:c_m5_plain_wild_plain = int64() never fails { X__m5_plain_wild_plain:x = X__m5_plain_wild_plain{ s: string_concat("ab", "cde"), k: 1i64 }; Q__m5_plain_wild_plain:q0 = Q__m5_plain_wild_plain{ wp: (@x) =>! wild X__m5_plain_wild_plain-> }; R__m5_plain_wild_plain:r0 = R__m5_plain_wild_plain{ qp: @q0 }; int64:n = raw g__m5_plain_wild_plain(@r0); pass n + x.s.len; };
+// m8_generic_T_plain; on 177a: exit=65; here: TYPE-104×1.
+struct:Hd__m8_generic_T_plain<T> = { T:v; };
+func:takev__m8_generic_T_plain<T> = T(Hd__m8_generic_T_plain<T>->:h) never fails { pass move(h.v); };
+func:c_m8_generic_T_plain = int64() never fails { Hd__m8_generic_T_plain<string>:h = Hd__m8_generic_T_plain{ v: string_concat("ab", "cde") }; string:t = raw takev__m8_generic_T_plain::<string>(@h); pass t.len + h.v.len; };
+// m10_slice_local_of_local; on 177a: exit=65; here: TYPE-104×1.
+struct:V__m10_slice_local_of_local = { wild string->:items; int64:count; };
+func:c_m10_slice_local_of_local = int64() never fails { wild string->:it = alloc(2i64 * 24i64) =>! wild string->; (<-it) = string_concat("ab", "cde"); V__m10_slice_local_of_local:v = V__m10_slice_local_of_local{ items: it, count: 1i64 }; string[]:s = #wild_slice<string>(v.items, v.count); string:t = move(s[0i64]); pass t.len + v.items[0i64].len; };
+// m13_wild_local_repointed; on 177a: exit=67; here: TYPE-104×1.
+struct:H__m13_wild_local_repointed = { string:s; int64:k; };
+fixed wild H__m13_wild_local_repointed->:P = NULL;
+func:c_m13_wild_local_repointed = int64() never fails { H__m13_wild_local_repointed:h = H__m13_wild_local_repointed{ s: string_concat("ab", "cde"), k: 1i64 }; wild H__m13_wild_local_repointed->:w = P; w = (@h) =>! wild H__m13_wild_local_repointed->; string:t = move((<-w).s); pass t.len + 2i64; };
+// p7_through_callee; on 177a: exit=60; here: TYPE-104×1.
+struct:H__p7_through_callee = { string:s; int64:k; };
+func:take__p7_through_callee = int64(move string:x) never fails { pass 0i64; };
+func:gp__p7_through_callee = int64(H__p7_through_callee->:p, int64:k) never fails { pass (<-p).s.len + k; };
+impl:H__p7_through_callee = {
+    func:mp = int64(Self->:self, int64:k) never fails { pass self.s.len + k; };
+    func:mv = int64(Self:self, int64:k) never fails { pass self.s.len + k; };
+    func:mb = int64(Self:self, int64:k) never fails { pass (string_bytes(self.s)[0i64] => int64) - 90i64 + k; };
+};
+func:vac__p7_through_callee = int64(H__p7_through_callee->:q) never fails { pass (raw take__p7_through_callee(move((<-q).s))); };
+// B-P7 (E6, callee form): the callee moves `(<-q).s` out; the caller reads `h.s.len` after. Fabricated 60. Right verdict: a refusal.
+func:c_p7_through_callee = int64() never fails {
+    H__p7_through_callee:h = H__p7_through_callee{ s: string_concat("ab", "cde"), k: 1i64 };
+    int64:t = raw vac__p7_through_callee(@h);
+    pass h.s.len + t;
+};
+// p7_through_holder; on 177a: exit=60; here: TYPE-104×1.
+struct:H__p7_through_holder = { string:s; int64:k; };
+func:take__p7_through_holder = int64(move string:x) never fails { pass 0i64; };
+func:gp__p7_through_holder = int64(H__p7_through_holder->:p, int64:k) never fails { pass (<-p).s.len + k; };
+impl:H__p7_through_holder = {
+    func:mp = int64(Self->:self, int64:k) never fails { pass self.s.len + k; };
+    func:mv = int64(Self:self, int64:k) never fails { pass self.s.len + k; };
+    func:mb = int64(Self:self, int64:k) never fails { pass (string_bytes(self.s)[0i64] => int64) - 90i64 + k; };
+};
+// B-P7 (E6): `h.s` moved out THROUGH `p`, then `h.s.len` read through the name. Fabricated 60 (or a fault at the drop). Right verdict: a refusal.
+func:c_p7_through_holder = int64() never fails {
+    H__p7_through_holder:h = H__p7_through_holder{ s: string_concat("ab", "cde"), k: 1i64 };
+    H__p7_through_holder->:p = @h;
+    int64:t = raw take__p7_through_holder(move((<-p).s));
+    pass h.s.len + t;
+};
+// m11_pass_deref_plain; on 177a: exit=65; here: TYPE-047×1.
+func:g__m11_pass_deref_plain = string(string->:p) never fails { pass (<-p); };
+func:c_m11_pass_deref_plain = int64() never fails { string:s = string_concat("ab", "cde"); string:t = raw g__m11_pass_deref_plain(@s); pass t.len + s.len; };
+// k2_realloc_field_ok MOVED to the `_ok` at build 7 (2026-11-01 18:28 EST): the bare `alloc` call is an origin outside the frame now (the walk's omission, below), so the cell is legal, 65 at both legs.
+// q11_wild_slice_copy_ok; on 177a: exit=65; here: TYPE-104×1.
+struct:V__q11_wild_slice_copy_ok = { wild string->:items; int64:count; };
+func:g__q11_wild_slice_copy_ok = int64(V__q11_wild_slice_copy_ok->:v, string[]:p) never fails { string[]:s = #wild_slice<string>(v.items, v.count); string[]:u = s; string:t = move(u[0i64]); pass t.len; };
+func:c_q11_wild_slice_copy_ok = int64() never fails { wild string->:it = alloc(48i64) =>! wild string->; (<-it) = string_concat("ab", "cde"); V__q11_wild_slice_copy_ok:v = V__q11_wild_slice_copy_ok{ items: it, count: 1i64 }; string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; pass raw g__q11_wild_slice_copy_ok(@v, a[0i64...2i64]); };
+// i1_cast_local_addr; on 177a: exit=65; here: TYPE-104×1.
+struct:H__i1_cast_local_addr = { string:s; };
+struct:Q__i1_cast_local_addr = { H__i1_cast_local_addr->:hp; };
+struct:W__i1_cast_local_addr = { H__i1_cast_local_addr:inner; };
+func:mk__i1_cast_local_addr = H__i1_cast_local_addr() never fails { pass H__i1_cast_local_addr{ s: string_concat("ab", "cde") }; };
+func:idp__i1_cast_local_addr = H__i1_cast_local_addr->(H__i1_cast_local_addr->:p) never fails { pass p; };
+func:g__i1_cast_local_addr = int64() never fails { H__i1_cast_local_addr:h = raw mk__i1_cast_local_addr(); string:t = move((<-((@h) =>! wild H__i1_cast_local_addr->)).s); pass t.len; };
+func:c_i1_cast_local_addr = int64() never fails { pass (raw g__i1_cast_local_addr()); };
+// i2_cast_copy_of_addr; on 177a: exit=65; here: TYPE-104×1.
+struct:H__i2_cast_copy_of_addr = { string:s; };
+struct:Q__i2_cast_copy_of_addr = { H__i2_cast_copy_of_addr->:hp; };
+struct:W__i2_cast_copy_of_addr = { H__i2_cast_copy_of_addr:inner; };
+func:mk__i2_cast_copy_of_addr = H__i2_cast_copy_of_addr() never fails { pass H__i2_cast_copy_of_addr{ s: string_concat("ab", "cde") }; };
+func:idp__i2_cast_copy_of_addr = H__i2_cast_copy_of_addr->(H__i2_cast_copy_of_addr->:p) never fails { pass p; };
+func:g__i2_cast_copy_of_addr = int64() never fails { H__i2_cast_copy_of_addr:h = raw mk__i2_cast_copy_of_addr(); H__i2_cast_copy_of_addr->:p = @h; string:t = move((<-(p =>! wild H__i2_cast_copy_of_addr->)).s); pass t.len; };
+func:c_i2_cast_copy_of_addr = int64() never fails { pass (raw g__i2_cast_copy_of_addr()); };
+// i3_cast_wild_local; on 177a: exit=65; here: TYPE-104×1.
+struct:H__i3_cast_wild_local = { string:s; };
+struct:Q__i3_cast_wild_local = { H__i3_cast_wild_local->:hp; };
+struct:W__i3_cast_wild_local = { H__i3_cast_wild_local:inner; };
+func:mk__i3_cast_wild_local = H__i3_cast_wild_local() never fails { pass H__i3_cast_wild_local{ s: string_concat("ab", "cde") }; };
+func:idp__i3_cast_wild_local = H__i3_cast_wild_local->(H__i3_cast_wild_local->:p) never fails { pass p; };
+func:g__i3_cast_wild_local = int64() never fails { H__i3_cast_wild_local:h = raw mk__i3_cast_wild_local(); wild H__i3_cast_wild_local->:w = (@h) =>! wild H__i3_cast_wild_local->; string:t = move((<-(w =>! wild H__i3_cast_wild_local->)).s); pass t.len; };
+func:c_i3_cast_wild_local = int64() never fails { pass (raw g__i3_cast_wild_local()); };
+// i6_cast_field_addr; on 177a: exit=65; here: TYPE-104×1.
+struct:H__i6_cast_field_addr = { string:s; };
+struct:Q__i6_cast_field_addr = { H__i6_cast_field_addr->:hp; };
+struct:W__i6_cast_field_addr = { H__i6_cast_field_addr:inner; };
+func:mk__i6_cast_field_addr = H__i6_cast_field_addr() never fails { pass H__i6_cast_field_addr{ s: string_concat("ab", "cde") }; };
+func:idp__i6_cast_field_addr = H__i6_cast_field_addr->(H__i6_cast_field_addr->:p) never fails { pass p; };
+func:g__i6_cast_field_addr = int64() never fails { W__i6_cast_field_addr:w = W__i6_cast_field_addr{ inner: raw mk__i6_cast_field_addr() }; string:t = move((<-((@w.inner) =>! wild H__i6_cast_field_addr->)).s); pass t.len; };
+func:c_i6_cast_field_addr = int64() never fails { pass (raw g__i6_cast_field_addr()); };
+// i7_cast_call_of_addr; on 177a: exit=65; here: TYPE-104×1.
+struct:H__i7_cast_call_of_addr = { string:s; };
+struct:Q__i7_cast_call_of_addr = { H__i7_cast_call_of_addr->:hp; };
+struct:W__i7_cast_call_of_addr = { H__i7_cast_call_of_addr:inner; };
+func:mk__i7_cast_call_of_addr = H__i7_cast_call_of_addr() never fails { pass H__i7_cast_call_of_addr{ s: string_concat("ab", "cde") }; };
+func:idp__i7_cast_call_of_addr = H__i7_cast_call_of_addr->(H__i7_cast_call_of_addr->:p) never fails { pass p; };
+func:g__i7_cast_call_of_addr = int64() never fails { H__i7_cast_call_of_addr:h = raw mk__i7_cast_call_of_addr(); string:t = move((<-((raw idp__i7_cast_call_of_addr(@h)) =>! wild H__i7_cast_call_of_addr->)).s); pass t.len; };
+func:c_i7_cast_call_of_addr = int64() never fails { pass (raw g__i7_cast_call_of_addr()); };
+// i8_cast_through_any; on 177a: exit=65; here: TYPE-104×1.
+struct:H__i8_cast_through_any = { string:s; };
+struct:Q__i8_cast_through_any = { H__i8_cast_through_any->:hp; };
+struct:W__i8_cast_through_any = { H__i8_cast_through_any:inner; };
+func:mk__i8_cast_through_any = H__i8_cast_through_any() never fails { pass H__i8_cast_through_any{ s: string_concat("ab", "cde") }; };
+func:idp__i8_cast_through_any = H__i8_cast_through_any->(H__i8_cast_through_any->:p) never fails { pass p; };
+func:g__i8_cast_through_any = int64() never fails { H__i8_cast_through_any:h = raw mk__i8_cast_through_any(); string:t = move((<-(((@h) =>! any->) =>! wild H__i8_cast_through_any->)).s); pass t.len; };
+func:c_i8_cast_through_any = int64() never fails { pass (raw g__i8_cast_through_any()); };
+// i9_cast_ternary; on 177a: exit=65; here: TYPE-104×1.
+struct:H__i9_cast_ternary = { string:s; };
+struct:Q__i9_cast_ternary = { H__i9_cast_ternary->:hp; };
+struct:W__i9_cast_ternary = { H__i9_cast_ternary:inner; };
+func:mk__i9_cast_ternary = H__i9_cast_ternary() never fails { pass H__i9_cast_ternary{ s: string_concat("ab", "cde") }; };
+func:idp__i9_cast_ternary = H__i9_cast_ternary->(H__i9_cast_ternary->:p) never fails { pass p; };
+func:g__i9_cast_ternary = int64(H__i9_cast_ternary->:p, bool:c) never fails { H__i9_cast_ternary:h = raw mk__i9_cast_ternary(); string:t = move((<-((is (c) : (@h) : p) =>! wild H__i9_cast_ternary->)).s); pass t.len; };
+func:c_i9_cast_ternary = int64() never fails { H__i9_cast_ternary:h = raw mk__i9_cast_ternary(); int64:n = raw g__i9_cast_ternary(@h, true); pass n; };
+// i10_cast_holder_field; on 177a: exit=65; here: TYPE-104×1.
+struct:H__i10_cast_holder_field = { string:s; };
+struct:Q__i10_cast_holder_field = { H__i10_cast_holder_field->:hp; };
+struct:W__i10_cast_holder_field = { H__i10_cast_holder_field:inner; };
+func:mk__i10_cast_holder_field = H__i10_cast_holder_field() never fails { pass H__i10_cast_holder_field{ s: string_concat("ab", "cde") }; };
+func:idp__i10_cast_holder_field = H__i10_cast_holder_field->(H__i10_cast_holder_field->:p) never fails { pass p; };
+func:g__i10_cast_holder_field = int64() never fails { H__i10_cast_holder_field:h = raw mk__i10_cast_holder_field(); Q__i10_cast_holder_field:q = Q__i10_cast_holder_field{ hp: @h }; string:t = move((<-(q.hp =>! wild H__i10_cast_holder_field->)).s); pass t.len; };
+func:c_i10_cast_holder_field = int64() never fails { pass (raw g__i10_cast_holder_field()); };
+// i11_cast_repointed_param; on 177a: exit=65; here: TYPE-104×1.
+struct:H__i11_cast_repointed_param = { string:s; };
+struct:Q__i11_cast_repointed_param = { H__i11_cast_repointed_param->:hp; };
+struct:W__i11_cast_repointed_param = { H__i11_cast_repointed_param:inner; };
+func:mk__i11_cast_repointed_param = H__i11_cast_repointed_param() never fails { pass H__i11_cast_repointed_param{ s: string_concat("ab", "cde") }; };
+func:idp__i11_cast_repointed_param = H__i11_cast_repointed_param->(H__i11_cast_repointed_param->:p) never fails { pass p; };
+func:g__i11_cast_repointed_param = int64(H__i11_cast_repointed_param->:p) never fails { H__i11_cast_repointed_param:h = raw mk__i11_cast_repointed_param(); H__i11_cast_repointed_param->:q = p; q = @h; string:t = move((<-(q =>! wild H__i11_cast_repointed_param->)).s); pass t.len; };
+func:c_i11_cast_repointed_param = int64() never fails { H__i11_cast_repointed_param:h = raw mk__i11_cast_repointed_param(); int64:n = raw g__i11_cast_repointed_param(@h); (<-(@h)).s = "x"; pass n; };
+// i12_cast_repoint_after; on 177a: exit=70; here: TYPE-104×1.
+struct:H__i12_cast_repoint_after = { string:s; };
+struct:Q__i12_cast_repoint_after = { H__i12_cast_repoint_after->:hp; };
+struct:W__i12_cast_repoint_after = { H__i12_cast_repoint_after:inner; };
+func:mk__i12_cast_repoint_after = H__i12_cast_repoint_after() never fails { pass H__i12_cast_repoint_after{ s: string_concat("ab", "cde") }; };
+func:idp__i12_cast_repoint_after = H__i12_cast_repoint_after->(H__i12_cast_repoint_after->:p) never fails { pass p; };
+func:g__i12_cast_repoint_after = int64(H__i12_cast_repoint_after->:p) never fails { H__i12_cast_repoint_after:h = raw mk__i12_cast_repoint_after(); H__i12_cast_repoint_after->:q = p; int64:n = 0i64; for (int32:i in 0i32...2i32) { string:t = move((<-(q =>! wild H__i12_cast_repoint_after->)).s); n = n + t.len; q = @h; } pass n; };
+func:c_i12_cast_repoint_after = int64() never fails { H__i12_cast_repoint_after:h = raw mk__i12_cast_repoint_after(); int64:n = raw g__i12_cast_repoint_after(@h); (<-(@h)).s = "x"; pass n; };
+// lk1_lock_pass_move_deref; on 177a: BORROW-001×1 REACH-002×1; here: TYPE-104×1.
+// THE LOCK'S OLD SPELLING (management_13, 2026-11-01 17:59:32 EST): spawn_lends.npk's cell 1 as it stood from landing 173 to 177a -- a spawn stored
+// the frame-local `@b` into the frame-local lock `v`, and `pass move(<-sp)` handed the lock out through a named pointer: BORROW-001 by DEF-393(a)'s
+// `lends` mark until 177a, TYPE-104 at the typer since DEF-416 (a move through a plain pointer). The by-value `pass move(v)` is DEF-395's face 1, open.
+fixed Duration:JL1 = Duration{ ns: 2000000000i64 };
+thread async func:stash_m__lk1_lock_pass_move_deref = NIL(Mutex<Barrier<1i32, 5i32>->, 3i32>->:dst, Barrier<1i32, 5i32>->:q) joins JL1 {
+    Guard<Barrier<1i32, 5i32>->>:g = await dst.acquire(raw duration_ms(500i64)) ?! E1;
+    g.value = q;
+    pass NIL;
+};
+async func:mk__lk1_lock_pass_move_deref = Mutex<Barrier<1i32, 5i32>->, 3i32>(Barrier<1i32, 5i32>->:ext) {
+    Barrier<1i32, 5i32>:b = barrier() ?! E1;
+    Mutex<Barrier<1i32, 5i32>->, 3i32>:v = mutex(ext) ?! E1;
+    Mutex<Barrier<1i32, 5i32>->, 3i32>->:sp = @v;
+    { drop stash_m__lk1_lock_pass_move_deref(@v, @b); }
+    pass move(<-sp);
+};
+// lk2_lock_pass_deref; on 177a: BORROW-001×1 REACH-002×1; here: TYPE-047×1.
+// THE LOCK'S OLD SPELLING (management_13, 2026-11-01 17:59:32 EST): the pass road of spawn_lends.npk's cell 1 as it stood from landing 173 to 177a -- a spawn stored
+// the frame-local `@b` into the frame-local lock `v`, and `pass move(<-sp)` handed the lock out through a named pointer: BORROW-001 by DEF-393(a)'s
+// `lends` mark until 177a, TYPE-047 at the typer since DEF-416 (the pass road, `pass <-sp`: a by-value copy of the pointee owner). The by-value `pass move(v)` is DEF-395's face 1, open.
+fixed Duration:JL2 = Duration{ ns: 2000000000i64 };
+thread async func:stash_m__lk2_lock_pass_deref = NIL(Mutex<Barrier<1i32, 5i32>->, 3i32>->:dst, Barrier<1i32, 5i32>->:q) joins JL2 {
+    Guard<Barrier<1i32, 5i32>->>:g = await dst.acquire(raw duration_ms(500i64)) ?! E1;
+    g.value = q;
+    pass NIL;
+};
+async func:mk__lk2_lock_pass_deref = Mutex<Barrier<1i32, 5i32>->, 3i32>(Barrier<1i32, 5i32>->:ext) {
+    Barrier<1i32, 5i32>:b = barrier() ?! E1;
+    Mutex<Barrier<1i32, 5i32>->, 3i32>:v = mutex(ext) ?! E1;
+    Mutex<Barrier<1i32, 5i32>->, 3i32>->:sp = @v;
+    { drop stash_m__lk2_lock_pass_deref(@v, @b); }
+    pass <-sp;
+};
+// rl1_long_form_deref_param; on 177a: exit=65 (landing 171's control 13: the pointee vacated, `a.s.len` read as 0); here: TYPE-047×1.
+struct:H__rl1 = { string:s; int64:k; };
+func:mk__rl1 = H__rl1() never fails { pass H__rl1{ s: string_concat("ab", "cde"), k: 1i64 }; };
+func:lr__rl1 = H__rl1(H__rl1->:pa) {
+    return Result{value: <-pa};
+};
+func:c_rl1_long_form_deref_param = int64() never fails {
+    H__rl1:a = raw mk__rl1();
+    H__rl1:x = lr__rl1(@a) ?| raw mk__rl1();
+    pass (x.s.len + a.s.len + 60i64);
+};
+// al3_laundered_through_call; on 177a: exit=65 (the pointee vacated through the laundered pointer, `h.s.len` read as 0); here: TYPE-104×1.
+struct:H__al3 = { string:s; };
+func:mk__al3 = H__al3() never fails { pass H__al3{ s: string_concat("ab", "cde") }; };
+func:same__al3 = string->(string->:q) never fails { pass q; };
+func:c_al3_laundered_through_call = int64() never fails {
+    H__al3:h = raw mk__al3();
+    wild string->:w = (raw same__al3(@h.s)) =>! wild string->;
+    string:s1 = move(<-w);
+    pass (s1.len + h.s.len + 60i64);
+};
+// --- the grid (`r416*`): one preamble, then each cell's own declarations and its `main` as a function ---
+struct:H = { string:s; int64:k; };
+enum:Ev = { Str(string); Nop; };
+struct:Hv = { Ev:e; };
+func:take = int64(move string:x) never fails { pass x.len; };
+impl:H = {
+    func:consume = int64(move Self:self) never fails { pass self.s.len; };
+    func:byval = int64(Self:self) never fails { pass self.s.len; };
+};
+func:mk = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 1i64 }; };
+// r416_struct_move; on 177a: exit=60; here: TYPE-104×1.
+func:v__r416_struct_move = H(H->:p) never fails { pass H{ s: move(p.s), k: 2i64 }; };
+func:c_r416_struct_move = int64() never fails {
+    H:h = raw mk();
+    H:t = raw v__r416_struct_move(@h);
+    pass ((h.s.len) + 60i64);
+};
+// r416_pick_move; on 177a: exit=65; here: TYPE-104×1.
+func:v__r416_pick_move = int64(Hv->:p) never fails { pick (move(p.e)) { (Ev.Str(x)) { pass x.len; }, (Ev.Nop) { pass 0i64; } } pass 0i64; };
+func:c_r416_pick_move = int64() never fails {
+    H:h = raw mk();
+    Hv:g = Hv{ e: Ev.Str(string_concat("a", "b")) }; int64:t = raw v__r416_pick_move(@g);
+    pass ((h.s.len) + 60i64);
+};
+// r416_recv_move3; on 177a: exit=60; here: TYPE-104×1.
+func:v__r416_recv_move3 = int64(H->:p) never fails { pass raw (move(<-p)).consume(); };
+func:c_r416_recv_move3 = int64() never fails {
+    H:h = raw mk();
+    int64:t = raw v__r416_recv_move3(@h);
+    pass ((h.s.len) + 60i64);
+};
+// r416_list_ptr; on 177a: exit=60; here: TYPE-104×1.
+func:v__r416_list_ptr = string(List<string>->:p) never fails { pass move((<-p)[0i64]); };
+func:c_r416_list_ptr = int64() never fails {
+    H:h = raw mk();
+    List<string>:l = raw list_init::<string>(2i64); drop list_push(@l, string_concat("a", "b")); string:t = raw v__r416_list_ptr(@l); pass (l[0i64].len + 60i64);
+};
+// r416b_wild_local_root; on 177a: BORROW-001×1; here: TYPE-104×1.
+func:v__r416b_wild_local_root = string() never fails { H:h2 = raw mk(); wild H->:w = (@h2) =>! wild H->; pass move(w.s); };
+func:c_r416b_wild_local_root = int64() never fails {
+    H:h = raw mk();
+    string:t = raw v__r416b_wild_local_root();
+    pass ((h.s.len) + 60i64);
+};
+// r416c_wild_derived; on 177a: exit=65; here: TYPE-104×1.
+func:v__r416c_wild_derived = int64() never fails { H:h2 = raw mk(); wild H->:w = (@h2) =>! wild H->; string:t = move(w.s); pass h2.s.len + t.len; };
+func:c_r416c_wild_derived = int64() never fails {
+    H:h = raw mk();
+    int64:t = raw v__r416c_wild_derived(); pass (t + 60i64);
+};
+// r416_pass_deref; on 177a: exit=60; here: TYPE-047×1.
+func:v__r416_pass_deref = string(string->:p) never fails { pass (<-p); };
+func:c_r416_pass_deref = int64() never fails {
+    H:h = raw mk();
+    string:t = raw v__r416_pass_deref(@h.s);
+    pass ((h.s.len) + 60i64);
+};
+// r416b_pass_whole; on 177a: exit=60; here: TYPE-047×1.
+func:v__r416b_pass_whole = H(H->:p) never fails { pass (<-p); };
+func:c_r416b_pass_whole = int64() never fails {
+    H:h = raw mk();
+    H:t = raw v__r416b_pass_whole(@h);
+    pass ((h.s.len) + 60i64);
+};
+// r416b_pass_deref_member; on 177a: exit=60; here: TYPE-047×1.
+func:v__r416b_pass_deref_member = string(H->:p) never fails { pass (<-p).s; };
+func:c_r416b_pass_deref_member = int64() never fails {
+    H:h = raw mk();
+    string:t = raw v__r416b_pass_deref_member(@h);
+    pass ((h.s.len) + 60i64);
+};
+// r416b_pass_deref_index; on 177a: exit=60; here: TYPE-047×1.
+func:v__r416b_pass_deref_index = string(string[2]->:p) never fails { pass (<-p)[0i64]; };
+func:c_r416b_pass_deref_index = int64() never fails {
+    H:h = raw mk();
+    string[2]:g = [string_concat("a", "b"), string_concat("c", "d")]; string:t = raw v__r416b_pass_deref_index(@g); pass (g[0i64].len + 60i64);
+};
+// r416b_call_deref; on 177a: exit=60; here: TYPE-047×1.
+func:idp__r416b_call_deref = string->(string->:p) never fails { pass p; };
+func:v__r416b_call_deref = string(string->:p) never fails { pass (<-(raw idp__r416b_call_deref(p))); };
+func:c_r416b_call_deref = int64() never fails {
+    H:h = raw mk();
+    string:t = raw v__r416b_call_deref(@h.s);
+    pass ((h.s.len) + 60i64);
+};
+// r416b_local_ptr; on 177a: exit=65; here: TYPE-047×1.
+func:v__r416b_local_ptr = string() never fails { H:h2 = raw mk(); string->:p = @h2.s; pass (<-p); };
+func:c_r416b_local_ptr = int64() never fails {
+    H:h = raw mk();
+    string:t = raw v__r416b_local_ptr();
+    pass ((h.s.len) + 60i64);
+};
+// r416c_return_lit; on 177a: exit=60; here: TYPE-047×1.
+func:v__r416c_return_lit = string(string->:p) { return Result{ value: (<-p) }; };
+func:c_r416c_return_lit = int64() never fails {
+    H:h = raw mk();
+    string:t = v__r416c_return_lit(@h.s) ?| "x";
+    pass ((h.s.len) + 60i64);
+};
+// r416b_return_lit; on 177a: TYPE-037×1; here: TYPE-037×1 TYPE-047×1.
+func:v__r416b_return_lit = string(string->:p) never fails { return Result{ value: (<-p) }; };
+func:c_r416b_return_lit = int64() never fails {
+    H:h = raw mk();
+    string:t = raw v__r416b_return_lit(@h.s);
+    pass ((h.s.len) + 60i64);
+};
+// al5_alloc_then_repoint; on 177a: exit=65; here: TYPE-104×1.
+func:mks__al5_alloc_then_repoint = string() never fails { pass string_concat("ab", "cde"); };
+func:c_al5_alloc_then_repoint = int64() never fails { string:o = raw mks__al5_alloc_then_repoint(); wild int8->:m = alloc(32i64); m = (@o) =>! wild int8->; wild string->:ws = m =>! wild string->; string:t = move(<-ws); pass (t.len + 60i64); };
+// al6_repoint_after_loop; on 177a: exit=70; here: TYPE-104×1.
+func:mks__al6_repoint_after_loop = string() never fails { pass string_concat("ab", "cde"); };
+func:newcell__al6_repoint_after_loop = wild string->() never fails { wild string->:w = alloc(32i64) =>! wild string->; (<-w) = raw mks__al6_repoint_after_loop(); pass w; };
+func:c_al6_repoint_after_loop = int64() never fails { string:o = raw mks__al6_repoint_after_loop(); wild string->:ws = raw newcell__al6_repoint_after_loop(); int64:n = 0i64; for (int32:i in 0i32...2i32) { string:t = move(<-ws); n = n + t.len; ws = (@o) =>! wild string->; } pass (n + 60i64); };
+// al7_copy_repoint_after; on 177a: exit=70; here: TYPE-104×1.
+func:mks__al7_copy_repoint_after = string() never fails { pass string_concat("ab", "cde"); };
+func:newcell__al7_copy_repoint_after = wild string->() never fails { wild string->:w = alloc(32i64) =>! wild string->; (<-w) = raw mks__al7_copy_repoint_after(); pass w; };
+func:c_al7_copy_repoint_after = int64() never fails { string:o = raw mks__al7_copy_repoint_after(); wild string->:a = raw newcell__al7_copy_repoint_after(); int64:n = 0i64; for (int32:i in 0i32...2i32) { wild string->:b = a; string:t = move(<-b); n = n + t.len; a = (@o) =>! wild string->; } pass (n + 60i64); };
+// pa5_ptr_add_over_own; on 177a: exit=65; here: TYPE-104×1.
+func:mks__pa5_ptr_add_over_own = string() never fails { pass string_concat("ab", "cde"); };
+func:c_pa5_ptr_add_over_own = int64() never fails { string[2]:arr = [raw mks__pa5_ptr_add_over_own(), raw mks__pa5_ptr_add_over_own()]; wild string->:w = #ptr_add<string>((@arr[0i64]) =>! wild string->, 1i64); string:t = move(<-w); pass (t.len + 60i64); };
+// pa6_ptr_add_inline_own; on 177a: exit=65; here: TYPE-104×1.
+func:mks__pa6_ptr_add_inline_own = string() never fails { pass string_concat("ab", "cde"); };
+func:c_pa6_ptr_add_inline_own = int64() never fails { string[2]:arr = [raw mks__pa6_ptr_add_inline_own(), raw mks__pa6_ptr_add_inline_own()]; string:t = move(<-(#ptr_add<string>((@arr[0i64]) =>! wild string->, 1i64))); pass (t.len + 60i64); };
+// pa7_ptr_add_local_struct; on 177a: exit=65; here: TYPE-104×1.
+struct:L__pa7_ptr_add_local_struct = { wild string->:items; int64:n; };
+func:mks__pa7_ptr_add_local_struct = string() never fails { pass string_concat("ab", "cde"); };
+func:newcell__pa7_ptr_add_local_struct = wild string->() never fails { wild string->:w = alloc(32i64) =>! wild string->; (<-w) = raw mks__pa7_ptr_add_local_struct(); pass w; };
+func:c_pa7_ptr_add_local_struct = int64() never fails { wild string->:c = raw newcell__pa7_ptr_add_local_struct(); L__pa7_ptr_add_local_struct:v = L__pa7_ptr_add_local_struct{ items: c, n: 1i64 }; string:t = move(<-(#ptr_add<string>(v.items, 0i64))); dalloc(c =>! wild int8->); pass (t.len + 60i64); };
+// pa9_ptr_add_repointed_field; on 177a: BORROW-002×1; here: TYPE-104×1.
+struct:L__pa9_ptr_add_repointed_field = { wild string->:items; int64:n; };
+func:mks__pa9_ptr_add_repointed_field = string() never fails { pass string_concat("ab", "cde"); };
+func:newcell__pa9_ptr_add_repointed_field = wild string->() never fails { wild string->:w = alloc(32i64) =>! wild string->; (<-w) = raw mks__pa9_ptr_add_repointed_field(); pass w; };
+func:h__pa9_ptr_add_repointed_field = int64(L__pa9_ptr_add_repointed_field->:v) never fails { string:o = raw mks__pa9_ptr_add_repointed_field(); v.items = (@o) =>! wild string->; string:t = move(<-(#ptr_add<string>(v.items, 0i64))); pass t.len; };
+func:c_pa9_ptr_add_repointed_field = int64() never fails { wild string->:c = raw newcell__pa9_ptr_add_repointed_field(); L__pa9_ptr_add_repointed_field:v = L__pa9_ptr_add_repointed_field{ items: c, n: 1i64 }; pass ((raw h__pa9_ptr_add_repointed_field(@v)) + 60i64); };
+// pa10_ptr_add_repointed_after; on 177a: BORROW-002×1; here: TYPE-104×1.
+struct:L__pa10_ptr_add_repointed_after = { wild string->:items; int64:n; };
+func:mks__pa10_ptr_add_repointed_after = string() never fails { pass string_concat("ab", "cde"); };
+func:newcell__pa10_ptr_add_repointed_after = wild string->() never fails { wild string->:w = alloc(32i64) =>! wild string->; (<-w) = raw mks__pa10_ptr_add_repointed_after(); pass w; };
+func:h__pa10_ptr_add_repointed_after = int64(L__pa10_ptr_add_repointed_after->:v) never fails { string:o = raw mks__pa10_ptr_add_repointed_after(); int64:n = 0i64; for (int32:i in 0i32...2i32) { string:t = move(<-(#ptr_add<string>(v.items, 0i64))); n = n + t.len; v.items = (@o) =>! wild string->; } pass n; };
+func:c_pa10_ptr_add_repointed_after = int64() never fails { wild string->:c = raw newcell__pa10_ptr_add_repointed_after(); L__pa10_ptr_add_repointed_after:v = L__pa10_ptr_add_repointed_after{ items: c, n: 1i64 }; pass ((raw h__pa10_ptr_add_repointed_after(@v)) + 60i64); };
+// pa11_pass_road_own; on 177a: BORROW-001×1; here: TYPE-047×1.
+func:mks__pa11_pass_road_own = string() never fails { pass string_concat("ab", "cde"); };
+func:h__pa11_pass_road_own = string() never fails { string[2]:arr = [raw mks__pa11_pass_road_own(), raw mks__pa11_pass_road_own()]; pass (<-(#ptr_add<string>((@arr[0i64]) =>! wild string->, 1i64))); };
+func:c_pa11_pass_road_own = int64() never fails { string:t = raw h__pa11_pass_road_own(); pass (t.len + 60i64); };
+// rk7a_two_types_second_arg; on 177a: exit=60; here: TYPE-104×1.
+func:g2__rk7<T, U> = wild T->(int64:n, U->:q) never fails { pass (q =>! wild T->); };
+func:c_rk7a_two_types_second_arg = int64() never fails { H:h = raw mk(); wild H->:w = raw g2__rk7::<H, H>(1i64, @h); string:t = move((<-w).s); pass h.s.len; };
+// rk7b_two_types_first_arg; on 177a: exit=60; here: TYPE-104×1.
+func:g3__rk7<T, U> = wild T->(U->:q, int64:n) never fails { pass (q =>! wild T->); };
+func:c_rk7b_two_types_first_arg = int64() never fails { H:h = raw mk(); wild H->:w = raw g3__rk7::<H, H>(@h, 1i64); string:t = move((<-w).s); pass h.s.len; };
+// rk7c_two_types_inline; on 177a: exit=60; here: TYPE-104×1.
+func:c_rk7c_two_types_inline = int64() never fails { H:h = raw mk(); string:t = move((<-(raw g2__rk7::<H, H>(1i64, @h))).s); pass h.s.len; };
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E1)               { exit 56i32; },
+        (E5)               { exit 55i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

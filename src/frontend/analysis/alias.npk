@@ -2413,6 +2413,49 @@ func:push_loop_binding_parties = NIL(Alias->:x, DeclId:bind) never fails {
     pass NIL;
 };
 
+// AN ELEMENT THAT MAY DROP (DEF-421, landing 177b; the one closed predicate of the `for` party): what `type_drops` records, and YES wherever the
+// answer cannot be read -- a generic `T`, the `Copy` bound unread (DEF-421's closed choice; `e3c_generic_whole`, `rb3a_generic_nested_array`,
+// `rb3b_generic_optional`, `rb3c_generic_struct`), `Self` and an associated type (`rg1c_self_elem_freed_read`, `rg1f_self_elem_slice_param`), an
+// unresolved type, and the fuel's end (`re1x_generic_array_17`, `rg3_concrete_array_65`: `type_mentions_param`'s 16 and `type_drops`' 64 levels
+// answered NO past their fuel, 67 on 177a, so the element raised no party). A kind holding its element by value answers by the element, a struct
+// or an enum by its type arguments (`Bx<T>`); a pointer, a slice and a function value drop nothing whatever they name (`rg2a_ptr_to_T_elem_generic`:
+// a `T->` element is a true copy, refused until this predicate), and so does every other kind that records no drop.
+func:elem_may_drop = bool(Alias->:x, int32:el, int32:fuel) decreases fuel never fails {
+    if ((fuel <= 0i32) || (raw type_drops(x.tr, el, x.scope, 64i32))) { pass true; }
+    int32:k = raw type_kind(x.types, el);
+    if ((k == (raw TY_PARAM())) || (k == (raw TY_SELF())) || (k == (raw TY_ASSOC())) || (k == (raw TY_INVALID()))) { pass true; }
+    if ((k == (raw TY_ARRAY())) || (k == (raw TY_OPTIONAL())) || (k == (raw TY_RESULT())) || (k == (raw TY_ATOMIC()))) { pass (raw elem_may_drop(x, raw type_elem(x.types, el), fuel - 1i32)); }
+    if ((k == (raw TY_STRUCT())) || (k == (raw TY_ENUM()))) {
+        for (int32:i in 0i32...(raw type_args_count_of(x.types, el))) {
+            if (raw elem_may_drop(x, raw ast_id_at(x.ast, raw type_args_start_of(x.types, el), i), fuel - 1i32)) { pass true; }
+        }
+    }
+    pass false;
+};
+
+// A `for` OVER A NAMED ARRAY OR SLICE OF OWNERS (DEF-421, landing 177b): a binding, a field, an element, a dereference or a cast on
+// the way -- the binding is a shallow copy of each element (`emit_for_indexed`), so a write AT the place, ABOVE it (`o = …`, `o.i = …`,
+// `seto(@o)`) or BELOW it (`a[0] = …`, `self.w0()`), in the body or in a callee, frees what the binding reads: 83 on 175, 176b and 177a
+// (`fa_arr_owner_ctl`, the row's eight, `p1`..`p4`, `r1`, `t12`). One VIEW party of the place for the loop's frame, as a lending `pick`
+// arm's is (P): its steps are the place's own. An element that drops nothing is a true copy and no party (`k2_int_elem_ok`); an element
+// that MAY drop is `elem_may_drop`'s answer, above. A pointer to the array is
+// peeled as `check_for` peels it, the root the pointer (`root_ptr`: its own reassignment leaves the pointee alone).
+func:push_for_place_party = NIL(Alias->:x, ExprId:it) never fails {
+    if (!(raw is_place_chain(x, it))) { pass NIL; }
+    int32:t = raw exprtypes_get(x.etypes, it);
+    int32:root = raw place_root_symbol(x, it);
+    if (root == 0i32) { pass NIL; }
+    if (t != 0i32) {   // a place whose type is missing raises the party, the closed direction (DEF-421, landing 177b; `rejudge_holder`'s flip the same)
+        if ((raw type_kind(x.types, t)) == (raw TY_POINTER())) { t = raw type_elem(x.types, t); }
+        int32:k = raw type_kind(x.types, t);
+        if ((k != (raw TY_ARRAY())) && (k != (raw TY_SLICE()))) { pass NIL; }
+        if (!(raw elem_may_drop(x, raw type_elem(x.types, t), 16i32))) { pass NIL; }
+    }
+    drop list_push(@x.live, Party{ site: it, kind: raw PARTY_VIEW(), root: root, holder: 0i32 - 1i32, place: it, view_kind: raw VIEW_DIRECT(),
+                                   root_ptr: raw root_ident_is_pointer(x, it), path: 0i32 });
+    pass NIL;
+};
+
 // The parties admitted into this holder, made live now (its declaration).
 func:register_holder = NIL(Alias->:x, int32:hsym) never fails {
     if (hsym == 0i32) { pass NIL; }
@@ -2529,8 +2572,9 @@ func:alias_stmt = NIL(Alias->:x, StmtId:id, int32:depth) never fails {
     if (s.kind == StmtKind.StmtForStmt) {
         drop acc_top(x, raw stmt_for_iter(x.ast, s), raw ACC_READ(), dd, false);
         drop frame_push(x);
-        // F (management_12's ruling of 2026-11-01 10:55): a `for` over a call's result or a range holds that VIEW's header for its whole body, so the view is a party of the loop's frame: `for (.. in raw mkv(@s)) { setq(q); }` read freed bytes (44, 229; `h3b`..`h3g`, `f1`..`f15`). A loop over a named binding keeps its own road, `h3e_for_ctl`.
+        // F (management_12's ruling of 2026-11-01 10:55): a `for` over a call's result or a range holds that VIEW's header for its whole body, so the view is a party of the loop's frame: `for (.. in raw mkv(@s)) { setq(q); }` read freed bytes (44, 229; `h3b`..`h3g`, `f1`..`f15`; `h3e_for_ctl` is a call result too, its owner left alone). A loop over a NAMED place is DEF-421's party below.
         if ((raw ast_expr(x.ast, raw stmt_for_iter(x.ast, s))).kind != ExprKind.ExprIdentifierExpr) { drop push_value_view_parties(x, raw stmt_for_iter(x.ast, s)); }
+        drop push_for_place_party(x, raw stmt_for_iter(x.ast, s));
         drop push_loop_binding_parties(x, raw stmt_for_binding(s));
         drop alias_stmt(x, raw stmt_for_body(x.ast, s), dd);
         drop frame_pop(x);
@@ -3684,11 +3728,11 @@ func:rejudge_earlier = NIL(Alias->:x, ExprId:snap, ExprId:id, ExprId:recv, int32
             continue;
         }
         int32:et = raw exprtypes_get(x.etypes, e);
-        if ((pk >= 0i32) || (et == 0i32) || (!vals)) { continue; }
-        if ((raw type_kind(x.types, et)) == (raw TY_POINTER())) {
+        if ((pk >= 0i32) || (!vals)) { continue; }
+        if ((et == 0i32) || ((raw type_kind(x.types, et)) == (raw TY_POINTER()))) {   // a missing type is judged as a pointer, the closed direction (DEF-421, landing 177b)
             drop check_written(x, e, fn, base + k, sp);
         }
-        if (((raw type_kind(x.types, et)) == (raw TY_SLICE())) && (!(raw type_slice_fixed(x.types, et)))) {
+        if ((et != 0i32) && ((raw type_kind(x.types, et)) == (raw TY_SLICE())) && (!(raw type_slice_fixed(x.types, et)))) {
             if (raw is_place_chain(x, e)) {
                 drop check_written_slice(x, e, fn, base + k, sp);
             } else {
@@ -3710,7 +3754,7 @@ func:rejudge_holder = NIL(Alias->:x, ExprId:a, int64:d0) never fails {
     if (!seen) { pass NIL; }
     int32:t = raw exprtypes_get(x.etypes, a);
     if ((t != 0i32) && ((raw type_kind(x.types, t)) == (raw TY_POINTER()))) { t = raw type_elem(x.types, t); }
-    if ((t == 0i32) || (!(raw type_holds_elem_pointer(x, t, 0i32, 8i32)))) { pass NIL; }
+    if ((t != 0i32) && (!(raw type_holds_elem_pointer(x, t, 0i32, 8i32)))) { pass NIL; }   // a type this pass cannot read is judged, not skipped (landing 177b: the fail-open flipped; 177a's sweep met no such site)
     ExprNode:an = raw ast_expr(x.ast, a);
     int32:hr = raw place_root_symbol(x, is (an.kind == ExprKind.ExprAddressOfExpr) : (raw expr_operand(an)) : a);
     for (int64:i in 0i64...x.live.count) {

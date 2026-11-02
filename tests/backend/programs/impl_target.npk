@@ -34,7 +34,7 @@ impl:N:Base = { func:base = int32(N:self) { pass self.v; }; };
 struct:Box<T> = { T:v; };
 impl:<T>:Box<T> = {
     func:set = NIL(Box<T>->:self, move T:v) never fails { self.v = move(v); pass NIL; };   // D-264
-    func:get = T(Box<T>->:self) never fails        { pass move(self.v); };   // D-264; DEF-104
+    func:get = T(move Box<T>:self) never fails     { pass move(self.v); };   // D-264; DEF-104; a `move` receiver since landing 177b (DEF-416: through the pointer it is TYPE-104)
 };
 
 func:main = int32(cstring[]:_~argv) {
@@ -43,7 +43,7 @@ func:main = int32(cstring[]:_~argv) {
 
     Box<int32>:b = Box{ v: 5i32 };
     drop b.set(17i32);                  // the mutating inherent family method
-    int32:g = raw b.get();             // 17
+    int32:g = raw (move(b)).get();     // 17, the box consumed
 
     exit d + g + 5i32;                 // 20 + 17 + 5 = 42
 };

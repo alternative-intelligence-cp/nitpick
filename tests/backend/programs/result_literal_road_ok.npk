@@ -21,6 +21,9 @@
 // function filling the `never fails` slot (site 33). Controls 27-30's literals stand in functions returning PS, the
 // literal's `T` (DEF-388, OPEN HIGH: a literal outside a `return` is typed by the enclosing function's success type
 // and wild context, never by its slot). Exit 0 at both legs under this compiler and landing 171's.
+// DATED NOTE 2026-11-01 (landing 177b, DEF-416, `NITPICK-TYPE-104`/`TYPE-047`): the header's "a pointer parameter's whole pointee (left VACANT,
+// D-225)" describes landings 171 to 177a; control 13 (`lr_deref`, `c_deref`) is retired below, its refusal pinned in
+// tests/types/rejection/move_through_pointer.npk (`rl1_long_form_deref_param`). The other controls stand.
 mod:result_literal_road_ok;
 error:E1;
 struct:PS = { string:s; int64:k; };
@@ -79,14 +82,10 @@ func:c_field = int64() {
     PS:x = lr_field() ?| raw mk6();
     pass x.s.len;
 };
-func:lr_deref = PS(PS->:pa) {
-    return Result{value: <-pa};
-};
-func:c_deref = int64() {
-    PS:a = raw mk();
-    PS:x = lr_deref(@a) ?| raw mk6();
-    pass x.s.len + a.s.len;
-};
+// CONTROL 13 RETIRED 2026-11-01 (1.6.1e landing 177b, DEF-416): `func:lr_deref = PS(PS->:pa) { return Result{value: <-pa}; }` -- the long form
+// moving a pointer PARAMETER's whole pointee out, left vacant, legal from landing 171 to 177a -- is `NITPICK-TYPE-047` since landing 177b
+// (`move` takes an owning place; the pass road's refusal, `pass <-sp`'s twin). Its refusal is the cell `rl1_long_form_deref_param` of
+// tests/types/rejection/move_through_pointer.npk; main's exit 13 is retired with it.
 
 // --- `move(...)` at the place inside the operator ---------------------------------------------------------------
 func:lr_tern = PS(bool:c) {
@@ -373,7 +372,6 @@ func:c_nf_slot = int64() {
 func:main = int32(cstring[]:_~argv) {
     if ((c_named() ?| 0i64) != 4i64) { exit 11i32; }
     if ((c_field() ?| 0i64) != 4i64) { exit 12i32; }
-    if ((c_deref() ?| 0i64) != 4i64) { exit 13i32; }
     if ((c_tern() ?| 0i64) != 6i64) { exit 14i32; }
     if ((c_nest() ?| 0i64) != 6i64) { exit 15i32; }
     if ((c_coal() ?| 0i64) != 6i64) { exit 16i32; }

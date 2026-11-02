@@ -19,7 +19,6 @@ func:wrcopy = NIL(H2->:q) never fails { H2->:q2 = q; q2.o = string_concat("x", "
 func:wrfwd = NIL(H2->:q) never fails { H2->:q2 = q; drop wr(q2); pass NIL; };
 func:wrcd = NIL(H2->:q) never fails { H2->:q2 = q; (<-q2).o = string_concat("x", "y"); pass NIL; };
 func:wrcwh = NIL(H2->:q) never fails { H2->:q2 = q; (<-q2) = H2{ o: string_concat("x", "y"), k: 9i64 }; pass NIL; };
-func:wrmv = NIL(H2->:q) never fails { H2->:q2 = q; string:t = move(q2.o); discard(t.len); pass NIL; };
 func:wrc2 = NIL(H2->:q) never fails { H2->:q2 = q =>! H2->; q2.o = string_concat("x", "y"); pass NIL; };
 func:wrany2 = NIL(any->:q) never fails { H2->:q2 = q =>! H2->; q2.o = string_concat("x", "y"); pass NIL; };
 func:wrc2e = NIL(H2->:q) never fails { H2->:q2 = q => H2->; q2.o = string_concat("x", "y"); pass NIL; };
@@ -105,12 +104,14 @@ func:copy_whole_assign_no_view = int64() never fails {
     pass h.k;
 };
 
-// 19. a field moved out through the copy, NO view live
+func:wrmv = NIL(H2->:q) never fails { H2->:q2 = q; string:t = move((<-(q2 =>! wild H2->)).o); discard(t.len); pass NIL; };
+// 19. a field moved out through the copy, NO view live; since landing 177b through the declared-unchecked road, `(<-(q2 =>! wild H2->)).o` (the
+//     plain `move(q2.o)` is TYPE-104, DEF-416); the pointee's `o` is left vacant (D-225) and `k` reads as written (build 8)
 func:copy_move_out_no_view = int64() never fails {
     H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
     H2->:hp = @h;
     drop wrmv(hp);
-    pass h.k;
+    pass h.k + h.o.len;
 };
 
 // 20. (f9j6cn) a plain pointer parameter copied into an `any->` local and written through its cast back, NO view live

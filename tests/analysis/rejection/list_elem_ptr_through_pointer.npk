@@ -1,45 +1,43 @@
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 131:6
+// expect-error-at: 129:6
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 140:23
+// expect-error-at: 139:20
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 150:20
+// expect-error-at: 149:6
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 160:6
+// expect-error-at: 159:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 170:14
+// expect-error-at: 169:20
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 180:20
+// expect-error-at: 179:15
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 190:15
+// expect-error-at: 189:21
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 200:21
+// expect-error-at: 199:26
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 210:26
+// expect-error-at: 209:24
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 220:24
+// expect-error-at: 219:23
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 230:23
+// expect-error-at: 228:20
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 239:20
+// expect-error-at: 238:20
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 249:20
+// expect-error-at: 247:20
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 258:20
+// expect-error-at: 255:36
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 266:36
+// expect-error-at: 263:20
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 274:20
+// expect-error-at: 272:20
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 283:20
+// expect-error-at: 281:20
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 292:20
+// expect-error-at: 291:6
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 302:6
+// expect-error-at: 302:20
 // expect-error: NITPICK-BORROW-015
 // expect-error-at: 313:20
-// expect-error: NITPICK-BORROW-015
-// expect-error-at: 324:20
 mod:list_elem_ptr_through_pointer;
 // A POINTER INTO A `List` ELEMENT REACHED OTHER THAN SYNTACTICALLY, OR A `List`
 // REALLOCATED THROUGH A POINTER (DEF-307 + DEF-314, landing 165; the twins of
@@ -132,16 +130,7 @@ func:assign_call_deref = NIL() never fails {
     discard(e.o.len);
     pass NIL;
 };
-// 02
-func:move_call_deref = NIL() never fails {
-    List<H2>:l = raw list_init::<H2>(1i64);
-    drop one(@l);
-    H2->:e = @l[0i64];
-    List<H2>:m = move(<-(raw idl(@l)));
-    discard(e.o.len);
-    discard(m.count);
-    pass NIL;
-};
+// 02 (`move_call_deref`, the whole List moved out through a call result's dereference): TYPE-104 since landing 177b (DEF-416: a `move` takes an owning place), a cell of tests/types/rejection/move_through_pointer.npk; no cell here.
 // 03
 func:grow_call_result = NIL() never fails {
     List<H2>:l = raw list_init::<H2>(1i64);
@@ -328,7 +317,6 @@ func:mixed_holder_list_ptr_and_other_ptr = NIL() never fails {
 
 func:main = int32(cstring[]:_~argv) {
     drop assign_call_deref();
-    drop move_call_deref();
     drop grow_call_result();
     drop assign_named_ptr();
     drop callee_replaces();

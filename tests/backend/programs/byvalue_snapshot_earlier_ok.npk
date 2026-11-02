@@ -37,6 +37,10 @@ func:take = int64(move string:x) never fails { pass 0i64; };
 struct:W2 = { string:s; };
 impl:W2 = { func:m2 = int64(W2:self, int64:k) never fails { pass (string_bytes(self.s)[0i64] => int64) - 90i64 + k; }; };
 func:wsr = int64(List<int64>[]:sl, List<int64>:v) never fails { pass (v[0i64] - 90i64) + (sl[0i64].count - 1i64); };
+// S2's TWO-ARRAY spelling, the legal third array (177a's row, item 13; management_13's `x_two_other_ok`, 67 on 176b and 177a): the ternary views
+// `arr` and `brr`, the by-value owner is `crr`'s element, and the callee's write through the view reaches neither.
+func:ws__s2_two = int64(List<int64>[]:sl, List<int64>:v) never fails { for (int64:i in 0i64...64i64) { drop list_push(@sl[0i64], i); } pass v[0i64] - 90i64; };
+func:c_s2_two_other_ok = int64() never fails { List<int64>[2]:arr = [raw list_init::<int64>(1i64), raw list_init::<int64>(1i64)]; drop list_push(@arr[0i64], 97i64); List<int64>[2]:brr = [raw list_init::<int64>(1i64), raw list_init::<int64>(1i64)]; drop list_push(@brr[0i64], 97i64); List<int64>[2]:crr = [raw list_init::<int64>(1i64), raw list_init::<int64>(1i64)]; drop list_push(@crr[0i64], 97i64); bool:c = true; pass raw ws__s2_two(is (c) : arr[0i64...2i64] : brr[0i64...2i64], crr[0i64]); };
 struct:W = { string->:p; };
 func:wv = int64(W:w, string:v) never fails { <-w.p = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
 impl:W = {
@@ -156,6 +160,7 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw c_s1y_disjoint_ptr_ok()) != 7i64) { exit 26i32; }
     if ((raw c_s1y_ptr_read_only_ok()) != 7i64) { exit 27i32; }
     if ((raw c_s1y_cmp_ok()) != 7i64) { exit 28i32; }
+    if ((raw c_s2_two_other_ok()) != 7i64) { exit 29i32; }
     exit 0i32;
 };
 func:failsafe = int32(Error:e) {

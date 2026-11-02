@@ -52,7 +52,9 @@
 // as an argument, are refused there (NITPICK-BORROW-004) and stand in functions of their own that lend nothing,
 // `pointee_moved_recv` and `pointee_moved_arg`; `main` compares what each reports at the control's own exit. Control
 // 29's clone stays in `main`, legal there. The rule is a stopgap until DEF-390's fix narrows it to the stores no
-// matrix attributes.
+// matrix attributes. Since landing 177b (DEF-416) the pointee's transfer through the pointer is TYPE-104 at the typer,
+// so controls 28 and 37 and their two functions are gone; controls 29 to 36 stand (build 8 restored them: build 7's hunk had
+// taken the ten as one range, review B's finding 1).
 mod:spawn_review_faces_ok;
 error:E1;
 fixed Duration:J2 = Duration{ ns: 2000000000i64 };
@@ -337,16 +339,8 @@ async func:main = int32(cstring[]:_~argv) {
         d = string_concat("xyzzy", "!");
         if (b != 104u8) { exit 27i32; }
     }
-    // 28. the owning pointee TRANSFERRED into a `move` receiver through the pointer, `(move(<-sp)).takec()` -- the
-    //     transfer the spawn rule's owner message names, in a function that hands no borrow to a call; the pointee is
-    //     left VACANT and assigned before a read (landing 172, F4: the task REPORTS the first byte it read, 97, as
-    //     `takecd`). In a function of its own, `pointee_moved_recv`, since R1's commit: see the note above it
-    {
-        int64:bad28 = await pointee_moved_recv(done) ?! E1;
-        int64:got28 = await done.recv(raw duration_ms(2000i64)) ?! E1;
-        if (got28 != 97i64) { exit 28i32; }
-        if (bad28 != 0i64) { exit 28i32; }
-    }
+    // 28. the owning pointee TRANSFERRED into a `move` receiver through the pointer, `(move(<-sp)).takec()`: TYPE-104 since
+    //     landing 177b (DEF-416: a `move` takes an owning place); no control (it stood in `pointee_moved_recv` since R1's commit)
     // 29. a CLONE of the owning pointee into a `move` receiver, `((<-sp).clone() ?! E1).takec()` -- the second
     //     transfer the message names (`.clone()` is fallible); the owner writes the pointee under the task, and
     //     the task reports the first BYTE it read -- 97, the clone's, never the owner's rewrite (landing 171, test
@@ -444,17 +438,8 @@ async func:main = int32(cstring[]:_~argv) {
         if (got36 != 104i64) { exit 36i32; }
         if (d.len != 6i64) { exit 36i32; }
     }
-    // 37. (c28a; t171/p364/ u1) control 28's argument spelling: the owning pointee TRANSFERRED into a `move SC`
-    //     parameter through the pointer, `takecfd(move(<-sp), done)` -- refused NITPICK-BORROW-004 by landing 171 (the
-    //     walk answered YES for the pointee whatever its type, DEF-378), legal here in a function that hands no borrow
-    //     to a call; the pointee is left VACANT and assigned before a read; the task reports 97. In a function of its
-    //     own, `pointee_moved_arg`, since R1's commit
-    {
-        int64:bad37 = await pointee_moved_arg(done) ?! E1;
-        int64:got37 = await done.recv(raw duration_ms(2000i64)) ?! E1;
-        if (got37 != 97i64) { exit 37i32; }
-        if (bad37 != 0i64) { exit 37i32; }
-    }
+    // 37. the owning pointee transferred through the pointer as the second parameter, `takecfd(move(<-sp), done)`: TYPE-104
+    //     since landing 177b (DEF-416); no control (it stood in `pointee_moved_arg` since R1's commit)
     exit 0i32;
 };
 func:failsafe = int32(Error:e) {
@@ -552,24 +537,6 @@ thread async func:takecfd = NIL(move SC:x, Channel<int64, 3i32, 64i64>:done) joi
 // in a function that LENDS -- some call, a builtin's included, handed a borrow of the frame -- because a callee or a
 // builtin may store a borrow into the target where no mark records it (DEF-390). `main` lends (its other controls hand
 // borrows to calls), so controls 28 and 37 stand here, in functions that lend nothing; each answers 1 if the vacant
-// pointee was not assigned, and `main` compares at the control's own exit.
-async func:pointee_moved_recv = int64(Channel<int64, 3i32, 64i64>:done) {
-    SC:w = SC{ s: string_concat("ab", "c"), k: 1i64 };
-    SC->:sp = @w;
-    {
-        drop (move(<-sp)).takecd(done);
-    }
-    w = SC{ s: string_concat("de", "f"), k: 2i64 };
-    if (w.s.len != 3i64) { pass 1i64; }
-    pass 0i64;
-};
-async func:pointee_moved_arg = int64(Channel<int64, 3i32, 64i64>:done) {
-    SC:w = SC{ s: string_concat("ab", "c"), k: 1i64 };
-    SC->:sp = @w;
-    {
-        drop takecfd(move(<-sp), done);
-    }
-    w = SC{ s: string_concat("de", "f"), k: 2i64 };
-    if (w.s.len != 3i64) { pass 1i64; }
-    pass 0i64;
-};
+// pointee was not assigned, and `main` compares at the control's own exit. Since landing 177b the transfer through the
+// pointer is TYPE-104 (DEF-416: a `move` takes an owning place), so both functions are gone; the note stays for the rule's
+// record, and `takecfd` stays with its one caller (control 37) gone.

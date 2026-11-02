@@ -1,25 +1,25 @@
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 67:19
+// expect-error-at: 66:19
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 77:19
+// expect-error-at: 76:19
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 88:19
+// expect-error-at: 87:19
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 98:18
+// expect-error-at: 97:18
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 106:15
+// expect-error-at: 108:15
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 115:8
+// expect-error-at: 117:8
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 128:19
+// expect-error-at: 130:19
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 139:19
+// expect-error-at: 141:19
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 149:10
+// expect-error-at: 151:10
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 158:5
+// expect-error-at: 160:5
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 165:16
+// expect-error-at: 167:16
 //
 // AN EXPLICIT `<-` IS A PLACE STEP TO THE POINTER'S NAME (DEF-272, landing 138; the
 // fuzzer's F-050). `(<-p).f` and `p.f` are one storage (D-098), and `(<-lp)[i]` is
@@ -54,7 +54,6 @@ func:setf  = NIL(Seat[2]->:a, fixed uint8[]:src) never fails { (<-a)[0i64].src =
 func:setd  = NIL(Seat->:s, fixed uint8[]:src) never fails { (<-s).src = src; pass NIL; };
 func:setv  = NIL(Inner->:i, fixed uint8[]:src) never fails { i.src = src; pass NIL; };
 func:clobber = NIL(string[2]->:a) never fails { (<-a)[0i64] = raw fresh(); pass NIL; };
-func:take  = NIL(string[2]->:a) never fails { string:t = move((<-a)[0i64]); pass NIL; };
 func:peek  = fixed uint8[](string[2]->:a) never fails { pass string_bytes((<-a)[0i64]); };
 
 // (1) F-050's own shape: the callee stores its view into an ELEMENT of the array
@@ -99,7 +98,10 @@ func:mut_elem = int32() never fails {
     pass (v[0i64] => int32);
 };
 
-// (5) A MOVE OUT OF `(<-a)[0i64]` is a write of the pointee (DEF-119): the same freeze.
+// (5) A MOVE OUT OF `(<-a)[0i64]` is a write of the pointee (DEF-119): the same freeze. Since landing 177b the callee moves through the
+//     DECLARED-UNCHECKED road, `(<-(a =>! wild string[2]->))[0i64]` -- the plain `(<-a)[0i64]` is TYPE-104 (DEF-416), a cell of
+//     tests/types/rejection/move_through_pointer.npk -- and the summary reads the move through the cast (build 8; review B's finding 4, `rb4a`).
+func:take = NIL(string[2]->:a) never fails { string:t = move((<-(a =>! wild string[2]->))[0i64]); pass NIL; };
 func:move_elem = int32() never fails {
     string[2]:arr = [string_concat("abc", "def"), string_concat("abc", "def")];
     fixed uint8[]:v = string_bytes(arr[0i64]);

@@ -13,7 +13,10 @@ error:E9;
 struct:Holder<T> = { List<T>:items; };
 
 func:take<T> = T(Holder<T>->:h, int64:i) never fails {
-    pass (move(h.items[i]));
+    // THE TAKE GOES THROUGH THE DECLARED-UNCHECKED ROAD (DEF-416, landing 177b): `h` is a plain pointer, and a `move` through
+    // one is TYPE-104; the cast asserts what this program arranges -- the holder outlives the call, and the slot the move
+    // leaves VACANT is one the holder's drop skips (S-26).
+    pass (move((<-(h =>! wild Holder<T>->)).items[i]));
 };
 
 func:put<T> = NIL(Holder<T>->:h, move T:v) never fails {
@@ -22,7 +25,7 @@ func:put<T> = NIL(Holder<T>->:h, move T:v) never fails {
 };
 
 func:last<T> = T(Holder<T>->:h) never fails {
-    pass (move(h.items[h.items.count - 1i64]));
+    pass (move((<-(h =>! wild Holder<T>->)).items[h.items.count - 1i64]));   // the declared-unchecked road, as `take`'s
 };
 
 func:run = int32() {

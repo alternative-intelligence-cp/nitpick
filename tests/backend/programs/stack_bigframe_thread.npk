@@ -11,17 +11,21 @@ fixed Duration:JOIN_5S = Duration{ ns: 5000000000i64 };
 
 // The array is filled through `$$m`, D-004's way to fill an unassigned one --
 // from index 0, the frame's LOWEST address, which is the first word an
-// overflowing frame would have written past the guard.
-func:fill = NIL(int64[8192]->:b, int64:v) never fails {
-    for (int64:i in 0i64...8192i64) { (<-b)[i] = v; }
+// overflowing frame would have written past the guard. Since DEF-345 (landing
+// 177b) the unassigned claim is admitted over a DROPPING type only -- its slot
+// is the zeroed vacant value -- so the array rides in a struct beside a
+// `string`, claimed whole; the frame is the same 64 KiB and a header.
+struct:Big = { int64[8192]:a; string:tag; };
+func:fill = NIL(Big->:b, int64:v) never fails {
+    for (int64:i in 0i64...8192i64) { b.a[i] = v; }
     pass NIL;
 };
 
 func:big = int64(int64:n) never fails {
-    int64[8192]:buf;
-    drop fill($$m buf, n);
+    Big:b;
+    drop fill($$m b, n);
     if (n == 0i64) { pass 0i64; }
-    pass ((raw big(n - 1i64)) + buf[(n & 8191i64)]);
+    pass ((raw big(n - 1i64)) + b.a[(n & 8191i64)]);
 };
 
 thread async func:runaway = NIL(int64:n) joins JOIN_5S {

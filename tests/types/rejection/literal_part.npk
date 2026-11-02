@@ -1,59 +1,63 @@
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 78:149
+// expect-error-at: 82:149
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 80:176
-// expect-error: NITPICK-TYPE-105
-// expect-error-at: 82:144
-// expect-error: NITPICK-TYPE-105
-// expect-error-at: 84:142
+// expect-error-at: 84:176
 // expect-error: NITPICK-TYPE-105
 // expect-error-at: 86:144
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 88:163
+// expect-error-at: 88:142
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 90:154
+// expect-error-at: 90:144
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 92:181
+// expect-error-at: 92:163
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 94:185
+// expect-error-at: 94:154
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 96:169
+// expect-error-at: 96:181
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 98:173
+// expect-error-at: 98:185
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 100:204
+// expect-error-at: 100:169
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 102:144
+// expect-error-at: 102:173
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 104:170
+// expect-error-at: 104:204
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 106:169
+// expect-error-at: 106:144
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 108:165
+// expect-error-at: 108:170
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 110:162
+// expect-error-at: 110:169
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 112:180
+// expect-error-at: 112:165
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 114:166
+// expect-error-at: 114:162
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 116:172
+// expect-error-at: 116:180
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 118:169
+// expect-error-at: 118:166
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 120:177
+// expect-error-at: 120:172
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 122:179
+// expect-error-at: 122:169
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 124:186
+// expect-error-at: 124:177
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 126:196
+// expect-error-at: 126:179
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 128:172
+// expect-error-at: 128:186
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 130:179
+// expect-error-at: 130:196
 // expect-error: NITPICK-TYPE-105
-// expect-error-at: 132:167
+// expect-error-at: 132:172
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 134:179
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 136:167
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 139:159
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 141:171
 // A PART OF A VALUE NO BINDING HOLDS, BUILT WHERE IT STANDS (NITPICK-TYPE-105, DEF-419's closed alternative, landing 177a; management_12's ruling of 2026-11-01 07:00, accepted 07:32). `W{ ptr: @h, k: (raw take(move(h.s))) }.ptr`: a struct, array or `Result` literal's other parts run, an
 // `@` in one and a `move` in another, and no analysis follows them through the read of this part (60 on 175 and 176b, a fabricated length). Refused at the member, the `?.` or the index, off a literal, a `pick`, or an operator or cast with one as an arm, in every position. One rule: plain data is not exempt (`a_ok_read_first`,
 // `a_index_k`; a later exemption is on the post-180 list). The way out is a binding (`lp_bound_ok`, in `literal_addr_initialiser_ok.npk`).
@@ -130,6 +134,11 @@ func:c_l_drop_read = int64() never fails { H:h = raw mk_h("ab"); H:g = raw mk_h(
 func:c_s_deref_lit = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); bool:b = s.len > 2i64; int32:i = 1i32; H:h = raw mk_h("ab"); pass raw fs((<-(W{ ptr: @h }.ptr)).s, (raw take(move(h.s)))); };
 // s_member_lit; on 176b: exit 67.
 func:c_s_member_lit = int64() never fails { string:s = raw mk_s(); string:t = raw mk_s(); bool:b = s.len > 2i64; int32:i = 1i32; pass raw fs(SW{ s: move(t), k: 0i64 }.s, 0i64); };
+struct:P = { int64:k; };
+// sn2_discard_pick -- `?.` off a `pick` with no expected type, under `discard`; on 177a: exit 65 (TYPE-105 landed for the member and the index off a `pick`; the `?.` road had no live cell until review-c's `sn2`).
+func:c_sn2_discard_pick = int64() never fails { bool:b = true; int32:i = 1i32; P?:o = P{ k: 5i64 }; discard((pick (i) { (1i32) { give o; }, (*) { give o; } })?.k); pass 5i64; };
+// sn3_tern_pick -- `?.` off a ternary with a `pick` arm, no expected type; on 177a: exit 65.
+func:c_sn3_tern_pick = int64() never fails { bool:b = true; int32:i = 1i32; P?:o = P{ k: 5i64 }; discard((is (b) : (pick (i) { (1i32) { give o; }, (*) { give o; } }) : o)?.k); pass 5i64; };
 func:main = int32(cstring[]:_~argv) { exit 0i32; };
 func:failsafe = int32(Error:e) {
     pick (e) {

@@ -1,0 +1,83 @@
+// expect-exit: 0
+// WHAT A `for` OVER A NAMED ARRAY MAY STILL DO (DEF-421, landing 177b; the legal twins of `tests/analysis/rejection/for_array_owner.npk`): another array written, the write after the loop, a nested read-only
+// loop over the same array, a sibling field of the enclosing struct or a sibling element's field read, a read-only callee handed the array, an element of a slice parameter READ, an array of plain elements
+// or of plain structs written in the body (a true copy, no party), a pointer root reassigned (`p = q`: the pointee stays), and an `Iterator` implementor's place written in its own body (no array, no party).
+mod:for_array_owner_ok;
+error:E5;
+// fa_arr_twin_ok; on 177a: exit=67, here: exit=67.
+func:c_fa_arr_twin_ok = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; string[2]:b = [string_concat("kl", "mno"), string_concat("pq", "rst")]; int64:r = 0i64; for (string:x in a) { b[0i64] = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// fa_after_ok; on 177a: exit=67, here: exit=67.
+func:c_fa_after_ok = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; int64:r = 0i64; for (string:x in a) { r = (string_bytes(x)[0i64] => int64) - 90i64; } a[0i64] = string_concat("wx", "yz"); pass r - 5i64; };
+// fa_int_arr_ok; on 177a: exit=67, here: exit=67.
+func:c_fa_int_arr_ok = int64() never fails { int64[2]:a = [1i64, 2i64]; int64:r = 0i64; for (int64:x in a) { a[0i64] = 9i64; r = r + x; } pass r + 4i64; };
+// fa_plain_struct_ok; on 177a: exit=67, here: exit=67.
+struct:S__fa_plain_struct_ok = { int64:j; int64:k; };
+func:c_fa_plain_struct_ok = int64() never fails { S__fa_plain_struct_ok[2]:a = [S__fa_plain_struct_ok{ j: 1i64, k: 1i64 }, S__fa_plain_struct_ok{ j: 2i64, k: 2i64 }]; int64:r = 0i64; for (S__fa_plain_struct_ok:x in a) { a[0i64] = S__fa_plain_struct_ok{ j: 3i64, k: 3i64 }; r = r + x.k; } pass r + 4i64; };
+// fa_sibling_ok; on 177a: exit=67, here: exit=67.
+struct:OA__fa_sibling_ok = { string[2]:arr; int64:z; };
+func:c_fa_sibling_ok = int64() never fails { OA__fa_sibling_ok:o = OA__fa_sibling_ok{ arr: [string_concat("ab", "cde"), string_concat("fg", "hij")], z: 0i64 }; int64:r = 0i64; for (string:x in o.arr) { o.z = 5i64; string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r + o.z - 5i64; };
+// fa_sibling_list_ok; on 177a: exit=67, here: exit=67.
+struct:OL__fa_sibling_list_ok = { string[2]:arr; List<int64>:l; };
+func:c_fa_sibling_list_ok = int64() never fails { OL__fa_sibling_list_ok:o = OL__fa_sibling_list_ok{ arr: [string_concat("ab", "cde"), string_concat("fg", "hij")], l: raw list_init::<int64>(2i64) }; int64:r = 0i64; for (string:x in o.arr) { drop list_push(@o.l, 1i64); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r + o.l.count - 1i64; };
+// fa_read_call_ok; on 177a: exit=67, here: exit=67.
+func:cnt__fa_read_call_ok = int64(string[2]->:p) never fails { pass (<-p)[0i64].len; };
+func:c_fa_read_call_ok = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; int64:r = 0i64; for (string:x in a) { discard(raw cnt__fa_read_call_ok(@a)); string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// fa_slice_param_elem_ok; on 177a: exit=67, here: exit=67.
+func:g__fa_slice_param_elem_ok = int64(string[]:a) never fails { int64:r = 0i64; for (string:x in a) { string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+func:c_fa_slice_param_elem_ok = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; pass raw g__fa_slice_param_elem_ok(a[0i64...2i64]); };
+// k1_nested_read_ok; on 177a: exit=67, here: exit=67.
+func:c_k1_nested_read_ok = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; int64:r = 0i64; for (string:x in a) { for (string:y in a) { r = 0i64; } string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// k2_int_elem_ok; on 177a: exit=67, here: exit=67.
+func:c_k2_int_elem_ok = int64() never fails { int64[2]:a = [97i64, 98i64]; int64:r = 0i64; for (int64:x in a) { a[0i64] = 1i64; r = x - 90i64; break; } pass r; };
+// k3_after_break_ok; on 177a: exit=67, here: exit=67.
+func:c_k3_after_break_ok = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; int64:r = 0i64; for (string:x in a) { r = (string_bytes(x)[0i64] => int64) - 90i64; break; } a[0i64] = string_concat("wx", "yz"); pass r; };
+// p5_deep_sib_ok; on 177a: exit=67, here: exit=67.
+struct:OA__p5_deep_sib_ok = { string[2]:arr; int64:z; };
+struct:OB__p5_deep_sib_ok = { OA__p5_deep_sib_ok:i; int64:y; };
+func:c_p5_deep_sib_ok = int64() never fails { OB__p5_deep_sib_ok:o = OB__p5_deep_sib_ok{ i: OA__p5_deep_sib_ok{ arr: [string_concat("ab", "cde"), string_concat("fg", "hij")], z: 0i64 }, y: 0i64 }; int64:r = 0i64; for (string:x in o.i.arr) { o.i.z = 1i64; o.y = 1i64; string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+// i1_iter_struct_ok; on 177a: exit=67, here: exit=67.
+struct:Ctr__i1_iter_struct_ok = { int64:n; string:s; };
+impl:Ctr__i1_iter_struct_ok:Iterator = { assoc:Item = int64; func:next = int64?(Ctr__i1_iter_struct_ok->:self) never fails { if (self.n >= 3i64) { pass NIL; } self.n = self.n + 1i64; pass self.n; }; };
+func:c_i1_iter_struct_ok = int64() never fails { Ctr__i1_iter_struct_ok:c = Ctr__i1_iter_struct_ok{ n: 0i64, s: string_concat("ab", "cde") }; int64:r = 0i64; for (int64:x in c) { c.s = string_concat("wx", "yz"); r = r + x; } pass r + 1i64; };
+// d2_ptr_reassign_ok; on 177a: exit=67, here: exit=67.
+func:g__d2_ptr_reassign_ok = int64(string[2]->:p, string[2]->:q) never fails { int64:r = 0i64; for (string:x in (<-p)) { p = q; string:junk = string_concat("qq", "qq"); r = (string_bytes(x)[0i64] => int64) - 90i64; break; } pass r; };
+func:c_d2_ptr_reassign_ok = int64() never fails { string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; string[2]:b = [string_concat("wx", "yz"), string_concat("wx", "yz")]; pass raw g__d2_ptr_reassign_ok(@a, @b); };
+// rg2a_ptr_to_T_elem_ok (build 9; management_13's cell `rg2a_ptr_to_T_elem_generic`, `probes/177b-final/`): a `T->` element drops nothing whatever `T` is, so the array
+// written in the body raises no party -- `elem_may_drop`'s pointer answer; build 8's `type_mentions_param` walked into the pointer and refused it (BORROW-015), the concrete
+// twin `rg2b` legal on both; on 177a: exit=67, here: exit=67.
+func:g__rg2a_ptr_to_T_elem_ok<T> = int64(T->:q) never fails { T->[2]:a = [q, q]; int64:r = 0i64; for (T->:p in a) { a[0i64] = q; r = 7i64; break; } pass r; };
+func:c_rg2a_ptr_to_T_elem_ok = int64() never fails { int64:v = 5i64; pass raw g__rg2a_ptr_to_T_elem_ok::<int64>(@v); };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c_fa_arr_twin_ok()) != 7i64) { exit 11i32; }
+    if ((raw c_fa_after_ok()) != 7i64) { exit 12i32; }
+    if ((raw c_fa_int_arr_ok()) != 7i64) { exit 13i32; }
+    if ((raw c_fa_plain_struct_ok()) != 7i64) { exit 14i32; }
+    if ((raw c_fa_sibling_ok()) != 7i64) { exit 15i32; }
+    if ((raw c_fa_sibling_list_ok()) != 7i64) { exit 16i32; }
+    if ((raw c_fa_read_call_ok()) != 7i64) { exit 17i32; }
+    if ((raw c_fa_slice_param_elem_ok()) != 7i64) { exit 18i32; }
+    if ((raw c_k1_nested_read_ok()) != 7i64) { exit 19i32; }
+    if ((raw c_k2_int_elem_ok()) != 7i64) { exit 20i32; }
+    if ((raw c_k3_after_break_ok()) != 7i64) { exit 21i32; }
+    if ((raw c_p5_deep_sib_ok()) != 7i64) { exit 22i32; }
+    if ((raw c_i1_iter_struct_ok()) != 7i64) { exit 23i32; }
+    if ((raw c_d2_ptr_reassign_ok()) != 7i64) { exit 24i32; }
+    if ((raw c_rg2a_ptr_to_T_elem_ok()) != 7i64) { exit 25i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

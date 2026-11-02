@@ -3,7 +3,9 @@
 // carries what the place holds (nothing: no view was ever stored there), not
 // `self`'s identity -- beside the two shapes that always were (a fresh string
 // stored into the cell, a moved local stored). The program twin runs it (exit
-// 22 at both legs); this file is the frontend's silence and the emission.
+// 22 at both legs); this file is the frontend's silence and the emission. Since landing 177b (DEF-416) the swap's
+// `move(self.v)` through the `Self->` receiver is TYPE-104 at the typer; the method stores the moved local into
+// `self.v`, one of the two shapes that always were.
 mod:lent_dyn_swap;
 error:E9;
 func:mk = string() never fails {
@@ -48,9 +50,7 @@ impl:DHold:Tr = {
     func:peek = int32(DHold:self) never fails { pass raw obs_s(self.v); };
     func:op = NIL(DHold->:self) never fails {
         string:other = raw nw();
-        string:tmp = move(self.v);
-        self.v = move(other);
-        other = move(tmp);
+        self.v = move(other);   // the moved local stored; the SWAP (`tmp = move(self.v)`) is TYPE-104 since landing 177b (DEF-416)
         pass NIL;
     };
 };

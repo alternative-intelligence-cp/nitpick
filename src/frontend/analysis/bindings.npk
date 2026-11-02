@@ -1808,7 +1808,21 @@ func:assign_mark_place = NIL(Assign->:x, AssignState:st, ExprId:place, int32:dep
     }
     if (rn.a == 0i32) { pass NIL; }
     drop note_defer_read(x, raw symbol_slot(x, rn.a));   // a `$$m` claim in a `defer` body is a use at the exit (DEF-405)
-    drop state_mark(st, raw symbol_slot(x, rn.a));
+    // `$$m` OF A BINDING NOT YET ASSIGNED WHOSE TYPE DROPS NOTHING (DEF-345, D-366, landing 177b): D-225's vacant value is written at the
+    // declaration for a dropping type alone, nothing binds the callee to write its `$$m` parameter, and the caller then reads the frame's
+    // last bytes as assigned (85/85 at both legs, dm1, dm2). A dropping type's zero-filled slot keeps the claim legal (`vt_pick_drop`).
+    // ONLY A LOCAL CAN BE UNASSIGNED (`assign_read`'s rule; DEF-345, landing 177b): a parameter is written by its caller, a global by its
+    // initialiser, a `for` or `pick` binding by the construct that introduced it. A `for` binding has no slot (`symbol_slot` −1, so `state_must`
+    // is false of it); a parameter and a `pick` binding have an ordinal, marked where they are bound. Without this guard the branch refused
+    // `$$m` of a `for` binding (`rc8a`, `rc8c`: 65 on 177a, legal).
+    int32:cslot = raw symbol_slot(x, rn.a);
+    bool:local = ((raw symtab_get(x.tab, rn.a)).origin_kind == (raw SYM_STMT()));
+    if (local && (!(raw state_must(st, cslot))) && (!(raw type_drops(x.tyres, raw exprtypes_get(x.etypes, place), x.scope, 64i32)))) {
+        drop assign_err(x, raw ASSIGN_UNASSIGNED(),
+            "`$$m` of a binding not assigned on every path that reaches here, whose type drops nothing: no vacant value was written at its declaration (D-225), the callee is not bound to write it, and the caller would read the frame's last bytes (DEF-345, D-366) -- initialise it first, or hand a dropping type",
+            rn.span);
+    }
+    drop state_mark(st, cslot);
     pass NIL;
 };
 

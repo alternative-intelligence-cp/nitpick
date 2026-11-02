@@ -1,17 +1,15 @@
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 44:10
+// expect-error-at: 42:10
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 50:25
+// expect-error-at: 49:20
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 56:20
+// expect-error-at: 55:15
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 62:15
+// expect-error-at: 60:20
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 67:20
+// expect-error-at: 66:20
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 73:20
-// expect-error: NITPICK-BORROW-013
-// expect-error-at: 79:14
+// expect-error-at: 72:14
 //
 // DEF-123 (1.6.1d step 1; the library listener's F-008): A WRITE THROUGH A
 // SHARED CLAIM'S HOLDER, AND A SHARED CLAIM HANDED TO A WRITER, ARE BORROW-013
@@ -43,12 +41,7 @@ func:main = int32(cstring[]:_~argv) {
         string->:p = $$i x;
         (<-p) = raw nw();
     }
-    // (a2) a move out through the holder
-    {
-        string:x = raw mk();
-        string->:q = $$i x;
-        string:t = move(<-q);
-    }
+    // (a2) a move out through the holder: TYPE-104 since landing 177b (DEF-416: a `move` takes an owning place), a cell of tests/types/rejection/move_through_pointer.npk; no cell here.
     // (a3) the pointee's address handed to a writer
     {
         string:x = raw mk();

@@ -6,10 +6,10 @@
 // keeps legal. The mark refuses a dereference OUT of a lending frame; it does
 // not refuse the dereference-out itself, nor a spawn that lends.
 //   - `mk_nospawn` (control 1) builds a `Mutex` and returns it with
-//     `pass move(<-sp)`, with NO spawn -- the frame does not lend, so the
-//     dereference-out is legal, as it was on 172. This is the discriminating
-//     control: the refusal in tests/analysis/rejection/spawn_lends.npk is
-//     conditional on the spawn, not on the `move(<-sp)`.
+//     `pass move(v)`, with NO spawn -- the frame does not lend, so the
+//     return is legal, as it was on 172. (It returned `move(<-sp)`, the
+//     dereference-out, until landing 177b: a `move` through a pointer is
+//     TYPE-104 since, DEF-416.)
 //   - `spawn_noderef` (control 2) hands a sanctioned `Mutex` pointer to a
 //     spawn -- so the frame lends, and the task stores a frame borrow through
 //     it -- but returns a plain `int32`, not a dereference out of the frame, so
@@ -31,11 +31,10 @@ thread async func:worker = NIL(Mutex<Barrier<1i32, 5i32>->, 3i32>->:dst, Barrier
 };
 
 // Control 1: a factory with NO spawn -- the frame does not lend, so
-// `pass move(<-sp)` is legal.
+// returning the lock is legal.
 async func:mk_nospawn = Mutex<Barrier<1i32, 5i32>->, 3i32>(Barrier<1i32, 5i32>->:ext) {
     Mutex<Barrier<1i32, 5i32>->, 3i32>:v = mutex(ext) ?! E1;
-    Mutex<Barrier<1i32, 5i32>->, 3i32>->:sp = @v;
-    pass move(<-sp);
+    pass move(v);
 };
 
 // Control 2: a spawn that lends, but the frame returns a plain `int32` -- no

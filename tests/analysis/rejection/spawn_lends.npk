@@ -1,29 +1,37 @@
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 50:10
+// expect-error-at: 62:10
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 57:10
+// expect-error-at: 70:10
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 65:10
+// expect-error-at: 79:10
 // expect-error: NITPICK-BORROW-001
-// expect-error-at: 72:10
+// expect-error-at: 87:10
 mod:spawn_lends;
 error:E1;
 
-// A SPAWN LENDS THIS FRAME (DEF-393(a), landing 173). A spawn whose argument
-// carries a borrow of this frame -- a sanctioned `Mutex` / `RwLock` /
-// `CondVar` / `Barrier` / `shared_arena` pointer included -- marks the frame
-// `lends`, exactly as an ordinary call does, because the spawned task may
-// store a borrow of this frame through the lock's interior and
-// `escape_spawn_args` attributes no such store to its target. Here each `mk`
-// hands the task a pointer to its own frame-local `Mutex`/`RwLock` `v`, the
-// task stores the frame-local `Barrier` `@b` into `v`'s interior, and `mk`
-// then returns the lock by value with `pass move(<-sp)` -- a dereference out
-// of the frame whose target now holds a dangling borrow. Landing 172's relaxed
-// dereference rule (face 2) trusted that target; the spawn's `lends` mark makes
-// `deref_targets_hold` answer yes, so the dereference is NITPICK-BORROW-001 at
-// the read, as landing 171 refused it. Legal half (a factory with no spawn
-// returns the lock; a spawn whose frame does not dereference out):
-// tests/backend/programs/spawn_lends_ok.npk.
+// A SPAWN LENDS THIS FRAME (DEF-393(a), landing 173; re-spelled at landing 177b, below). A spawn
+// whose argument carries a borrow of this frame -- a sanctioned `Mutex` / `RwLock` / `CondVar` /
+// `Barrier` / `shared_arena` pointer included -- marks the frame `lends`, exactly as an ordinary
+// call does, because the spawned task may store a borrow of this frame through the lock's
+// interior and `escape_spawn_args` attributes no such store to its target. Here each `mk` hands
+// the task a pointer to its own frame-local `Mutex`/`RwLock` `v`, the task stores the frame-local
+// `Barrier` `@b` into `v`'s interior, and `mk` then dereferences a plain pointer-holding struct
+// `w` of the SAME frame out -- `pass <-wp` through a named pointer, `pass <-(@w)` inline.
+// Landing 172's relaxed dereference rule (face 2) trusted that target; the spawn's `lends` mark
+// makes `deref_targets_hold` answer yes, so the dereference is NITPICK-BORROW-001 at the read,
+// as landing 171 refused it. Legal half (a factory with no spawn returns the lock; a spawn whose
+// frame does not dereference out): tests/backend/programs/spawn_lends_ok.npk; the same four
+// shapes with no spawn: `k2_no_spawn_plain_ok`, exit 0.
+//
+// RE-SPELLED AT LANDING 177b (DEF-416, NITPICK-TYPE-104; management_13's ruling of 2026-11-01
+// 17:59:32 EST, cells `MANAGEMENT/probes/177b-lent-lock/` e3_lends_plain_named,
+// e4_lends_plain_inline: BORROW-001 on 176b, 177a and 177b). From landing 173 to 177a the four
+// cells dereferenced the LOCK itself out, `pass move(<-sp)` and `pass move(<-(@v))`, which
+// DEF-416 refuses at the typer as a move through a plain pointer before any analysis runs; those
+// spellings are `tests/types/rejection/move_through_pointer.npk`'s `lk1` (TYPE-104) and `lk2`
+// (`pass <-sp`, TYPE-047) now. The mark's job is unchanged for a plain struct, so this file keeps
+// running. The BY-VALUE `pass move(v)` / `pass v` of the lock after the spawn is ACCEPTED today --
+// DEF-395's face 1 (HIGH, landing 179) -- and is parked whole in `tests/parked/def395-by-value/`.
 
 fixed Duration:J2 = Duration{ ns: 2000000000i64 };
 
@@ -40,36 +48,43 @@ thread async func:stash_r = NIL(RwLock<Barrier<1i32, 5i32>->, 3i32>->:dst, Barri
     pass NIL;
 };
 
-// 1. (s1n) a `Mutex` handed to a spawn through a named pointer, returned by
-//    `pass move(<-sp)` -- BORROW-001 at the dereference
-async func:mk_s1n = Mutex<Barrier<1i32, 5i32>->, 3i32>(Barrier<1i32, 5i32>->:ext) {
+// The plain pointer-holding struct each `mk` dereferences out of the lending frame.
+struct:PS = { Barrier<1i32, 5i32>->:p; int64:k; };
+
+// 1. (s1n) a `Mutex` handed to a spawn; a plain struct of the same frame dereferenced out
+//    through a named pointer, `pass <-wp` -- BORROW-001 at the dereference
+async func:mk_s1n = PS(Barrier<1i32, 5i32>->:ext) {
     Barrier<1i32, 5i32>:b = barrier() ?! E1;
     Mutex<Barrier<1i32, 5i32>->, 3i32>:v = mutex(ext) ?! E1;
-    Mutex<Barrier<1i32, 5i32>->, 3i32>->:sp = @v;
+    PS:w = PS{ p: ext, k: 2i64 };
+    PS->:wp = @w;
     { drop stash_m(@v, @b); }
-    pass move(<-sp);
+    pass <-wp;
 };
-// 2. (s1i) the same with an inline dereference, `pass move(<-(@v))`
-async func:mk_s1i = Mutex<Barrier<1i32, 5i32>->, 3i32>(Barrier<1i32, 5i32>->:ext) {
+// 2. (s1i) the same with an inline dereference, `pass <-(@w)`
+async func:mk_s1i = PS(Barrier<1i32, 5i32>->:ext) {
     Barrier<1i32, 5i32>:b = barrier() ?! E1;
     Mutex<Barrier<1i32, 5i32>->, 3i32>:v = mutex(ext) ?! E1;
+    PS:w = PS{ p: ext, k: 2i64 };
     { drop stash_m(@v, @b); }
-    pass move(<-(@v));
+    pass <-(@w);
 };
-// 3. (s2n) a `RwLock` through a named pointer
-async func:mk_s2n = RwLock<Barrier<1i32, 5i32>->, 3i32>(Barrier<1i32, 5i32>->:ext) {
+// 3. (s2n) a `RwLock`, the struct through a named pointer
+async func:mk_s2n = PS(Barrier<1i32, 5i32>->:ext) {
     Barrier<1i32, 5i32>:b = barrier() ?! E1;
     RwLock<Barrier<1i32, 5i32>->, 3i32>:v = rwlock(ext) ?! E1;
-    RwLock<Barrier<1i32, 5i32>->, 3i32>->:sp = @v;
+    PS:w = PS{ p: ext, k: 2i64 };
+    PS->:wp = @w;
     { drop stash_r(@v, @b); }
-    pass move(<-sp);
+    pass <-wp;
 };
 // 4. (s2i) a `RwLock` with an inline dereference
-async func:mk_s2i = RwLock<Barrier<1i32, 5i32>->, 3i32>(Barrier<1i32, 5i32>->:ext) {
+async func:mk_s2i = PS(Barrier<1i32, 5i32>->:ext) {
     Barrier<1i32, 5i32>:b = barrier() ?! E1;
     RwLock<Barrier<1i32, 5i32>->, 3i32>:v = rwlock(ext) ?! E1;
+    PS:w = PS{ p: ext, k: 2i64 };
     { drop stash_r(@v, @b); }
-    pass move(<-(@v));
+    pass <-(@w);
 };
 
 async func:main = int32(cstring[]:_~argv) { exit 0i32; };

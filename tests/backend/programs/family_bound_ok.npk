@@ -26,12 +26,12 @@ impl:<T: Ord>:Box<T>:Ord = { pub func:cmp = Ordering(Box<T>:self, Box<T>:other) 
 
 struct:Pair<T, U> = { T:a; U:b; };
 // The parameters in the OTHER order: `second` is the struct's `b`, of type `T`.
-impl:<T, U>:Pair<U, T> = { func:second = T(Pair<U, T>->:self) never fails { pass move(self.b); }; };   // a bare `T` is move-only (D-264; DEF-104): out of the pointee by `move`
+impl:<T, U>:Pair<U, T> = { func:second = T(move Pair<U, T>:self) never fails { pass move(self.b); }; };   // a bare `T` is move-only (D-264; DEF-104): out of a CONSUMED receiver by `move` (through a pointer it is TYPE-104 since landing 177b, DEF-416)
 // A concrete first argument: a member of `Pair<int32, _>` and of nothing else.
-impl:<T>:Pair<int32, T> = { func:tail = T(Pair<int32, T>->:self) never fails { pass move(self.b); }; };
+impl:<T>:Pair<int32, T> = { func:tail = T(move Pair<int32, T>:self) never fails { pass move(self.b); }; };
 // A parameter nested inside another instance.
 struct:Cell<X> = { X:v; };
-impl:<T>:Cell<Pair<T, int32>> = { func:inner = T(Cell<Pair<T, int32>>->:self) never fails { pass move(self.v.a); }; };
+impl:<T>:Cell<Pair<T, int32>> = { func:inner = T(move Cell<Pair<T, int32>>:self) never fails { pass move(self.v.a); }; };
 
 func:main = int32(cstring[]:_~argv) {
     Box<Point>:a = Box{ v: Point{ x: 1i32 } };
@@ -44,10 +44,11 @@ func:main = int32(cstring[]:_~argv) {
     if (p.v.y != 7i32) { exit 5i32; }
 
     Pair<int32, int64>:q = Pair{ a: 1i32, b: 7i64 };
-    if ((raw q.second()) != 7i64) { exit 6i32; }
-    if ((raw q.tail()) != 7i64) { exit 7i32; }
+    if ((raw (move(q)).second()) != 7i64) { exit 6i32; }
+    Pair<int32, int64>:q2 = Pair{ a: 1i32, b: 7i64 };
+    if ((raw (move(q2)).tail()) != 7i64) { exit 7i32; }
     Cell<Pair<int64, int32>>:c = Cell{ v: Pair{ a: 5i64, b: 1i32 } };
-    if ((raw c.inner()) != 5i64) { exit 8i32; }
+    if ((raw (move(c)).inner()) != 5i64) { exit 8i32; }
     exit 0i32;
 };
 func:failsafe = int32(Error:e) { pick (e) { (E9) { exit 90i32; }, (HeapOom) { exit 92i32; }, (HeapBadRequest) { exit 91i32; }, (Unreachable) { exit 95i32; }, (WildLeak) { exit 96i32; }, (StackExhausted) { exit 99i32; }, (MachineFault) { exit 99i32; }, (IntOverflow) { exit 99i32; }, (OutOfBounds) { exit 99i32; }, (TbbErr) { exit 99i32; }, (DecreasesViolated) { exit 99i32; }, (*) { exit 99i32; } } exit 9i32; };

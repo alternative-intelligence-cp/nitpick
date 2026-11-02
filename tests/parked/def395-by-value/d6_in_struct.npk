@@ -1,0 +1,54 @@
+mod:d6_in_struct;
+error:E1;
+fixed Duration:J2 = Duration{ ns: 2000000000i64 };
+struct:W = { Mutex<Barrier<1i32, 5i32>->, 3i32>:m; };
+thread async func:stash_m = NIL(Mutex<Barrier<1i32, 5i32>->, 3i32>->:dst, Barrier<1i32, 5i32>->:q) joins J2 {
+    Guard<Barrier<1i32, 5i32>->>:g = await dst.acquire(raw duration_ms(500i64)) ?! E1;
+    g.value = q;
+    pass NIL;
+};
+thread async func:stash_r = NIL(RwLock<Barrier<1i32, 5i32>->, 3i32>->:dst, Barrier<1i32, 5i32>->:q) joins J2 {
+    Guard<Barrier<1i32, 5i32>->>:g = await dst.write(raw duration_ms(500i64)) ?! E1;
+    g.value = q;
+    pass NIL;
+};
+async func:plain_stash = NIL(Mutex<Barrier<1i32, 5i32>->, 3i32>->:dst, Barrier<1i32, 5i32>->:q) {
+    Guard<Barrier<1i32, 5i32>->>:g = await dst.acquire(raw duration_ms(500i64)) ?! E1;
+    g.value = q;
+    pass NIL;
+};
+async func:mkw = W(Barrier<1i32, 5i32>->:ext) {
+    Barrier<1i32, 5i32>:b = barrier() ?! E1;
+    Mutex<Barrier<1i32, 5i32>->, 3i32>:v = mutex(ext) ?! E1;
+    { drop stash_m(@v, @b); }
+    pass W{ m: move(v) };
+};
+async func:main = int32(cstring[]:_~argv) {
+    Barrier<1i32, 5i32>:o = barrier() ?! E1;
+    W:r = await mkw(@o) ?! E1;
+    {
+        Guard<Barrier<1i32, 5i32>->>:g = await r.m.acquire(raw duration_ms(500i64)) ?! E1;
+        await g.value.arrive(raw duration_ms(500i64)) ?! E1;
+    }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

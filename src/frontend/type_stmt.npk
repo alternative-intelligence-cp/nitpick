@@ -1894,6 +1894,167 @@ pub func:place_is_local = bool(ExprTyper->:e, ExprId:id, int32:fuel) never fails
     pass false;
 };
 
+// A `move` OR `pass` PATH'S VERDICT (DEF-416, landing 177b; the rule of DEF-416's row with Q1's widening; the cells are `move_through_pointer.npk`'s,
+// `i2_cast_copy_of_addr` the widening's): the pointer or view step NEAREST the moved storage decides. 0: no pointer, handle or view on the path -- the frame's own storage, or
+// the `wild` road with every origin placed outside the frame. 1: the nearest step is a PLAIN pointer, a handle or a plain view -- the pointee's
+// owner is not this frame, and the bindings analysis tracks the move by the pointer's slot, so the owner reads its vacated value as whole
+// (`p7_through_holder`, `p7_through_callee`: 60 on every landing to 177a). 2: the nearest step is `wild` (the declared-unchecked road), but the
+// path's root is a value binding of this function, or the origin of a pointer or view on the path -- plain ones and the root included -- is one
+// or is derived from one here (`@x`, `x.items`, a copy, a cast), or cannot be decided: the frame's own drop frees what the move vacated (time's
+// case4, probe12, probe12b; `r416c_wild_derived`, 65). A pointer or view that is a value binding's field or element is read through the binding.
+pub func:move_path_verdict = int32(ExprTyper->:e, ExprId:id, int32:fuel) never fails {
+    ExprId:cur = id;
+    bool:wmode = false;   // a `wild` step was met nearest: every step below, and the root, answer for their origin
+    for (int32:hop in 0i32...fuel) {
+        if (raw expr_is_none(cur)) { pass 2i32; }
+        ExprNode:n = raw ast_expr(e.ast, cur);
+        if (n.kind == ExprKind.ExprIdentifierExpr) {
+            if (!wmode) { pass 0i32; }
+            pass (is (raw ptr_from_outside(e, cur, fuel)) : 0i32 : 2i32);
+        }
+        bool:part = (n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprIndexExpr) || (n.kind == ExprKind.ExprDerefExpr)
+                    || (n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr);
+        if (!part) { pass 2i32; }
+        ExprId:base = is (n.kind == ExprKind.ExprIndexExpr) : (raw expr_lhs(n)) : (raw expr_operand(n));
+        int32:bk = raw type_kind(e.types, raw exprtypes_get(e.expr_types, base));
+        bool:step = (n.kind == ExprKind.ExprDerefExpr) || (bk == (raw TY_POINTER())) || (bk == (raw TY_HANDLE()))
+                    || ((n.kind == ExprKind.ExprIndexExpr) && (bk == (raw TY_SLICE())));
+        if (step) {
+            if ((!wmode) && ((bk == (raw TY_HANDLE())) || (!(raw step_wild(e, base))))) { pass 1i32; }
+            wmode = true;
+            if (!(raw ptr_from_outside(e, base, fuel))) { pass 2i32; }
+            // A builtin's or a call's result is no place to walk on: `ptr_from_outside` judged its origin whole, so the path ends here at 0
+            // (`pass (<-(#ptr_add<T>(self.cells.ptr, off)))`, lib/ntensor.npk's `get`; `pa1`). A walk that went on past the call refused it as unplaceable.
+            if (!(raw move_path_place_kind((raw ast_expr(e.ast, base)).kind))) { pass 0i32; }
+        }
+        cur = base;
+    }
+    pass 2i32;
+};
+// The node kinds `move_path_verdict` walks as a place: a name, a member, an index, a dereference and the two casts.
+func:move_path_place_kind = bool(ExprKind:k) never fails {
+    pass ((k == ExprKind.ExprIdentifierExpr) || (k == ExprKind.ExprMemberAccessExpr) || (k == ExprKind.ExprIndexExpr) || (k == ExprKind.ExprDerefExpr)
+          || (k == ExprKind.ExprCastExpr) || (k == ExprKind.ExprUncheckedCastExpr));
+};
+pub func:move_path_text = string(int32:verdict) never fails {
+    if (verdict == 1i32) { pass "`move` takes an owning place: a plain pointer, a handle or a view stands nearest the moved storage, whose owner is not this frame, and the owner would read the vacated value as whole (DEF-416, D-065) -- move it through the name that owns it, or hand the owner a value to store"; }
+    pass "`move` through `wild` is refused here: the path's root, or the origin of a pointer or view on it, is a value binding of this function or derived from one (`@x`, `x.items`, a copy, a cast), or cannot be placed -- the binding's own drop frees what this vacates (DEF-416)";
+};
+// THE POINTER OR VIEW AT A STEP IS `wild`: a declared-wild place, a wild cast or a wild-returning builtin (`expr_wild_provenance`), or a local
+// initialised from one or from `#wild_slice` (`T[]:s = #wild_slice<T>(v.items, v.count)`, the library `Vec`s' pops).
+func:step_wild = bool(ExprTyper->:e, ExprId:b) never fails {
+    if (raw expr_wild_provenance(e.ast, e.tab, e.interns, e.expr_types, e.types, b, 16i32)) { pass true; }
+    ExprNode:n = raw ast_expr(e.ast, b);
+    ExprId:init = b;
+    if ((n.kind == ExprKind.ExprIdentifierExpr) && (n.a != 0i32)) {
+        Symbol:s = raw symtab_get(e.tab, n.a);
+        if (s.origin_kind == (raw SYM_STMT())) { init = raw stmt_decl_init(e.ast, raw ast_stmt(e.ast, StmtId{ index: s.origin })); }
+        if (raw has_int(e.ptr_keys, n.a)) { pass false; }   // a re-assigned local reads as its plainest value (q9): the initialiser road is a slot's written once
+    }
+    if ((raw expr_is_none(init)) || (init.index == b.index)) { pass false; }
+    if ((raw ast_expr(e.ast, init)).kind == ExprKind.ExprBuiltinExpr) { pass (raw string_eq(raw intern_get(e.interns, raw builtin_name(raw ast_expr(e.ast, init))), "wild_slice")); }
+    pass (raw expr_wild_provenance(e.ast, e.tab, e.interns, e.expr_types, e.types, init, 16i32));
+};
+// THE ORIGIN OF A POINTER OR VIEW (DEF-416 (3)(b)): true when the storage it reaches visibly lies outside this frame's value bindings -- a pointer
+// or view parameter, a module binding, an allocating builtin's block, a field or element reached through such a pointer, through a local's
+// initialiser, a copy, a cast and `move`, and `#ptr_add`'s or `#wild_slice`'s pointer argument. A value binding or its field, an address, a call
+// this walk cannot see through, a pointer this function re-pointed at its own storage (`ptr_tainted`): false, the closed direction.
+func:ptr_from_outside = bool(ExprTyper->:e, ExprId:x, int32:fuel) never fails {
+    if ((fuel <= 0i32) || (raw expr_is_none(x))) { pass false; }
+    ExprNode:n = raw ast_expr(e.ast, x);
+    if (n.kind == ExprKind.ExprSentinelLiteral) { pass true; }   // NULL is no storage (D-006): what a later store puts here is that store's to answer (m13b)
+    if (n.kind == ExprKind.ExprIdentifierExpr) {
+        if ((n.a == 0i32) || (raw has_int(e.ptr_tainted, n.a))) { pass false; }
+        Symbol:s = raw symtab_get(e.tab, n.a);
+        int32:k = raw type_kind(e.types, raw exprtypes_get(e.expr_types, x));
+        bool:ptr = (k == (raw TY_POINTER())) || (k == (raw TY_SLICE())) || (k == (raw TY_HANDLE()));
+        if (s.origin_kind == (raw SYM_DECL())) { pass (ptr || ((raw ast_decl(e.ast, DeclId{ index: s.origin })).kind == DeclKind.DeclGlobalDecl)); }
+        if ((s.origin_kind != (raw SYM_STMT())) || (!ptr)) { pass false; }
+        pass (raw ptr_from_outside(e, raw stmt_decl_init(e.ast, raw ast_stmt(e.ast, StmtId{ index: s.origin })), fuel - 1i32));
+    }
+    if ((n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr) || (n.kind == ExprKind.ExprMoveExpr) || (n.kind == ExprKind.ExprRawUnwrapExpr)) {
+        pass (raw ptr_from_outside(e, raw expr_operand(n), fuel - 1i32));
+    }
+    if (n.kind == ExprKind.ExprMemberAccessExpr) {
+        if (raw has_int(e.ptr_tainted, 0i32 - ((raw expr_name(n)) =>! int32))) { pass false; }
+        pass (raw ptr_from_outside(e, raw expr_operand(n), fuel - 1i32));
+    }
+    if (n.kind == ExprKind.ExprIndexExpr) { pass (raw ptr_from_outside(e, raw expr_lhs(n), fuel - 1i32)); }
+    // A CALL BY NAME (DEF-416, landing 177b): a builtin whose result is its first argument's storage answers by that argument
+    // (`builtin_answers_by_arg`: `mcpy`, `memset`, `mmov` hand back their destination, `ralloc` its block -- `ra3a`..`ra3e`, `rc1c` read own
+    // storage as outside, 60 and 67 on 177a; `rc1b` over a parameter and `rc1d` over `alloc` stay legal; an arity error stays the typer's
+    // diagnostic, `rc9a`..`rc9c`); an allocating builtin called bare (`alloc(n)`, `aalloc`) is outside (a reading of the sigil form alone refused
+    // the manual regime's own `wild string->:ws = m =>! wild string->; move(<-ws)` over `m = alloc(...)`, deref_store_drop.npk's case 9); a user
+    // function declaring a wild return (D-002's `func:malloc = wild any->(...)`) is outside ONLY IF EVERY ARGUMENT is outside or can carry no
+    // address (`func:lie2 = wild H->(wild H->:q) { pass q; }` over `@h`, no `=>!` and no `#` in the program, read 60 on 177a -- `rc3a`, `rc3b`,
+    // `rc3d`, `u1`..`u3`; a by-value holder of a pointer, `rc3e`, and an own argument beside an outside one, `rc3g`, answer false, the ruled
+    // sentence's "cannot be decided"; `rc3h` over a size and `rc3i` over an outside pointer stay legal). THE FUEL IS SPLIT among the arguments:
+    // the loop is this walk's one branch, and a chain of two-argument calls over an outside root visited 2^n nodes otherwise (`rc3j`, 20 levels,
+    // 11 s; `rc3k`, `rc3l`); running out answers false, the closed direction. Any other call stays unseen-through (false).
+    if (n.kind == ExprKind.ExprCallExpr) {
+        ExprId:cal = raw expr_callee(n);
+        if (raw expr_is_none(cal)) { pass false; }
+        ExprNode:cn = raw ast_expr(e.ast, cal);
+        // THE VALUE ARGUMENTS ALONE: a call's window holds its turbofish types FIRST (`expr_generic_count`, parse_expr.npk), so both arms
+        // start past them and the fuel is split among the values -- a type's index read as an expression refused legal programs by the luck
+        // of their numbering while landing 177b was built (127 of 400 generated twins differing only in unrelated declarations, `tf_gen.py`; the tree's pin is tests/backend/programs/generic_call_window_ok.npk).
+        int32:gc = raw expr_generic_count(n);
+        if ((cn.kind == ExprKind.ExprIdentifierExpr) && (cn.a == 0i32) && (raw builtin_answers_by_arg(raw intern_get(e.interns, cn.payload =>! int32)))) {
+            if ((raw expr_list_count(n)) <= gc) { pass false; }
+            pass (raw ptr_from_outside(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), gc) }, fuel - 1i32));
+        }
+        if (!(raw expr_wild_provenance(e.ast, e.tab, e.interns, e.expr_types, e.types, x, 4i32))) { pass false; }
+        for (int32:i in gc...(raw expr_list_count(n))) {
+            ExprId:a = ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), i) };
+            if ((raw arg_can_carry_address(e, a)) && (!(raw ptr_from_outside(e, a, (fuel - 1i32) / ((raw expr_list_count(n)) - gc))))) { pass false; }
+        }
+        pass true;
+    }
+    if (n.kind == ExprKind.ExprBuiltinExpr) {
+        string:bn = string_concat("", raw intern_get(e.interns, raw builtin_name(n)));
+        if (raw builtin_answers_by_arg(bn)) {
+            if ((raw expr_list_count(n)) <= (raw builtin_generic_count(n))) { pass false; }
+            pass (raw ptr_from_outside(e, ExprId{ index: raw ast_id_at(e.ast, raw expr_list_start(n), raw builtin_generic_count(n)) }, fuel - 1i32));
+        }
+        pass (raw builtin_returns_wild(bn));
+    }
+    pass false;
+};
+// A BUILTIN WHOSE RESULT IS ITS FIRST ARGUMENT'S STORAGE: `#ptr_add`, `#wild_slice` and `#wild_ptr` a pointer or view into their pointer
+// argument; `mcpy`, `memset` and `mmov` their destination handed back; `ralloc` its block re-sized -- each answers by that argument, on the
+// bare-call arm and on the sigil arm alike (DEF-416, landing 177b).
+func:builtin_answers_by_arg = bool(string:bn) never fails {
+    pass ((raw string_eq(bn, "ptr_add")) || (raw string_eq(bn, "wild_slice")) || (raw string_eq(bn, "wild_ptr")) || (raw string_eq(bn, "mcpy"))
+          || (raw string_eq(bn, "memset")) || (raw string_eq(bn, "mmov")) || (raw string_eq(bn, "ralloc")));
+};
+// AN ARGUMENT THROUGH WHICH A CALLEE COULD HAND BACK THIS FRAME'S ADDRESS (DEF-416, landing 177b): a pointer, a slice, a view or a value
+// holding one, a `string` among them (`type_holds_address`, the layout's one table; an untyped argument YES). No exemption: the tree's two
+// wild-returning functions over a by-value `string` (`cbytes`, `rel_name`) hand back `wild int8->`, which no move path owns, so none is needed.
+func:arg_can_carry_address = bool(ExprTyper->:e, ExprId:a) never fails {
+    int32:t = raw exprtypes_get(e.expr_types, a);
+    if (t == 0i32) { pass true; }
+    TypeResolver:r = raw etyper_resolver(e);
+    pass (raw type_holds_address(@r, t));
+};
+func:has_int = bool(List<int32>:l, int32:v) never fails {
+    for (int64:i in 0i64...l.count) { if (l[i] == v) { pass true; } }
+    pass false;
+};
+// A POINTER OR VIEW STORED BY THIS FUNCTION (DEF-416 (3)(b)): a local (the symbol) or a field (minus the name) of pointer, slice or handle
+// type is RECORDED with the value stored, and judged at the function's end with every store known (`check_function`): a value whose origin
+// is this frame's own storage, or none (`@`/`$$m` of the slot, a NONE value), taints the key for every move path, before or after the store.
+pub func:note_ptr_store = NIL(ExprTyper->:e, ExprId:tgt, ExprId:val) never fails {
+    ExprNode:tn = raw ast_expr(e.ast, tgt);
+    int32:key = 0i32;
+    if (tn.kind == ExprKind.ExprIdentifierExpr) { key = tn.a; }
+    if (tn.kind == ExprKind.ExprMemberAccessExpr) { key = 0i32 - ((raw expr_name(tn)) =>! int32); }
+    int32:k = raw type_kind(e.types, raw exprtypes_get(e.expr_types, tgt));
+    if ((key == 0i32) || (!((k == (raw TY_POINTER())) || (k == (raw TY_SLICE())) || (k == (raw TY_HANDLE()))))) { pass NIL; }
+    drop list_push(@e.ptr_keys, key);
+    drop list_push(@e.ptr_vals, val.index);
+    pass NIL;
+};
+
 // A PLACE ROOTED AT A LIMITED BINDING (1.5.2 step 1, D-251): the root
 // identifier's declaration -- a local's `StmtVarDeclStmt` or a parameter's
 // `DeclParamDecl` -- carries a `limit<Rules>`. Walks member and index
@@ -2568,6 +2729,7 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
     }
     int32:got = raw type_of_expr(e, value);
     drop check_wild_into_plain(e, value, want);   // D-361: wild provenance into a plain pointer place
+    drop note_ptr_store(e, target, value);   // DEF-416 (3)(b): a pointer this frame points at its own storage, judged at the function's end
     e.null_ctx = nsv;
     e.expected = saved;
 
@@ -3665,6 +3827,10 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
     e.fn_gives = raw fn_declares_gives(e.ast, d);
     e.fn_pure = raw fn_declares_pure(e.ast, d);
     e.fn_comptime = raw decl_has(d, raw DECL_COMPTIME());
+    drop list_truncate(@e.ptr_tainted, 0i64);
+    drop list_truncate(@e.ptr_keys, 0i64);
+    drop list_truncate(@e.ptr_vals, 0i64);
+    drop list_truncate(@e.pass_sites, 0i64);
     // `pure` (1.5.1, D-221, S-15): a function of its arguments and nothing
     // else. Its header rules: not `async` or `thread` (an executor deciding
     // when a body runs is an effect, and so is a suspension inside it), not
@@ -4003,6 +4169,20 @@ func:check_function = NIL(ExprTyper->:e, DeclId:fid, int32:scope) never fails {
     if (!(raw stmt_is_none(body))) {
         drop check_stmt(e, body);
     }
+    // DEF-416 (3)(b) JUDGED WITH EVERY STORE KNOWN (landing 177b; the cells `q1_store_after_move`, `q6_copy_order`, `q7_init_order`): a pointer slot's origin is every value
+    // stored into it in ANY order -- a loop's later store re-points what an earlier move read -- so the taint is a fixpoint over the
+    // function's stores (`ptr_keys`/`ptr_vals`, a key of 0 a `move` site), and the moves are judged after it, each at its own span.
+    for (int64:round in 0i64...(e.ptr_keys.count + 1i64)) {
+        for (int64:i in 0i64...e.ptr_keys.count) {
+            if ((e.ptr_keys[i] != 0i32) && (!(raw has_int(e.ptr_tainted, e.ptr_keys[i]))) && (!(raw ptr_from_outside(e, ExprId{ index: e.ptr_vals[i] }, 64i32)))) { drop list_push(@e.ptr_tainted, e.ptr_keys[i]); }
+        }
+    }
+    for (int64:i in 0i64...e.ptr_keys.count) {
+        int32:mv = is (e.ptr_keys[i] == 0i32) : (raw move_path_verdict(e, ExprId{ index: e.ptr_vals[i] }, 64i32)) : 0i32;
+        if (mv != 0i32) { discard(raw te_error(e, raw TYPE_MOVE_THROUGH_POINTER(), raw move_path_text(mv), (raw ast_expr(e.ast, ExprId{ index: e.ptr_vals[i] })).span)); }
+    }
+    // and the `pass` sites after them, the same fixpoint (DEF-416: judged before it, the pass road read `rc5f` as legal)
+    for (int64:i in 0i64...e.pass_sites.count) { drop judge_pass_site(e, e.pass_sites[i]); }
     e.generics = saved;
     pass NIL;
 };

@@ -2268,7 +2268,11 @@ func:fold_call = ConstVal(TypeResolver->:r, ExprNode:e, int32:scope, int32:fuel)
     // THE ENVIRONMENT IS SWAPPED, NOT COPIED (D-247, 1.5.1b step 5): a
     // `FoldEnv` owns its list now, so the save and the restore are transfers,
     // and the restore's overwrite drops the callee's frame.
-    FoldEnv:saved = move(r.env);
+    // THE TAKE GOES THROUGH THE DECLARED-UNCHECKED ROAD (DEF-416, landing 177b): `r` is a plain pointer, and a `move` through
+    // one is TYPE-104; the store two lines below writes the slot whole before anything reads it, which is what the cast asserts.
+    // (A wild HOLDER local of `r` instead read as a retained borrow of `r` in every caller's summary -- BORROW-015 at five sites of
+    // this file and one of escape.npk under 177a's own compiler while landing 177b was built -- so the cast stands at the one expression.)
+    FoldEnv:saved = move((<-(r =>! wild TypeResolver->)).env);
     int32:saved_depth = r.fold_depth;
     r.env = move(frame);
     // THE CALL IS NAMED WHERE ITS FRAME IS ENTERED (`fold_chain`): the slot at

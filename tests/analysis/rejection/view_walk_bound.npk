@@ -1,19 +1,21 @@
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 35:46
+// expect-error-at: 37:46
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 41:74
+// expect-error-at: 43:74
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 49:84
+// expect-error-at: 51:84
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 57:100
+// expect-error-at: 59:100
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 65:116
+// expect-error-at: 67:116
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 73:25
+// expect-error-at: 75:25
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 81:25
+// expect-error-at: 83:25
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 89:25
+// expect-error-at: 91:25
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 100:21
 // THE WALK OF AN ARGUMENT'S VALUE HAS ONE BOUND, AND PAST IT THE ANSWER IS A REFUSAL (DEF-349, landing 177a). The walk answered "no party" at a fuel of 4, so four casts or ternaries around a view or an address hid it
 // (`f(is (c) : (is (c) : (is (c) : (is (c) : string_bytes(s) : w) : w) : w) : w, @s)`, 113, the freed bytes; the address's window, 65). The bound is `ALIAS_DEPTH()`, the one no tree exceeds (AST_DEPTH_MAX), and NITPICK-BORROW-007 past it, a backstop no
 // tree reaches. The legal twin, five ternaries over another owner, stands in `view_walk_bound_ok.npk`.
@@ -88,6 +90,14 @@ func:c_d349_rev_view_t5 = int64() never fails {
     bool:c = s.len > 2i64;
     int32:r = raw pairr(@s, (is (c) : (is (c) : (is (c) : (is (c) : (is (c) : string_bytes(s) : string_bytes(t)) : string_bytes(t)) : string_bytes(t)) : string_bytes(t)) : string_bytes(t)));
     pass ((r) => int64);
+};
+// d349_rev_view_c4 -- DEF-349's CAST face (management_12's `MANAGEMENT/probes/177-def349-casts/s4_view_rev`, 2026-11-01 09:43 EST: accepted, 7, on 176b;
+// BORROW-015 on 177a): the view-maker under FOUR casts, `@s` first -- the one bound closes casts and ternaries alike (`peel_ptr_casts`, `push_call_view_party_in`).
+func:gr__c4 = int64(List<int64>->:p, List<int64>[]:sl) never fails { for (int64:i in 0i64...64i64) { drop list_push(p, i); } pass sl[0i64][0i64] - 90i64; };
+func:c_d349_rev_view_c4 = int64() never fails {
+    List<int64>[2]:arr = [raw list_init::<int64>(1i64), raw list_init::<int64>(1i64)];
+    drop list_push(@arr[0i64], 97i64);
+    pass raw gr__c4(@arr[0i64], ((((arr[0i64...2i64] =>! List<int64>[]) =>! List<int64>[]) =>! List<int64>[]) =>! List<int64>[]));
 };
 func:main = int32(cstring[]:_~argv) { exit 0i32; };
 func:failsafe = int32(Error:e) {

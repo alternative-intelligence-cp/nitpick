@@ -1,23 +1,27 @@
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 57:6
+// expect-error-at: 61:6
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 64:6
+// expect-error-at: 68:6
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 72:6
+// expect-error-at: 76:6
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 79:6
+// expect-error-at: 83:6
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 85:6
+// expect-error-at: 89:6
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 92:6
+// expect-error-at: 96:6
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 99:6
+// expect-error-at: 103:6
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 106:6
+// expect-error-at: 110:6
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 114:6
+// expect-error-at: 118:6
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 121:7
+// expect-error-at: 125:7
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 162:198
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 163:200
 mod:store_through_pointer;
 // A STORE THROUGH AN INDIRECTION LANDS WHERE THE INDIRECTION POINTS (DEF-296, landing 156; DEF-289's first face).
 // Every function below stores a VIEW OF A POINTER PARAMETER'S POINTEE (`string_bytes(p.s)`, `S->:p` -- no borrow of this
@@ -147,6 +151,16 @@ func:ctl_block_ends = int32(S->:p) never fails {
     p.s = string_concat("x", "y");
     pass r;
 };
+
+// THE WHOLE POINTEE REWRITTEN WITH THIS FRAME'S BORROW INSIDE IT (landing 177b, DEF-416's review A, finding 4). DEF-416's store
+// tracking keys a dereference target as 0, so `(<-lp) = L{ items: (@arr[0i64]) =>! wild string->, n: 0i64 }` over a `wild` holder
+// from `alloc` is a store it does not record, and `move(<-lp.items)` reads as a move through outside storage. The store rule's
+// tail refuses it first: a borrow of this frame stored where only a local of the borrowing frame may hold it (D-004 rule 3) --
+// the cast address (ra4b_whole_struct_store) and `#ptr_add` over it (rc7c_whole_struct_ptr_add). `NITPICK-BORROW-002`, one report
+// each, on 177a and on this landing's compiler.
+struct:L__whole_store = { wild string->:items; int64:n; };
+func:c_ra4b_whole_struct_store = int64() never fails { string[2]:arr = [string_concat("ab", "cde"), string_concat("ab", "cde")]; wild L__whole_store->:lp = alloc(16i64) =>! wild L__whole_store->; (<-lp) = L__whole_store{ items: (@arr[0i64]) =>! wild string->, n: 0i64 }; string:t = move(<-lp.items); pass arr[0i64].len; };
+func:c_rc7c_whole_struct_ptr_add = int64() never fails { string[2]:arr = [string_concat("ab", "cde"), string_concat("ab", "cde")]; wild L__whole_store->:lp = alloc(16i64) =>! wild L__whole_store->; (<-lp) = L__whole_store{ items: #ptr_add<string>(@arr[0i64], 0i64), n: 0i64 }; string:t = move(<-lp.items); pass arr[0i64].len; };
 
 func:main = int32(cstring[]:_~argv) {
     S:s = S{ s: string_concat("a", "b") };

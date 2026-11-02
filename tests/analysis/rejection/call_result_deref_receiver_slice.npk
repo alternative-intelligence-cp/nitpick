@@ -1,67 +1,65 @@
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 198:29
+// expect-error-at: 196:29
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 208:23
+// expect-error-at: 206:23
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 218:45
+// expect-error-at: 218:13
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 229:13
+// expect-error-at: 228:33
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 239:33
+// expect-error-at: 238:29
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 249:29
+// expect-error-at: 248:33
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 259:33
+// expect-error-at: 259:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 270:14
+// expect-error-at: 271:13
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 282:13
+// expect-error-at: 283:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 294:14
+// expect-error-at: 294:13
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 305:13
+// expect-error-at: 305:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 316:14
+// expect-error-at: 315:14
 // expect-error: NITPICK-BORROW-015
 // expect-error-at: 326:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 337:14
+// expect-error-at: 338:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 349:14
+// expect-error-at: 350:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 361:14
+// expect-error-at: 361:15
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 372:15
+// expect-error-at: 371:36
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 382:36
+// expect-error-at: 381:43
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 392:43
+// expect-error-at: 392:30
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 403:30
+// expect-error-at: 402:43
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 413:43
+// expect-error-at: 413:30
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 424:30
+// expect-error-at: 423:44
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 434:44
+// expect-error-at: 433:45
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 444:45
+// expect-error-at: 444:25
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 455:25
+// expect-error-at: 455:32
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 466:32
+// expect-error-at: 467:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 478:14
+// expect-error-at: 477:36
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 488:36
+// expect-error-at: 488:31
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 499:31
-// expect-error: NITPICK-BORROW-015
-// expect-error-at: 509:43
+// expect-error-at: 498:43
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 519:30
+// expect-error-at: 508:30
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 528:15
+// expect-error-at: 517:15
 mod:call_result_deref_receiver_slice;
 // DEF-315 + DEF-316 + DEF-317 (1.6.1e, landing 166): THREE ROOTLESS SHAPES RESOLVED TO
 // THE STORAGE THEY REACH. (1) DEF-315: a `Self->` method whose receiver is the BARE
@@ -210,16 +208,7 @@ func:slice_elem_whole_through_deref_call = NIL() never fails {
     pass NIL;
 };
 
-// 6. (DEF-316) the element's field MOVED OUT through the dereference
-func:slice_elem_move_through_deref_call = NIL() never fails {
-    H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
-    H2[]:t = arr[0i64...2i64];
-    fixed uint8[]:vw = string_bytes(arr[0i64].o);
-    string:m = move((<-(raw idsl(@t)))[0i64].o);
-    discard(vw[0i64] => int32);
-    discard(m.len);
-    pass NIL;
-};
+// 6. (DEF-316) the element's field MOVED OUT through the dereference: TYPE-104 since landing 177b (DEF-416: a `move` takes an owning place), a cell of tests/types/rejection/move_through_pointer.npk; no cell here.
 
 // 7. (DEF-316) the element's ADDRESS through the dereference handed to a writer
 func:slice_elem_addr_to_writer_through_deref_call = NIL() never fails {

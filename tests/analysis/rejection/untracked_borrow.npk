@@ -1,7 +1,13 @@
 // expect-error: NITPICK-BORROW-009
-// expect-error-at: 34:21
+// expect-error-at: 40:21
 // expect-error: NITPICK-BORROW-009
-// expect-error-at: 43:11
+// expect-error-at: 49:11
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 65:150
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 66:180
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 68:185
 //
 // (2026-10-18, DEF-257, landing 133: the `pick` case picked on an ADDRESS, `pick (@h.t)`,
 // and drew `NITPICK-PICK-003` beside the borrow -- its selector a `Tag->` rather than a
@@ -47,6 +53,20 @@ func:pick_on_a_borrow = NIL() never fails {
     pass NIL;
 };
 
+// THE `for` BINDING AS A LAUNDERING ROAD, ASKED AND CLOSED HERE (landing 177b, DEF-416's review A, finding 2). DEF-416's origin
+// walk reads a `for` binding as a declaration outside the frame, so `for (H->:x in ps)` over an array holding THIS frame's own
+// address, with the cast at the element (`(<-(x =>! wild H->)).s`, i4's spelling), looked like a road from the frame's own value to
+// a `move` through `wild`. It is not one: the borrow in `ps` reaches the `for` binding and this rule refuses it before the walk
+// runs -- the address stored in the array's literal (ra2a_for_binding_move), stored into an element after the literal
+// (rc6a_for_elem_store), and a `wild` array of the cast address (rc6g_for_over_wild_array). On 177a and on this landing's
+// compiler alike: `NITPICK-BORROW-009`, one report each.
+struct:H__for_borrow = { string:s; };
+func:mk__for_borrow = H__for_borrow() never fails { pass H__for_borrow{ s: string_concat("ab", "cde") }; };
+func:c_ra2a_for_binding_move = int64() never fails { H__for_borrow:h = raw mk__for_borrow(); H__for_borrow->[1]:ps = [@h]; for (H__for_borrow->:x in ps) { string:t = move((<-(x =>! wild H__for_borrow->)).s); } pass h.s.len; };
+func:g__rc6a_for_elem_store = int64(H__for_borrow->:q) never fails { H__for_borrow:h = raw mk__for_borrow(); H__for_borrow->[1]:ps = [q]; ps[0i64] = @h; for (H__for_borrow->:x in ps) { string:t = move((<-(x =>! wild H__for_borrow->)).s); } pass h.s.len; };
+func:c_rc6a_for_elem_store = int64() never fails { H__for_borrow:o = raw mk__for_borrow(); pass raw g__rc6a_for_elem_store(@o); };
+func:c_rc6g_for_over_wild_array = int64() never fails { H__for_borrow:h = raw mk__for_borrow(); wild H__for_borrow->[1]:ps = [(@h) =>! wild H__for_borrow->]; for (H__for_borrow->:x in ps) { string:t = move((<-(x =>! wild H__for_borrow->)).s); } pass h.s.len; };
+
 func:main = int32(cstring[]:_~argv) { exit 0i32; };
 
 // THE HANDLER A ROOT OWES (D-013; REACH-003 at 1.5.1b step 1b): this file
@@ -57,6 +77,7 @@ func:failsafe = int32(Error:e) {
     pick (e) {
         (Unreachable) { exit 95i32; }, (HeapOom) { exit 92i32; },
         (HeapBadRequest) { exit 91i32; }, (WildLeak) { exit 96i32; },
+        (OutOfBounds) { exit 94i32; },  // landing 177b's rc6a row indexes an array (REACH-002 otherwise)
         (StackExhausted) { exit 99i32; },
         (MachineFault) { exit 99i32; },
         (DecreasesViolated) { exit 99i32; },

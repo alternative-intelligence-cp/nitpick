@@ -39,19 +39,19 @@ func:move_a = int64() never fails {
     pass (g[1i64].c[3i64] => int64);
 };
 func:assign_m = int64() never fails {
-    int64:k;
+    int64:k = 0i64;   // DEF-345 (landing 177b): a `$$m` of an unassigned non-dropping binding is ASSIGN-001; `seti` overwrites it, the order test stands
     Row[2]:g = [Row{ c: [1i32, 2i32, 3i32, 4i32] }, Row{ c: [5i32, 6i32, 7i32, 8i32] }];
     drop fill($$m g[(raw seti($$m k)) - 1i64].c[k - 1i64]);
     pass (g[0i64].c[0i64] => int64);
 };
 func:assign_i = int64() never fails {
-    int64:k;
+    int64:k = 0i64;   // DEF-345 (landing 177b): a `$$m` of an unassigned non-dropping binding is ASSIGN-001; `seti` overwrites it, the order test stands
     Row[2]:g = [Row{ c: [1i32, 2i32, 3i32, 4i32] }, Row{ c: [5i32, 6i32, 7i32, 8i32] }];
     drop fill($$i g[(raw seti($$m k)) - 1i64].c[k - 1i64]);
     pass (g[0i64].c[0i64] => int64);
 };
 func:assign_a = int64() never fails {
-    int64:k;
+    int64:k = 0i64;   // DEF-345 (landing 177b): a `$$m` of an unassigned non-dropping binding is ASSIGN-001; `seti` overwrites it, the order test stands
     Row[2]:g = [Row{ c: [1i32, 2i32, 3i32, 4i32] }, Row{ c: [5i32, 6i32, 7i32, 8i32] }];
     drop fill(@g[(raw seti($$m k)) - 1i64].c[k - 1i64]);
     pass (g[0i64].c[0i64] => int64);

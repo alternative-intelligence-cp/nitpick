@@ -1,37 +1,35 @@
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 83:7
+// expect-error-at: 81:7
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 90:11
+// expect-error-at: 88:11
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 97:5
+// expect-error-at: 95:5
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 105:7
+// expect-error-at: 103:7
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 112:7
+// expect-error-at: 110:7
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 119:7
+// expect-error-at: 117:7
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 126:13
+// expect-error-at: 124:13
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 133:13
+// expect-error-at: 131:13
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 140:8
+// expect-error-at: 138:8
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 148:7
+// expect-error-at: 146:7
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 156:9
+// expect-error-at: 154:9
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 163:10
+// expect-error-at: 161:10
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 170:7
+// expect-error-at: 168:7
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 179:28
+// expect-error-at: 177:28
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 189:13
+// expect-error-at: 187:13
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 196:23
-// expect-error: NITPICK-BORROW-015
-// expect-error-at: 206:7
+// expect-error-at: 197:7
 mod:pointer_alias_store;
 // A WRITE THROUGH A POINTER IS A WRITE TO ITS TARGET (DEF-302, the named-pointer layer).
 // A pointer `hp = @h` (or `@arr[i]`, `@h.o`, a pointer field, a copy of another pointer, a pointer two levels
@@ -189,14 +187,7 @@ func:list_of_ptrs = int32() never fails {
     ps[0i64].o = string_concat("x", "y");
     pass (vw[0i64] => int32);
 };
-func:move_through_ptr = int32() never fails {
-    H2:h = H2{ o: string_concat("a", "b") };
-    H2->:hp = @h;
-    fixed uint8[]:vw = string_bytes(h.o);
-    string:t = move(hp.o);
-    if (t.len == 999i64) { pass 0i32; }
-    pass (vw[0i64] => int32);
-};
+// `move_through_ptr` (`string:t = move(hp.o)` beside a view of `h.o`): TYPE-104 since landing 177b (DEF-416: a `move` takes an owning place), a cell of tests/types/rejection/move_through_pointer.npk; no cell here.
 func:repointed_then_written = int32() never fails {
     H2:h = H2{ o: string_concat("a", "b") };
     H2:g = H2{ o: string_concat("c", "d") };

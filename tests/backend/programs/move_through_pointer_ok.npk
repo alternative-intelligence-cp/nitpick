@@ -1,0 +1,279 @@
+// expect-exit: 0
+// WHAT A `move` MAY STILL TAKE (DEF-416, landing 177b; the legal twins of `tests/types/rejection/move_through_pointer.npk`): an owning local, a `move` parameter's field (a by-value parameter's is TYPE-047, the caller's value), a
+// `for` binding, a lending `pick`'s copy, a copy-typed element behind a pointer (no move at all), the prelude's `list_pop` (the wild road inside the prelude), a
+// `#wild_slice` local re-pointed to storage from OUTSIDE the frame (m13b), a `wild`-qualified parameter's pointee (r416b_wild_param), a slice local over a wild block (m9), the declared-unchecked
+// cast at the one expression (m14: `move((<-(p =>! wild H->)).s)`; m14b: an element through it; management_13's i4 and i5: on a plain parameter or a copy of it, the slot restored), k1's walker, and p7's legal twin that reads through the holder only. Each cell returns what the
+// standalone cell exited less 60 (the grid's cells return the exit itself); `main` compares. Three cells free the block their standalone form left for the
+// exit (m7, m9, k1): D-151's check runs at exit 0 alone, and the first twin exited 94 (WildLeak) for it. ADDED AT management_13's RULING OF 18:42:35 EST (its second laundering attempt, on build 7; `MANAGEMENT/probes/177b-def416/`,
+// `.internal/probes177b/cells8.txt`): `u4`, `pa8` and `pa12`, 65 on 177a and here; their refused siblings `al5`-`al7`, `pa5`-`pa7`, `pa9`-`pa11` are in the rejection file; `u1`-`u3`
+// (`lie`: a user function declaring a wild return over `q =>! wild string->`, `move(<-(raw lie(@o)))`) are ACCEPTED on both and in neither test, named on DEF-416's row.
+mod:move_through_pointer_ok;
+error:E1;
+error:E5;
+// i4_cast_param_ok; on 177a: exit=65, here: exit=65.
+struct:H__i4_cast_param_ok = { string:s; };
+struct:Q__i4_cast_param_ok = { H__i4_cast_param_ok->:hp; };
+struct:W__i4_cast_param_ok = { H__i4_cast_param_ok:inner; };
+func:mk__i4_cast_param_ok = H__i4_cast_param_ok() never fails { pass H__i4_cast_param_ok{ s: string_concat("ab", "cde") }; };
+func:idp__i4_cast_param_ok = H__i4_cast_param_ok->(H__i4_cast_param_ok->:p) never fails { pass p; };
+func:g__i4_cast_param_ok = int64(H__i4_cast_param_ok->:p) never fails { string:t = move((<-(p =>! wild H__i4_cast_param_ok->)).s); (<-(p =>! wild H__i4_cast_param_ok->)).s = "y"; pass t.len; };
+func:c_i4_cast_param_ok = int64() never fails { H__i4_cast_param_ok:h = raw mk__i4_cast_param_ok(); int64:n = raw g__i4_cast_param_ok(@h); (<-(@h)).s = "x"; pass n; };
+// i5_cast_copy_of_param; on 177a: exit=65, here: exit=65.
+struct:H__i5_cast_copy_of_param = { string:s; };
+struct:Q__i5_cast_copy_of_param = { H__i5_cast_copy_of_param->:hp; };
+struct:W__i5_cast_copy_of_param = { H__i5_cast_copy_of_param:inner; };
+func:mk__i5_cast_copy_of_param = H__i5_cast_copy_of_param() never fails { pass H__i5_cast_copy_of_param{ s: string_concat("ab", "cde") }; };
+func:idp__i5_cast_copy_of_param = H__i5_cast_copy_of_param->(H__i5_cast_copy_of_param->:p) never fails { pass p; };
+func:g__i5_cast_copy_of_param = int64(H__i5_cast_copy_of_param->:p) never fails { H__i5_cast_copy_of_param->:q = p; string:t = move((<-(q =>! wild H__i5_cast_copy_of_param->)).s); (<-(q =>! wild H__i5_cast_copy_of_param->)).s = "y"; pass t.len; };
+func:c_i5_cast_copy_of_param = int64() never fails { H__i5_cast_copy_of_param:h = raw mk__i5_cast_copy_of_param(); int64:n = raw g__i5_cast_copy_of_param(@h); (<-(@h)).s = "x"; pass n; };
+// k1_walker_ok; on 177a: exit=65, here: exit=65.
+struct:N__k1_walker_ok = { string:s; wild N__k1_walker_ok->:next; };
+func:g__k1_walker_ok = int64(wild N__k1_walker_ok->:q) never fails { wild N__k1_walker_ok->:cur = q; int64:r = 0i64; for (int64:i in 0i64...1i64) { string:t = move((<-cur).s); r = r + t.len; cur = cur.next; } pass r; };
+func:c_k1_walker_ok = int64() never fails { wild int8->:raw_it = alloc(32i64); wild N__k1_walker_ok->:it = raw_it =>! wild N__k1_walker_ok->; (<-it).s = string_concat("ab", "cde"); int64:r = raw g__k1_walker_ok(it); dalloc(raw_it); pass r; };
+// m6_prelude_shape_ok; on 177a: exit=67, here: exit=67.
+struct:Lst__m6_prelude_shape_ok = { wild string->:items; int64:count; };
+func:popit__m6_prelude_shape_ok = string(Lst__m6_prelude_shape_ok->:l) never fails { l.count = l.count - 1i64; pass move(l.items[l.count]); };
+func:c_m6_prelude_shape_ok = int64() never fails { wild string->:it = alloc(2i64 * 24i64) =>! wild string->; (<-it) = string_concat("ab", "cde"); Lst__m6_prelude_shape_ok:l = Lst__m6_prelude_shape_ok{ items: it, count: 1i64 }; string:t = raw popit__m6_prelude_shape_ok(@l); dalloc(it); pass t.len + 2i64; };
+// m7_copy_pop_ok; on 177a: exit=67, here: exit=67.
+struct:Vc__m7_copy_pop_ok<T> = { wild T->:items; int64:count; };
+func:popc__m7_copy_pop_ok<T: Copy> = T(Vc__m7_copy_pop_ok<T>->:v) never fails { v.count = v.count - 1i64; pass move(v.items[v.count]); };
+func:c_m7_copy_pop_ok = int64() never fails { wild int8->:raw_it = alloc(16i64); wild int64->:it = raw_it =>! wild int64->; (<-it) = 7i64; Vc__m7_copy_pop_ok<int64>:v = Vc__m7_copy_pop_ok{ items: it, count: 1i64 }; int64:r = raw popc__m7_copy_pop_ok::<int64>(@v); dalloc(raw_it); pass r; };
+// m9_slice_local_wild_ok; on 177a: exit=67, here: exit=67.
+struct:V__m9_slice_local_wild_ok = { wild string->:items; int64:count; };
+func:popw__m9_slice_local_wild_ok = string(V__m9_slice_local_wild_ok->:v) never fails { string[]:s = #wild_slice<string>(v.items, v.count); v.count = v.count - 1i64; pass move(s[v.count]); };
+func:c_m9_slice_local_wild_ok = int64() never fails { wild int8->:raw_it = alloc(2i64 * 24i64); wild string->:it = raw_it =>! wild string->; (<-it) = string_concat("ab", "cde"); V__m9_slice_local_wild_ok:v = V__m9_slice_local_wild_ok{ items: it, count: 1i64 }; string:t = raw popw__m9_slice_local_wild_ok(@v); int64:n = t.len + 2i64; dalloc(raw_it); pass n; };
+// m13b_wild_local_repointed_out_ok; on 177a: exit=67, here: exit=67.
+struct:H__m13b_wild_local_repointed_out_ok = { string:s; int64:k; };
+func:g__m13b_wild_local_repointed_out_ok = int64(wild H__m13b_wild_local_repointed_out_ok->:q) never fails { wild H__m13b_wild_local_repointed_out_ok->:w = NULL; w = q; string:t = move((<-w).s); pass t.len + 2i64; };
+func:c_m13b_wild_local_repointed_out_ok = int64() never fails { wild H__m13b_wild_local_repointed_out_ok->:b = alloc(32i64) =>! wild H__m13b_wild_local_repointed_out_ok->; (<-b) = H__m13b_wild_local_repointed_out_ok{ s: string_concat("ab", "cde"), k: 1i64 }; int64:r = raw g__m13b_wild_local_repointed_out_ok(b); dalloc(b); pass r; };
+// p7_through_holder_T; on 177a: exit=70, here: exit=70.
+struct:H__p7_through_holder_T = { string:s; int64:k; };
+func:take__p7_through_holder_T = int64(move string:x) never fails { pass 0i64; };
+func:gp__p7_through_holder_T = int64(H__p7_through_holder_T->:p, int64:k) never fails { pass (<-p).s.len + k; };
+impl:H__p7_through_holder_T = {
+    func:mp = int64(Self->:self, int64:k) never fails { pass self.s.len + k; };
+    func:mv = int64(Self:self, int64:k) never fails { pass self.s.len + k; };
+    func:mb = int64(Self:self, int64:k) never fails { pass (string_bytes(self.s)[0i64] => int64) - 90i64 + k; };
+};
+// B-P7's legal twin: reads through the holder only. Expect 70.
+func:c_p7_through_holder_T = int64() never fails {
+    H__p7_through_holder_T:h = H__p7_through_holder_T{ s: string_concat("ab", "cde"), k: 1i64 };
+    H__p7_through_holder_T->:p = @h;
+    int64:k2 = (<-p).k;
+    int64:t = (<-p).s.len;
+    pass h.s.len + t + k2 - 1i64;
+};
+// m14_inline_cast_move_ok; on 177a: exit=67, here: exit=67.
+struct:H__m14_inline_cast_move_ok = { string:s; int64:k; };
+func:g__m14_inline_cast_move_ok = int64(H__m14_inline_cast_move_ok->:p) never fails { string:t = move((<-(p =>! wild H__m14_inline_cast_move_ok->)).s); p.s = string_concat("wx", "yz"); pass (t.len + p.s.len) - 2i64; };
+func:c_m14_inline_cast_move_ok = int64() never fails { H__m14_inline_cast_move_ok:h = H__m14_inline_cast_move_ok{ s: string_concat("ab", "cde"), k: 1i64 }; int64:r = raw g__m14_inline_cast_move_ok(@h); pass r + h.s.len - 4i64; };
+// m14b_inline_cast_elem_ok; on 177a: exit=68, here: exit=68.
+struct:V2__m14b_inline_cast_elem_ok = { List<string>:names; int64:k; };
+func:g__m14b_inline_cast_elem_ok = int64(V2__m14b_inline_cast_elem_ok->:v) never fails { List<string>:keep = raw list_init::<string>(2i64); for (int64:i in 0i64...v.names.count) { drop list_push(@keep, move((<-(v =>! wild V2__m14b_inline_cast_elem_ok->)).names[i])); } v.names = move(keep); pass v.names.count; };
+func:c_m14b_inline_cast_elem_ok = int64() never fails { V2__m14b_inline_cast_elem_ok:v = V2__m14b_inline_cast_elem_ok{ names: raw list_init::<string>(2i64), k: 1i64 }; drop list_push(@v.names, string_concat("ab", "cde")); drop list_push(@v.names, string_concat("fg", "hij")); int64:r = raw g__m14b_inline_cast_elem_ok(@v); pass r + v.names[1i64].len + 1i64; };
+// --- the grid (`r416*`): one preamble, then each cell's own declarations and its `main` as a function returning the exit itself ---
+struct:H = { string:s; int64:k; };
+enum:Ev = { Str(string); Nop; };
+struct:Hv = { Ev:e; };
+func:take = int64(move string:x) never fails { pass x.len; };
+impl:H = {
+    func:consume = int64(move Self:self) never fails { string:t = move(self.s); pass t.len; };   // the move out of a `move Self` receiver's field, legal (`rf7`)
+    func:byval = int64(Self:self) never fails { pass self.s.len; };
+};
+func:mk = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 1i64 }; };
+// r416_for; on 177a: exit=65, here: exit=65.
+func:v__r416_for = int64(H[2]->:p) never fails { int64:n = 0i64; for (H:e in (<-p)) { n = n + e.s.len; } pass n; };
+func:c_r416_for = int64() never fails {
+    H[2]:g = [raw mk(), raw mk()];
+    int64:t = raw v__r416_for(@g);   // the `for` reads each element's length through the dereferenced array: 10, the elements intact (build 8: the row called nothing until then)
+    pass ((g[0i64].s.len) + (t - 10i64) + 60i64);
+};
+// r416b_for_deref; on 177a: exit=62, here: exit=62.
+func:v__r416b_for_deref = int64(string[2]->:p) never fails { int64:n = 0i64; for (string:e in (<-p)) { n = n + e.len; } pass n; };
+func:c_r416b_for_deref = int64() never fails {
+    H:h = raw mk();
+    string[2]:g = [string_concat("a", "b"), string_concat("c", "d")]; int64:t = raw v__r416b_for_deref(@g); pass (g[0i64].len + 60i64);
+};
+// r416_pick_lend; on 177a: exit=65, here: exit=65.
+func:v__r416_pick_lend = int64(Hv->:p) never fails { pick (p.e) { (Ev.Str(x)) { pass x.len; }, (Ev.Nop) { pass 0i64; } } pass 0i64; };
+func:c_r416_pick_lend = int64() never fails {
+    H:h = raw mk();
+    Hv:g = Hv{ e: Ev.Str(string_concat("a", "b")) }; int64:t = raw v__r416_pick_lend(@g);
+    pass ((h.s.len) + 60i64);
+};
+// r416_list_pop; on 177a: exit=62, here: exit=62.
+func:v__r416_list_pop = int64() never fails { List<string>:l = raw list_init::<string>(2i64); drop list_push(@l, string_concat("a", "b")); string:t = raw list_pop::<string>(@l); pass t.len; };
+func:c_r416_list_pop = int64() never fails {
+    pass ((raw v__r416_list_pop()) + 60i64);   // the prelude's pop moves out through its `#wild_slice` view, the library `Vec`s' road (build 8: the function was `pass 0i64` until then)
+};
+// r416b_wild_param; on 177a: exit=60, here: exit=60: the owner `h` reads its vacated `s` as length 0 -- the defect's own symptom, legal on the
+// declared-unchecked road because the caller's `(@h) =>! wild H->` asserts the pointee is the author's (D-019); the same callee takes a plain
+// `@h` with no cast (D-223) and vacates it unseen: DEF-423 (HIGH, registered at build 8, management_13's `ra6a`, `ra6c`, `rc2b`).
+func:v__r416b_wild_param = string(wild H->:p) never fails { pass move(p.s); };
+func:c_r416b_wild_param = int64() never fails {
+    H:h = raw mk();
+    string:t = raw v__r416b_wild_param((@h) =>! wild H->);
+    pass ((h.s.len) + 60i64);
+};
+// pa1_ptr_add_param_field_ok; on 177a: exit=60, here: exit=60 (build 6 refused it, TYPE-047: lib/ntensor.npk's `get`, a builtin's result at the END of the path).
+struct:S__pa1 = { buffer:b; int64:n; };
+func:get__pa1 = string(S__pa1->:self, int64:k) never fails { pass (<-(#ptr_add<string>(self.b.ptr, k))); };
+func:c_pa1_ptr_add_param_field_ok = int64() never fails {
+    S__pa1:s = S__pa1{ b: buffer_new(64i64), n: 1i64 };
+    string:x = raw get__pa1(@s, 0i64);
+    pass (string_byte_length(x) + 60i64);
+};
+// pa4_ptr_add_param_direct_ok; on 177a: exit=65, here: exit=65 (`#ptr_add` straight on a wild pointer PARAMETER).
+func:get__pa4 = string(wild string->:p, int64:k) never fails { pass (<-(#ptr_add<string>(p, k))); };
+func:c_pa4_ptr_add_param_direct_ok = int64() never fails {
+    wild int8->:m = alloc(#size_of<string>());
+    defer { dalloc(m); }
+    wild string->:ws = m =>! wild string->;
+    (<-ws) = string_concat("ab", "cde");
+    string:x = raw get__pa4(ws, 0i64);
+    pass (x.len + 60i64);
+};
+// al1_alloc_cast_move_out_ok; on 177a: exit=65, here: exit=65 (tests/backend/programs/deref_store_drop.npk's case 9: a block from `alloc`, cast, written, moved out of; build 6 refused it).
+func:c_al1_alloc_cast_move_out_ok = int64() never fails {
+    wild int8->:m = alloc(#size_of<string>());
+    defer { dalloc(m); }
+    wild string->:ws = m =>! wild string->;
+    (<-ws) = string_concat("ab", "cde");
+    string:s1 = move(<-ws);
+    pass (s1.len + 60i64);
+};
+// al2_user_allocator_move_out_ok; on 177a: exit=65, here: exit=65 (the block from a USER allocator declaring a wild return, D-002's `func:malloc = wild any->(...)`).
+func:grow__al2 = wild string->(int64:n) never fails { pass (alloc(n) =>! wild string->); };
+func:c_al2_user_allocator_move_out_ok = int64() never fails {
+    wild string->:w = raw grow__al2(#size_of<string>());
+    defer { dalloc(w =>! wild int8->); }
+    (<-w) = string_concat("ab", "cde");
+    string:s1 = move(<-w);
+    pass (s1.len + 60i64);
+};
+// al4_alloc_sigil_ptr_add_move_out_ok; on 177a: exit=65, here: exit=65 (deref_store_drop.npk's line 147: `#ptr_add` over the cast block from `alloc`).
+func:c_al4_alloc_sigil_ptr_add_move_out_ok = int64() never fails {
+    wild int8->:m = alloc(#size_of<string>());
+    defer { dalloc(m); }
+    wild string->:ws = m =>! wild string->;
+    wild string->:e = #ptr_add<string>(ws, 0i64);
+    (<-e) = string_concat("ab", "cde");
+    string:s2 = move(<-e);
+    pass (s2.len + 60i64);
+};
+// k2_realloc_field_ok; on 177a: exit=65, here: exit=65 (management_13's cell; TYPE-104 on build 6, the bare `alloc` call not read as an origin -- a post-180 item until build 7 read it).
+struct:Lst__k2_realloc_field_ok = { wild string->:items; int64:count; };
+func:g__k2_realloc_field_ok = int64(Lst__k2_realloc_field_ok->:l) never fails { l.items = alloc(48i64) =>! wild string->; (<-l.items) = string_concat("ab", "cde"); string:t = move(l.items[0i64]); pass t.len; };
+func:c_k2_realloc_field_ok = int64() never fails {
+    wild string->:first = alloc(24i64) =>! wild string->;
+    Lst__k2_realloc_field_ok:l = Lst__k2_realloc_field_ok{ items: first, count: 0i64 };
+    int64:n = raw g__k2_realloc_field_ok(@l);
+    dalloc(l.items =>! wild int8->);   // the re-pointed block, and the first one: D-151's leak check runs at exit 0 (the standalone cell leaves both for the exit)
+    dalloc(first =>! wild int8->);
+    pass (n + 60i64);
+};
+// u4_user_alloc_ok; on 177a: exit=65, here: exit=65 (a user allocator's cell moved out and freed (`newcell` declares a wild return, read as an origin by `ptr_from_outside`, F1)).
+func:mks__u4_user_alloc_ok = string() never fails { pass string_concat("ab", "cde"); };
+func:newcell__u4_user_alloc_ok = wild string->() never fails { wild string->:w = alloc(32i64) =>! wild string->; (<-w) = raw mks__u4_user_alloc_ok(); pass w; };
+func:c_u4_user_alloc_ok = int64() never fails { wild string->:w = raw newcell__u4_user_alloc_ok(); string:t = move(<-w); dalloc(w =>! wild int8->); pass (t.len + 60i64); };
+// pa8_ptr_add_param_struct_ok; on 177a: exit=65, here: exit=65 (`#ptr_add` over a pointer PARAMETER's wild field, the walk ending at the builtin's result (F2)).
+struct:L__pa8_ptr_add_param_struct_ok = { wild string->:items; int64:n; };
+func:mks__pa8_ptr_add_param_struct_ok = string() never fails { pass string_concat("ab", "cde"); };
+func:newcell__pa8_ptr_add_param_struct_ok = wild string->() never fails { wild string->:w = alloc(32i64) =>! wild string->; (<-w) = raw mks__pa8_ptr_add_param_struct_ok(); pass w; };
+func:h__pa8_ptr_add_param_struct_ok = int64(L__pa8_ptr_add_param_struct_ok->:v) never fails { string:t = move(<-(#ptr_add<string>(v.items, 0i64))); pass t.len; };
+func:c_pa8_ptr_add_param_struct_ok = int64() never fails { wild string->:c = raw newcell__pa8_ptr_add_param_struct_ok(); L__pa8_ptr_add_param_struct_ok:v = L__pa8_ptr_add_param_struct_ok{ items: c, n: 1i64 }; int64:r = raw h__pa8_ptr_add_param_struct_ok(@v); dalloc(c =>! wild int8->); pass (r + 60i64); };
+// pa12_pass_road_param_ok; on 177a: exit=65, here: exit=65 (the pass road over the same, `pass (<-(#ptr_add<string>(v.items, 0i64)))` (ntensor's `get` shape)).
+struct:L__pa12_pass_road_param_ok = { wild string->:items; int64:n; };
+func:mks__pa12_pass_road_param_ok = string() never fails { pass string_concat("ab", "cde"); };
+func:newcell__pa12_pass_road_param_ok = wild string->() never fails { wild string->:w = alloc(32i64) =>! wild string->; (<-w) = raw mks__pa12_pass_road_param_ok(); pass w; };
+func:h__pa12_pass_road_param_ok = string(L__pa12_pass_road_param_ok->:v) never fails { pass (<-(#ptr_add<string>(v.items, 0i64))); };
+func:c_pa12_pass_road_param_ok = int64() never fails { wild string->:c = raw newcell__pa12_pass_road_param_ok(); L__pa12_pass_road_param_ok:v = L__pa12_pass_road_param_ok{ items: c, n: 1i64 }; string:t = raw h__pa12_pass_road_param_ok(@v); dalloc(c =>! wild int8->); pass (t.len + 60i64); };
+// --- build 9 (review A §4 of build 8; management_13's ruling of 23:37:38 EST, item 4): the preamble's helpers CALLED, the by-argument arm's legal side, the turbofish ---
+// r416_helpers_ok: `take` over a `move` parameter's field, `consume` MOVING its `move Self` receiver's field (`rf7`'s legal move; it only read `self.s.len` until the amend of
+// build 9, review A's finding 4), `byval` over a by-value receiver, a READ and nothing more: `move(h.s)` over a by-value `H:h` is TYPE-047 on 177a and here
+// (`r416_byval_param_field`, the caller's value, D-065), so a by-value PARAMETER's field is no row -- the preamble's three, declared and never called until build 9;
+// on 177a: exit=75, here: exit=75.
+func:tk__r416_helpers_ok = int64(move H:h) never fails { pass raw take(move(h.s)); };
+func:c_r416_helpers_ok = int64() never fails { H:a = raw mk(); H:c = raw mk(); H:d = raw mk(); pass (raw tk__r416_helpers_ok(move(a))) + (raw (move(c)).consume()) + (raw d.byval()); };
+// rh2d_local_ptr_ralloc_ok (management_13's cell, `probes/177b-final/`): a local pointer re-sized by `ralloc` beside a move through a pointer parameter's `wild` field --
+// the move's path reads `q` and no path goes through `m`, so the row passes whatever `ralloc` answers: it pins only the LOCAL-versus-FIELD key at `rh2c`'s boundary
+// (`note_ptr_store` keys a local by its symbol and a field by its name; review A of build 9, finding 2), not the by-argument arm -- `rk8` below is that arm's legal
+// side; the standalone leaves its block for the exit; on 177a: exit=65, here: exit=65.
+struct:L__rh2d_local_ptr_ralloc_ok = { wild string->:items; int64:n; };
+func:g__rh2d_local_ptr_ralloc_ok = int64(L__rh2d_local_ptr_ralloc_ok->:q) never fails { wild string->:m = alloc(24i64) =>! wild string->; m = ralloc(m, 48i64) =>! wild string->; string:t = move(q.items[0i64]); dalloc(m =>! wild int8->); pass t.len; };
+func:c_rh2d_local_ptr_ralloc_ok = int64() never fails { wild string->:b = alloc(24i64) =>! wild string->; (<-b) = string_concat("ab", "cde"); L__rh2d_local_ptr_ralloc_ok:o = L__rh2d_local_ptr_ralloc_ok{ items: b, n: 1i64 }; int64:r = raw g__rh2d_local_ptr_ralloc_ok(@o); dalloc(b =>! wild int8->); pass r; };
+// rc1e_mcpy_alloc_ok: `mcpy` over an allocated block, the move through its result -- the by-argument arm's legal side for `mcpy` (`rc1d`'s shape with the builtin in the way; `rc1c` over `@h.s` is TYPE-104); on 177a: exit=65, here: exit=65.
+func:c_rc1e_mcpy_alloc_ok = int64() never fails { wild H->:w = alloc(32i64) =>! wild H->; (<-w) = raw mk(); wild H->:w2 = mcpy(w, w, 0i64) =>! wild H->; string:t = move((<-w2).s); dalloc(w =>! wild int8->); pass t.len; };
+// rk8_ralloc_block_move_ok (management_13's cell, `probes/177b-b9/`): the by-argument arm's REAL legal side -- the move goes through `ralloc`'s result over a block from
+// `alloc` (`ralloc` answers by its first argument, outside); its frame twin `rk8b`, `ralloc` over `(@h) =>! wild string->`, is TYPE-104 (BORROW-009 on 177a); on 177a: exit=65,
+// here: exit=65 (65 on build 8 too).
+func:c_rk8_ralloc_block_move_ok = int64() never fails { wild string->:m = alloc(24i64) =>! wild string->; (<-m) = string_concat("ab", "cde"); m = ralloc(m, 48i64) =>! wild string->; string:t = move(<-m); dalloc(m =>! wild int8->); pass t.len; };
+// rh3a_generic_alloc_ok, rh3d_generic_two_types_ok, rh3e_generic_inferred_arg (management_13's cells) and tf_unrelated_decls_ok (one of its 400 `tf_gen.py` twins): a TURBOFISH call's
+// window holds its types first -- build 8's call arm read them as value arguments and refused 127 of the 400 by the luck of the numbering; on 177a: exit=65, here: exit=65, each;
+// these four read 65 on build 8 too, and this whole file compiled and exited 0 under build 8's binary at `9fe39f7` (aad04911; review A of build 9, finding 1) -- after the amend's
+// rows shifted its numbering, build 8 reads TYPE-104 x1 at `c_rh3d` (measured): luck either way, so the PIN of the fix is `generic_call_window_ok.npk`, standalone, TYPE-104 x10 under build 8.
+func:cell__rh3a_generic_alloc_ok<T> = wild T->(int64:n) never fails { pass (alloc(n) =>! wild T->); };
+func:c_rh3a_generic_alloc_ok = int64() never fails { wild H->:w = raw cell__rh3a_generic_alloc_ok::<H>(32i64); (<-w) = raw mk(); string:t = move((<-w).s); dalloc(w =>! wild int8->); pass t.len; };
+func:cell2__rh3d_generic_two_types_ok<T,U> = wild T->(int64:n) never fails { pass (alloc(n) =>! wild T->); };
+func:c_rh3d_generic_two_types_ok = int64() never fails { wild H->:w = raw cell2__rh3d_generic_two_types_ok::<H,int32>(32i64); (<-w) = raw mk(); string:t = move((<-w).s); dalloc(w =>! wild int8->); pass t.len; };
+func:gl__rh3e_generic_inferred_arg<T> = wild T->(wild T->:q) never fails { pass q; };
+func:c_rh3e_generic_inferred_arg = int64() never fails { wild H->:w = alloc(32i64) =>! wild H->; (<-w) = raw mk(); string:t = move((<-(raw gl__rh3e_generic_inferred_arg::<H>(w))).s); dalloc(w =>! wild int8->); pass t.len; };
+struct:X0__tf_unrelated_decls_ok = { int64:a; };
+struct:X1__tf_unrelated_decls_ok = { int64:a; };
+struct:X2__tf_unrelated_decls_ok = { int64:a; };
+struct:X3__tf_unrelated_decls_ok = { int64:a; };
+struct:X4__tf_unrelated_decls_ok = { int64:a; };
+func:c_tf_unrelated_decls_ok = int64() never fails { wild H->:w = raw cell__rh3a_generic_alloc_ok::<H>(32i64); (<-w) = raw mk(); string:t = move((<-w).s); dalloc(w =>! wild int8->); pass t.len; };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c_i4_cast_param_ok()) != 5i64) { exit 11i32; }
+    if ((raw c_i5_cast_copy_of_param()) != 5i64) { exit 12i32; }
+    if ((raw c_k1_walker_ok()) != 5i64) { exit 13i32; }
+    if ((raw c_m6_prelude_shape_ok()) != 7i64) { exit 14i32; }
+    if ((raw c_m7_copy_pop_ok()) != 7i64) { exit 15i32; }
+    if ((raw c_m9_slice_local_wild_ok()) != 7i64) { exit 16i32; }
+    if ((raw c_m13b_wild_local_repointed_out_ok()) != 7i64) { exit 18i32; }
+    if ((raw c_p7_through_holder_T()) != 10i64) { exit 19i32; }
+    if ((raw c_m14_inline_cast_move_ok()) != 7i64) { exit 20i32; }
+    if ((raw c_m14b_inline_cast_elem_ok()) != 8i64) { exit 21i32; }
+    if ((raw c_r416_for()) != 65i64) { exit 22i32; }
+    if ((raw c_r416b_for_deref()) != 62i64) { exit 23i32; }
+    if ((raw c_r416_pick_lend()) != 65i64) { exit 24i32; }
+    if ((raw c_r416_list_pop()) != 62i64) { exit 25i32; }
+    if ((raw c_r416b_wild_param()) != 60i64) { exit 26i32; }
+    if ((raw c_pa1_ptr_add_param_field_ok()) != 60i64) { exit 27i32; }
+    if ((raw c_pa4_ptr_add_param_direct_ok()) != 65i64) { exit 28i32; }
+    if ((raw c_al1_alloc_cast_move_out_ok()) != 65i64) { exit 29i32; }
+    if ((raw c_al2_user_allocator_move_out_ok()) != 65i64) { exit 30i32; }
+    if ((raw c_al4_alloc_sigil_ptr_add_move_out_ok()) != 65i64) { exit 31i32; }
+    if ((raw c_k2_realloc_field_ok()) != 65i64) { exit 32i32; }
+    if ((raw c_u4_user_alloc_ok()) != 65i64) { exit 33i32; }
+    if ((raw c_pa8_ptr_add_param_struct_ok()) != 65i64) { exit 34i32; }
+    if ((raw c_pa12_pass_road_param_ok()) != 65i64) { exit 35i32; }
+    if ((raw c_r416_helpers_ok()) != 15i64) { exit 36i32; }
+    if ((raw c_rh2d_local_ptr_ralloc_ok()) != 5i64) { exit 37i32; }
+    if ((raw c_rc1e_mcpy_alloc_ok()) != 5i64) { exit 38i32; }
+    if ((raw c_rh3a_generic_alloc_ok()) != 5i64) { exit 39i32; }
+    if ((raw c_rh3d_generic_two_types_ok()) != 5i64) { exit 40i32; }
+    if ((raw c_rh3e_generic_inferred_arg()) != 5i64) { exit 41i32; }
+    if ((raw c_tf_unrelated_decls_ok()) != 5i64) { exit 42i32; }
+    if ((raw c_rk8_ralloc_block_move_ok()) != 5i64) { exit 43i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E1)               { exit 56i32; },
+        (E5)               { exit 55i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

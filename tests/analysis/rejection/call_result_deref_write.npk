@@ -1,21 +1,17 @@
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 83:6
+// expect-error-at: 79:6
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 92:17
+// expect-error-at: 90:22
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 101:22
+// expect-error-at: 99:32
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 110:32
-// expect-error: NITPICK-BORROW-015
-// expect-error-at: 119:13
+// expect-error-at: 108:13
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 130:6
+// expect-error-at: 119:6
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 138:34
+// expect-error-at: 129:18
 // expect-error: NITPICK-BORROW-016
-// expect-error-at: 147:18
-// expect-error: NITPICK-BORROW-016
-// expect-error-at: 155:22
+// expect-error-at: 137:22
 mod:call_result_deref_write;
 // DEF-309 (1.6.1e, landing 164): A WRITE THROUGH THE DEREFERENCE OF A CALL-RESULT
 // POINTER IS RESOLVED TO THE STORAGE THE POINTER POINTS AT. DEF-305 (landing 161)
@@ -85,14 +81,7 @@ func:view_whole_assign = NIL() never fails {
     pass NIL;
 };
 
-// 2. the whole pointee moved out through the deref
-func:view_whole_move = NIL() never fails {
-    H2:h = H2{ o: string_concat("a", "b") };
-    fixed uint8[]:vw = string_bytes(h.o);
-    H2:u = move(<-(raw idh(@h)));
-    discard(vw[0i64] => int32);
-    pass NIL;
-};
+// 2. the whole pointee moved out through the deref: TYPE-104 since landing 177b (DEF-416: a `move` takes an owning place), a cell of tests/types/rejection/move_through_pointer.npk; no cell here.
 
 // 3. a FIELD written through the deref
 func:view_field_write = NIL() never fails {
@@ -131,14 +120,7 @@ async func:lend_whole_assign = NIL() {
     pass NIL;
 };
 
-// 7. the lent arena moved out through the deref
-async func:lend_whole_move = NIL() {
-    shared_arena<int64>:s = shared_arena_make(8i64);
-    drop filler(@s);
-    shared_arena<int64>:u = move(<-(raw idp(@s)));
-    u.destroy();
-    pass NIL;
-};
+// 7. the lent arena moved out through the deref: TYPE-104 since landing 177b (DEF-416: a `move` takes an owning place), a cell of tests/types/rejection/move_through_pointer.npk; no cell here.
 
 // 8. the address of the deref handed to the replacer
 async func:lend_addr_of_deref = NIL() {

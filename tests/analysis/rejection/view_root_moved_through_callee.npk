@@ -1,9 +1,9 @@
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 32:25
+// expect-error-at: 36:25
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 39:25
+// expect-error-at: 43:25
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 46:25
+// expect-error-at: 50:25
 //
 // DEF-119 (1.6.1d step 1; the library listener's F-004): A `move` OUT THROUGH
 // A POINTER IS A MUTATION OF THE POINTEE. `move(<-p)` vacates the whole
@@ -14,14 +14,18 @@
 // is BORROW-013 (D-286: readers only; DEF-123's rule). A callee that moves a
 // FIELD out was recorded all along and stays refused; a callee that only reads
 // through its pointer is the control.
+//
+// Since landing 177b (DEF-416) a `move` through a pointer is TYPE-104 at the typer, so the callees here STORE through
+// the pointer (`(<-p) = raw mk()`, `b.s = raw mk()`), the mutation of the pointee DEF-119 recorded for the move; the
+// three verdicts stand as they were.
 mod:view_root_moved_through_callee;
 error:E9;
 
 struct:Box = { string:s; };
 
 func:mk = string() never fails { pass string_concat("ab", "c"); };
-func:take_whole = NIL(string->:p) never fails { string:t = move(<-p); pass NIL; };
-func:take_field = NIL(Box->:b) never fails { string:t = move(b.s); pass NIL; };
+func:take_whole = NIL(string->:p) never fails { (<-p) = raw mk(); pass NIL; };   // a STORE through the pointer drops the root (the `move` through it is TYPE-104 since landing 177b, DEF-416)
+func:take_field = NIL(Box->:b) never fails { b.s = raw mk(); pass NIL; };
 func:read_only = int64(string->:p) never fails { pass string_byte_length(<-p); };
 
 func:main = int32(cstring[]:_~argv) {

@@ -31,6 +31,8 @@ impl:PS = {
         await sleep(raw duration_ms(1i64)) ?| NIL;
         pass self.s.len;
     };
+    // the pointee moved out THROUGH the receiver on the declared-unchecked road (DEF-416, build 8): the receiver is a parameter, outside the frame
+    func:takew = int64(Self->:self) never fails { PS:v = move(<-(self =>! wild PS->)); pass raw (move(v)).take(); };
 };
 trait:Tl = { func:ln = int64(Self:self) never fails; };
 impl:PS:Tl = { func:ln = int64(PS:self) never fails { pass self.s.len; }; };
@@ -72,12 +74,16 @@ func:c_recv_field = int64() never fails {
     HU:h = raw mkh();
     pass raw (move(h.u)).take();
 };
-// through a pointer: the POINTEE is transferred and left vacant (D-225), so `ps.s` reads empty after it
+// through a pointer: `(move(<-pp)).take()` was TYPE-104 at landing 177b (DEF-416: a `move` takes an owning place; a cell of
+// tests/types/rejection/move_through_pointer.npk); the mechanism stands on the declared-unchecked road, `pp.takew()` -- the pointee transferred
+// and left vacant (D-225), then RE-STORED through its name and read whole (build 8; review B's "where each deleted row's check now lives")
 func:c_recv_through_pointer = int64() never fails {
     PS:ps = raw mk();
     PS->:pp = @ps;
-    int64:n = raw (move(<-pp)).take();
-    pass (n * 10i64) + ps.s.len;
+    int64:n = raw pp.takew();
+    int64:vac = ps.s.len;
+    ps = raw mk();
+    pass (n * 100i64) + (vac * 10i64) + ps.s.len;
 };
 func:c_recv_ufcs = int64() never fails {
     PS:ps = raw mk();
@@ -256,7 +262,7 @@ func:c_plain_dyn = int64() never fails {
 async func:main = int32(cstring[]:_~argv) {
     if ((raw c_recv_by_name()) != 4i64) { exit 11i32; }
     if ((raw c_recv_field()) != 4i64) { exit 12i32; }
-    if ((raw c_recv_through_pointer()) != 40i64) { exit 13i32; }
+    if ((raw c_recv_through_pointer()) != 404i64) { exit 13i32; }
     if ((raw c_recv_ufcs()) != 4i64) { exit 14i32; }
     if ((raw c_recv_generic(raw mk3())) != 6i64) { exit 15i32; }
     if ((await c_recv_await() ?| 0i64) != 4i64) { exit 16i32; }

@@ -30,7 +30,10 @@ func:shape1 = int64(cstring:devnull) never fails {
 };
 
 func:enter = NIL(Res->:r, move Env:frame) never fails {
-    Env:saved = move(r.env);
+    // THE TAKE GOES THROUGH THE DECLARED-UNCHECKED ROAD (DEF-416, landing 177b): `r` is a plain pointer, and a `move` through
+    // one is TYPE-104; the store on the next line writes the slot whole before anything reads it, which is what the cast
+    // asserts (the compiler's own `fold_call` in src/frontend/type_resolve.npk is this idiom, spelled the same way).
+    Env:saved = move((<-(r =>! wild Res->)).env);
     r.env = move(frame);
     drop list_push(@r.env.names, string_concat("in-", int_to_string(r.depth)));
     r.depth = r.depth + 1i64;

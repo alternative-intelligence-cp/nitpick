@@ -1,35 +1,35 @@
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 66:16
+// expect-error-at: 65:16
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 76:14
+// expect-error-at: 75:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 86:15
+// expect-error-at: 85:15
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 96:15
+// expect-error-at: 95:15
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 106:17
+// expect-error-at: 105:17
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 116:16
+// expect-error-at: 115:16
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 126:15
+// expect-error-at: 125:15
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 136:16
+// expect-error-at: 135:16
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 146:15
+// expect-error-at: 148:15
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 156:15
+// expect-error-at: 158:15
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 166:17
+// expect-error-at: 168:17
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 176:16
+// expect-error-at: 178:16
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 186:14
+// expect-error-at: 188:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 197:18
+// expect-error-at: 199:18
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 207:17
+// expect-error-at: 209:17
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 218:7
+// expect-error-at: 220:7
 mod:param_copy_summary;
 struct:H2 = { string:o; int64:k; };
 
@@ -45,7 +45,6 @@ func:wrcopy = NIL(H2->:q) never fails { H2->:q2 = q; q2.o = string_concat("x", "
 func:wrfwd = NIL(H2->:q) never fails { H2->:q2 = q; drop wr(q2); pass NIL; };
 func:wrcd = NIL(H2->:q) never fails { H2->:q2 = q; (<-q2).o = string_concat("x", "y"); pass NIL; };
 func:wrcwh = NIL(H2->:q) never fails { H2->:q2 = q; (<-q2) = H2{ o: string_concat("x", "y"), k: 9i64 }; pass NIL; };
-func:wrmv = NIL(H2->:q) never fails { H2->:q2 = q; string:t = move(q2.o); discard(t.len); pass NIL; };
 func:wrc2 = NIL(H2->:q) never fails { H2->:q2 = q =>! H2->; q2.o = string_concat("x", "y"); pass NIL; };
 func:wrany2 = NIL(any->:q) never fails { H2->:q2 = q =>! H2->; q2.o = string_concat("x", "y"); pass NIL; };
 func:wrc2e = NIL(H2->:q) never fails { H2->:q2 = q => H2->; q2.o = string_concat("x", "y"); pass NIL; };
@@ -138,7 +137,10 @@ func:copy_whole_pointee_assign = NIL() never fails {
     pass NIL;
 };
 
-// 9. (DEF-342) a field MOVED OUT through the copy (f9j15)
+func:wrmv = NIL(H2->:q) never fails { H2->:q2 = q; string:t = move((<-(q2 =>! wild H2->)).o); discard(t.len); pass NIL; };
+// 9. (DEF-342) a field MOVED OUT through the copy (f9j15); since landing 177b through the declared-unchecked road, `(<-(q2 =>! wild H2->)).o`
+//    -- the plain `move(q2.o)` is TYPE-104 (DEF-416), a cell of tests/types/rejection/move_through_pointer.npk -- and the summary reads the move
+//    through the cast (build 8; review B's finding 4)
 func:copy_field_moved_out = NIL() never fails {
     H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
     H2->:hp = @h;

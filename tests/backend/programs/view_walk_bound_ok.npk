@@ -11,8 +11,18 @@ func:c_d349_deep_ok = int64() never fails {
     bool:c = s.len > 2i64;
     pass raw wr(is (c) : (is (c) : (is (c) : (is (c) : (is (c) : string_bytes(t) : w) : w) : w) : w) : w, @s);
 };
+// d349_cast4_ok -- four casts around a view of ANOTHER owner beside `@s` (management_12's `s4_view_ok`: 7 on 176b and 177a): the depth alone refuses nothing.
+func:gs__c4 = int64(List<int64>[]:sl, List<int64>->:p) never fails { for (int64:i in 0i64...64i64) { drop list_push(p, i); } pass sl[0i64][0i64] - 90i64; };
+func:c_d349_cast4_ok = int64() never fails {
+    List<int64>[2]:arr = [raw list_init::<int64>(1i64), raw list_init::<int64>(1i64)];
+    List<int64>[2]:brr = [raw list_init::<int64>(1i64), raw list_init::<int64>(1i64)];
+    drop list_push(@arr[0i64], 97i64);
+    drop list_push(@brr[0i64], 97i64);
+    pass raw gs__c4(((((brr[0i64...2i64] =>! List<int64>[]) =>! List<int64>[]) =>! List<int64>[]) =>! List<int64>[]), @arr[0i64]);
+};
 func:main = int32(cstring[]:_~argv) {
     if ((raw c_d349_deep_ok()) != 5i64) { exit 1i32; }
+    if ((raw c_d349_cast4_ok()) != 7i64) { exit 2i32; }
     exit 0i32;
 };
 func:failsafe = int32(Error:e) {

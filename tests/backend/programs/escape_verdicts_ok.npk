@@ -290,31 +290,21 @@ async func:main = int32(cstring[]:_~argv) {
         int64:got21 = await done.recv(raw duration_ms(2000i64)) ?! E1;
         if (got21 != 104i64) { exit 21i32; }
     }
-    // 22. (t1a) a pointee's owning PART moved through the pointer by the automatic dereference, `move(sp.s)`, into a
-    //     `move string` parameter; the part is VACANT and assigned before a read
+    // 22. (t1a) an owner's PART moved into a `move string` parameter; the part is VACANT and assigned before a read. Through
+    //     a pointer (`move(sp.s)`, the automatic dereference) this was DEF-416's shape, TYPE-104 since landing 177b: the case
+    //     stands on the owner, re-assigned whole after the join.
     {
         SC:w = SC{ s: string_concat("ab", "c"), k: 1i64 };
-        SC->:sp = @w;
         {
-            drop takesd(move(sp.s), done);
+            drop takesd(move(w.s), done);
         }
         int64:got22 = await done.recv(raw duration_ms(2000i64)) ?! E1;
         if (got22 != 97i64) { exit 22i32; }
-        w.s = string_concat("de", "f");
+        w = SC{ s: string_concat("de", "f"), k: 1i64 };   // the spawn's `move(w.s)` marks `w` moved (MOVE-001 at a field store): the owner re-assigned WHOLE
         if (w.s.len != 3i64) { exit 22i32; }
     }
-    // 23. (t1x) the same by the explicit dereference, `move((<-sp).s)`
-    {
-        SC:w = SC{ s: string_concat("ab", "c"), k: 1i64 };
-        SC->:sp = @w;
-        {
-            drop takesd(move((<-sp).s), done);
-        }
-        int64:got23 = await done.recv(raw duration_ms(2000i64)) ?! E1;
-        if (got23 != 97i64) { exit 23i32; }
-        w.s = string_concat("de", "f");
-        if (w.s.len != 3i64) { exit 23i32; }
-    }
+    // 23. (t1x) the same by the explicit dereference, `move((<-sp).s)`: TYPE-104 since landing 177b (DEF-416), a cell of
+    //     tests/types/rejection/move_through_pointer.npk; no case here.
     // 24. DEF-383's address face (above `main`)
     {
         string:u = up() ?| string_concat("q", "r");

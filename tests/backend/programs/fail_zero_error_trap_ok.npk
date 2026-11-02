@@ -13,7 +13,7 @@
 // compiler and 173's). The trapping shape is `fail_zero_error_trap.npk`.
 mod:fail_zero_error_trap_ok;
 error:E5;
-struct:S = { Error:e; };
+struct:S = { Error:e; string:n; };   // the `string` since DEF-345 (landing 177b), as in the trapping half
 func:wn = NIL(S->:out, bool:w) never fails { if (w) { (<-out).e = E5; } pass NIL; };
 func:f_computed = int64() { S:s; drop wn($$m s, true); fail s.e; };
 func:f_const = int64() { fail E5; };
