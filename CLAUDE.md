@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   listener's and the fuzzer's findings, safety before correctness before performance. Cycles 0.0–1.5 are complete
   (`meta/roadmap/done/`); 1.4 made the compiler self-hosting (D-202) and 1.5 made the verification leg (`npkg verify`, the floor's
   specification and models, the schedule explorer).
-- **main = landing 177b** (2026-11-01; wt/56a, branch 56-r177b, on 10cf2fb, landing 177a's dee24fe and its two meta commits; ONE commit ⟦FILL: SHA⟧, the ninth build amended once over the same binary; the seventh, `0c503a0`, the eighth, `8548052`, and `9fe39f7` did not land) — DEF-421 + DEF-416 +
+- **main = landing 177b** (2026-11-01; wt/56a, branch 56-r177b, on 10cf2fb, landing 177a's dee24fe and its two meta commits; ONE commit 5baf647, the ninth build amended once over the same binary; the seventh, `0c503a0`, the eighth, `8548052`, and `9fe39f7` did not land) — DEF-421 + DEF-416 +
   DEF-345, DEF-422, DEF-423 and DEF-424 registered (analysis/alias.npk, type_stmt.npk, type_expr.npk, type_codes.npk, analysis/bindings.npk; re-spelled `src/` sites in smt_table.npk and type_resolve.npk; +204/−21 code
   lines, 142 statements, about 229 at base density; the caps per face in the record, as re-ruled 20:24:11, 20:43:30 and 23:37:38: DEF-421 32 of 40, DEF-416 184 of 185 (44 → 128 → 135 → 185: the sizing error, two omissions and build 8's three mechanisms; build 9's call arm), DEF-345 6 of 12,
   the re-spellings 8 of 10): A `move` TAKES AN OWNING PLACE (DEF-416, `NITPICK-TYPE-104` new): `move(<-p)`, `move((<-p).s)` and `(move(<-p)).m()` through a PLAIN pointer, handle or view nearest the
