@@ -1,0 +1,38 @@
+// WHAT STAYS LEGAL beside DEF-452's refusal (TYPE-038; landing 177d1): a `never fails` function in a generic `never fails` slot, through a parameter, a field and a generic setter, and a may-fail function in
+// a generic slot that says nothing about failing. Substitution keeps the bit it was given, either way. Exit 0 at the end.
+mod:subst_never_fails_ok;
+error:E5;
+struct:Hb<T> = { func T(T) never fails:f; };
+func:okf = int64(int64:x) never fails { pass x + 1i64; };
+func:mayf = int64(int64:x) { if (x < 0i64) { fail E5; } pass x + 2i64; };
+func:apply<T> = T(func T(T) never fails:cb, T:x) never fails { pass (raw cb(x)); };
+func:apply_may<T> = T(func T(T):cb, T:x) { pass (relay cb(x)); };
+func:put<T> = int32(Hb<T>->:p, func T(T) never fails:cb) never fails { (<-p).f = cb; pass 0i32; };
+func:call_it<T> = T(Hb<T>:h, T:x) never fails { pass (raw h.f(x)); };
+func:through_all = int64() never fails {
+    Hb<int64>:h = Hb{ f: okf };
+    int32:z = raw put(@h, okf);
+    pass (raw call_it(h, 5i64)) + (raw apply(okf, 1i64));
+};
+func:main = int32(cstring[]:_~argv) {
+    if ((raw through_all()) != 8i64) { exit 1i32; }
+    if ((apply_may(mayf, 1i64) ?| 0i64) != 3i64) { exit 2i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E5)                { exit 75i32; },
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

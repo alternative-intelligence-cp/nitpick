@@ -1,0 +1,38 @@
+// expect-error: NITPICK-TYPE-038
+// expect-error-at: 19:64
+// expect-error: NITPICK-TYPE-038
+// expect-error-at: 20:81
+// expect-error: NITPICK-TYPE-038
+// expect-error-at: 21:97
+mod:subst_never_fails;
+
+// SUBSTITUTION KEEPS `never fails` (DEF-452, RULED, landing 177d1): `subst_func` rebuilt a function type with the bit cleared, so a may-fail function fit a generic `never fails` parameter, the instance kept
+// only the value word, and the failure became a made-up value or a null plain pointer (`g2c` 173, `g2e` 97, `g3d` 173). A may-never-fail function still fits: `tests/accept/subst_never_fails_ok.npk`.
+
+error:E5;
+struct:Hb<T> = { func T(T) never fails:f; };
+func:okf = int64(int64:x) never fails { pass x; };
+func:failer = int64(int64:x) { if (x > 0i64) { fail E5; } pass x; };
+func:pf = int64->(int64->:p) { if (true) { fail E5; } pass p; };
+func:apply<T> = T(func T(T) never fails:cb, T:x) never fails { pass (raw cb(x)); };
+func:put<T> = int32(Hb<T>->:p, func T(T) never fails:cb) never fails { (<-p).f = cb; pass 0i32; };
+func:made_up_value = int32() never fails { int64:r = raw apply(failer, 5i64); pass 1i32; };   // site
+func:null_pointer = int32() never fails { int64:v = 7i64; int64->:q = raw apply(pf, @v); pass 1i32; };   // site
+func:through_a_setter = int32() never fails { Hb<int64>:h = Hb{ f: okf }; int32:z = raw put(@h, failer); pass 1i32; };   // site
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

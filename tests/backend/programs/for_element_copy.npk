@@ -1,0 +1,67 @@
+// expect-exit: 0
+//
+// A `for`'s ELEMENT BINDING IS A COPY, AND WRITING IT CHANGES THE COPY (Q10, DEF-461, ruled legal, landing 177d1). The counted form's binding is the loop's counter, so writing it broke the loop, and that's
+// TYPE-108 (`tests/types/rejection/for_binding_write.npk`). The element form's isn't: the loop count and the array's bytes stay as they were, through a write, through the binding's address, and over a view.
+// `q10b`, `q10b2`, `q10b4`. `tests/verify/for_element_index_write.npk` and `for_element_slice_index.npk` hold the bound check on an index computed from the copy; `for_element_owner_write.npk` is the owner's refusal.
+mod:for_element_copy;
+func:write_copy = int32() never fails {
+    int64[4]:a = [1i64, 2i64, 3i64, 4i64];
+    int64:v = 0i64;
+    int64:n = 0i64;
+    for (int64:x in a) { n = n + 1i64; if (n > 1000i64) { pass 1i32; } x = x + 100i64; v = v + x; }
+    if (n != 4i64) { pass 2i32; }
+    if (v != 410i64) { pass 3i32; }
+    if ((a[0i64] != 1i64) || (a[1i64] != 2i64) || (a[2i64] != 3i64) || (a[3i64] != 4i64)) { pass 4i32; }
+    pass 0i32;
+};
+func:write_through_address = int32() never fails {
+    int64[4]:a = [1i64, 2i64, 3i64, 4i64];
+    int64:n = 0i64;
+    for (int64:x in a) { n = n + 1i64; if (n > 1000i64) { pass 11i32; } int64->:p = @x; <-p = 9i64; }
+    if (n != 4i64) { pass 12i32; }
+    if ((a[0i64] != 1i64) || (a[3i64] != 4i64)) { pass 13i32; }
+    pass 0i32;
+};
+func:write_over_view = int32() never fails {
+    int64[4]:a = [1i64, 2i64, 3i64, 4i64];
+    int64[]:s = a[0i64...4i64];
+    int64:n = 0i64;
+    for (int64:x in s) { n = n + 1i64; if (n > 1000i64) { pass 21i32; } x = 9i64; }
+    if (n != 4i64) { pass 22i32; }
+    if ((a[0i64] != 1i64) || (a[3i64] != 4i64)) { pass 23i32; }
+    pass 0i32;
+};
+// A RANGE BINDING TAKES NO CLAIM, AND THE SPELLING IS A COPY (DEF-461, management_17's ruling of 2026-11-03 00:37:11 EST, from `Ailp-team_40`'s LOW): `$$i i` is TYPE-108, `for_binding_write.npk`, and `$$i j` of a local copy runs.
+func:rd = int64(int64->:p) never fails { pass <-p; };
+func:claim_range_copy = int32() never fails {
+    int64:n = 0i64;
+    for (int64:i in 0i64...4i64) { int64:j = i; n = n + (raw rd($$i j)); }
+    if (n != 6i64) { pass 31i32; }
+    pass 0i32;
+};
+func:main = int32(cstring[]:_~argv) {
+    int32:r = raw write_copy();
+    if (r != 0i32) { exit r; }
+    r = raw write_through_address();
+    if (r != 0i32) { exit r; }
+    r = raw write_over_view();
+    if (r != 0i32) { exit r; }
+    r = raw claim_range_copy();
+    exit r;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

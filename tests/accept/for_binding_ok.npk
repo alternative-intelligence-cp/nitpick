@@ -1,0 +1,64 @@
+// WHAT STAYS LEGAL beside DEF-461's refusal (TYPE-108; landing 177d1): reading a range `for`'s binding in every way, a copy of it written, `move` of it (a scalar's slot isn't vacated), a name used again
+// after the loop, a bound written in the body (the bound is read once at the head), and the binding of a `for` over an `Iterator`, whose loop asks `next` and never the binding. Exit 0 at the end.
+mod:for_binding_ok;
+struct:It = { int64:i; };
+impl:It:Iterator = { assoc:Item = int64; func:next = int64?(It->:self) never fails { if (self.i >= 3i64) { pass NIL; } self.i = self.i + 1i64; pass self.i; }; };
+func:reads = int64() never fails {
+    int64[4]:a = [7i64, 7i64, 7i64, 7i64];
+    int64:n = 0i64;
+    for (int64:i in 0i64...4i64) { n = n + a[i] + i; pick (i) { (0i64) { n = n + 1i64; }, (*) { } } }
+    pass n;
+};
+func:copy_written = int64() never fails {
+    int64:n = 0i64;
+    for (int64:i in 0i64...4i64) { int64:j = i; j = 9i64; n = n + j; }
+    pass n;
+};
+func:moved = int64() never fails {
+    int64:n = 0i64;
+    for (int64:i in 0i64...4i64) { int64:j = move(i); n = n + j + 1i64; }
+    pass n;
+};
+func:name_again = int64() never fails {
+    for (int64:i in 0i64...4i64) { discard(i); }
+    int64:i = 3i64;
+    i = 9i64;
+    pass i;
+};
+func:bound_written = int64() never fails {
+    int64:hi = 4i64;
+    int64:n = 0i64;
+    for (int64:i in 0i64...hi) { hi = 2i64; n = n + 1i64; }
+    pass n;
+};
+func:iterator_binding = int64() never fails {
+    It:it = It{ i: 0i64 };
+    int64:n = 0i64;
+    for (int64:x in it) { x = 5i64; n = n + x; }
+    pass n;
+};
+func:main = int32(cstring[]:_~argv) {
+    if ((raw reads()) != 35i64) { exit 1i32; }
+    if ((raw copy_written()) != 36i64) { exit 2i32; }
+    if ((raw moved()) != 10i64) { exit 3i32; }
+    if ((raw name_again()) != 9i64) { exit 4i32; }
+    if ((raw bound_written()) != 4i64) { exit 5i32; }
+    if ((raw iterator_binding()) != 15i64) { exit 6i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

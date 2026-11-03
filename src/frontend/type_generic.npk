@@ -317,10 +317,12 @@ func:subst_func = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
     // THE KIND IS PRESERVED. A variadic function whose collector is substituted is
     // still variadic, and rebuilding it as a fixed one would make every call check
     // as fixed arity — which is the exact defect D-100 was written about.
+    // AND SO IS `never fails` (DEF-452): rebuilt as `false`, a may-fail function fit a generic `never fails` parameter, the instance kept only the value word, and the failure became a made-up value or a null plain pointer.
+    bool:nf = raw func_never_fails(r.types, t);
     if (raw type_is_variadic(r.types, t)) {
-        pass (raw tt_func_variadic(r.types, ret, w.start, w.count, false));
+        pass (raw tt_func_variadic(r.types, ret, w.start, w.count, nf));
     }
-    pass (raw tt_func(r.types, ret, w.start, w.count, false));
+    pass (raw tt_func(r.types, ret, w.start, w.count, nf));
 };
 
 func:subst_dyn = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,

@@ -275,6 +275,10 @@ pub struct:ExprTyper = {
     // 1.5.2h): pushed around an arm that binds a view, popped after; every
     // write path asks `place_frozen`.
     List<int32>:frozen;
+    // WHAT A `break` OR `continue` CAN SEE, innermost last (DEF-464, DEF-465, DEF-417's half): a loop's label, 0 when it has none, or `OPEN_ARM`, or `OPEN_DEFER`. `check_leaver` reads it.
+    List<int32>:open_leaves;
+    // THE BINDINGS OF THE RANGE `for`s OPEN HERE, by declaration (DEF-461). `refuse_range_binding` reads it.
+    List<int32>:range_binds;
 };
 
 pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab,
@@ -297,6 +301,8 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                              instances: instances, fninsts: fninsts,
                              self_type: 0i32, self_trait: 0i32,
                              frozen: raw list_init::<int32>(8i64),
+                             open_leaves: raw list_init::<int32>(8i64),
+                             range_binds: raw list_init::<int32>(8i64),
                              givex_pick: raw list_init::<int32>(8i64),
                              givex_cur: raw list_init::<int32>(8i64),
                              ptr_tainted: raw list_init::<int32>(8i64),
@@ -486,6 +492,10 @@ pub func:place_is_view = bool(ExprTyper->:e, ExprId:id) never fails {
     pass (raw sym_is_view(e.tab, e.ast, rn.a));
 };
 
+// The two entries of `e.open_leaves` that are no loop: a label is an intern index, never negative.
+pub func:OPEN_ARM = int32() never fails { pass 0i32 - 1i32; };
+pub func:OPEN_DEFER = int32() never fails { pass 0i32 - 2i32; };
+
 // IS THIS PLACE ROOTED AT A FROZEN SELECTOR -- the root of a lending `pick`
 // one of whose binding arms is being typed?
 pub func:place_frozen = bool(ExprTyper->:e, ExprId:id) never fails {
@@ -508,6 +518,26 @@ pub func:refuse_frozen = bool(ExprTyper->:e, ExprId:place, string:what, Span:at)
         string_concat(m1, " reaches the value the arm's binding views in place -- write after the `pick`, or bind nothing in this arm"),
         at));
     pass true;
+};
+
+// A RANGE `for`'s BINDING IS ITS LOOP'S OWN COUNTER (DEF-461, TYPE-108; 1.6.1e landing 177d1). The latch ends the loop only when the counter lands on its bound (`fr.incr`, `icmp eq`)
+// and the encoder's L-12 gives the binding `[lo, hi)`, so a body that wrote it ran past the bound and `--elide` removed the guard that would have caught it. The latch and L-12 stay as they
+// are, and this makes them true: no write form reaches the binding, a `defer` in the body included. `while` is the road for a counter that jumps. A scalar has no parts, so the place IS the name.
+func:refuse_range_binding = bool(ExprTyper->:e, ExprId:place, string:what, Span:at) never fails {
+    ExprNode:n = raw ast_expr(e.ast, place);
+    if ((n.kind != ExprKind.ExprIdentifierExpr) || (n.a == 0i32)) { pass false; }
+    Symbol:sy = raw symtab_get(e.tab, n.a);
+    if (sy.origin_kind != (raw SYM_DECL())) { pass false; }
+    for (int64:i in 0i64...e.range_binds.count) {
+        if (e.range_binds[i] == sy.origin) {
+            string:m1 = string_concat("a range `for`'s binding is its loop's own counter (DEF-461), and this ", what);
+            discard(raw te_error(e, raw TYPE_FOR_BINDING_WRITE(),
+                string_concat(m1, " would write it: the loop ends only when the counter lands on its bound, so a jump runs past it. Copy it to a local, or use `while` for a counter that jumps"),
+                at));
+            pass true;
+        }
+    }
+    pass false;
 };
 
 // A WRITE PATH INTO A VIEW (TYPE-066) OR A FROZEN SELECTOR (TYPE-067): the one
@@ -553,6 +583,7 @@ pub func:refuse_write_path = bool(ExprTyper->:e, ExprId:place, string:what, Span
 // `<-p = other` would drop the caller's cell.
 pub func:refuse_write_path_ex = bool(ExprTyper->:e, ExprId:place, string:what, Span:at,
                                      bool:skip_loan) never fails {
+    if (raw refuse_range_binding(e, place, what, at)) { pass true; }
     if ((!skip_loan) && (raw place_lent_owning(e, place))) {
         string:l1 = string_concat("a plain parameter of an owning type is LENT (D-004): the callee holds a copy of its header and none of the ownership, so this ", what);
         discard(raw te_error(e, raw TYPE_LOAN_READ_ONLY(),
@@ -4037,7 +4068,9 @@ func:type_pick_expr_arms = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fai
         // (DEF-233): a `give` or a `fall` there is in its place.
         e.arm_depth = e.arm_depth + 1i32;
         e.givex_depth = e.givex_depth + 1i32;
+        drop list_push(@e.open_leaves, raw OPEN_ARM());
         drop check_stmt(e, raw arm_body(a));
+        discard(raw list_pop(@e.open_leaves));
         e.arm_depth = e.arm_depth - 1i32;
         e.givex_depth = e.givex_depth - 1i32;
         if (frz) { discard(raw list_pop(@e.frozen)); }

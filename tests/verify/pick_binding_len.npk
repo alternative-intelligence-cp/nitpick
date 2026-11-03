@@ -1,0 +1,53 @@
+// expect-exit: 0
+// expect-obligation: bounds open 1
+// expect-obligation: div-min discharged 1
+// expect-obligation: div-zero open 1
+// expect-obligation: overflow open 4
+// expect-obligation: exhaustive checker 3
+// expect-obligation: failsafe-post discharged 14
+//
+// A `pick` BINDING'S `.len` IS ITS OWN TERM (DEF-460, landing 177d1): `bind_pattern` wrote `lensym: 0`, "already minted", so the first read of `x.len` named the function's symbol 0, its first parameter. `n` is
+// the first parameter here: `100 / (x.len - n + 1)` and `a[x.len - n + 1]` discharged at the wrong term and `--elide` took the live guards out (`f1a` 97, `f1c` 83 elided, 85 and 98 plain). Both rows are open now
+// and their guards stay. `tests/backend/programs/move_through_pointer_ok.npk` is the fail-closed face: `sym_text` trapped inside `npkc` on a binding read before any symbol. `main` stands outside both guards.
+mod:pick_binding_len;
+enum:Ev = { Str(string); Nop; };
+struct:Hv = { Ev:e; };
+func:div_by_len = int64(int64:n, Hv->:p) never fails {
+    pick (p.e) {
+        (Ev.Str(x)) { pass 100i64 / (x.len - n + 1i64); },
+        (Ev.Nop) { pass 0i64; }
+    }
+    pass 0i64;
+};
+func:index_by_len = int64(int64:n, Hv->:p) never fails {
+    int64[4]:a = [7i64, 7i64, 7i64, 7i64];
+    pick (p.e) {
+        (Ev.Str(x)) { pass a[x.len - n + 1i64]; },
+        (Ev.Nop) { pass 0i64; }
+    }
+    pass 0i64;
+};
+func:main = int32(cstring[]:_~argv) {
+    Hv:g = Hv{ e: Ev.Str(string_concat("a", "b")) };
+    if ((raw div_by_len(2i64, @g)) != 100i64) { exit 1i32; }
+    if ((raw index_by_len(2i64, @g)) != 7i64) { exit 2i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (DivByZero)         { exit 85i32; },
+        (DivOverflow)       { exit 86i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

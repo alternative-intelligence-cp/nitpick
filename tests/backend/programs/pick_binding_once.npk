@@ -69,10 +69,10 @@ func:arm_guarded = int32(move Opt:e) never fails {
 // (f) an arm left by `break`, out of the loop that holds the pick
 func:arm_break = int32() never fails {
     int32:acc = 0i32;
-    for (int32:i in 0i32...3i32) {
+    LBL: for (int32:i in 0i32...3i32) {
         Opt:e = Opt.Som(raw mk());
         pick (move(e)) {
-            (Som(x)) { acc = acc + raw obs_s(x); break; },
+            (Som(x)) { acc = acc + raw obs_s(x); break LBL; },
             (Opt.Non) { }
         }
     }

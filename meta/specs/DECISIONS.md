@@ -14543,6 +14543,8 @@ OVERWRITE half is closed.
 > reading, `wild_places.npk`, is the one predicate); a plain `T->` names a live managed value by
 > the language's contract, a `wild` block laundered by `=>! T->` included.
 
+*[2026-11-03, 1.6.1e landing 177d1 — a dated note (DEF-483, ruled N, `MANAGEMENT/briefs/def483-ruling-2026-11-02.md`).]* This decision's overwrite drop rests on a live struct, whose fields are live or vacant, and manual storage isn't that: a store to a place inside a `wild` block ran the old value's drop over the block's bytes. **A store to a place inside manual storage never drops the old value,** the rule DEF-120 already had for `(<-p) = v`. To replace a live owner the author says it's live, `(<-(w =>! S->)).f = v`, and that drops. The settled text above stands for managed storage. MEMORY_REFERENCE §1.1d has the line.
+
 ## D-187 — `#ptr_add<T>` is element-scaled; `atomic_from_ptr` is fused-only over the turbofish — **SETTLED at 1.1.13a**
 
 **`#ptr_add<T>(ptr, offset)` — SETTLED.** The offset is in **ELEMENTS of

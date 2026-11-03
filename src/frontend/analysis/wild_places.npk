@@ -11,18 +11,18 @@
 // pointer drops the old pointee ONLY when the pointer names managed storage
 // (DEF-120), because the manual regime's storage holds no value until the
 // author writes one, and the closed direction for a wrong free is no free.
-// Two readers, ONE predicate: a shape either side forgot would be a leak on
-// one side and a bad free on the other.
+// SINCE LANDING 177d1 THE EMITTER'S STORE ASKS ITS OWN WALK, `store_place_manual`
+// below (DEF-483): this predicate's answers are the typer's to lean on (TYPE-104,
+// TYPE-032), and a checked cast's target or a by-value binding must not move a drop.
 //
 // WILD PROVENANCE IS A WHITELIST, not a borrow blacklist: `=>! wild …->`, a
 // read of a `QUAL_WILD` place, a builtin whose signature hands back wild
 // storage, a user function or method declaring a wild return, or `NULL`. Everything else
 // — a plain pointer parameter, a plain-slot read, a call this walk cannot see
 // through — is provenance-UNKNOWN and answers `false`. For the escape analysis
-// `false` refuses (fail closed); for the emitter `false` means "a managed
-// pointee, dropped before it is overwritten" — a plain `T->` names a LIVE
-// managed value by the language's contract, and a `wild` block laundered into
-// a plain pointer by `=>! T->` is the author's assertion of exactly that.
+// `false` refuses (fail closed). A plain `T->` names a LIVE managed value by the
+// language's contract, and a `wild` block laundered into a plain pointer by
+// `=>! T->` is the author's assertion of exactly that.
 mod:wild_places;
 
 use "../ast_kind.npk".*;
@@ -136,7 +136,7 @@ pub func:expr_wild_provenance = bool(Ast->:ast, SymbolTable->:tab, InternTable->
 
 // THE DOOR'S PROVENANCE (DEF-423, landing 177c; D-223 amended). What a `wild` slot takes with no cast, whatever the pointee, and
 // what a plain pointer's index asks (DEF-425). `expr_wild_provenance` above keeps its answers for its own readers (TYPE-032,
-// TYPE-097, `b.ptr != NULL`, the emitter's store, TYPE-104's walk); this one differs in three ways. A header's `.ptr` is never
+// TYPE-097, `b.ptr != NULL`, TYPE-104's walk); this one differs in three ways. A header's `.ptr` is never
 // wild here: the door's `door_header_admits` is that value's one road. The `mcpy` family's result is its destination's. An address
 // counts only when it lands inside a wild pointee. Closed at the end.
 pub func:door_wild = bool(Ast->:ast, SymbolTable->:tab, InternTable->:interns, ExprTypes->:etypes, TypeTable->:types,
@@ -222,6 +222,104 @@ pub func:door_place_step = bool(Ast->:ast, SymbolTable->:tab, InternTable->:inte
         pass (raw door_wild(ast, tab, interns, etypes, types, b, d - 1i32));
     }
     pass (raw door_place_step(ast, tab, interns, etypes, types, b, d - 1i32));
+};
+
+// A STORE'S TARGET: IS IT INSIDE MANUAL STORAGE? (DEF-483, RULED N, landing 177d1; `MANAGEMENT/briefs/def483-ruling-2026-11-02.md`.) A store to a place inside manual storage never
+// drops the old value, the rule `(<-p) = v` already had: the storage holds no value until the author writes one, and the closed direction for a wrong free is no free. To replace a live
+// owner the author says it's live, `(<-(w =>! S->)).f = v`, and that drops. Walk the target from the store outward. Inline steps inherit: a member of a by-value struct, an element of a
+// fixed array, a payload, parentheses (no node). The first step that follows a reference decides: `<-e`, a member through a pointer, an index through a pointer or slice, by `e`'s value
+// (`store_value_manual`). A `List`'s index ends the walk, not manual: its element is the `List`'s (R5). No reference step at all is not manual: a local, a by-value `wild` binding. NOT
+// `expr_wild_provenance`: that reading relaxes TYPE-104 and TYPE-032, so a checked cast must not answer there (R7), and here it must. Fuel's end or an unread kind answers MANUAL, no drop,
+// a leak at worst; no arm answers "not manual" by default. `wild_table.py` holds the list of kinds. THE FUEL IS ONE NO PARSED PROGRAM REACHES, so it can't lose a drop in silence: every call
+// goes one level down a tree PARSE-012 holds to 256 levels, and a range's second question is one more at that node, 512 at most.
+pub func:STORE_WALK_FUEL = int32() never fails { pass 1024i32; };
+pub func:store_place_manual = bool(Ast->:ast, SymbolTable->:tab, InternTable->:interns, ExprTypes->:etypes, TypeTable->:types,
+                                   ExprId:id, int32:d) decreases d never fails {
+    if (d <= 0i32) { pass true; }
+    if (raw expr_is_none(id)) { pass true; }
+    ExprNode:n = raw ast_expr(ast, id);
+    ExprKind:k = n.kind;
+    if (k == ExprKind.ExprIdentifierExpr) { pass false; }
+    if (k == ExprKind.ExprDerefExpr) { pass (raw store_value_manual(ast, tab, interns, etypes, types, raw expr_operand(n), d - 1i32)); }
+    if ((k == ExprKind.ExprMemberAccessExpr) || (k == ExprKind.ExprSafeNavExpr)) {
+        int32:bt = raw exprtypes_get(etypes, raw expr_operand(n));
+        if (bt == 0i32) { pass true; }
+        if ((raw type_kind(types, bt)) == (raw TY_OPTIONAL())) { bt = raw type_elem(types, bt); }
+        if ((raw type_kind(types, bt)) == (raw TY_POINTER())) { pass (raw store_value_manual(ast, tab, interns, etypes, types, raw expr_operand(n), d - 1i32)); }
+        pass (raw store_place_manual(ast, tab, interns, etypes, types, raw expr_operand(n), d - 1i32));
+    }
+    if (k == ExprKind.ExprIndexExpr) {
+        int32:ibk = raw type_kind(types, raw exprtypes_get(etypes, raw expr_lhs(n)));
+        if ((ibk == (raw TY_POINTER())) || (ibk == (raw TY_SLICE()))) { pass (raw store_value_manual(ast, tab, interns, etypes, types, raw expr_lhs(n), d - 1i32)); }
+        if (ibk == (raw TY_ARRAY())) { pass (raw store_place_manual(ast, tab, interns, etypes, types, raw expr_lhs(n), d - 1i32)); }
+        if (ibk == (raw TY_STRUCT())) { pass false; }
+        pass true;
+    }
+    if (k == ExprKind.ExprTernaryExpr) {
+        pass (raw store_place_manual(ast, tab, interns, etypes, types, raw expr_rhs(n), d - 1i32)) || (raw store_place_manual(ast, tab, interns, etypes, types, raw expr_third(n), d - 1i32));
+    }
+    // A BY-VALUE TEMPORARY HAS NO REFERENCE STEP, so it isn't manual; `raw`, `move`, a cast and the unwraps ask what they hold, so `(move(<-w)).s` is `w`'s. The typer refuses each of these as a
+    // store's target today (TYPE-024, cells `y3a` to `y3j`), so these arms are defensive: a rule that opens one mustn't lose its drop to the closed answer below.
+    if ((k == ExprKind.ExprCallExpr) || (k == ExprKind.ExprMethodCallExpr) || (k == ExprKind.ExprBuiltinExpr) || (k == ExprKind.ExprStructLiteralExpr) || (k == ExprKind.ExprArrayLiteralExpr)
+        || (k == ExprKind.ExprBinaryExpr) || (k == ExprKind.ExprUnaryExpr)) { pass false; }
+    if ((k == ExprKind.ExprMoveExpr) || (k == ExprKind.ExprRawUnwrapExpr) || (k == ExprKind.ExprRelayExpr) || (k == ExprKind.ExprEmphaticUnwrapExpr) || (k == ExprKind.ExprEmphaticCoalesceExpr)
+        || (k == ExprKind.ExprAwaitExpr) || (k == ExprKind.ExprCastExpr) || (k == ExprKind.ExprUncheckedCastExpr)) {
+        pass (raw store_place_manual(ast, tab, interns, etypes, types, raw expr_operand(n), d - 1i32));
+    }
+    if ((k == ExprKind.ExprNullCoalesceExpr) || (k == ExprKind.ExprSafeUnwrapExpr)) {
+        pass (raw store_place_manual(ast, tab, interns, etypes, types, raw expr_lhs(n), d - 1i32)) || (raw store_place_manual(ast, tab, interns, etypes, types, raw expr_rhs(n), d - 1i32));
+    }
+    pass true;
+};
+
+// The value a reference step follows. A checked cast asks its operand, whatever its target says (R7); `=>! T->` asserts a live value and `=>! wild T->` says manual, over a plain pointer
+// too; any arm of a ternary, `??` or `?|`; `<-(@x)` is the place `x`'s answer and `<-e` reads what `e` reaches; a field by its declaration; a call by its declared return. A range is a view
+// of what it ranges over, so it asks as a place does (`w.a[0...2][0].s` is inside `w`). A slice `#wild_slice` made is manual, as its name says. Closed at the end, `pick` and `NULL` among it.
+pub func:store_value_manual = bool(Ast->:ast, SymbolTable->:tab, InternTable->:interns, ExprTypes->:etypes, TypeTable->:types,
+                                   ExprId:id, int32:d) decreases d never fails {
+    if (d <= 0i32) { pass true; }
+    if (raw expr_is_none(id)) { pass true; }
+    ExprNode:n = raw ast_expr(ast, id);
+    ExprKind:k = n.kind;
+    if (k == ExprKind.ExprCastExpr) { pass (raw store_value_manual(ast, tab, interns, etypes, types, raw expr_operand(n), d - 1i32)); }
+    if (k == ExprKind.ExprUncheckedCastExpr) { pass ((raw expr_cast_quals(n)) & ((raw QUAL_WILD()) | (raw QUAL_WILDX()))) != 0i32; }
+    if (k == ExprKind.ExprTernaryExpr) {
+        pass (raw store_value_manual(ast, tab, interns, etypes, types, raw expr_rhs(n), d - 1i32)) || (raw store_value_manual(ast, tab, interns, etypes, types, raw expr_third(n), d - 1i32));
+    }
+    if ((k == ExprKind.ExprNullCoalesceExpr) || (k == ExprKind.ExprSafeUnwrapExpr)) {
+        pass (raw store_value_manual(ast, tab, interns, etypes, types, raw expr_lhs(n), d - 1i32)) || (raw store_value_manual(ast, tab, interns, etypes, types, raw expr_rhs(n), d - 1i32));
+    }
+    if ((k == ExprKind.ExprMoveExpr) || (k == ExprKind.ExprRawUnwrapExpr) || (k == ExprKind.ExprRelayExpr) || (k == ExprKind.ExprEmphaticUnwrapExpr)
+        || (k == ExprKind.ExprEmphaticCoalesceExpr) || (k == ExprKind.ExprAwaitExpr)) {
+        pass (raw store_value_manual(ast, tab, interns, etypes, types, raw expr_operand(n), d - 1i32));
+    }
+    if ((k == ExprKind.ExprAddressOfExpr) || (k == ExprKind.ExprBorrowExpr)) { pass (raw store_place_manual(ast, tab, interns, etypes, types, raw expr_operand(n), d - 1i32)); }
+    if (k == ExprKind.ExprDerefExpr) {
+        ExprNode:dn = raw ast_expr(ast, raw expr_operand(n));
+        if ((dn.kind == ExprKind.ExprAddressOfExpr) || (dn.kind == ExprKind.ExprBorrowExpr)) { pass (raw store_value_manual(ast, tab, interns, etypes, types, raw expr_operand(dn), d - 1i32)); }
+        pass (raw store_value_manual(ast, tab, interns, etypes, types, raw expr_operand(n), d - 1i32));
+    }
+    if (k == ExprKind.ExprIdentifierExpr) { pass (raw place_wild(ast, tab, etypes, types, id)); }
+    if (k == ExprKind.ExprIndexExpr) {
+        if ((raw ast_expr(ast, raw expr_rhs(n))).kind == ExprKind.ExprRangeExpr) { pass (raw store_place_manual(ast, tab, interns, etypes, types, id, d - 1i32)); }
+        pass (raw place_wild(ast, tab, etypes, types, id));
+    }
+    if ((k == ExprKind.ExprMemberAccessExpr) || (k == ExprKind.ExprSafeNavExpr)) {
+        if (raw header_ptr_read(ast, interns, etypes, types, id)) { pass true; }
+        // A name before the dot with no type is a qualifier, unread; a `Result`'s `.value` has no field to declare anything, so its holder says (`wild Result<T->>:r`).
+        int32:vb = raw exprtypes_get(etypes, raw expr_operand(n));
+        if (vb == 0i32) { pass true; }
+        if ((raw type_kind(types, vb)) == (raw TY_RESULT())) { pass (raw store_value_manual(ast, tab, interns, etypes, types, raw expr_operand(n), d - 1i32)); }
+        pass (raw place_wild(ast, tab, etypes, types, id));
+    }
+    if ((k == ExprKind.ExprCallExpr) || (k == ExprKind.ExprMethodCallExpr)) { pass (raw expr_wild_provenance(ast, tab, interns, etypes, types, id, d)); }
+    if (k == ExprKind.ExprBuiltinExpr) {
+        string:bn = raw intern_get(interns, raw builtin_name(n));
+        pass (raw string_eq(bn, "wild_slice")) || (raw builtin_returns_wild(bn));
+    }
+    // A number is no reference (TYPE-008 refuses its pointer arithmetic, so neither can be a store's base: `y4a`, `y4b`).
+    if ((k == ExprKind.ExprBinaryExpr) || (k == ExprKind.ExprUnaryExpr)) { pass false; }
+    pass true;
 };
 
 // `x.ptr`, the compiler-known header's block pointer, `x` a `string`, `cstring`, slice or `buffer` or a pointer to one, `wild` or not. THE ONE PREDICATE of I2 and I3 (DEF-425):

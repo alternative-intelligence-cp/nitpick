@@ -122,14 +122,14 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
         drop check_cond(e, s);
         drop check_measure(e, raw stmt_while_measure(e.ast, s), false, "a `while` loop", s.span);
         drop check_invariants(e, raw stmt_while_invariant(e.ast, s));
-        drop check_stmt(e, raw stmt_body(e.ast, s));
+        drop check_loop_body(e, s, raw stmt_body(e.ast, s));
         pass NIL;
     }
     if (s.kind == StmtKind.StmtWhenStmt) {
         drop check_cond(e, s);
         drop check_measure(e, raw stmt_when_measure(e.ast, s), false, "a `when` loop", s.span);
         drop check_invariants(e, raw stmt_when_invariant(e.ast, s));
-        drop check_stmt(e, raw stmt_when_body(e.ast, s));
+        drop check_loop_body(e, s, raw stmt_when_body(e.ast, s));
         drop check_stmt(e, raw stmt_when_then(e.ast, s));
         drop check_stmt(e, raw stmt_when_end(e.ast, s));
         pass NIL;
@@ -148,9 +148,12 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
 
     if (s.kind == StmtKind.StmtForStmt) {
         drop check_for(e, s);
+        bool:over_range = raw for_over_range(e, s);
+        if (over_range) { drop list_push(@e.range_binds, (raw stmt_for_binding(s)).index); }
         drop check_measure(e, raw stmt_for_measure(e.ast, s), true, "a `for` loop", s.span);
         drop check_invariants(e, raw stmt_for_invariant(e.ast, s));
-        drop check_stmt(e, raw stmt_for_body(e.ast, s));
+        drop check_loop_body(e, s, raw stmt_for_body(e.ast, s));
+        if (over_range) { discard(raw list_pop(@e.range_binds)); }
         pass NIL;
     }
 
@@ -186,7 +189,9 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
         int32:saved_givex = e.givex_depth;
         e.arm_depth = e.arm_depth + 1i32;
         e.givex_depth = 0i32;
+        drop list_push(@e.open_leaves, raw OPEN_ARM());
         drop check_stmt(e, raw arm_body(s));
+        discard(raw list_pop(@e.open_leaves));
         e.givex_depth = saved_givex;
         e.arm_depth = e.arm_depth - 1i32;
         pass NIL;
@@ -197,17 +202,16 @@ pub func:check_stmt = NIL(ExprTyper->:e, StmtId:id) never fails {
         // D-163 rule 7: `fail`/`relay` are refused anywhere in a `defer` body.
         bool:saved_defer = e.in_defer;
         e.in_defer = true;
+        drop list_push(@e.open_leaves, raw OPEN_DEFER());
         drop check_stmt(e, body);
+        discard(raw list_pop(@e.open_leaves));
         e.in_defer = saved_defer;
         pass NIL;
     }
 
-    // `break`, `continue` and `fall` carry a LABEL and no expression, so there is
-    // nothing here to type. Said out loud rather than reached by falling off the
-    // end, because "./nothing to check" and "nobody has looked" are the two answers
-    // this function exists to keep apart.
-    if (s.kind == StmtKind.StmtBreakStmt)    { pass NIL; }
-    if (s.kind == StmtKind.StmtContinueStmt) { pass NIL; }
+    // `break` and `continue` carry a LABEL and no expression: what is there to check is what they leave.
+    if (s.kind == StmtKind.StmtBreakStmt)    { drop check_leaver(e, s); pass NIL; }
+    if (s.kind == StmtKind.StmtContinueStmt) { drop check_leaver(e, s); pass NIL; }
     // A `fall` OUTSIDE A `pick` ARM, A `give` OUTSIDE A `pick` EXPRESSION'S ARM
     // (DEF-233, landing 111): each means something only there, and the emitter's
     // lookup for the enclosing pick trapped the compiler on one outside (exit 3,
@@ -1404,6 +1408,65 @@ func:check_arms = NIL(ExprTyper->:e, ExprId:sel, bool:consuming, int32:start,
 // it as a rung — calling it valid. A range, a slice and an array iterate
 // their element; an `Iterator` implementor joins them at 1.0.9d with its
 // lowering; anything else is refused here by name.
+// A LOOP'S BODY, with the loop open to what it holds. One function, so a kind of loop can't open a frame the emitter doesn't.
+func:check_loop_body = NIL(ExprTyper->:e, StmtNode:s, StmtId:body) never fails {
+    drop list_push(@e.open_leaves, raw stmt_label(s));
+    drop check_stmt(e, body);
+    discard(raw list_pop(@e.open_leaves));
+    pass NIL;
+};
+
+// A `break` OR `continue` LEAVES A LOOP OPEN AT THAT POINT (1.6.1e landing 177d1), read as the emitter's `fnem_loop_find` reads its frames: a bare one the nearest, a labelled one the nearest with
+// that label. NONE IS TYPE-109 (DEF-464): the emitter's EMIT-002 blamed the compiler for a person's mistake, the author's `(0){ break; },`. ONE OUTSIDE A `defer` BODY IS TYPE-040 (DEF-417's
+// half): a cleanup runs while its block unwinds, and `run_defers_down_to` re-entered the body, exit 3 and no message; a loop written inside the body stays legal. A BARE `break` WHOSE NEAREST
+// BREAKABLE IS A `pick` ARM IS TYPE-110 (DEF-465, RULED), in an `if` in the arm too: in C, Java or Go it would leave only the `switch`, and here it left the loop in silence. `continue` means one thing everywhere.
+func:check_leaver = NIL(ExprTyper->:e, StmtNode:s) never fails {
+    bool:is_break = s.kind == StmtKind.StmtBreakStmt;
+    string:word = "`continue`";
+    if (is_break) { word = "`break`"; }
+    int32:label = raw stmt_label(s);
+    bool:in_arm = false;
+    bool:in_body = false;
+    int64:i = e.open_leaves.count;
+    while (i > 0i64) decreases i {
+        i = i - 1i64;
+        int32:o = e.open_leaves[i];
+        if (o == (raw OPEN_ARM()))   { in_arm = true;  continue; }
+        if (o == (raw OPEN_DEFER())) { in_body = true; continue; }
+        if ((label != 0i32) && (o != label)) { continue; }
+        if (in_body) {
+            discard(raw te_error(e, raw TYPE_DEFER_EXIT(),
+                string_concat(word, " in a `defer` body may not leave a loop outside the body (D-163, DEF-417): a cleanup runs while its block unwinds, whatever the loop is doing; a loop written inside the body may be left"),
+                s.span));
+            pass NIL;
+        }
+        if (is_break && in_arm && (label == 0i32)) {
+            discard(raw te_error(e, raw TYPE_ARM_BREAK(),
+                "a bare `break` in a `pick` arm is refused (DEF-465): an arm ends by itself and needs no `break`, and leaving the loop around the `pick` takes a labelled loop and `break label;`",
+                s.span));
+        }
+        pass NIL;
+    }
+    if (label != 0i32) {
+        discard(raw te_error(e, raw TYPE_NO_LOOP(),
+            string_concat(word, " names a label no open loop has (DEF-464): a label belongs to a loop this statement stands inside"),
+            s.span));
+        pass NIL;
+    }
+    discard(raw te_error(e, raw TYPE_NO_LOOP(),
+        string_concat(word, " needs a loop to leave, and none is open here (DEF-464): a `pick` arm or an `if` is not one, an arm ends by itself, and a function is left with `pass`"),
+        s.span));
+    pass NIL;
+};
+
+// IS THIS `for` OVER A RANGE? `check_for` has typed the iterable, and takes one level of auto-dereference.
+func:for_over_range = bool(ExprTyper->:e, StmtNode:s) never fails {
+    int32:it = raw exprtypes_get(e.expr_types, raw stmt_for_iter(e.ast, s));
+    if (it == 0i32) { pass false; }
+    if ((raw type_kind(e.types, it)) == (raw TY_POINTER())) { it = raw type_elem(e.types, it); }
+    pass ((raw type_kind(e.types, it)) == (raw TY_RANGE()));
+};
+
 func:check_for = NIL(ExprTyper->:e, StmtNode:s) never fails {
     int32:it = raw type_of_expr(e, raw stmt_for_iter(e.ast, s));
     if (it == 0i32) { pass NIL; }
@@ -1574,7 +1637,7 @@ func:check_counted = NIL(ExprTyper->:e, StmtNode:s) never fails {
     string:cform = "a `loop` statement";
     if (s.kind == StmtKind.StmtTillStmt) { cform = "a `till` statement"; }
     drop check_measure(e, raw stmt_counted_measure(e.ast, s), true, cform, s.span);
-    drop check_stmt(e, raw stmt_counted_body(s));
+    drop check_loop_body(e, s, raw stmt_counted_body(s));
     e.counted_depth = e.counted_depth - 1i32;
     pass NIL;
 };

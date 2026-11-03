@@ -1,0 +1,77 @@
+// expect-exit: 0
+//
+// `await` IN THE STORE'S WALK (DEF-483, landing 177d1). A store's base read through `await` asks the awaited call's declared return, as a call does (`store_value_manual`). Through a call declared `wild`
+// the place is manual, so no drop runs over a filled block (74 before this landing) and a real descriptor stays open. Through a plain call the store keeps its drop, and a descriptor closes: that row is
+// the one a lost arm fails, since a walk with no `await` arm answers manual by its closed end. No frame address crosses an `await` here: the plain pointer is a crossed one over a block, so DEF-431 isn't
+// what this measures. `store_manual_storage.npk` is the rest of the rule; its `main` isn't `async`.
+mod:store_manual_await;
+
+error:E5;
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+struct:SS = { string:s; };
+struct:FH = { OwnedFd:h; };
+
+func:blk = wild SS->() never fails { wild SS->:w = alloc(64i64) =>! wild SS->; discard(memset(w, 65i64, 64i64)); pass w; };
+func:blk_str = wild string->() never fails { wild string->:w = alloc(32i64) =>! wild string->; discard(memset(w, 65i64, 32i64)); pass w; };
+async func:same_s = wild string->(wild string->:b) { pass b; };
+async func:same_w = wild SS->(wild SS->:b) { pass b; };
+async func:same_f = wild FH->(wild FH->:b) { pass b; };
+async func:plain_f = FH->(FH->:q) { pass q; };
+
+async func:m_await_deref = int64() { wild string->:w = raw blk_str(); <-((await same_s(w)) ?! E5) = raw mks(); dalloc(w); pass 5i64; };
+async func:m_await_member = int64() { wild SS->:w = raw blk(); (<-((await same_w(w)) ?! E5)).s = raw mks(); dalloc(w); pass 5i64; };
+async func:m_await_coalesce = int64() { wild string->:w = raw blk_str(); <-((await same_s(w)) ?| w) = raw mks(); dalloc(w); pass 5i64; };
+
+func:dup_fd = int64() never fails { pass sys(32i64, 1i64) ?| -1i64; };
+func:is_open = bool(int64:d) never fails { int64:r = sys(72i64, d, 1i64) ?| -1i64; pass r >= 0i64; };
+func:owned = OwnedFd(int64:d) never fails { pass own_fd((d =>! int32) =>! fd); };
+func:none = OwnedFd() never fails { pass own_fd((-1i32) =>! fd); };
+func:left_open = bool(int64:d) never fails { bool:o = raw is_open(d); if (o) { discard(sys(3i64, d) ?| 0i64); } pass o; };
+func:closed = bool(int64:d) never fails { pass !(raw is_open(d)); };
+func:block_holding = wild FH->(int64:d) never fails { wild FH->:w = calloc(2i64, 8i64) =>! wild FH->; <-w = FH{ h: raw owned(d) }; pass w; };
+
+async func:fd_await_wild_stays_open = bool() {
+    int64:d = raw dup_fd();
+    wild FH->:w = raw block_holding(d);
+    (<-((await same_f(w)) ?! E5)).h = raw none();
+    bool:b = raw left_open(d);
+    dalloc(w);
+    pass b;
+};
+async func:fd_await_plain_closes = bool() {
+    int64:d = raw dup_fd();
+    wild FH->:w = raw block_holding(d);
+    FH->:p = w =>! FH->;
+    (<-((await plain_f(p)) ?! E5)).h = raw none();
+    bool:b = raw closed(d);
+    dalloc(w);
+    pass b;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    if (((await m_await_deref()) ?| 0i64) != 5i64) { exit 1i32; }
+    if (((await m_await_member()) ?| 0i64) != 5i64) { exit 2i32; }
+    if (((await m_await_coalesce()) ?| 0i64) != 5i64) { exit 3i32; }
+    if ((raw dup_fd()) < 0i64) { exit 39i32; }
+    if (!((await fd_await_wild_stays_open()) ?| false)) { exit 40i32; }
+    if (!((await fd_await_plain_closes()) ?| false)) { exit 41i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E5)                { exit 88i32; },
+        (DeadlineExceeded)  { exit 89i32; },
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

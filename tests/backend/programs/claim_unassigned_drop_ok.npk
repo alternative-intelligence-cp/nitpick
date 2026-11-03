@@ -17,9 +17,11 @@ func:c_pick_drop = int64() never fails { SC:s; drop wnc($$m s, true); int32:v = 
 // A BINDING WRITTEN AT ITS BINDING IS ASSIGNED (build 8; management_13's item 4 of 2026-11-01 20:24, `rc8a`, `rc8c`: 65 on 177a, ASSIGN-001 on
 // build 7): `assign_read`'s rule, only a local can be unassigned -- a range `for`'s binding, an array `for`'s, a parameter, a consuming `pick`'s
 // binding is each written by its construct: a `for` binding has no slot (`symbol_slot` −1), a parameter and a `pick` binding an ordinal marked
-// where they are bound (review B of build 8); `$$m` of each is legal and the callee reads the value.
+// where they are bound (review B of build 8); `$$m` of each is legal and the callee reads the value. SINCE LANDING 177d1 A RANGE'S BINDING IS THE LOOP'S
+// COUNTER AND TAKES NO WRITE FORM, `$$m` AMONG THEM (DEF-461, TYPE-108, tests/types/rejection/for_binding_write.npk), so TYPE-108 answers before ASSIGN-001 can; this file's first `for` ranges a
+// VIEW, whose binding is the question this block asks: `for`'s binding, written at its binding, under `$$m`.
 func:rd = int64(int64->:p) never fails { pass <-p; };
-func:c_dm_for_range = int64() never fails { int64:r = 0i64; for (int64:x in 5i64...6i64) { r = raw rd($$m x); } pass r; };
+func:c_dm_for_view = int64() never fails { int64[2]:a = [5i64, 6i64]; int64:r = 0i64; for (int64:x in a[0i64...1i64]) { r = raw rd($$m x); } pass r; };
 func:c_dm_for_array = int64() never fails { int64[2]:a = [5i64, 6i64]; int64:r = 0i64; for (int64:x in a) { r = raw rd($$m x); break; } pass r; };
 func:dm_param = int64(int64:v) never fails { pass raw rd($$m v); };
 func:c_dm_param = int64() never fails { pass raw dm_param(7i64); };
@@ -27,7 +29,7 @@ enum:Ev = { Num(int64); Str(string); };
 func:c_dm_pick = int64() never fails { Ev:e = Ev.Num(8i64); pick (move(e)) { (Ev.Num(n)) { pass raw rd($$m n); }, (Ev.Str(s)) { pass s.len; } } pass 0i64; };   // a consuming pick needs an owning selector (TYPE-046), so a `string` variant beside the `int64` one
 func:main = int32(cstring[]:_~argv) {
     if ((raw c_string()) != 0i64) { exit 1i32; }
-    if ((raw c_dm_for_range()) != 5i64) { exit 4i32; }
+    if ((raw c_dm_for_view()) != 5i64) { exit 4i32; }
     if ((raw c_dm_for_array()) != 5i64) { exit 5i32; }
     if ((raw c_dm_param()) != 7i64) { exit 6i32; }
     if ((raw c_dm_pick()) != 8i64) { exit 7i32; }

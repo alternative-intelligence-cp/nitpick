@@ -194,16 +194,31 @@ side is computed. The four shapes:
 | Store | The old value | Since |
 |---|---|---|
 | `x = v` (a whole binding) | dropped, guarded by the binding's flag | D-183 |
-| `s.f = v` (an owning field) | dropped unconditionally — a live struct's fields are live or vacant; inside a `wild` block that premise doesn't hold and the drop runs over the block's bytes, DEF-483 (open, 177d) | D-186 |
-| `a[i] = v`, `l[i] = v` (a managed array's or `List`'s element) | dropped unconditionally; an array inside a `wild` block too, DEF-483 (open, 177d) | D-186, D-247 |
-| `(<-p) = v` (through a pointer) | dropped when `p` names MANAGED storage; left alone when `p` is `wild`; a checked cast or a ternary as the target hides `wild` and the store drops, DEF-483 (open, 177d) | DEF-120 |
+| `s.f = v` (an owning field) | dropped — a live struct's fields are live or vacant; **not** when the place is inside manual storage, below | D-186, DEF-483 |
+| `a[i] = v`, `l[i] = v` (a managed array's or `List`'s element) | dropped; **not** when the array is inside manual storage, below. A `List`'s element is the `List`'s, whatever holds the `List`, so it always drops | D-186, D-247, DEF-483 |
+| `(<-p) = v` (through a pointer) | dropped when `p` names MANAGED storage; **not** when it's inside manual storage, below | DEF-120, DEF-483 |
+
+**A store to a place inside manual storage never drops the old value** (DEF-483, ruled N, 1.6.1e landing 177d1). Manual storage holds no value until the author writes one, and the closed direction for a wrong free is no free. To replace a live owner, the author says it's live: `(<-(w =>! S->)).f = v`, or past element 0 `(<-((#ptr_add<S>(w, i)) =>! S->)).f = v`, or a plain local of that cast. Each drops. `(w =>! S->).f = v` is `NITPICK-TYPE-024`: a cast isn't a place.
+
+**The line.** Walk the target from the store outward toward its root (`store_place_manual`, `store_value_manual`, in `src/frontend/analysis/wild_places.npk`).
+
+- **Inline steps inherit:** a member of a by-value struct, an element of a fixed array, a payload, parentheses.
+- **The first step that follows a reference decides:** `<-e`, a member through a pointer, an index through a pointer or slice. The place is manual when `e`'s value is of `wild` provenance, and not otherwise.
+- **A `List`'s index ends the walk, not manual.**
+- **No reference step at all is not manual:** a local, a by-value `wild` binding.
+
+**`e`'s provenance here.** A checked cast asks its operand, whatever its target says: `<-(w => string->)` is manual, `<-(p => wild string->)` over a plain `p` isn't. `=>! T->` asserts a live value, so it's not manual; `=>! wild T->` is manual, over a plain pointer too, because the author said so. A ternary, `??` or `?|` is manual if any arm is. `<-(@x)` is the place `x`'s answer. A field is what its declaration says, so a `wild` field is manual whatever holds it and a plain pointer field in a `wild` block isn't. A call is what its declared return says, through `await` too. A `wild Result`'s `.value` asks its holder.
+
+**Fuel's end or an unread kind answers manual,** so no drop, and a leak at worst. A `pick` value is one of those, even with plain arms, and the spelling that drops is a plain local of the `pick`'s value: `S->:p = pick (e) { … }; p.f = v;`. Reading the arms would rest the drop on another check (TYPE-097 at `give`), and a relaxation there would become a wrong free.
+
+**Not reached by this line, each with its row:** a plain address of a place in an unwritten block (`string->:q = @w.s; <-q = v;`, DEF-484, ruled, 177d2); a member store through a plain view over a block (DEF-486, ruled, 177d2); a `wild` value laundered through a plain slot with no crossing (DEF-479, DEF-481, 177d6). Each of these still drops over the block's bytes until its row lands.
 
 "`p` is wild" is the escape analysis's own wild-provenance reading (D-223,
 `src/frontend/analysis/wild_places.npk` — one predicate for the analysis and the
 emitter): a `wild`-qualified binding, parameter or field, an element of one, an
 `=>! wild T->` cast, `#ptr_add`/`#wild_slice`, an allocator's or a
-wild-returning function's result. *[1.6.1e landing 177c: this is the reading for a store's drop, TYPE-032, TYPE-097, `b.ptr != NULL`
-and TYPE-104's walk. What a `wild` slot TAKES is `door_wild`'s reading, in the same file: there a
+wild-returning function's result. *[1.6.1e landing 177c: this is the reading for TYPE-032, TYPE-097, `b.ptr != NULL`
+and TYPE-104's walk, and it was a store's drop's until landing 177d1, which gave the store its own walk, the line above. What a `wild` slot TAKES is `door_wild`'s reading, in the same file: there a
 header's `.ptr` is never `wild`, the `mcpy` family's result is
 its destination's, and an address counts only when it lands inside a wild pointee. A method's declared `wild` return counts in both since the rebuild (DEF-477), and at TYPE-097 alone a checked cast counts (D-361's note).]* Manual storage holds no value until the
 author writes one, and the closed direction for a wrong free is no free. A plain

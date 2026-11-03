@@ -1,0 +1,49 @@
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 24:74
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 25:77
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 26:83
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 27:104
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 28:110
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 29:77
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 30:86
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 31:110
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 32:75
+mod:leaver_defer;
+
+// A `break` OR `continue` IN A `defer` BODY LEAVES NO LOOP OUTSIDE THE BODY (DEF-417's half, TYPE-040, landing 177d1): a cleanup runs while its block unwinds, and `run_defers_down_to` re-entered the body,
+// exit 3 and no message. A loop written inside the body may be left, `tests/accept/leavers_ok.npk`. `pass` in a `defer` body stays where it is, DEF-417's row.
+
+func:d_break = int64(bool:c) never fails { while (c) unbounded { defer { break; } } pass 1i64; };   // site
+func:d_continue = int64(bool:c) never fails { while (c) unbounded { defer { continue; } } pass 1i64; };   // site
+func:d_in_if = int64(bool:c) never fails { while (c) unbounded { defer { if (c) { break; } } } pass 1i64; };   // site
+func:d_in_arm = int64(int64:n, bool:c) never fails { while (c) unbounded { defer { pick (n) { (0i64) { break; }, (*) { } } } } pass 1i64; };   // site
+func:d_defer_in_arm = int64(int64:n, bool:c) never fails { while (c) unbounded { pick (n) { (0i64) { defer { break; } }, (*) { } } } pass 1i64; };   // site
+func:d_label = int64(bool:c) never fails { o: while (c) unbounded { defer { break o; } } pass 1i64; };   // site
+func:d_label_continue = int64(bool:c) never fails { o: while (c) unbounded { defer { continue o; } } pass 1i64; };   // site
+func:d_label_past_inner = int64(bool:c) never fails { o: while (c) unbounded { defer { while (c) unbounded { break o; } } } pass 1i64; };   // site
+func:d_for = int64() never fails { for (int64:i in 0i64...3i64) { defer { break; } } pass 1i64; };   // site
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

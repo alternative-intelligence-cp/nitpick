@@ -145,6 +145,10 @@ int32:max = is (a > b) : a : b;
 
 Nitpick supports `break;` to exit the innermost loop, and `continue;` to skip to the next iteration across all loop types.
 
+> *[2026-11-03, 1.6.1e landing 177d1, DEF-464, DEF-465:]* **A `break` or `continue` needs an open loop.** With none, or with a label naming no open loop, it's `NITPICK-TYPE-109`. A loop that has ended, or one in the function that called this one, isn't open.
+>
+> **A bare `break` whose nearest breakable is a `pick` arm is `NITPICK-TYPE-110`,** in statement and expression arms and in an `if` in the arm. An arm ends by itself, and leaving the loop takes `break label;` (§2.5). In C, C++, Java, JavaScript, Go, Swift and D a `break` there leaves only the `switch`, so a carried-over line would otherwise compile and mean something else. Refusing is the choice that can be undone. `continue` means one thing everywhere and stays legal in an arm, and so does a `break` of a loop written inside the arm.
+
 > **Every `while` and `when` says why it ends (D-304, 1.5.8c).** The head
 > carries exactly one of `decreases E` — a plain integer that is at least zero
 > and smaller on every trip, checked at the top of the body in every build
@@ -233,6 +237,10 @@ for (int64:i in 1..3) {
 > type**: no wrap, no widening. Anything else is refused at the checker by
 > name (`NITPICK-TYPE-007`, the type mismatch at the binding — this sentence
 > named `TYPE-033` until 1.6.1d step 4, DEF-133's d6), never at a backend rung.
+>
+> *[2026-11-03, 1.6.1e landing 177d1, DEF-461:]* **A range `for`'s binding is its loop's own counter, so it takes no assignment, no `@` and neither claim.** Any of them is `NITPICK-TYPE-108`, in a `defer` in the body too, and `$$i` with them: `$$i` and `$$m` are one pointer type. The latch ends the loop only when the counter lands on its bound, and the verified build's bound on the binding rests on that. The spelling is a copy, `int64:j = i;`, and `while` is the road for a counter that jumps.
+>
+> **An element binding is a copy, and writing it changes the copy.** `for (int64:x in a) { x = 9i64; }` leaves the array's bytes and the loop's count as they were, through `@x` and over a slice too. Over an owner the binding is on loan, so a write is `NITPICK-TYPE-085`. `$` of `loop` and `till` isn't writable (`NITPICK-TYPE-024`).
 >
 > *[2026-11-01, 1.6.1e landing 177a, F, DEF-410's row:]* **A `for` over a call's result or a range holds that view's header for its whole body** (the header is read once, before the first step), so a write-capable access of the view's owner in the body is `NITPICK-BORROW-015`: `for (uint8:b in string_bytes(s)) { s = …; }`, over `raw mkv(s)`, over a ternary of views, over `l[0...2]` with `grow(@l)` in the body: `f1_write` 44 → 44 → BORROW-015, `f2_slice_grow` 229 → 229 → BORROW-015, `h3b_for_write` 44 → 44 → BORROW-015, each read freed bytes before. Bind the data first, or write after the loop. A slice local has its holder's party; an `Iterator` holding a borrow, or a slice local of owners, is `NITPICK-BORROW-009` at the loop's head. **What this does not reach:** a `for` over a named array of owners, a field holding one or a dereference of one has no party, so `for (string:x in a) { a[0i64] = …; … x … }` is accepted and reads freed bytes (`fa_arr_owner` 83 → 83 → 83; DEF-421, OPEN, the first item of landing 177b); a plain element stays legal (`fa_int_arr_ok` 67 → 67 → 67). `while`, `when`, `loop`, `till` and `if` hold no view across their block (their conditions and bounds are read to scalars), one line per `StmtKind` in `meta/roadmap/1.6/1.6.1e.md`'s landing-177a record, under THE CLASS, ONE LINE PER KIND.
 >
@@ -437,7 +445,7 @@ defer { dalloc(buf); }
 
 Runs on **every normal exit path** — scope end, `return`, `pass`, `fail`, `relay`, `exit` — **after the exit's value is evaluated** (D-136): `pass v` returns the `v` that was read at the `pass`, whatever the defers then do. LIFO, innermost scope first.
 
-A `defer` body decides nothing about the function's outcome and leaves for nowhere (D-163 rule 7, `NITPICK-TYPE-040`): `fail` and `relay` are refused inside one, and since 1.6.1e landing 111 (DEF-233) so are `give` and `fall` -- the body runs at the scope's exit, after the `pick` arm it was written in has finished, so neither has a `pick` to reach (the compiler exited 3 in silence on either until then).
+A `defer` body decides nothing about the function's outcome and leaves for nowhere (D-163 rule 7, `NITPICK-TYPE-040`): `fail` and `relay` are refused inside one, and since 1.6.1e landing 111 (DEF-233) so are `give` and `fall` -- the body runs at the scope's exit, after the `pick` arm it was written in has finished, so neither has a `pick` to reach (the compiler exited 3 in silence on either until then). Since landing 177d1 (DEF-417's half) so are a `break` and a `continue` whose loop is outside the body; a loop written inside the body keeps its own. `pass` in a `defer` body is that row's other half, open, after landing 180, and it still traps the compiler.
 
 > *[2026-11-01, 1.6.1e landing 176, DEF-405 + DEF-411:]* **A `defer` body is judged for the moment it RUNS, and it may not `exit`.** Until landing 176 the bindings analysis typed a `defer` body against the move state and the `is_error` refinement at its REGISTRATION, and the body ran at the scope's exit, so a `move`, a free or a re-assignment between the two left the body reading vacated storage (a wrong value, exit 50 at both legs, on every landing to 175; a stale plain pointer through a `Result<int64->>`). Three rules now: (i) the body inherits NO `checked`/`errchecked` refinement -- it tests `is_error` for itself, else `NITPICK-TAINT-001`; (ii) what a registered body reads is PENDING until its block ends, and a `move` of a pending binding before then is `NITPICK-MOVE-001`, a `dalloc`/`destroy` of one `NITPICK-MOVE-002`, each naming the `defer`'s position -- the body's OWN move or free of what it reads (`defer { dalloc(buf); }`) is the idiom and stays legal, and a body inside a body leaves its reads to the outer block; (iii) `pass v` of an OWNING `v` that an earlier `defer` reads is the same MOVE-001: D-136 evaluates `v` first, for an owner that evaluation is a move, and the body would run over the vacated `v`. And `exit` inside a `defer` body is `NITPICK-TYPE-040` beside `fail`, `relay`, `give` and `fall` (DEF-411: the emitter ran the scope's defers at the `exit`, the body held the `exit`, and the recursion trapped the compiler with no message): an `exit` decides the whole program's outcome, which a cleanup may not. *176b (the same day; management_11's review A):* a nested `defer` pends only its OWN reads -- the outer body's earlier reads are not the inner `defer`'s (R2) --, and a pending binding moved and REFILLED before its block ends is still MOVE-001, by position (R1, accepted; the relaxation after landing 180). And `pass`, `break` and `continue` in a `defer` body TRAP the compiler as `exit` did (DEF-417, LOW, fail-closed; TYPE-040 with the defer-relative loop counter after landing 180).
 
@@ -452,8 +460,8 @@ A `defer` body decides nothing about the function's outcome and leaves for nowhe
 
 **`exit code;`** terminates the process, and may appear only in `main` or
 `failsafe` -- and never inside a `defer` body, even one written in `main`: `NITPICK-TYPE-040`
-(DEF-411, 1.6.1e landing 176; §4.5's dated note; `pass`, `break` and `continue` in a `defer`
-body are DEF-417, open, after landing 180 -- they trap the compiler today).
+(DEF-411, 1.6.1e landing 176; §4.5's dated note; `break` and `continue` leaving a `defer` body are
+`NITPICK-TYPE-040` since landing 177d1, and `pass` in one is DEF-417, open, after landing 180 -- it traps the compiler today).
 
 > **Note (2026-10-09, 1.6.1e landing 104 — DEF-249):** `code` is an `int32`, exactly, held to it by the checker since this
 > landing (`NITPICK-TYPE-007` at the operand otherwise; an entry point whose signature is already refused keeps that one report). Before it the operand was typed under the expectation and

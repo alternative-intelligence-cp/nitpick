@@ -1,0 +1,68 @@
+// expect-error: NITPICK-TYPE-110
+// expect-error-at: 36:17
+// expect-error: NITPICK-TYPE-110
+// expect-error-at: 37:96
+// expect-error: NITPICK-TYPE-110
+// expect-error-at: 38:95
+// expect-error: NITPICK-TYPE-110
+// expect-error-at: 39:104
+// expect-error: NITPICK-TYPE-110
+// expect-error-at: 40:90
+// expect-error: NITPICK-TYPE-110
+// expect-error-at: 41:84
+// expect-error: NITPICK-TYPE-110
+// expect-error-at: 42:122
+// expect-error: NITPICK-TYPE-110
+// expect-error-at: 43:109
+// expect-error: NITPICK-TYPE-110
+// expect-error-at: 44:120
+// expect-error: NITPICK-TYPE-110
+// expect-error-at: 45:118
+// expect-error: NITPICK-TYPE-110
+// expect-error-at: 46:131
+// expect-error: NITPICK-TYPE-110
+// expect-error-at: 47:111
+// expect-error: NITPICK-TYPE-110
+// expect-error-at: 48:178
+// expect-error: NITPICK-TYPE-110
+// expect-error-at: 50:108
+// expect-error: NITPICK-TYPE-110
+// expect-error-at: 51:141
+mod:leaver_arm_break;
+
+// A BARE `break` WHOSE NEAREST BREAKABLE IS A `pick` ARM (DEF-465, RULED, TYPE-110, landing 177d1): in C, C++, Java, JavaScript, Go, Swift and D it would leave only the `switch`, and here it left the loop in
+// silence. Statement and expression arms alike, and in an `if` inside an arm. `continue` means one thing everywhere, and `break label;` says which: `tests/accept/leavers_ok.npk`.
+
+macro:lv = () { break; };   // site
+func:in_while = int64(int64:n, bool:c) never fails { while (c) unbounded { pick (n) { (0i64) { break; }, (*) { } } } pass 1i64; };   // site
+func:in_for = int64(int64:n) never fails { for (int64:i in 0i64...3i64) { pick (n) { (0i64) { break; }, (*) { } } } pass 1i64; };   // site
+func:in_element_for = int64(int64:n, int64[]:a) never fails { for (int64:x in a) { pick (n) { (0i64) { break; }, (*) { } } } pass 1i64; };   // site
+func:in_loop = int64(int64:n) never fails { loop(0i64, 3i64, 1i64) { pick (n) { (0i64) { break; }, (*) { } } } pass 1i64; };   // site
+func:in_till = int64(int64:n) never fails { till(3i64, 1i64) { pick (n) { (0i64) { break; }, (*) { } } } pass 1i64; };   // site
+func:in_when = int64(int64:n) never fails { int64:m = n; when (m > 0i64) decreases m { m = m - 1i64; pick (n) { (0i64) { break; }, (*) { } } } then { } end { } pass 1i64; };   // site
+func:in_if_in_arm = int64(int64:n, bool:c) never fails { while (c) unbounded { pick (n) { (0i64) { if (c) { break; } }, (*) { } } } pass 1i64; };   // site
+func:in_value_arm = int64(int64:n, bool:c) never fails { int64:v = 0i64; while (c) unbounded { v = pick (n) { (0i64) { break; give 1i64; }, (*) { give 2i64; } }; } pass v; };   // site
+func:nested_arm = int64(int64:n, bool:c) never fails { while (c) unbounded { pick (n) { (0i64) { pick (n) { (0i64) { break; }, (*) { } } }, (*) { } } } pass 1i64; };   // site
+func:arm_of_a_loop_in_an_arm = int64(int64:n, bool:c) never fails { pick (n) { (0i64) { while (c) unbounded { pick (n) { (0i64) { break; }, (*) { } } } }, (*) { } } pass 1i64; };   // site
+func:loop_in_a_defer = int64(int64:n, bool:c) never fails { defer { while (c) unbounded { pick (n) { (0i64) { break; }, (*) { } } } } pass 1i64; };   // site
+func:then_of_a_when_in_an_arm = int64(int64:n, bool:c) never fails { while (c) unbounded { pick (n) { (0i64) { int64:m = n; when (m > 0i64) decreases m { m = m - 1i64; } then { break; } end { } }, (*) { } } } pass 1i64; };   // site
+func:by_macro = int64(int64:n, bool:c) never fails { while (c) unbounded { pick (n) { (0i64) { #lv(); }, (*) { } } } pass 1i64; };
+func:generic_body<T> = int64(T:x, int64:n, bool:c) never fails { while (c) unbounded { pick (n) { (0i64) { break; }, (*) { } } } pass 1i64; };   // site
+comptime func:compile_time = int64(int64:m) never fails { int64:i = 0i64; while (i < m) decreases m - i { i = i + 1i64; pick (i) { (2i64) { break; }, (*) { } } } pass i; };   // site
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

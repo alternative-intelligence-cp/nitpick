@@ -1,0 +1,72 @@
+// expect-error: NITPICK-TYPE-108
+// expect-error-at: 37:21
+// expect-error: NITPICK-TYPE-108
+// expect-error-at: 41:68
+// expect-error: NITPICK-TYPE-108
+// expect-error-at: 42:70
+// expect-error: NITPICK-TYPE-108
+// expect-error-at: 43:74
+// expect-error: NITPICK-TYPE-108
+// expect-error-at: 44:68
+// expect-error: NITPICK-TYPE-108
+// expect-error-at: 45:81
+// expect-error: NITPICK-TYPE-108
+// expect-error-at: 46:77
+// expect-error: NITPICK-TYPE-108
+// expect-error-at: 47:77
+// expect-error: NITPICK-TYPE-108
+// expect-error-at: 48:76
+// expect-error: NITPICK-TYPE-108
+// expect-error-at: 49:78
+// expect-error: NITPICK-TYPE-108
+// expect-error-at: 50:88
+// expect-error: NITPICK-TYPE-108
+// expect-error-at: 51:106
+// expect-error: NITPICK-TYPE-108
+// expect-error-at: 52:106
+// expect-error: NITPICK-TYPE-108
+// expect-error-at: 54:76
+// expect-error: NITPICK-TYPE-108
+// expect-error-at: 55:76
+mod:for_binding_write;
+
+// A RANGE `for`'s BINDING IS ITS LOOP'S OWN COUNTER (DEF-461, RULED, TYPE-108, landing 177d1): the latch ends the loop only when the counter lands on its bound, and the encoder's L-12 gives the binding
+// `[lo, hi)`, so a body that wrote it ran past the bound and `--elide` removed the guard. No write form reaches it, in a `defer` in the body too. `while` is the road for a counter that jumps, and the
+// element form's binding is a copy: `tests/accept/for_binding_ok.npk`.
+
+macro:setit = (x) { x = 9i64; };   // site
+func:wr = NIL(int64->:p) never fails { <-p = 9i64; pass NIL; };
+trait:Bump = { func:bump = NIL(Self->:self) never fails; };
+impl:int64:Bump = { func:bump = NIL(int64->:self) never fails { <-self = 9i64; pass NIL; }; };
+func:assign = int64() never fails { for (int64:i in 0i64...4i64) { i = 9i64; } pass 1i64; };   // site
+func:compound = int64() never fails { for (int64:i in 0i64...4i64) { i += 9i64; } pass 1i64; };   // site
+func:compound_mul = int64() never fails { for (int64:i in 0i64...4i64) { i *= 9i64; } pass 1i64; };   // site
+func:parens = int64() never fails { for (int64:i in 0i64...4i64) { (i) = 9i64; } pass 1i64; };   // site
+func:address = int64() never fails { for (int64:i in 0i64...4i64) { int64->:p = @i; } pass 1i64; };   // site
+func:claim_m = int64() never fails { for (int64:i in 0i64...4i64) { drop wr($$m i); } pass 1i64; };   // site
+func:claim_i = int64() never fails { for (int64:i in 0i64...4i64) { drop wr($$i i); } pass 1i64; };   // site
+func:receiver = int64() never fails { for (int64:i in 0i64...4i64) { drop i.bump(); } pass 1i64; };   // site
+func:in_defer = int64() never fails { for (int64:i in 0i64...4i64) { defer { i = 9i64; } } pass 1i64; };   // site
+func:in_arm = int64() never fails { for (int64:i in 0i64...4i64) { pick (i) { (0i64) { i = 9i64; }, (*) { } } } pass 1i64; };   // site
+func:in_inner_loop = int64() never fails { for (int64:i in 0i64...4i64) { for (int64:j in 0i64...2i64) { i = j; } } pass 1i64; };   // site
+func:inner_binding = int64() never fails { for (int64:i in 0i64...4i64) { for (int64:j in 0i64...2i64) { j = i; } } pass 1i64; };   // site
+func:by_macro = int64() never fails { for (int64:i in 0i64...4i64) { #setit(i); } pass 1i64; };
+func:narrow_counter = int32() never fails { for (int32:i in 0i32...4i32) { i = 9i32; } pass 1i32; };   // site
+func:exclusive_range = int64() never fails { for (int64:i in 0i64..4i64) { i = 9i64; } pass 1i64; };   // site
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,14 @@
+// expect-error: NITPICK-TYPE-085
+// expect-error-at: 10:9
+mod:for_element_owner_write;
+// An element binding is a copy of a plain `int64` (`tests/backend/programs/for_element_copy.npk`), and of an owner it's the array's value on loan: a write would free what the array still holds. Q10, DEF-461, `q10b3`, landing 177d1.
+func:main = int32(cstring[]:_~argv) {
+    string[2]:a = [string_concat("ab", "cd"), string_concat("ef", "gh")];
+    int64:n = 0i64;
+    for (string:x in a) {
+        n = n + x.len;
+        x = string_concat("zz", "zz");
+    }
+    if (n != 8i64) { exit 72i32; }
+    exit 0i32;
+};

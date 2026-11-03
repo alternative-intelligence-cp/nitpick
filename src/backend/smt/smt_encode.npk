@@ -209,9 +209,11 @@ struct:Bind = {
     // A CONTAINER BINDING'S LENGTH SYMBOL (1.5.8b step 5): `|len.<name>.<k>|`,
     // named lazily at the first read and FRESH after every write or
     // invalidation of the name, so `xs.len` and an element's `bounds` row name
-    // one length exactly while the binding is untouched. 0 for none -- an
-    // escaped name (DEF-14) and every non-container type keep it 0, and their
-    // rows stay `unencoded` rather than resting on a symbol a call could
+    // one length exactly while the binding is untouched. -1 for none, because
+    // 0 is a symbol, the function's first (DEF-69; DEF-460, landing 177d1: a
+    // `pick` binding's 0 read as `n`'s length and `--elide` took live guards)
+    // -- an escaped name (DEF-14) and every non-container type keep -1, and
+    // their rows stay `unencoded` rather than resting on a symbol a call could
     // falsify.
     int32:lensym;
 };
@@ -5995,14 +5997,14 @@ func:collect_escaped_stmt = NIL(Encoder->:e, StmtId:sid) never fails {
 func:bind_pattern = NIL(Encoder->:e, PatNode:p) never fails {
     if (p.kind == PatKind.PatStructDestructure) {
         for (int32:i in 0i32...(raw pat_bind_count(p))) {
-            Bind:b = Bind{ name: raw ast_id_at(e.ast, raw pat_bind_start(p), i), sym: 0i32 - 1i32, type_id: 0i32, rule: 0i32, entry: 0i32 - 1i32, lanes: raw list_init::<int32>(1i64), lensym: 0i32 };
+            Bind:b = Bind{ name: raw ast_id_at(e.ast, raw pat_bind_start(p), i), sym: 0i32 - 1i32, type_id: 0i32, rule: 0i32, entry: 0i32 - 1i32, lanes: raw list_init::<int32>(1i64), lensym: 0i32 - 1i32 };
             drop list_push(@e.binds, move(b));
         }
         pass NIL;
     }
     if (p.kind == PatKind.PatEnumDestructure) {
         for (int32:j in 0i32...(raw pat_enum_bind_count(e.ast, p))) {
-            Bind:b2 = Bind{ name: raw pat_enum_bind(e.ast, p, j), sym: 0i32 - 1i32, type_id: 0i32, rule: 0i32, entry: 0i32 - 1i32, lanes: raw list_init::<int32>(1i64), lensym: 0i32 };
+            Bind:b2 = Bind{ name: raw pat_enum_bind(e.ast, p, j), sym: 0i32 - 1i32, type_id: 0i32, rule: 0i32, entry: 0i32 - 1i32, lanes: raw list_init::<int32>(1i64), lensym: 0i32 - 1i32 };
             drop list_push(@e.binds, move(b2));
         }
         pass NIL;

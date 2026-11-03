@@ -1,0 +1,33 @@
+// expect-exit: 98
+// expect-obligation: bounds open 1
+// expect-obligation: bounds discharged 1
+// expect-obligation: overflow open 2
+// expect-obligation: exhaustive checker 1
+// expect-obligation: failsafe-post discharged 12
+//
+// THE VIEW'S TWIN OF `for_element_index_write.npk` (Q10, DEF-461, `q10b6`, landing 177d1): the copy written over a slice's element, the index computed from it, the guard kept under `--elide`.
+mod:for_element_slice_index;
+func:main = int32(cstring[]:_~argv) {
+    int64[4]:a = [1i64, 2i64, 3i64, 0i64];
+    int64[]:s = a[0i64...4i64];
+    int64[4]:b = [7i64, 7i64, 7i64, 7i64];
+    int64:v = 0i64;
+    for (int64:x in s) { x = x + 100i64; v = v + b[x]; }
+    exit 67i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,138 @@
+// WHAT STAYS LEGAL beside DEF-464's, DEF-465's and DEF-417's refusals (TYPE-109, TYPE-110, TYPE-040; landing 177d1): `e2` to `e5`, `d5` and `c4` of `MANAGEMENT/probes/author-break`, and the frames a `when`'s
+// `then` and `end` stand outside. The program twin, `tests/backend/programs/leavers_run.npk`, runs the same bodies.
+mod:leavers_ok;
+macro:lv = () { break; };
+macro:lb = () { break o; };
+
+// A labelled `break` from an arm (DEF-465's road): the loop ends at the first pass.
+func:arm_label = int64() never fails {
+    int64:n = 0i64;
+    o: while (n < 3i64) decreases 3i64 - n { n = n + 1i64; pick (n) { (1i64) { break o; }, (*) { } } }
+    pass n;
+};
+// A `continue` from an arm means what it means everywhere: every pass reaches the end of the arm, none the statement after the `pick`.
+func:arm_continue = int64() never fails {
+    int64:n = 0i64;
+    int64:after = 0i64;
+    while (n < 3i64) decreases 3i64 - n { n = n + 1i64; pick (n) { (*) { continue; } } after = after + 1i64; }
+    pass after;
+};
+// A loop written inside the arm is the nearest breakable.
+func:loop_in_arm = int64() never fails {
+    int64:n = 0i64;
+    pick (n) { (0i64) { while (n < 3i64) decreases 3i64 - n { n = n + 1i64; break; } }, (*) { } }
+    pass n;
+};
+// An arm with nothing to say ends by itself.
+func:empty_arm = int64() never fails {
+    int64:n = 0i64;
+    while (n < 3i64) decreases 3i64 - n { n = n + 1i64; pick (n) { (2i64) { }, (*) { } } }
+    pass n;
+};
+// A labelled `break` from an inner loop.
+func:label_from_inner = int64() never fails {
+    int64:n = 0i64;
+    o: for (int64:i in 0i64...3i64) { for (int64:j in 0i64...3i64) { n = n + 1i64; break o; } }
+    pass n;
+};
+// A label on every kind of loop, the outermost taken from the innermost. `when` has its own cell: its `then` and `end` run after its frame closes.
+func:label_kinds = int64() never fails {
+    int64:n = 0i64;
+    f: for (int64:i in 0i64...3i64) { l: loop(0i64, 3i64, 1i64) { t: till(3i64, 1i64) { x: while (n < 9i64) decreases 9i64 - n { n = n + 1i64; break f; } } } }
+    pass n;
+};
+func:continue_label = int64() never fails {
+    int64:n = 0i64;
+    f: for (int64:i in 0i64...3i64) { l: loop(0i64, 3i64, 1i64) { n = n + 1i64; continue f; } }
+    pass n;
+};
+// A `when`'s body is its loop.
+func:when_body = int64() never fails {
+    int64:n = 5i64;
+    when (n > 0i64) decreases n { n = n - 1i64; break; } then { } end { }
+    pass n;
+};
+// A `when`'s `then` and `end` run after its frame closes, so a `break` there leaves the loop around it.
+func:when_then_end = int64() never fails {
+    int64:g = 3i64;
+    int64:m = 0i64;
+    while (g > 0i64) decreases g { g = g - 1i64; when (m > 0i64) decreases m { m = m - 1i64; } then { break; } end { break; } }
+    pass g;
+};
+func:when_then_end_continue = int64() never fails {
+    int64:g = 3i64;
+    int64:m = 0i64;
+    while (g > 0i64) decreases g { g = g - 1i64; when (m > 0i64) decreases m { m = m - 1i64; } then { continue; } end { continue; } }
+    pass g;
+};
+// A loop written inside a `defer` body may be left, by either spelling, from an arm by its label.
+func:loop_in_defer = int64() never fails {
+    int64:n = 0i64;
+    {
+        defer {
+            l: while (n < 3i64) decreases 3i64 - n { n = n + 1i64; break l; }
+            for (int64:i in 0i64...3i64) { n = n + 1i64; break; }
+            m: for (int64:i in 0i64...3i64) { n = n + 1i64; pick (i) { (0i64) { break m; }, (*) { } } }
+            for (int64:i in 0i64...3i64) { continue; }
+        }
+    }
+    pass n;
+};
+// A statement macro's `break` is the `break` of the loop it lands in.
+func:macro_break = int64() never fails {
+    int64:n = 0i64;
+    while (n < 3i64) decreases 3i64 - n { n = n + 1i64; #lv(); }
+    pass n;
+};
+func:macro_label = int64() never fails {
+    int64:n = 0i64;
+    o: while (n < 3i64) decreases 3i64 - n { n = n + 1i64; pick (n) { (*) { #lb(); } } }
+    pass n;
+};
+// A `continue` and a labelled `break` from a nested arm, a loop inside an arm.
+func:nested = int64() never fails {
+    int64:n = 0i64;
+    pick (n) { (0i64) { o: while (n < 9i64) decreases 9i64 - n { n = n + 1i64; pick (n) { (1i64) { continue; }, (*) { break o; } } } }, (*) { } }
+    pass n;
+};
+// An expression arm that leaves by a label gives nothing on that road.
+func:value_arm_label = int64() never fails {
+    int64:n = 0i64;
+    int64:v = 0i64;
+    o: while (n < 3i64) decreases 3i64 - n { n = n + 1i64; v = pick (n) { (2i64) { break o; give 1i64; }, (*) { give 2i64; } }; }
+    pass n;
+};
+func:main = int32(cstring[]:_~argv) {
+    if ((raw arm_label()) != 1i64) { exit 1i32; }
+    if ((raw arm_continue()) != 0i64) { exit 2i32; }
+    if ((raw loop_in_arm()) != 1i64) { exit 3i32; }
+    if ((raw empty_arm()) != 3i64) { exit 4i32; }
+    if ((raw label_from_inner()) != 1i64) { exit 5i32; }
+    if ((raw label_kinds()) != 1i64) { exit 6i32; }
+    if ((raw continue_label()) != 3i64) { exit 7i32; }
+    if ((raw when_body()) != 4i64) { exit 8i32; }
+    if ((raw when_then_end()) != 2i64) { exit 9i32; }
+    if ((raw when_then_end_continue()) != 0i64) { exit 10i32; }
+    if ((raw loop_in_defer()) != 3i64) { exit 11i32; }
+    if ((raw macro_break()) != 1i64) { exit 12i32; }
+    if ((raw macro_label()) != 1i64) { exit 13i32; }
+    if ((raw nested()) != 2i64) { exit 14i32; }
+    if ((raw value_arm_label()) != 2i64) { exit 15i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

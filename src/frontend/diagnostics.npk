@@ -176,7 +176,10 @@ pub func:diaglist_rehome = NIL(DiagList->:list, int64:i, Span:at,
     if (i < 0i64) { pass NIL; }
     if (i >= list.count) { pass NIL; }
     list.items[i].span = at;
-    list.items[i].message = string_concat(prefix, list.items[i].message);
+    // THE OLD MESSAGE IS LIVE AND THIS STORE SAYS SO (DEF-483, landing 177d1): `items` is `wild`, and a store inside manual storage drops nothing. Every element below `count` was written whole by
+    // `diaglist_push`, and the guards above hold `i` below it. Without the assertion each re-homed diagnostic leaks its message, up to 256 strings a failed derive compile.
+    Diagnostic->:it = (#ptr_add<Diagnostic>(list.items, i)) =>! Diagnostic->;
+    it.message = string_concat(prefix, it.message);
     pass NIL;
 };
 

@@ -48,7 +48,7 @@ use "../../frontend/numeric.npk".*;       // tfp_q_signed, tfp_q_of_int (DEF-204
 use "../../frontend/type_decls.npk".*;
 use "../../frontend/type_trait.npk".*;   // impl_count/impl_at, method_symbol_name (D-166)
 use "../../frontend/type_names.npk".*;   // method_symbol_name (D-166)
-use "../../frontend/analysis/wild_places.npk".*;   // expr_wild_provenance: a store through a pointer drops a MANAGED pointee (DEF-120, 1.6.1d step 3)
+use "../../frontend/analysis/wild_places.npk".*;   // store_place_manual: a store inside manual storage drops nothing (DEF-120, 1.6.1d step 3; DEF-483, landing 177d1)
 use "./ir_writer.npk".*;
 use "./ir_types.npk".*;
 use "./ir_func.npk".*;
@@ -1065,30 +1065,27 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         // a field is -- unless the pointer names MANUAL storage, which holds
         // no value until the author writes one: a `wild`-qualified binding,
         // parameter or field, an `=>! wild` cast, `#ptr_add`, an allocator's
-        // result. That reading is `expr_wild_provenance`, the escape
-        // analysis's own (D-223), so a shape either side forgot would be a
-        // leak on one and a bad free on the other. The closed direction for
-        // a wrong free is no free.
+        // result. The closed direction for a wrong free is no free.
         //
-        // A FIELD OR MANAGED-ELEMENT TARGET DROPS UNCONDITIONALLY (D-186,
-        // closing D-183's partial-place item): a live struct's fields are
-        // always live — construction fills every field and partial moves do
-        // not exist — and a managed array's elements likewise, so no flag
-        // is needed. The prelude's own streams exposed the leak:
-        // `tr.acc = string_slice(tr.acc, …)` left the old body behind on
-        // every refill. A `wild` pointee stays the manual regime's;
-        // elements reached through a pointer base are exempt.
+        // A FIELD OR MANAGED-ELEMENT TARGET DROPS (D-186, closing D-183's
+        // partial-place item): a live struct's fields are always live --
+        // construction fills every field and partial moves do not exist --
+        // and a managed array's elements likewise, so no flag is needed. The
+        // prelude's own streams exposed the leak: `tr.acc =
+        // string_slice(tr.acc, …)` left the old body behind on every refill.
+        // Elements reached through a pointer base are exempt.
+        //
+        // NOT INSIDE MANUAL STORAGE (DEF-483, ruled N, landing 177d1): all
+        // three arms ask `store_place_manual` once they would drop, the
+        // field's and the element's as the dereference's, so `w.s = v` over a
+        // `wild` block behaves as `<-w = S{…}` does. `(<-(w =>! S->)).s = v` is
+        // the author saying the old value is live, and that drops.
         string:aflag = "";
         {
             ExprNode:tgt = raw ast_expr(x.ast, raw stmt_target(s));
             bool:tgt_drops_old = false;
             if (tgt.kind == ExprKind.ExprMemberAccessExpr) {
-                if (raw type_drops_recorded(x.fe.ctx.types, place.type_id, 64i32)) {
-                    // through a pointer receiver or a plain place alike: the
-                    // field belongs to the struct, and the struct's owner is
-                    // exactly who is overwriting it.
-                    tgt_drops_old = true;
-                }
+                if (raw type_drops_recorded(x.fe.ctx.types, place.type_id, 64i32)) { tgt_drops_old = true; }
             }
             if (tgt.kind == ExprKind.ExprIndexExpr) {
                 if (raw type_drops_recorded(x.fe.ctx.types, place.type_id, 64i32)) {
@@ -1109,11 +1106,11 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
             if (tgt.kind == ExprKind.ExprDerefExpr) {
                 int32:dpty = raw subst_emitted_type(x.fe.ctx, place.type_id);
                 if (raw type_drops_recorded(x.fe.ctx.types, dpty, 64i32)) {
-                    if (!(raw expr_wild_provenance(x.ast, x.tab, x.interns, x.et, x.fe.ctx.types,
-                                                   raw expr_operand(tgt), raw BORROW_FUEL()))) {
-                        tgt_drops_old = true;
-                    }
+                    tgt_drops_old = true;
                 }
+            }
+            if (tgt_drops_old) {
+                if (raw store_place_manual(x.ast, x.tab, x.interns, x.et, x.fe.ctx.types, raw stmt_target(s), raw STORE_WALK_FUEL())) { tgt_drops_old = false; }
             }
             if (tgt_drops_old) {
                 drop irw_line(x.fe.w, raw cat4("call void ",

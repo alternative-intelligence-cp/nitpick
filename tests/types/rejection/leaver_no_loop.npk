@@ -1,0 +1,79 @@
+// expect-error: NITPICK-TYPE-109
+// expect-error-at: 42:17
+// expect-error: NITPICK-TYPE-109
+// expect-error-at: 44:49
+// expect-error: NITPICK-TYPE-109
+// expect-error-at: 45:55
+// expect-error: NITPICK-TYPE-109
+// expect-error-at: 46:41
+// expect-error: NITPICK-TYPE-109
+// expect-error-at: 47:44
+// expect-error: NITPICK-TYPE-109
+// expect-error-at: 48:51
+// expect-error: NITPICK-TYPE-109
+// expect-error-at: 49:64
+// expect-error: NITPICK-TYPE-109
+// expect-error-at: 50:73
+// expect-error: NITPICK-TYPE-109
+// expect-error-at: 51:80
+// expect-error: NITPICK-TYPE-109
+// expect-error-at: 52:72
+// expect-error: NITPICK-TYPE-109
+// expect-error-at: 53:84
+// expect-error: NITPICK-TYPE-109
+// expect-error-at: 54:49
+// expect-error: NITPICK-TYPE-109
+// expect-error-at: 56:52
+// expect-error: NITPICK-TYPE-109
+// expect-error-at: 57:113
+// expect-error: NITPICK-TYPE-109
+// expect-error-at: 58:120
+// expect-error: NITPICK-TYPE-109
+// expect-error-at: 59:117
+// expect-error: NITPICK-TYPE-109
+// expect-error-at: 60:87
+// expect-error: NITPICK-TYPE-109
+// expect-error-at: 62:56
+mod:leaver_no_loop;
+
+// A `break` OR `continue` LEAVES A LOOP OPEN AT THAT POINT, A LABEL NAMING ONE (DEF-464, TYPE-109, landing 177d1): the emitter's EMIT-002 answered these and blamed the compiler for a person's mistake,
+// the author's `(0){ break; },` the first. `tests/accept/leavers_ok.npk` holds the shapes beside these that stay legal.
+
+macro:lv = () { break; };   // site
+struct:S = { int64:x; };
+impl:S = { func:m = int64(S:self) never fails { break; pass 1i64; }; };   // site
+trait:T9 = { func:m2 = int64(Self:self) never fails { continue; pass 1i64; }; };   // site
+func:bare_break = int64() never fails { break; pass 1i64; };   // site
+func:bare_continue = int64() never fails { continue; pass 1i64; };   // site
+func:in_if = int64(bool:c) never fails { if (c) { break; } pass 1i64; };   // site
+func:in_arm = int64(int64:n) never fails { pick (n) { (0i64) { break; }, (*) { } } pass 1i64; };   // site
+func:in_arm_continue = int64(int64:n) never fails { pick (n) { (0i64) { continue; }, (*) { } } pass 1i64; };   // site
+func:in_value_arm = int64(int64:n) never fails { int64:v = pick (n) { (0i64) { break; give 1i64; }, (*) { give 2i64; } }; pass v; };   // site
+func:no_such_label = int64(bool:c) never fails { while (c) unbounded { break nosuch; } pass 1i64; };   // site
+func:ended_label = int64(bool:c) never fails { o: while (c) unbounded { break o; } continue o; pass 1i64; };   // site
+func:called_from_a_loop = int64() never fails { break; pass 1i64; };   // site
+func:calls_it = int64(bool:c) never fails { while (c) unbounded { discard(raw called_from_a_loop()); } pass 1i64; };
+func:defer_no_loop = int64() never fails { defer { break; } pass 1i64; };   // site
+func:when_then = int64(int64:n) never fails { int64:m = n; when (m > 0i64) decreases m { m = m - 1i64; } then { break; } end { } pass 1i64; };   // site
+func:when_end = int64(int64:n) never fails { int64:m = n; when (m > 0i64) decreases m { m = m - 1i64; } then { } end { continue; } pass 1i64; };   // site
+func:when_label = int64(int64:n) never fails { int64:m = n; w: when (m > 0i64) decreases m { m = m - 1i64; } then { break w; } end { } pass 1i64; };   // site
+func:loop_head = int64(int64:n) never fails { int64:m = n; while (pick (m) { (0i64) { break; give true; }, (*) { give false; } }) unbounded { m = 1i64; } pass 1i64; };   // site
+func:by_macro = int64() never fails { #lv(); pass 1i64; };
+async func:in_async = int64() { pick (1i64) { (1i64) { break; }, (*) { } } pass 1i64; };   // site
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

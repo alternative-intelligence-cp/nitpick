@@ -752,3 +752,9 @@ pub func:TYPE_MOVE_THROUGH_POINTER = string() never fails { pass "NITPICK-TYPE-1
 pub func:TYPE_INDEX_PLAIN = string() never fails { pass "NITPICK-TYPE-106"; };
 pub func:TYPE_WILD_INSTANCE = string() never fails { pass "NITPICK-TYPE-107"; };
 pub func:TYPE_LITERAL_PART = string() never fails { pass "NITPICK-TYPE-105"; };
+// A RANGE `for`'s BINDING IS ITS LOOP'S OWN COUNTER (DEF-461, landing 177d1): no write form reaches it. `refuse_range_binding`.
+pub func:TYPE_FOR_BINDING_WRITE = string() never fails { pass "NITPICK-TYPE-108"; };
+// A `break` OR `continue` LEAVES A LOOP OPEN AT THAT POINT, A LABEL NAMING ONE (DEF-464, landing 177d1); the emitter's EMIT-002 blamed the compiler for it. `check_leaver`.
+pub func:TYPE_NO_LOOP = string() never fails { pass "NITPICK-TYPE-109"; };
+// A BARE `break` WHOSE NEAREST BREAKABLE IS A `pick` ARM (DEF-465, RULED, landing 177d1): an arm ends by itself, and leaving the loop takes `break label;`. `check_leaver`.
+pub func:TYPE_ARM_BREAK = string() never fails { pass "NITPICK-TYPE-110"; };

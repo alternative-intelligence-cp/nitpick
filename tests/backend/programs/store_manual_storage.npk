@@ -1,0 +1,257 @@
+// expect-exit: 0
+//
+// A STORE TO A PLACE INSIDE MANUAL STORAGE NEVER DROPS THE OLD VALUE (DEF-483, ruled N, landing 177d1). `w.s = v` over a `wild` block ran the old value's drop over the block's bytes, `npk_dalloc` trapping
+// on what the fill said (74, `y5ec`), and `w.h = own_fd(…)` over a `calloc` closed descriptor 0 (81, `y5q`); `<-(w => string->) = v` and `<-(is c : w : w) = v` did the same (`y5`, `y5f`). The line walks the
+// target outward: inline steps inherit, the first step that follows a reference decides by its pointer's provenance, a `List`'s index ends the walk, and no reference step at all isn't manual.
+// TWO PARTS. The block-filled part: each store lands on 65s, so a drop that runs is a trap, not a pass. The descriptor part: a real descriptor held in an `OwnedFd` field tells a drop from no drop by
+// `fcntl` after the store, because a program that merely survives proves nothing about a store that must KEEP its drop. Through `w.h = …` the old descriptor stays open; through the author's assertion it
+// closes (the ruling's pair); every plain road closes it. Each exit below names one row of the ruling's must-lists.
+mod:store_manual_storage;
+
+error:E5;
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+
+struct:SS = { string:s; };
+struct:WF = { wild SS->:n; };
+struct:AS = { SS[2]:r; };
+struct:NS = { SS:inn; };
+struct:OS = { string?:o; };
+struct:Bx<T> = { int32:tag; T:item; };
+struct:Nk = { string:s; wild Nk->:next; };
+struct:H = { int64:n; };
+impl:H = { func:getw = wild SS->(H->:self, wild SS->:b) never fails { pass b; }; };
+func:same = wild SS->(wild SS->:b) never fails { pass b; };
+
+func:blk = wild SS->() never fails { wild SS->:w = alloc(64i64) =>! wild SS->; discard(memset(w, 65i64, 64i64)); pass w; };
+func:blk_str = wild string->() never fails { wild string->:w = alloc(32i64) =>! wild string->; discard(memset(w, 65i64, 32i64)); pass w; };
+func:may_str = wild string->(wild string->:b) { pass b; };
+func:setw = NIL(wild SS->:w) never fails { w.s = raw mks(); pass NIL; };
+func:setbox<T> = NIL(wild Bx<T>->:w, move T:v) never fails { w.item = move(v); pass NIL; };
+func:setslice = NIL(wild SS[]:v) never fails { v[0i64].s = raw mks(); pass NIL; };
+
+// ---- the block-filled part: the old value is 65s, so any drop traps ----
+func:m_checked_cast = int64() never fails { wild string->:w = raw blk_str(); <-(w => string->) = raw mks(); int64:n = (<-(w => string->)).len; dalloc(w); pass n; };
+func:m_checked_cast_list = int64() never fails {
+    wild List<int64>->:w = alloc(64i64) =>! wild List<int64>->;
+    discard(memset(w, 65i64, 64i64));
+    <-(w => List<int64>->) = raw list_init::<int64>(4i64);
+    dalloc(w);
+    pass 5i64;
+};
+func:m_ternary = int64(int64:j) never fails { wild string->:w = raw blk_str(); <-(is (j == 1i64) : w : w) = raw mks(); dalloc(w); pass 5i64; };
+func:m_join_wild_or_plain = int64(bool:c) never fails {
+    wild string->:w = raw blk_str();
+    string:s = raw mks();
+    string->:p = @s;
+    <-(is (c) : (p => string->) : (w => string->)) = raw mks();
+    dalloc(w);
+    pass 5i64;
+};
+func:m_wild_cast = int64() never fails { wild string->:w = raw blk_str(); <-(w => wild string->) = raw mks(); dalloc(w); pass 5i64; };
+func:m_direct = int64() never fails { wild string->:w = raw blk_str(); <-w = raw mks(); dalloc(w); pass 5i64; };
+func:m_field = int64() never fails { wild SS->:w = raw blk(); w.s = raw mks(); int64:n = w.s.len; dalloc(w); pass n; };
+func:m_deref_field = int64() never fails { wild SS->:w = raw blk(); (<-w).s = raw mks(); dalloc(w); pass 5i64; };
+func:m_index_field = int64() never fails { wild SS->:w = raw blk(); w[0i64].s = raw mks(); dalloc(w); pass 5i64; };
+func:m_array_elem_field = int64() never fails { wild AS->:w = alloc(64i64) =>! wild AS->; discard(memset(w, 65i64, 64i64)); w.r[1i64].s = raw mks(); dalloc(w); pass 5i64; };
+func:m_array_elem_whole = int64() never fails { wild AS->:w = alloc(64i64) =>! wild AS->; discard(memset(w, 65i64, 64i64)); (<-w).r[0i64] = SS{ s: raw mks() }; dalloc(w); pass 5i64; };
+func:m_range_of_array = int64() never fails { wild AS->:w = alloc(64i64) =>! wild AS->; discard(memset(w, 65i64, 64i64)); (w.r[0i64...1i64])[0i64].s = raw mks(); dalloc(w); pass 5i64; };
+func:m_nested_field = int64() never fails { wild NS->:w = alloc(64i64) =>! wild NS->; discard(memset(w, 65i64, 64i64)); w.inn.s = raw mks(); dalloc(w); pass 5i64; };
+func:m_wild_field = int64() never fails { wild SS->:w = raw blk(); WF:h = WF{ n: w }; h.n.s = raw mks(); dalloc(w); pass 5i64; };
+func:m_wild_field_via_plain = int64() never fails { wild SS->:w = raw blk(); WF:h = WF{ n: w }; WF->:hp = @h; hp.n.s = raw mks(); dalloc(w); pass 5i64; };
+func:m_address_of_field = int64() never fails { wild SS->:w = raw blk(); <-(@w.s) = raw mks(); dalloc(w); pass 5i64; };
+func:m_wild_param = int64() never fails { wild SS->:w = raw blk(); drop setw(w); dalloc(w); pass 5i64; };
+func:m_generic = int64() never fails { wild Bx<string>->:w = alloc(64i64) =>! wild Bx<string>->; discard(memset(w, 65i64, 64i64)); discard(raw setbox::<string>(w, raw mks())); dalloc(w); pass 5i64; };
+func:m_optional_field = int64() never fails { wild OS->:w = alloc(64i64) =>! wild OS->; discard(memset(w, 65i64, 64i64)); w.o = raw mks(); dalloc(w); pass 5i64; };
+func:m_wild_slice_param = int64() never fails { wild SS->:w = raw blk(); drop setslice(#wild_slice<SS>(w, 1i64)); dalloc(w); pass 5i64; };
+func:m_wild_slice_local = int64() never fails { wild SS->:w = raw blk(); wild SS[]:v = #wild_slice<SS>(w, 1i64); v[0i64].s = raw mks(); dalloc(w); pass 5i64; };
+func:m_ptr_array_elem = int64() never fails { wild SS->:w = raw blk(); wild SS->[1]:arr = [w]; arr[0i64].s = raw mks(); dalloc(w); pass 5i64; };
+func:m_ptr_to_ptr = int64() never fails {
+    wild SS->:w = raw blk();
+    wild SS->->:pp = alloc(8i64) =>! wild SS->->;
+    <-pp = w;
+    (<-pp).s = raw mks();
+    dalloc(w);
+    dalloc(pp);
+    pass 5i64;
+};
+func:m_coalesce = int64() never fails { wild string->:w = raw blk_str(); wild string->?:o = NIL; <-(o ?? w) = raw mks(); dalloc(w); pass 5i64; };
+func:m_emphatic_coalesce = int64() never fails { wild string->:w = raw blk_str(); wild string->?:o = w; <-(o ??! E5) = raw mks(); dalloc(w); pass 5i64; };
+func:m_call_deref_field = int64() never fails { wild SS->:w = raw blk(); (<-(raw same(w))).s = raw mks(); dalloc(w); pass 5i64; };
+func:m_method_deref_field = int64() never fails { wild SS->:w = raw blk(); H:h = H{ n: 1i64 }; (<-(raw h.getw(w))).s = raw mks(); dalloc(w); pass 5i64; };
+func:m_emphatic_call = int64() never fails { wild string->:w = raw blk_str(); <-(may_str(w) ?! E5) = raw mks(); dalloc(w); pass 5i64; };
+func:m_safe_unwrap_call = int64() never fails { wild string->:w = raw blk_str(); <-(may_str(w) ?| w) = raw mks(); dalloc(w); pass 5i64; };
+func:m_safe_nav = int64() never fails { wild SS->:w = raw blk(); WF?:h = WF{ n: w }; (<-(h?.n ?? w)).s = raw mks(); dalloc(w); pass 5i64; };
+// `k1_walker_ok`'s shape over a recycled block: as written its block comes back fresh, so it passed in the suite and proved nothing (`k1u`).
+func:m_recycled = int64() never fails {
+    wild int8->:r0 = alloc(32i64);
+    discard(memset(r0, 65i64, 32i64));
+    dalloc(r0);
+    wild int8->:raw_it = alloc(32i64);
+    wild Nk->:it = raw_it =>! wild Nk->;
+    (<-it).s = string_concat("ab", "cde");
+    dalloc(raw_it);
+    pass 5i64;
+};
+
+// ---- the descriptor part ----
+struct:FH = { OwnedFd:h; };
+struct:PF = { FH->:p; };
+struct:LF = { List<OwnedFd>:l; };
+func:dup_fd = int64() never fails { pass sys(32i64, 1i64) ?| -1i64; };
+func:is_open = bool(int64:d) never fails { int64:r = sys(72i64, d, 1i64) ?| -1i64; pass r >= 0i64; };
+func:owned = OwnedFd(int64:d) never fails { pass own_fd((d =>! int32) =>! fd); };
+func:none = OwnedFd() never fails { pass own_fd((-1i32) =>! fd); };
+// The store left the old descriptor open: right for manual storage, and it's closed here so the next road starts clean.
+func:left_open = bool(int64:d) never fails { bool:o = raw is_open(d); if (o) { discard(sys(3i64, d) ?| 0i64); } pass o; };
+func:closed = bool(int64:d) never fails { pass !(raw is_open(d)); };
+func:block_holding = wild FH->(int64:d) never fails { wild FH->:w = calloc(2i64, 8i64) =>! wild FH->; <-w = FH{ h: raw owned(d) }; pass w; };
+
+// The ruling's pair.
+func:fd_field_stays_open = bool() never fails { int64:d = raw dup_fd(); wild FH->:w = raw block_holding(d); w.h = raw none(); bool:b = raw left_open(d); dalloc(w); pass b; };
+func:fd_assert_deref_closes = bool() never fails { int64:d = raw dup_fd(); wild FH->:w = raw block_holding(d); (<-(w =>! FH->)).h = raw none(); bool:b = raw closed(d); dalloc(w); pass b; };
+// The other two spellings the ruling gives: a plain local of the cast, and past element 0.
+func:fd_assert_local_closes = bool() never fails { int64:d = raw dup_fd(); wild FH->:w = raw block_holding(d); FH->:p = w =>! FH->; p.h = raw none(); bool:b = raw closed(d); dalloc(w); pass b; };
+func:fd_assert_elem_closes = bool() never fails {
+    int64:d = raw dup_fd();
+    wild FH->:w = calloc(2i64, 8i64) =>! wild FH->;
+    <-(#ptr_add<FH>(w, 1i64)) = FH{ h: raw owned(d) };
+    (<-((#ptr_add<FH>(w, 1i64)) =>! FH->)).h = raw none();
+    bool:b = raw closed(d);
+    dalloc(w);
+    pass b;
+};
+// `=>! wild` over a plain pointer is the author saying manual, and that's what it gets, over a live value too (`m15`): a leak, which the descriptor shows.
+func:fd_wild_assert_of_plain_stays_open = bool() never fails { int64:d = raw dup_fd(); FH:t = FH{ h: raw owned(d) }; FH->:p = @t; (<-(p =>! wild FH->)).h = raw none(); pass raw left_open(d); };
+// A whole store through `wild` drops nothing either.
+func:fd_whole_stays_open = bool() never fails { int64:d = raw dup_fd(); wild FH->:w = raw block_holding(d); <-w = FH{ h: raw none() }; bool:b = raw left_open(d); dalloc(w); pass b; };
+// A plain pointer field in a `wild` block isn't manual: its declaration decides (`m1`).
+func:fd_plain_ptr_in_block_closes = bool() never fails {
+    int64:d = raw dup_fd();
+    wild FH->:t = raw block_holding(d);
+    wild PF->:w = alloc(16i64) =>! wild PF->;
+    <-w = PF{ p: t =>! FH-> };
+    w.p.h = raw none();
+    bool:b = raw closed(d);
+    dalloc(w);
+    dalloc(t);
+    pass b;
+};
+// A by-value `wild` binding has no reference step (`m4`).
+func:fd_byvalue_wild_closes = bool() never fails { int64:d = raw dup_fd(); wild FH:ws = FH{ h: raw owned(d) }; ws.h = raw none(); pass raw closed(d); };
+// A checked cast with a `wild` target over a plain pointer surrenders no tracking (R7, `m16`, `xg4`).
+func:fd_checked_wild_target_closes = bool() never fails { int64:d = raw dup_fd(); OwnedFd:o = raw owned(d); OwnedFd->:p = @o; <-(p => wild OwnedFd->) = raw none(); pass raw closed(d); };
+// A `List`'s element is the `List`'s, whatever holds the `List` (R5): `m17`, `xi1`, and `m19`.
+func:fd_byvalue_wild_list_closes = bool() never fails {
+    int64:d = raw dup_fd();
+    List<OwnedFd>:l = raw list_init::<OwnedFd>(1i64);
+    drop list_push(@l, raw owned(d));
+    wild List<OwnedFd>:wl = move(l);
+    wl[0i64] = raw none();
+    pass raw closed(d);
+};
+func:fd_list_in_block_closes = bool() never fails {
+    int64:d = raw dup_fd();
+    wild LF->:w = alloc(64i64) =>! wild LF->;
+    <-w = LF{ l: raw list_init::<OwnedFd>(1i64) };
+    drop list_push(@w.l, raw owned(d));
+    w.l[0i64] = raw none();
+    bool:b = raw closed(d);
+    dalloc(w);
+    pass b;
+};
+// The plain roads (`n1`, `n2`, `n3`, `n4`, `n6`, `n7`).
+func:fd_setp = NIL(FH->:p) never fails { p.h = raw none(); pass NIL; };
+func:fd_local_field_closes = bool() never fails { int64:d = raw dup_fd(); FH:t = FH{ h: raw owned(d) }; t.h = raw none(); pass raw closed(d); };
+func:fd_plain_param_closes = bool() never fails { int64:d = raw dup_fd(); FH:t = FH{ h: raw owned(d) }; drop fd_setp(@t); pass raw closed(d); };
+func:fd_list_elem_closes = bool() never fails { int64:d = raw dup_fd(); List<OwnedFd>:l = raw list_init::<OwnedFd>(1i64); drop list_push(@l, raw owned(d)); l[0i64] = raw none(); pass raw closed(d); };
+func:fd_array_elem_closes = bool() never fails { int64:d = raw dup_fd(); OwnedFd[1]:a = [raw owned(d)]; a[0i64] = raw none(); pass raw closed(d); };
+func:fd_plain_deref_closes = bool() never fails { int64:d = raw dup_fd(); OwnedFd:o = raw owned(d); OwnedFd->:p = @o; <-p = raw none(); pass raw closed(d); };
+func:fd_plain_ptr_local_closes = bool() never fails { int64:d = raw dup_fd(); FH:t = FH{ h: raw owned(d) }; FH->:p = @t; p.h = raw none(); pass raw closed(d); };
+func:fd_address_of_local_closes = bool() never fails { int64:d = raw dup_fd(); FH:t = FH{ h: raw owned(d) }; <-(@t.h) = raw none(); pass raw closed(d); };
+func:fd_id = FH->(FH->:p) never fails { pass p; };
+func:fd_plain_call_closes = bool() never fails { int64:d = raw dup_fd(); FH:t = FH{ h: raw owned(d) }; (<-(raw fd_id(@t))).h = raw none(); pass raw closed(d); };
+func:fd_plain_ternary_closes = bool(bool:c) never fails { int64:d = raw dup_fd(); FH:t = FH{ h: raw owned(d) }; FH->:p = @t; (<-(is (c) : p : p)).h = raw none(); pass raw closed(d); };
+func:fd_plain_coalesce_closes = bool() never fails { int64:d = raw dup_fd(); FH:t = FH{ h: raw owned(d) }; FH->:p = @t; FH->?:o = @t; (<-(o ?? p)).h = raw none(); pass raw closed(d); };
+func:fd_plain_cast_closes = bool() never fails { int64:d = raw dup_fd(); FH:t = FH{ h: raw owned(d) }; FH->:p = @t; (<-(p => FH->)).h = raw none(); pass raw closed(d); };
+// A `pick` value as a store's base is unread, so it answers manual: no drop, a leak at worst, even with plain arms (`x30`, ruled as built, 177d's held rulings). Reading the arms would rest the drop on
+// TYPE-097 at `give`, and a relaxation there would become a wrong free. The spelling that drops is a plain local of the `pick`'s value.
+enum:EF = { A; B; };
+func:fd_pick_value_stays_open = bool() never fails { int64:d = raw dup_fd(); FH:t = FH{ h: raw owned(d) }; FH->:q = @t; EF:e = EF.A; (<-(pick (e) { (EF.A) { give q; }, (EF.B) { give q; } })).h = raw none(); pass raw left_open(d); };
+func:fd_pick_local_closes = bool() never fails { int64:d = raw dup_fd(); FH:t = FH{ h: raw owned(d) }; FH->:q = @t; EF:e = EF.A; FH->:p = pick (e) { (EF.A) { give q; }, (EF.B) { give q; } }; p.h = raw none(); pass raw closed(d); };
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw m_checked_cast()) != 5i64) { exit 1i32; }
+    if ((raw m_checked_cast_list()) != 5i64) { exit 2i32; }
+    if ((raw m_ternary(1i64)) != 5i64) { exit 3i32; }
+    if ((raw m_join_wild_or_plain(false)) != 5i64) { exit 4i32; }
+    if ((raw m_wild_cast()) != 5i64) { exit 5i32; }
+    if ((raw m_direct()) != 5i64) { exit 6i32; }
+    if ((raw m_field()) != 5i64) { exit 7i32; }
+    if ((raw m_deref_field()) != 5i64) { exit 8i32; }
+    if ((raw m_index_field()) != 5i64) { exit 9i32; }
+    if ((raw m_array_elem_field()) != 5i64) { exit 10i32; }
+    if ((raw m_array_elem_whole()) != 5i64) { exit 11i32; }
+    if ((raw m_range_of_array()) != 5i64) { exit 12i32; }
+    if ((raw m_nested_field()) != 5i64) { exit 13i32; }
+    if ((raw m_wild_field()) != 5i64) { exit 14i32; }
+    if ((raw m_wild_field_via_plain()) != 5i64) { exit 15i32; }
+    if ((raw m_address_of_field()) != 5i64) { exit 16i32; }
+    if ((raw m_wild_param()) != 5i64) { exit 17i32; }
+    if ((raw m_generic()) != 5i64) { exit 18i32; }
+    if ((raw m_optional_field()) != 5i64) { exit 19i32; }
+    if ((raw m_wild_slice_param()) != 5i64) { exit 20i32; }
+    if ((raw m_ptr_array_elem()) != 5i64) { exit 21i32; }
+    if ((raw m_ptr_to_ptr()) != 5i64) { exit 22i32; }
+    if ((raw m_coalesce()) != 5i64) { exit 23i32; }
+    if ((raw m_emphatic_coalesce()) != 5i64) { exit 24i32; }
+    if ((raw m_call_deref_field()) != 5i64) { exit 25i32; }
+    if ((raw m_method_deref_field()) != 5i64) { exit 26i32; }
+    if ((raw m_emphatic_call()) != 5i64) { exit 27i32; }
+    if ((raw m_safe_unwrap_call()) != 5i64) { exit 28i32; }
+    if ((raw m_safe_nav()) != 5i64) { exit 29i32; }
+    if ((raw m_recycled()) != 5i64) { exit 30i32; }
+    if ((raw m_wild_slice_local()) != 5i64) { exit 31i32; }
+    if ((raw dup_fd()) < 0i64) { exit 39i32; }
+    if (!(raw fd_field_stays_open())) { exit 40i32; }
+    if (!(raw fd_assert_deref_closes())) { exit 41i32; }
+    if (!(raw fd_assert_local_closes())) { exit 42i32; }
+    if (!(raw fd_assert_elem_closes())) { exit 43i32; }
+    if (!(raw fd_wild_assert_of_plain_stays_open())) { exit 44i32; }
+    if (!(raw fd_whole_stays_open())) { exit 45i32; }
+    if (!(raw fd_plain_ptr_in_block_closes())) { exit 46i32; }
+    if (!(raw fd_byvalue_wild_closes())) { exit 47i32; }
+    if (!(raw fd_checked_wild_target_closes())) { exit 48i32; }
+    if (!(raw fd_byvalue_wild_list_closes())) { exit 49i32; }
+    if (!(raw fd_list_in_block_closes())) { exit 50i32; }
+    if (!(raw fd_local_field_closes())) { exit 51i32; }
+    if (!(raw fd_plain_param_closes())) { exit 52i32; }
+    if (!(raw fd_list_elem_closes())) { exit 53i32; }
+    if (!(raw fd_array_elem_closes())) { exit 54i32; }
+    if (!(raw fd_plain_deref_closes())) { exit 55i32; }
+    if (!(raw fd_plain_ptr_local_closes())) { exit 56i32; }
+    if (!(raw fd_address_of_local_closes())) { exit 57i32; }
+    if (!(raw fd_plain_call_closes())) { exit 58i32; }
+    if (!(raw fd_plain_ternary_closes(true))) { exit 59i32; }
+    if (!(raw fd_plain_coalesce_closes())) { exit 60i32; }
+    if (!(raw fd_plain_cast_closes())) { exit 61i32; }
+    if (!(raw fd_pick_value_stays_open())) { exit 62i32; }
+    if (!(raw fd_pick_local_closes())) { exit 63i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E5)                { exit 88i32; },
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};
