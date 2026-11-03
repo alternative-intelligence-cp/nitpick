@@ -1411,7 +1411,7 @@ a `fixed` header's `.ptr` there is the write D-287 refuses, spelled `fv.ptr =>! 
 A user struct's field named `ptr` isn't a header. So a `fixed` header's `.ptr` enters no write form without a written `=>!`.
 *[The sentence "A pointer to a scalar or a struct keeps its indexing", here from 1.5.8b
 step 1b, came out at landing 177c (management_14's rulings §2). It let a plain pointer
-run over the stack with nothing written. The rebuild changed two sentences of this paragraph: I2's "not in a `wild` slot" and "Over a header in a `wild` slot, `.ptr[i]` is `wild`'s index, unchecked" came out at R3, and W2's and W3's text stands as first written, W2 (e) true since R1 stopped W3's role at every transparent form.]*
+run over the stack with nothing written. The rebuild changed more than this paragraph's two sentences, I2's "not in a `wild` slot" and "Over a header in a `wild` slot, `.ptr[i]` is `wild`'s index, unchecked", which came out at R3: this paragraph gained its write forms, R14's sentence and I3's five uses; the D-038 sentence above lost "the only unbounded road" and gained "Indexing agrees now" with DEF-470's clause; and W3's text gained "the argument itself, parentheses only" at R1 (BUILTIN_REFERENCE above §1's table, MEMORY_REFERENCE's 177c note, D-223's note). W2's text stands as first written, W2 (e) true since R1 stopped W3's role at every transparent form.]*
 
 ---
 
@@ -1458,7 +1458,7 @@ the authority on both.
 | `a ?? d` | the value, or `d` |
 | `a ??! Ident` | the value, or a trap with the named identity (D-360, 1.6.1e landing 120; S-137): `?!`'s twin at the other wrapper, through `npk_raise`, so `failsafe` names the identity as it names `?!`'s |
 | `a?.f` | the field, still wrapped |
-| `int32->?:p = NIL;`, `p = @x;`, `p ?? @d`, `p?.v` | **the pointer that may be absent (D-355, 1.6.1e landing 119)**: a plain `T->` always points at something, so "maybe no pointer" is `T->?` -- `NIL` when empty, `== NIL` the test, `?? @d` the pointer or a default, `p?.v` a field of the pointee, still wrapped (`?.` reaches a field, never a method: a `Self->` method on the pointee is called on `p ?? @d` or, with no default to offer, on `p ??! Ident` -- the pointer, or a trap with the named identity: D-360, landing 120, which settled S-137). Lowers as `{ i8, ptr }`; the escape analysis sees a borrow inside it as it sees the bare pointer's. `NULL` into a `T->?` is NITPICK-TYPE-096 (it built a present optional holding a null pointer until landing 119). |
+| `int32->?:p = NIL;`, `p = @x;`, `p ?? @d`, `p?.v` | **the pointer that may be absent (D-355, 1.6.1e landing 119)**: a plain `T->` always points at something, except DEF-470's unwritten `$$m` (open, 177d), so "maybe no pointer" is `T->?` -- `NIL` when empty, `== NIL` the test, `?? @d` the pointer or a default, `p?.v` a field of the pointee, still wrapped (`?.` reaches a field, never a method: a `Self->` method on the pointee is called on `p ?? @d` or, with no default to offer, on `p ??! Ident` -- the pointer, or a trap with the named identity: D-360, landing 120, which settled S-137). Lowers as `{ i8, ptr }`; the escape analysis sees a borrow inside it as it sees the bare pointer's. `NULL` into a `T->?` is NITPICK-TYPE-096 (it built a present optional holding a null pointer until landing 119). |
 | `pick (a ?? d) { … }` | the arms, over the value or the default — a `pick` never selects on the `Optional` itself (D-260, TYPE-065) |
 
 > *[2026-10-31, 1.6.1e landing 175, DEF-408:]* **`a?.f` is a struct's STORED field, and a member the compiler COMPUTES is `NITPICK-TYPE-102` through `?.`** -- `o?.len`, `o?.cap`, `o?.ptr`, `o?.value`, `o?.err`, `o?.is_error`, `o?.num`, a `Guard`'s or an `OwnedFd`'s `o?.value`. The emitter typed every such read by the `?.` node's own `Optional` type and stored the raw member at the Optional's base, so a present `string?`'s `o?.len` read a wrong value on every compiler before 175 (twelve kinds; a `frac32?`'s `o?.num` emitted IR `llc` refuses). Unwrap first (`?? d`, `??! Ident`) or test (`!= NIL`), then read the member. A TEMPORARY restriction (D-099's dated note), lifted by DEF-408's emitter fix after landing 180; a struct's field through `?.`, by value or through a pointer, is right and stays open.
@@ -2324,7 +2324,7 @@ Everything below follows from that one sentence, and nothing beyond it is part o
   prelude's `List` declares as `hidden wild T->:items` -- so `b.ptr != NULL` stands.
   *[1.6.1e landing 177c: for `NULL`'s question and TYPE-097 alone. At a `wild` slot a header's `.ptr` isn't of `wild`
   provenance: DEF-423's W3, MEMORY_REFERENCE's 177c note.]*
-- **A plain `T->` always points at something (D-355).** `NULL` written where a plain
+- **A plain `T->` always points at something (D-355), except DEF-470's unwritten `$$m` (open, 177d).** `NULL` written where a plain
   pointer is expected -- a local's or a module binding's initialiser, an assignment,
   a plain parameter's argument, a plain field in a literal, `pass NULL` from a plain
   `T->()`, a comparison (`p == NULL` is a question a plain pointer always answers
@@ -2362,7 +2362,7 @@ Everything below follows from that one sentence, and nothing beyond it is part o
   parses reaches it). A function with a `wild` return is no value (TYPE-100): a function type
   carries no qualifier. NOT ASKED YET: a `Result<T->>` slot (DEF-479); an arena's, a
   `shared_arena`'s, a `Mutex`'s and a `RwLock`'s pointer element (DEF-481); an atomic's
-  (DEF-391). The crossing `v =>! T->` is the
+  (DEF-391); an address or view through a `wild` pointer, freed through a copy (DEF-482). The crossing `v =>! T->` is the
   author's assertion that the pointer points at something a program may read (the
   TOS marker, as every `=>!` is), and a `wild` slot takes the value as it is. Also a pick
   expression's `give` in a plain slot, judged as a ternary's arm is; a `wild` value as a

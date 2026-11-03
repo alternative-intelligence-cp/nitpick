@@ -12,7 +12,7 @@ implicitly, and there are no collection pauses.
 Variables in Nitpick exist in one of several allocation states. You can use contextual keywords (like `stack`, `wild`) immediately before the type declaration to explicitly control their residency.
 
 > **`NULL` is a `wild` pointer's value (D-355, 1.6.1e landing 119).** A plain `T->`
-> always points at something: `NULL` is legal in a `wild` pointer context alone --
+> always points at something, except DEF-470's unwritten `$$m` (open, 177d): `NULL` is legal in a `wild` pointer context alone --
 > a `wild`/`wildx` binding, parameter, field or return, a store into or a comparison
 > against a wild place, the builtins' `wild any->` parameters -- and `NITPICK-TYPE-096`
 > anywhere else a pointer or an `Optional` is expected. A pointer that may be absent
@@ -194,9 +194,9 @@ side is computed. The four shapes:
 | Store | The old value | Since |
 |---|---|---|
 | `x = v` (a whole binding) | dropped, guarded by the binding's flag | D-183 |
-| `s.f = v` (an owning field) | dropped unconditionally — a live struct's fields are live or vacant | D-186 |
-| `a[i] = v`, `l[i] = v` (a managed array's or `List`'s element) | dropped unconditionally | D-186, D-247 |
-| `(<-p) = v` (through a pointer) | dropped when `p` names MANAGED storage; left alone when `p` is `wild` | DEF-120 |
+| `s.f = v` (an owning field) | dropped unconditionally — a live struct's fields are live or vacant; inside a `wild` block that premise doesn't hold and the drop runs over the block's bytes, DEF-483 (open, 177d) | D-186 |
+| `a[i] = v`, `l[i] = v` (a managed array's or `List`'s element) | dropped unconditionally; an array inside a `wild` block too, DEF-483 (open, 177d) | D-186, D-247 |
+| `(<-p) = v` (through a pointer) | dropped when `p` names MANAGED storage; left alone when `p` is `wild`; a checked cast or a ternary as the target hides `wild` and the store drops, DEF-483 (open, 177d) | DEF-120 |
 
 "`p` is wild" is the escape analysis's own wild-provenance reading (D-223,
 `src/frontend/analysis/wild_places.npk` — one predicate for the analysis and the
@@ -208,7 +208,7 @@ header's `.ptr` is never `wild`, the `mcpy` family's result is
 its destination's, and an address counts only when it lands inside a wild pointee. A method's declared `wild` return counts in both since the rebuild (DEF-477), and at TYPE-097 alone a checked cast counts (D-361's note).]* Manual storage holds no value until the
 author writes one, and the closed direction for a wrong free is no free. A plain
 `T->` names a live managed value by the language's contract — a binding's, a
-field's, an element's, a vacant one after a move — and a `wild` block cast to a
+field's, an element's, a vacant one after a move, except DEF-470's unwritten `$$m` (open, 177d) — and a `wild` block cast to a
 plain pointer by `=>! T->` is the author's assertion of exactly that: spell the
 cast `=>! wild T->` for storage that holds no value yet.
 

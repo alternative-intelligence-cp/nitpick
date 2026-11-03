@@ -344,7 +344,7 @@ Direct access to operating system syscalls.
 
 | Built-in | Signature | Description | Fails | Pure | Views |
 |---|---|---|---|---|---|
-| `sys` | `(int64:NR, ..*int64[]) → Result<int64>` | **SPECIAL** — the only syscall form, and the language's one variadic builtin. Reaches any OS syscall; the kernel's own negative returns land in the error slot (D-141). **ABI:** inline | `Result` — may fail | effect | — |
+| `sys` | `(int64:NR, ..*int64[]) → Result<int64>` | **SPECIAL** — the only syscall form, and the language's one variadic builtin. Reaches any OS syscall; the kernel's own negative returns land in the error slot (D-141). Beside `=>!` and `wild`, a road no rule checks: its arguments are kernel registers, with no bound and no direction, and nothing on the page but the word `sys` says so (D-048's note, DEF-478). A header's `.ptr` enters uncast unless the header is `fixed`, TYPE-106 (D-287). **ABI:** inline | `Result` — may fail | effect | — |
 
 > ### The contract is CHECKED (D-192, the 1.1 interlude)
 >
