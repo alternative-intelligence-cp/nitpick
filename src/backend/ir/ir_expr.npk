@@ -10572,8 +10572,8 @@ func:rooted_in_temporary = bool(ExprEmitter->:x, ExprId:id) never fails {
     pass false;
 };
 
-// A HEADER'S `.ptr[i]` IS THE HEADER'S OWN CHECKED READ (DEF-425's I2, landing 177c; a write form through one is TYPE-106). `ptr`
-// and `len` load after the index is evaluated, the `List` arm's order, so an index that re-points the header is read against what it left.
+// A HEADER'S `.ptr[i]` IS THE HEADER'S OWN CHECKED READ (DEF-425's I2, landing 177c; a write form through one is TYPE-106). The data pointer
+// and `len` load after the index is evaluated, the `List` arm's order, so an index that re-points the header is read against what it left; for `hp.ptr[i]` the pointer `hp` loads before the index, only `len` and the data after.
 // A `cstring` has its terminator, `i <= len`; a `string`, a `buffer` and a slice `i < len`. A range is a value no place holds.
 func:addr_of_header_elem = PlaceVal(ExprEmitter->:x, ExprNode:n, int32:elem_tid, string:etext) never fails {
     ExprId:hb = raw expr_operand(raw ast_expr(x.ast, raw expr_lhs(n)));
