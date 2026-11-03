@@ -294,3 +294,19 @@ test` runs the whole suite and takes about three hours.
 
 Every diagnostic carries a code; the specification's reference files
 (`meta/specs/*_REFERENCE.md`) describe each one.
+
+## 9. Keeping up to date
+
+`tools/update.sh` brings your checkout and the pair §4 installed up to the newest commit on the branch you follow:
+
+```sh
+tools/update.sh             # fetch; if there's a newer commit: fast-forward, build, test, install
+tools/update.sh --check     # only say whether there's a newer commit (exit 3 if there is)
+tools/update.sh --rebuild   # build and install what's checked out, your own changes included; no git
+```
+
+It runs §3 and §4's commands, so it takes about a minute when there's something to build, and it needs only what §1 asked for. `--prefix DIR` installs somewhere other than `~/.local`; `--repo DIR` names a checkout other than the one it's in.
+
+It never merges, rebases, stashes or discards. With uncommitted changes, or a branch that has gone its own way, it says so and stops with nothing changed. The installed compiler is replaced only after the new one has built §5's first program and that program has run, and the pair it replaces stays in `~/.local/lib/nitpick/previous/`, so you can compare the two: `~/.local/lib/nitpick/previous/npkc hello.npk -o old.ll`. `~/.local/lib/nitpick/installed-commit` records which commit is installed.
+
+`build/npkg` isn't rebuilt: §6 does that if you use it.

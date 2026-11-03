@@ -32,7 +32,7 @@ nitpick/                    # `alternative-intelligence-cp/nitpick` since 2026-0
 ├── npkg/                   # the build and test driver (D-206, 1.4.8): a shipped tool, not the compiler
 ├── runtime/                # npkrt.ll, the runtime FLOOR: hand-written .ll, PERMANENT (D-015/D-203;
 │   └── tests/              #   re-homed here at 1.4.6), and the floor's own hand-written tests
-├── tools/                  # check / parse_check / resolve_check — the real frontend, for the harness (0.7.8)
+├── tools/                  # check / parse_check / resolve_check — the real frontend, for the harness (0.7.8); update.sh, INSTALL.md §9
 ├── bootstrap/              # Not the compiler. (D-085; survival map D-203)
 │   ├── generator/          #   made the FIRST snapshot; builds nothing now (permanent, regeneration-only:
 │   │                       #   gen_tables.py, and float_vectors.py for the float conversion's known answers)
