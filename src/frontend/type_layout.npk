@@ -220,7 +220,6 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
     bool:haschan = false;
     bool:hasborrow = false;
     bool:hasshared = false;
-    bool:hasguard = false;
     int32:i = 0i32;
     int32:nmembers = raw item_member_count(r.ast, d);
     while (i < nmembers) decreases nmembers - i {
@@ -252,7 +251,6 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
             if (raw type_contains_shared_recorded(r.types, ft, 64i32)) { hasshared = true; }
             // AND GUARD CONTAINMENT (D-339, landing 127), same walk, same
             // reason: a struct carries a hold exactly when a field does.
-            if (raw type_contains_guard_recorded(r.types, ft, 64i32)) { hasguard = true; }
         }
         i = i + 1i32;
     }
@@ -266,7 +264,6 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
     drop tt_set_haschan(r.types, struct_type, haschan);
     drop tt_set_hasborrow(r.types, struct_type, hasborrow);
     drop tt_set_hasshared(r.types, struct_type, hasshared);
-    drop tt_set_hasguard(r.types, struct_type, hasguard);
     drop lay_end(@l);
     // A ZERO-FIELD STRUCT IS ONE BYTE, and that rule belongs HERE rather than in
     // the accumulator: `Result<NIL>` is `{i32}` and genuinely four, and an
@@ -433,12 +430,100 @@ pub func:type_contains_shared = bool(TypeResolver->:r, int32:id, int32:scope,
 // point to the one table in types.npk. An aggregate's answer is layout's
 // `hasborrow` bit, so the layout is computed first -- the query ensures, the
 // caller does not remember (D-227).
-// Guard containment, ensured first (D-339, landing 127): the lock walk's
-// reader, which runs before `finish_layouts` and must never read a 0 bit.
-pub func:type_contains_guard = bool(TypeResolver->:r, int32:id, int32:scope,
-                                    int32:fuel) never fails {
+// GUARD CONTAINMENT IS A WALK AT QUERY TIME, READING NO BIT (D-227, D-339; landing 177d2): `wild T->` asks no layout of the `X` in a `List<X>`, so a bit read for a generic argument could only be 0, and asking would turn a legal recursive type into a by-value cycle (`s1_order_list_before_decl` was 67/67 under the bit, LOCK-001 here).
+// `seen` stops a cycle (a type already walked adds nothing), the first yes returns with `r.generics` restored, and every kind answers explicitly (walkers-total, an empty excuse table). A fuel-out answers yes, the closed direction, and that's the walk's price: `f_chain_600`, a right program with a type 600 `List`s deep, is LOCK-001.
+func:guard_walk = bool(TypeResolver->:r, int32:id, int32:scope, List<int32>->:seen, int32:fuel) never fails {
+    if (fuel <= 0i32) { pass true; }
+    if (id <= 0i32) { pass false; }
+    int32:k = raw type_kind(r.types, id);
+    // The holds themselves.
+    if (k == (raw TY_GUARD()))   { pass true; }
+    if (k == (raw TY_RGUARD()))  { pass true; }
+    // Wrappers, and a range, answer from what they carry.
+    if (k == (raw TY_ARRAY()))    { pass (raw guard_walk(r, raw type_elem(r.types, id), scope, seen, fuel - 1i32)); }
+    if (k == (raw TY_OPTIONAL())) { pass (raw guard_walk(r, raw type_elem(r.types, id), scope, seen, fuel - 1i32)); }
+    if (k == (raw TY_RESULT()))   { pass (raw guard_walk(r, raw type_elem(r.types, id), scope, seen, fuel - 1i32)); }
+    if (k == (raw TY_RANGE()))    { pass (raw guard_walk(r, raw type_elem(r.types, id), scope, seen, fuel - 1i32)); }
+    if ((k == (raw TY_STRUCT())) || (k == (raw TY_ENUM()))) {
+        for (int64:q in 0i64...(<-seen).count) { if ((<-seen)[q] == id) { pass false; } }
+        drop list_push(seen, id);
+        int32:n = raw type_args_count_of(r.types, id);
+        int32:s = raw type_args_start_of(r.types, id);
+        for (int32:i in 0i32...n) {
+            if (raw guard_walk(r, raw ast_id_at(r.ast, s, i), scope, seen, fuel - 1i32)) { pass true; }
+        }
+        DeclId:did = DeclId{ index: raw type_decl(r.types, id) };
+        DeclNode:d = raw ast_decl(r.ast, did);
+        int32:home = raw symtab_home_scope(r.tab, did.index, scope);
+        GenericScope:saved = raw bind_instance(r, id);
+        int32:nm = raw item_member_count(r.ast, d);
+        for (int32:i in 0i32...nm) {
+            DeclNode:m = raw ast_decl(r.ast, raw item_member(r.ast, d, i));
+            if ((k == (raw TY_STRUCT())) && (m.kind == DeclKind.DeclFieldDecl)) {
+                if (raw guard_walk(r, raw resolve_type(r, raw field_type(m), home), home, seen, fuel - 1i32)) { r.generics = saved; pass true; }
+            }
+            if ((k == (raw TY_ENUM())) && (m.kind == DeclKind.DeclEnumVariant)) {
+                int32:pc = raw variant_payload_count(m);
+                for (int32:j in 0i32...pc) {
+                    int32:pt = raw resolve_type(r, TypeId{ index: raw ast_id_at(r.ast, raw variant_payload_start(m), j) }, home);
+                    if (raw guard_walk(r, pt, home, seen, fuel - 1i32)) { r.generics = saved; pass true; }
+                }
+            }
+        }
+        r.generics = saved;
+        pass false;
+    }
+    // Something that may point at a hold does not carry it.
+    if (k == (raw TY_POINTER())) { pass false; }
+    if (k == (raw TY_SLICE()))   { pass false; }
+    if (k == (raw TY_DYN()))     { pass false; }
+    if (k == (raw TY_ANY()))     { pass false; }
+    if (k == (raw TY_HANDLE()))  { pass false; }
+    // The cells, the endpoints and the owning byte cells carry no hold.
+    if (k == (raw TY_MUTEX()))        { pass false; }
+    if (k == (raw TY_RWLOCK()))       { pass false; }
+    if (k == (raw TY_CONDVAR()))      { pass false; }
+    if (k == (raw TY_BARRIER()))      { pass false; }
+    if (k == (raw TY_ATOMIC()))       { pass false; }
+    if (k == (raw TY_ARENA()))        { pass false; }
+    if (k == (raw TY_SHARED_ARENA())) { pass false; }
+    if (k == (raw TY_CHANNEL()))      { pass false; }
+    if (k == (raw TY_OWNEDFD()))      { pass false; }
+    if (k == (raw TY_STRING()))       { pass false; }
+    if (k == (raw TY_CSTRING()))      { pass false; }
+    if (k == (raw TY_BUFFER()))       { pass false; }
+    // Values that carry no hold: the scalars, the tier, a code word, a code
+    // address.
+    if (k == (raw TY_INVALID())) { pass false; }
+    if (k == (raw TY_NIL()))     { pass false; }
+    if (k == (raw TY_BOOL()))    { pass false; }
+    if (k == (raw TY_INT()))     { pass false; }
+    if (k == (raw TY_CHAR()))    { pass false; }
+    if (k == (raw TY_FLOAT()))   { pass false; }
+    if (k == (raw TY_TBB()))     { pass false; }
+    if (k == (raw TY_TFP()))     { pass false; }
+    if (k == (raw TY_DIM()))     { pass false; }
+    if (k == (raw TY_TERN()))    { pass false; }
+    if (k == (raw TY_FRAC()))    { pass false; }
+    if (k == (raw TY_COMPLEX())) { pass false; }
+    if (k == (raw TY_SIMD()))    { pass false; }
+    if (k == (raw TY_KERNEL()))  { pass false; }
+    if (k == (raw TY_FLAGS()))   { pass false; }
+    if (k == (raw TY_ERROR()))   { pass false; }
+    if (k == (raw TY_FUNC()))          { pass false; }
+    if (k == (raw TY_FUNC_VARIADIC())) { pass false; }
+    // Not runtime values, or resolved before any binding asks.
+    if (k == (raw TY_TRAIT()))    { pass false; }
+    if (k == (raw TY_COMPTIME())) { pass false; }
+    if (k == (raw TY_SELF()))     { pass false; }
+    if (k == (raw TY_PARAM()))    { pass false; }
+    if (k == (raw TY_ASSOC()))    { pass false; }
+    pass false;
+};
+pub func:type_contains_guard = bool(TypeResolver->:r, int32:id, int32:scope) never fails {
     drop ensure_layout(r, id, scope, raw LAYOUT_FUEL());
-    pass (raw type_contains_guard_recorded(r.types, id, fuel));
+    List<int32>:seen = raw list_init::<int32>(8i64);
+    pass (raw guard_walk(r, id, scope, @seen, 1024i32));
 };
 
 pub func:chan_elem_verdict = int32(TypeResolver->:r, int32:elem, int32:scope,
@@ -535,7 +620,6 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
         bool:ehaschan = false;
         bool:ehasborrow = false;
         bool:ehasshared = false;
-        bool:ehasguard = false;
         // THE POINTER-BEARING BIT OF AN ENUM (DEF-160, 1.6.1d step 4): a
         // payload may be an address, and `field_holds_ptr` answered `false`
         // for EVERY enum since 0.8.1 ("a tag and a word") -- so `E.Some(@local)`
@@ -597,9 +681,6 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
                         if (raw type_contains_shared_recorded(r.types, pt, 64i32)) {
                             ehasshared = true;
                         }
-                        if (raw type_contains_guard_recorded(r.types, pt, 64i32)) {
-                            ehasguard = true;
-                        }
                     }
                     if (vsize > wsize) { wsize = vsize; }
                 }
@@ -615,7 +696,6 @@ pub func:ensure_layout = NIL(TypeResolver->:r, int32:t, int32:scope, int32:fuel)
         drop tt_set_haschan(r.types, t, ehaschan);
         drop tt_set_hasborrow(r.types, t, ehasborrow);
         drop tt_set_hasshared(r.types, t, ehasshared);
-        drop tt_set_hasguard(r.types, t, ehasguard);
         drop lay_end(@l);
         drop tt_set_layout(r.types, t, l.size, l.align);
         pass NIL;

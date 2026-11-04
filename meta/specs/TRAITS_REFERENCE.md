@@ -90,6 +90,8 @@ trait:Describable = {
 };
 ```
 
+> *[2026-11-03, 1.6.1e landing 177d2, DEF-490:]* **A default body holds no `wild` word.** `Self` in a default body is a type parameter, and the page doesn't show what it is. A member of a `trait` with a body may not hold `wild`, `=>!` or a `#` form that reads storage, a macro call included (`#size_of`, `#sqrt` and `#unreachable` aren't that): `NITPICK-TYPE-112` at the member, even for `=>!` over two integers, the mark being the one a generic's question reads. An argument mentioning an unbound `Self`, at a generic with the word or the view mark, is `NITPICK-TYPE-107`, whether the member is a call in a default body or a bodyless signature. The road for both: declare the method without a body here and write it in each impl, or give each type its own method, where the type is on the page. A signature saying `Self[]`, `Box<Self>` or `Self[2]` can't be written in an impl (TYPE-014, DEF-493), so a type's own method is the road there.
+
 ### 2.2 Supertraits
 
 A trait may require that implementing types also satisfy other traits. Multiple

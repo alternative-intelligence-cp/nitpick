@@ -1,0 +1,30 @@
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 10:75
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 11:119
+mod:async_address_owner_moved;
+// The ruling's own allowance (Q4): the frame preserves storage and gives no permission to move the owner. A dropping owner moved under a live address, before and after the first suspension, stays an ownership refusal, never a stale read. (DEF-431)
+error:E9;
+struct:SS = { string:s; };
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+async func:pre = int64() { SS:o = SS{ s: raw mks() }; SS->:p = @o; SS:t = move(o); await sleep(raw duration_ms(1i64)) ?| NIL; pass p.s.len + 2i64; };   // site NITPICK-BORROW-013
+async func:post = int64() { SS:o = SS{ s: raw mks() }; await sleep(raw duration_ms(1i64)) ?| NIL; SS->:p = @o; SS:t = move(o); await sleep(raw duration_ms(1i64)) ?| NIL; pass p.s.len + 2i64; };   // site NITPICK-BORROW-013
+async func:main = int32(cstring[]:_~argv) { int64:r = await pre() ?! E9; int64:u = await post() ?! E9; exit ((r + u) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

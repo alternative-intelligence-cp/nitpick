@@ -1089,6 +1089,8 @@ func:record_summary = NIL(Escape->:x, ExprId:v) never fails {
 // copy (the reference's `Views` column has no method row), so the call views,
 // stores and writes nothing (1.6.1 step 0; found on the prelude's `complex`
 // renderings, where the unknown-callee reading froze `self` against itself).
+// A LOCK'S `acquire`, `read` AND `write` ARE THE EXCEPTION: the guard views its
+// receiver through its release (`call_hands_guard`, DEF-438, landing 177d2).
 // A BARE BUILTIN CALL (`sys`, `alloc`, `string_from_bytes`) or a `#` builtin.
 func:call_is_bare_builtin = bool(Escape->:x, ExprId:call) never fails {
     if (raw expr_is_none(call)) { pass false; }
@@ -1531,6 +1533,9 @@ func:refuse_view_escape_into = NIL(Escape->:x, ExprId:dp, ExprId:arg, bool:auto_
                 // in the body itself dies with the parameter, at the frame's end.
                 // A `for` binding's is its loop body's block, for the same reason.
                 if (raw refuse_call_holder_scope(x, sy.scope, true, srcs, an.span)) { pass NIL; }
+                for (int64:gi in 0i64...srcs.count) {
+                    if (raw refuse_guard_before_lock(x, rn.a, rid, (<-srcs)[gi], an.span)) { pass NIL; }
+                }
                 drop escape_mark_param(x, sy.origin);
                 pass NIL;
             }
@@ -1552,6 +1557,9 @@ func:refuse_view_escape_into = NIL(Escape->:x, ExprId:dp, ExprId:arg, bool:auto_
     // once the holder-scope question is answered (DEF-252, DEF-42)
     if (sy.origin_kind == (raw SYM_STMT())) {
         if (raw refuse_call_holder_scope(x, sy.scope, false, srcs, an.span)) { pass NIL; }
+        for (int64:gi in 0i64...srcs.count) {
+            if (raw refuse_guard_before_lock(x, rn.a, rid, (<-srcs)[gi], an.span)) { pass NIL; }
+        }
         drop escape_mark(x, sy.origin);
     }
     // a POINTER-typed `for` binding whose own slot is the destination (`@q`
@@ -3445,7 +3453,15 @@ func:collect_view_refs = NIL(Escape->:x, ExprId:id, int32:depth, List<ViewRef>->
 // value -- is read with every bit set.
 func:collect_call_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, int32:start, int32:count,
                               int32:depth, List<ViewRef>->:out) never fails {
-    if (raw call_is_builtin_method(x, call)) { pass NIL; }
+    if (raw call_is_builtin_method(x, call)) {
+        // A GUARD VIEWS ITS LOCK (DEF-438, RULED, landing 177d2): `m.acquire(d)`, `r.read(d)` and `r.write(d)` hand back a pointer to the lock's cell, the one builtin-method result that isn't a scalar or an owned copy. So a guard over a mutex this frame owns can't leave it, and one over a borrowed owner's can, within that owner's life; the rest is what any view gets, through moves, summaries, structs and `Result` payloads.
+        if ((!(raw expr_is_none(recv))) && (raw call_hands_guard(x, call, recv))) {
+            bool:recv_ptr = (raw type_kind(x.types, raw exprtypes_get(x.etypes, recv))) == (raw TY_POINTER());
+            drop arg_refs_view(x, recv, !recv_ptr, 0i32, depth, out);
+            if (recv_ptr) { drop arg_refs_pass(x, recv, false, depth, out); }   // DEF-511: `q = m; q.acquire(d)` names the local `q`, and the guard's view carries `q`'s own chain, `m`, as a value of `q` would
+        }
+        pass NIL;
+    }
     int32:callee = raw call_callee_fn(x, call);
     int32:spass = 0i32 - 1i32;
     if (callee > 0i32) {
@@ -3491,6 +3507,16 @@ func:collect_call_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, int32:start, 
 // performs, 1.0.9b; DEF-94's twin in this analysis): the callee's first
 // parameter is a pointer and the receiver expression is not one. An unknown
 // callee answers yes, the closed direction.
+// Does this builtin method hand back a guard over its receiver? `crossing_concurrent_method` is the list of what a lock's for; a `CondVar`'s `timedwait` is on it and yields no hold, so the kinds are asked first.
+func:call_hands_guard = bool(Escape->:x, ExprId:call, ExprId:recv) never fails {
+    int32:rt = raw exprtypes_get(x.etypes, recv);
+    if (rt == 0i32) { pass false; }
+    if ((raw type_kind(x.types, rt)) == (raw TY_POINTER())) { rt = raw type_elem(x.types, rt); }
+    int32:rk = raw type_kind(x.types, rt);
+    if ((rk != (raw TY_MUTEX())) && (rk != (raw TY_RWLOCK()))) { pass false; }
+    pass (raw crossing_concurrent_method(rk, raw intern_get(x.tr.interns, (raw expr_name(raw ast_expr(x.ast, call))) =>! int32)));
+};
+
 func:recv_is_auto_ref = bool(Escape->:x, ExprId:call, ExprId:recv) never fails {
     int32:rxt = raw exprtypes_get(x.etypes, recv);
     if (rxt != 0i32) {
@@ -4925,6 +4951,7 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
                     // declared earlier reaches outward, and so does a CALLEE's
                     // store into it (`refuse_call_holder_scope`, DEF-252).
                     drop check_holder_scope(x, sym.scope, val, s.span);
+                    discard(raw refuse_guard_before_lock(x, tn.a, tgt, val, s.span));
                     drop escape_mark(x, sym.origin);
                 }
                 pass NIL;
@@ -4960,6 +4987,7 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
             Symbol:fs = raw symtab_get(x.tab, fsym);
             bool:fparam = (fs.origin_kind == (raw SYM_DECL()));
             drop check_field_holder_scope(x, fs.scope, val, fparam, s.span);
+            discard(raw refuse_guard_before_lock(x, fsym, tgt, val, s.span));
             if (fparam) { drop escape_mark_param(x, fs.origin); } else { drop escape_mark(x, fs.origin); }
         }
         pass NIL;
@@ -5138,6 +5166,34 @@ func:holder_scope_root = int32(Escape->:x, int32:holder_scope, ExprId:val, bool:
     pass 0i32;
 };
 
+// A PLACE THAT CAN BE A LOCK, for a value whose type shows no guard: a shared cell, a pointer or a slice over one, a `dyn` or a `T` (177d2's reopen). It's asked of the viewed place, not the root, whose type misses a pointer held in a struct.
+func:place_may_be_lock = bool(Escape->:x, int32:ty) never fails {
+    int32:t = ty;
+    if (((raw type_kind(x.types, t)) == (raw TY_POINTER())) || ((raw type_kind(x.types, t)) == (raw TY_SLICE()))) { t = raw type_elem(x.types, t); }
+    int32:k = raw type_kind(x.types, t);
+    pass ((k == (raw TY_DYN())) || (k == (raw TY_PARAM())) || (raw type_contains_shared(x.tr, t, x.scope, 64i32)));
+};
+
+// A GUARD'S RELEASE READS ITS LOCK (DEF-438, RULED: the view "lasts through the guard's release"). Bindings of one block drop in reverse order, so a guard stored into a holder declared BEFORE its lock in the same block outlives the lock by one step: the lock's drop frees the cell and the release reads it (`npk_guard_release`, 124 on a futex over the freed bytes, `rv1`). Rule 3's scopes can't see one block's order, and no other holder's drop reads through what it holds (no impl of `Drop` exists). A later-declared GUARD isn't a later-declared lock: `move(t)` answers its own lock (`cc6`). A binding that holds its own lock and its guard answers too: its fields drop in reverse, and with the guard's field first the lock goes first (`rv12`; the other order, `rv10`, is the closed answer's price).
+func:refuse_guard_before_lock = bool(Escape->:x, int32:holder, ExprId:place, ExprId:val, Span:at) never fails {
+    // THE VALUE'S TYPE ANSWERS TOO: a `dyn` holder's type shows no guard (`d = move(o)` over a struct holding one), and the value's own `GH` does. A `move(o) => dyn Tr` is asked of its operand, the type the cast hides. A holder and a value whose types BOTH show no guard (a `dyn`, a struct or `List` of `dyn`) answer by the place they view: a value with a destructor over a place that can be a lock fires, and that refuses a right program too, one that views a lock, atomic, arena, `dyn` or `T` declared later and holds no guard; its road is one line, declare it first. Left open, DEF-505, MEDIUM, six cells, all through a `dyn` or a `T`: a guard hidden behind a `dyn` whose lock the viewed place only reaches through a pointer, slice or `dyn` inside another slice or struct, handed to a helper that returns the guard (`m7_struct_of_slice`, `m10_ptr_struct_helper`, `q9_struct_dyn_field_helper`), and a holder typed `T`, which `type_drops` says no of (`g_T_value_lock`, `g_T_value_ptr_struct`, `i5_guard_inert_first_same_block`).
+    bool:shown = ((raw type_contains_guard(x.tr, raw exprtypes_get(x.etypes, place), x.scope)) || (raw type_contains_guard(x.tr, raw exprtypes_get(x.etypes, val), x.scope)) || (((raw ast_expr(x.ast, val)).kind == ExprKind.ExprDynCastExpr) && (raw type_contains_guard(x.tr, raw exprtypes_get(x.etypes, raw expr_operand(raw ast_expr(x.ast, val))), x.scope))));
+    int32:hscope = (raw symtab_get(x.tab, holder)).scope;
+    // A PARAMETER DROPS AFTER EVERY BLOCK OF THE BODY (`ir_stmt.npk`), so as a holder it answers for the body block's lock too, the block DEF-252's exemption (`holder_scope_root`) lets a borrow through from: `h.g = move(t)` on `move GH:h`, over a body-local lock, hung in the release at exit (F2 of 177d2's reopen). A deeper block is rule 3's already, one report.
+    List<ViewRef>:refs = raw list_init::<ViewRef>(4i64);
+    drop collect_view_refs(x, val, raw ESCAPE_DEPTH(), @refs);
+    for (int64:i in 0i64...refs.count) {
+        int32:rscope = (raw symtab_get(x.tab, refs[i].root)).scope;
+        if ((shown || ((raw type_drops(x.tr, raw exprtypes_get(x.etypes, val), x.scope, 64i32)) && (raw place_may_be_lock(x, raw exprtypes_get(x.etypes, ExprId{ index: refs[i].place }))))) && (refs[i].root >= holder) && ((rscope == hscope) || ((raw sym_is_param(x, holder)) && ((raw scope_parent(x.tab, rscope)) == hscope)))) {
+            drop escape_err(x, raw BORROW_STORED(),
+                "a guard, or a value that can hold one, cannot be stored here: this binding is declared before the lock in the same block, or holds the lock itself, so the lock's drop can run first and the guard's release would read a freed lock (D-004 rule 3, DEF-438) -- declare the lock before a separate binding that holds its guard",
+                at);
+            pass true;
+        }
+    }
+    pass false;
+};
+
 func:check_holder_scope = NIL(Escape->:x, int32:holder_scope, ExprId:val, Span:at) never fails {
     int32:vr = raw holder_scope_root(x, holder_scope, val, false);
     if (vr == 0i32) { pass NIL; }
@@ -5222,6 +5278,13 @@ func:collect_local_roots = NIL(Escape->:x, ExprId:id, int32:depth, List<int32>->
             } else {
                 drop collect_local_roots(x, vp2, d, out);
             }
+        }
+    }
+    // A GUARD VIEWS ITS LOCK (DEF-438), so its receiver's frame root is a root of its value, as a view-maker's is: `g = a.acquire(d)` into a holder that outlives `a` is rule 3's. The shape walk below reads the receiver as a value, which a pointer local holding `@a` answers.
+    if (n.kind == ExprKind.ExprMethodCallExpr) {
+        ExprId:grv = raw expr_operand(n);
+        if ((!(raw expr_is_none(grv))) && (raw call_hands_guard(x, id, grv))) {
+            if (raw view_is_frame_borrow(x, grv)) { drop push_frame_root(x, raw view_root_ident(x, grv), out); }
         }
     }
     // THE CUSTOM-SHAPED KINDS BY THEIR OWN WINDOWS (1.5.5 step 1 -- step 0's
@@ -5633,10 +5696,15 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
         // An enum constructor's "receiver" is the enum's NAME (DEF-160): no
         // value to walk, as for a namespace call.
         if (raw call_is_enum_ctor(x, id)) { erecv = raw expr_none(); }
-        pass (raw escape_call_like(x, id, erecv,
+        bool:mra = raw escape_call_like(x, id, erecv,
                                      raw expr_list_start(n),
                                      raw expr_list_count(n),
-                                     raw expr_none(), d));
+                                     raw expr_none(), d);
+        // A GUARD VIEWS ITS LOCK, so its verdict is the view's (DEF-438; `collect_call_refs`' arm says why), as a `#` builtin's that views is. A pointer receiver is no place to view: it carries what it carries, and the walk just above read that as an argument (`(raw getp(@h)).acquire(d)`).
+        if ((!(raw expr_is_none(erecv))) && (raw call_hands_guard(x, id, erecv))) {
+            if ((raw type_kind(x.types, raw exprtypes_get(x.etypes, erecv))) != (raw TY_POINTER())) { pass (raw view_verdict(x, erecv, n.span)); }
+        }
+        pass mra;
     }
     if (n.kind == ExprKind.ExprBuiltinExpr) {
         int32:bgc = raw builtin_generic_count(n);
@@ -6967,31 +7035,6 @@ func:spawn_param_is_move = bool(Escape->:x, ExprId:call, int32:idx) never fails 
     pass (((raw param_quals(pd)) & (raw QUAL_MOVE())) != 0i32);
 };
 
-// DOES THIS TYPE HOLD A TYPE PARAMETER BY VALUE (DEF-365, landing 172)? A `T`, `Self` or an associated type,
-// or a kind that keeps one in its storage: an array's element, an Optional's, a Result's, an atomic's, a generic
-// struct's or enum's type arguments. A pointer or a slice owns nothing it reaches. No other kind is walked, and
-// not because none holds a parameter (this comment said so until R1's commit; C2 of the review of 99f83e7): a
-// `range<T>` is refused by the typer (TYPE-008; c2r), an `arena<T>` by value is an owner to `type_drops` and
-// refused as one below (c2a), a Channel crosses by design (D-181), and an owner of any other kind is refused by
-// `type_drops` below. Local to the spawn rule: `type_drops_recorded` is read everywhere and keeps its answers.
-// Past the fuel the answer is YES, the closed reading (DEF-54).
-func:spawn_type_holds_param = bool(TypeTable->:t, Ast->:ast, int32:ty, int32:fuel) never fails {
-    if (fuel <= 0i32) { pass true; }
-    if (ty == 0i32) { pass false; }
-    int32:k = raw type_kind(t, ty);
-    if ((k == (raw TY_PARAM())) || (k == (raw TY_SELF())) || (k == (raw TY_ASSOC()))) { pass true; }
-    if ((k == (raw TY_ARRAY())) || (k == (raw TY_OPTIONAL())) || (k == (raw TY_RESULT())) || (k == (raw TY_ATOMIC()))) {
-        pass (raw spawn_type_holds_param(t, ast, raw type_elem(t, ty), fuel - 1i32));
-    }
-    if ((k == (raw TY_STRUCT())) || (k == (raw TY_ENUM()))) {
-        int32:n = raw type_args_count_of(t, ty);
-        int32:s = raw type_args_start_of(t, ty);
-        for (int32:i in 0i32...n) {
-            if (raw spawn_type_holds_param(t, ast, raw ast_id_at(ast, s, i), fuel - 1i32)) { pass true; }
-        }
-    }
-    pass false;
-};
 
 // A BY-VALUE OWNER CANNOT CROSS A SPAWN (DEF-340, landing 168): the child frame receives
 // a COPY of the argument's words -- for a `string`, a `List` or a struct holding one, the
@@ -7013,7 +7056,7 @@ func:escape_spawn_byval = NIL(Escape->:x, ExprId:call, int32:pos, ExprId:a, int3
     // (DEF-54); a `T: Copy` bound is the relaxation if it is readable here. AND SO IS A TYPE THAT HOLDS
     // ONE BY VALUE (DEF-365, landing 172): DEF-361 read the top-level kind alone, so `T?`, `T[n]`,
     // `Result<T>` and a generic struct's or enum's instance crossed (f2a, f2d; t171/def365/).
-    if (!(raw spawn_type_holds_param(x.types, x.ast, aty, 64i32))) {
+    if (!(raw type_holds_param(x.types, x.ast, aty, 64i32))) {
         if (!(raw type_drops(x.tr, aty, x.scope, 64i32))) { pass NIL; }
     }
     if (raw spawn_param_is_move(x, call, pos)) { pass NIL; }

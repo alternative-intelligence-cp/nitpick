@@ -1,0 +1,29 @@
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 8:54
+mod:wild_instance_self_forward;
+// A generic with no mark, between a default body and one with the word (`s12n`, DEF-490's form B): `outer<Self>`'s body asks for `gc<Self>` only at the emitter's worklist, the one site that sees it. The checker doesn't, so this suite.
+struct:SS = { string:s; };
+struct:HB = { wild int8->:b; };
+func:gc<T> = T[](HB->:h) never fails { pass #wild_slice<T>(h.b =>! wild T->, 1i64); };
+func:outer<T> = T[](HB->:h) never fails { pass raw gc::<T>(h); };
+trait:VO = { func:vw = Self[](Self->:self, HB->:h) never fails { pass raw outer::<Self>(h); }; };
+impl:SS:VO = { };
+func:f = int64() never fails { wild int8->:b = alloc(256i64); discard(memset(b, 0i64, 256i64)); HB:h = HB{ b: b }; SS:k = SS{ s: string_concat("a", "b") }; SS[]:v = raw k.vw(@h); int64:n = v.len; dalloc(b); pass n; };
+func:main = int32(cstring[]:_~argv) { exit ((raw f()) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -79,12 +79,14 @@ pub func:DECL_DERIVED = int32() never fails   { pass 4096i32; };
 // They shift up so they never collide with the visibility and modifier bits.
 pub func:DECL_RET_WILD = int32() never fails  { pass 64i32; };
 pub func:DECL_RET_WILDX = int32() never fails { pass 128i32; };
-// 1024 (`DECL_RET_FIXED`) is FREE since landing 103 (DEF-247): it was set by
+// 1024 was `DECL_RET_FIXED` until landing 103 (DEF-247): it was set by
 // `p_return_quals` and read by nothing, as 256 (`DECL_RET_STACK`) was until this one took it.
 // THE WORD IS WRITTEN IN THIS FUNCTION'S, STRUCT'S OR ENUM'S DECLARATION, ANYWHERE (TYPE-107, DEF-423's generic road;
 // `check_wild_instance` reads it): the tokens the declaration took are read once, here, so a body, a macro's body and
 // a nested type count and no walker of declarations exists to fall behind a new node. A `#` form that reads storage (`sigil_reads_no_storage`) and `=>!` count as the word.
 pub func:DECL_HAS_WILD = int32() never fails  { pass 256i32; };
+// THIS GENERIC'S BODY FORMS A PLAIN VIEW OVER MANUAL STORAGE AT A TYPE PARAMETER (DEF-486's `z36`): set by the typer, where R6's gate meets the view, not read off the tokens, so a range over a `wild` field counts as `#wild_slice` does. `check_wild_instance` answers it.
+pub func:DECL_VIEWS_T = int32() never fails  { pass 1024i32; };
 // `thread` (D-181): this function is a THREAD BODY — it owns an executor and
 // the arena its task frames come from (D-034), which is what makes it a
 // different kind of function from a task rather than the same one used

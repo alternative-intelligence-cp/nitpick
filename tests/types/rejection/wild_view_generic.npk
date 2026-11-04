@@ -1,0 +1,84 @@
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 50:64
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 51:72
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 52:80
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 53:79
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 54:77
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 55:67
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 56:66
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 57:65
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 58:77
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 59:59
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 60:65
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 62:88
+// expect-error: NITPICK-TYPE-017
+// expect-error-at: 65:65
+mod:wild_view_generic;
+
+// A GENERIC'S PLAIN VIEW OVER MANUAL STORAGE AT AN UNKNOWN `T` ANSWERS AT ITS INSTANCE (z36, DEF-486, TYPE-107, landing 177d2): a plain `T[]` is legal over a block at `int64` and says live values are there at a type that drops.
+// The declaration carries the mark (a quiet run of the same walk), and every instance is asked. One call per site. Forwarding (`gv::<T>` from a generic) is seen at emission alone: `tests/backend/rejection/wild_view_generic_forward.npk`.
+// The legal instances and the roads: `tests/backend/programs/wild_view_roads_ok.npk`.
+error:E5;
+struct:SS = { string:s; };
+struct:Box<T> = { T:x; };
+struct:VH<T> = { T[]:v; };
+struct:WH<T> = { wild T->:w; };
+struct:WA<T> = { wild T[2]:wa; };
+func:gv<T> = T[](wild T->:w) never fails { pass #wild_slice<T>(w, 1i64); };
+func:fv<T> = VH<T>(wild T->:w) never fails { pass VH{ v: #wild_slice<T>(w, 1i64) }; };
+func:gb<T> = Box<T>[](wild Box<T>->:w) never fails { pass #wild_slice<Box<T>>(w, 1i64); };
+func:ga<T> = T[2][](wild T[2]->:w) never fails { pass #wild_slice<T[2]>(w, 1i64); };
+func:gl<T> = int64(wild T->:w) never fails { T[]:v = #wild_slice<T>(w, 1i64); pass v.len; };
+func:takes<T> = int64(T[]:v) never fails { pass v.len; };
+func:gp<T> = int64(wild T->:w) never fails { T[]:v = #wild_slice<T>(w, 1i64); pass raw takes::<T>(v); };
+func:gr<T> = T[](wild T[2]->:w) never fails { pass (<-w)[0i64...1i64]; };
+impl:<T>:WH<T> = { func:view = T[](WH<T>->:self) never fails { pass #wild_slice<T>(self.w, 1i64); }; };
+impl:<T>:WA<T> = { func:rng = T[](WA<T>->:self) never fails { pass self.wa[0i64...1i64]; }; };
+func:g2<T, U> = T[](wild T->:w, U->:u) never fails { pass #wild_slice<T>(w, 1i64); };
+
+func:at_struct = NIL(wild SS->:w) never fails { SS[]:v = raw gv::<SS>(w); pass NIL; };   // site
+func:at_string = NIL(wild string->:w) never fails { string[]:v = raw gv::<string>(w); pass NIL; };   // site
+func:at_list = NIL(wild List<int64>->:w) never fails { List<int64>[]:v = raw gv::<List<int64>>(w); pass NIL; };   // site
+func:in_box = NIL(wild Box<string>->:w) never fails { Box<string>[]:v = raw gb::<string>(w); pass NIL; };   // site
+func:in_array = NIL(wild string[2]->:w) never fails { string[2][]:v = raw ga::<string>(w); pass NIL; };   // site
+func:into_field = NIL(wild SS->:w) never fails { VH<SS>:h = raw fv::<SS>(w); pass NIL; };   // site
+func:local_only = NIL(wild SS->:w) never fails { int64:n = raw gl::<SS>(w); pass NIL; };   // site
+func:handed_on = NIL(wild SS->:w) never fails { int64:n = raw gp::<SS>(w); pass NIL; };   // site
+func:range_of_wild_param = NIL(wild SS[2]->:w) never fails { SS[]:v = raw gr::<SS>(w); pass NIL; };   // site
+func:method = NIL(WH<SS>->:h) never fails { SS[]:v = raw h.view(); pass NIL; };   // site
+func:method_range = NIL(WA<SS>->:p) never fails { SS[]:v = raw p.rng(); pass NIL; };   // site
+// The mark is one bit on the declaration, so a second argument that drops refuses too, the view being at `T`: closed, and `wild T[]` is the road.
+func:second_argument = NIL(wild int64->:w, string->:s) never fails { int64[]:v = raw g2::<int64, string>(w, s); pass NIL; };   // site
+// A bare `T: Copy` can't drop, so it's no mark and the bound answers alone.
+func:gc<T: Copy> = T[](wild T->:w) never fails { pass #wild_slice<T>(w, 1i64); };
+func:copy_bound = NIL(wild SS->:w) never fails { SS[]:v = raw gc::<SS>(w); pass NIL; };   // site NITPICK-TYPE-017
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (DeadlineExceeded)  { exit 76i32; },
+        (E5)                { exit 75i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

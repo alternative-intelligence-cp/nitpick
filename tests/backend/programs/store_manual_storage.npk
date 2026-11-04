@@ -153,7 +153,7 @@ func:fd_list_in_block_closes = bool() never fails {
     int64:d = raw dup_fd();
     wild LF->:w = alloc(64i64) =>! wild LF->;
     <-w = LF{ l: raw list_init::<OwnedFd>(1i64) };
-    drop list_push(@w.l, raw owned(d));
+    drop list_push((@w.l) =>! List<OwnedFd>->, raw owned(d));
     w.l[0i64] = raw none();
     bool:b = raw closed(d);
     dalloc(w);

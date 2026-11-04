@@ -175,6 +175,7 @@ pub struct:Alias = {
     // THE RECEIVER OF A CONCURRENT-SET OPERATION is checked against every party
     // but the lent ones (DEF-148), for that one access.
     bool:skip_lent;
+    bool:skip_view;   // a lock's own operation is judged: a view of the lock stays good (DEF-438)
     int32:judge_only;   // 177a: 0, every party; -1, the assignment targets alone (DEF-415); > 0, the parties sited at that expression alone (E-a)
 };
 
@@ -209,7 +210,7 @@ pub func:alias_init = Alias(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                 pre: raw list_init::<Party>(16i64),
                 call_marks: raw list_init::<int64>(8i64),
                 stmt_sym: map, stmt_count: sc, decl_sym: dmap, decl_count: dc,
-                spawn_call: raw expr_none(), skip_lent: false, judge_only: 0i32 };
+                spawn_call: raw expr_none(), skip_lent: false, skip_view: false, judge_only: 0i32 };
 };
 
 // The symbol a declaration (a parameter) made, or 0.
@@ -1425,6 +1426,7 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
         if ((mode == (raw CHECK_CLAIMS())) && summary_judged) { continue; }
         if ((mode == (raw CHECK_LENT())) && (p.kind != (raw PARTY_LENT()))) { continue; }
         if (x.skip_lent && (p.kind == (raw PARTY_LENT()))) { continue; }
+        if (x.skip_view && (p.kind == (raw PARTY_VIEW()))) { continue; }
         // A VIEW PARTY NEVER CONFLICTS WITH THE ACCESS THAT MADE IT: a range
         // view's own creation is the write-capable access of its base (D-249)
         // and the view party's site at once. A LENT party's place IS the
@@ -1622,6 +1624,7 @@ func:check_view_parties_at = bool(Alias->:x, ViewRef:tgt, List<Step>:ap, int32:s
             && ((p.kind != (raw PARTY_TARGET())) || ((mode == (raw CHECK_VIEWS())) && (x.judge_only == 0i32)))) { continue; }
         if ((mode == (raw CHECK_LENT())) && (p.kind != (raw PARTY_LENT()))) { continue; }
         if (x.skip_lent && (p.kind == (raw PARTY_LENT()))) { continue; }
+        if (x.skip_view && (p.kind == (raw PARTY_VIEW()))) { continue; }
         if ((self_holder != 0i32) && (p.holder == self_holder)) { continue; }
         if ((!(raw expr_is_none(self_site))) && (p.site.index == self_site.index)) { continue; }   // the access's own argument's parties (a ternary's arms, DEF-338)
         if (!(raw conflicts(p.kind, akind))) { continue; }
@@ -2886,6 +2889,11 @@ func:refuse_shared_to_writer = NIL(Alias->:x, ExprId:call, int32:pos, int32:hold
 // party before walking the index UNDER it (`l[(raw push_row(@l))].v[0i64...2i64][1i64]`, safe: refused BORROW-015) and walked
 // `l[0i64...2i64][(raw grow0(@l))]`'s outer index before reaching the range below it (the view read the FREED buffer, 230).
 func:acc_indices = NIL(Alias->:x, ExprId:place, int32:depth) never fails {
+    // THE SKIP FLAGS ANSWER FOR A LOCK OPERATION'S OWN ACCESS AND NOTHING ITS PATH RUNS (F1 of 177d2's reopen): `ms[raw grow(@l)].acquire(d)` grew `l` under a live view, BORROW-015 on landing 177d1 and 179 with the flag on; a `skip_lent` here since DEF-148 let `ms[raw rep(@a)].acquire(d)` replace a lent lock. The one setter is `acc_call`, the one thing it wants judged is `acc_place`'s `check_access` after this walk, so the flags come back for that.
+    bool:was_lent = x.skip_lent;
+    bool:was_view = x.skip_view;
+    x.skip_lent = false;
+    x.skip_view = false;
     int64:w0 = x.live.count;
     List<int32>:steps = raw list_init::<int32>(4i64);
     ExprId:cur = place;
@@ -2930,6 +2938,8 @@ func:acc_indices = NIL(Alias->:x, ExprId:place, int32:depth) never fails {
         }
     }
     drop list_truncate(@x.live, w);
+    x.skip_lent = was_lent;
+    x.skip_view = was_view;
     pass NIL;
 };
 
@@ -3328,11 +3338,14 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
         // `m.acquire(d)` -- is checked against every party but the LENT ones.
         // `destroy`, an operation outside the set, keeps every party.
         bool:lent_ok = false;
+        bool:lock_op = false;
         if ((ft == 0i32) && (rcallee == 0i32) && (rxt != 0i32) && (n.kind == ExprKind.ExprMethodCallExpr)) {
             int32:rxk = raw type_kind(x.types, rxt);
             if (rxk == (raw TY_POINTER())) { rxk = raw type_kind(x.types, raw type_elem(x.types, rxt)); }
             if (raw spawn_crossing_kind(rxk)) {
                 lent_ok = raw crossing_concurrent_method(rxk, raw intern_get(x.it, n.payload =>! int32));
+                // AN ACQUISITION INVALIDATES NO VIEW OF ITS LOCK (DEF-438): the cell stays where it is, so a guard's view of the lock (and any other) isn't its conflict. A second guard while the first lives is the lock analysis's, LOCK-001, one report (D-240).
+                lock_op = lent_ok && ((rxk == (raw TY_MUTEX())) || (rxk == (raw TY_RWLOCK())));
             }
         }
         if (ptr_recv && (rcallee > 0i32) && (raw is_place_chain(x, recv))) {
@@ -3344,8 +3357,10 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
         } else {
             if (lent_ok && (raw is_place_chain(x, recv))) {
                 x.skip_lent = true;
+                x.skip_view = lock_op;
                 drop acc_place(x, recv, rk, raw expr_none(), depth);
                 x.skip_lent = false;
+                x.skip_view = false;
             } else {
                 drop acc_expr(x, recv, rk, depth);
             }

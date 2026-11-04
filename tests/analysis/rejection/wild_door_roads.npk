@@ -95,11 +95,11 @@
 // expect-error: NITPICK-BORROW-015
 // expect-error-at: 381:216
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 386:164
+// expect-error-at: 386:178
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 390:166
+// expect-error-at: 390:180
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 394:124
+// expect-error-at: 394:138
 // expect-error: NITPICK-BORROW-011
 // expect-error-at: 397:138
 // expect-error: NITPICK-BORROW-011
@@ -111,71 +111,71 @@
 // expect-error: NITPICK-BORROW-013
 // expect-error-at: 403:184
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 408:152
+// expect-error-at: 408:166
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 412:115
+// expect-error-at: 412:129
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 415:154
+// expect-error-at: 415:168
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 418:169
+// expect-error-at: 418:183
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 421:154
+// expect-error-at: 421:168
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 425:115
+// expect-error-at: 425:126
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 428:75
+// expect-error-at: 428:89
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 432:163
+// expect-error-at: 432:177
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 432:168
+// expect-error-at: 432:182
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 436:173
+// expect-error-at: 436:187
 // expect-error: NITPICK-BORROW-013
 // expect-error-at: 440:146
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 443:75
+// expect-error-at: 443:89
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 446:167
+// expect-error-at: 446:181
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 449:161
+// expect-error-at: 449:175
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 449:194
+// expect-error-at: 449:208
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 452:167
+// expect-error-at: 452:181
 // expect-error: NITPICK-BORROW-013
 // expect-error-at: 456:103
 // expect-error: NITPICK-BORROW-013
 // expect-error-at: 460:95
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 463:164
+// expect-error-at: 463:178
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 467:166
+// expect-error-at: 467:180
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 470:168
+// expect-error-at: 470:182
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 474:245
+// expect-error-at: 474:259
 // expect-error: NITPICK-BORROW-014
-// expect-error-at: 478:143
+// expect-error-at: 478:155
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 478:161
+// expect-error-at: 478:175
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 482:158
+// expect-error-at: 482:172
 // expect-error: NITPICK-BORROW-014
-// expect-error-at: 486:137
+// expect-error-at: 486:138
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 486:156
+// expect-error-at: 486:170
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 490:153
+// expect-error-at: 490:167
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 493:151
+// expect-error-at: 493:165
 // expect-error: NITPICK-BORROW-014
-// expect-error-at: 496:158
+// expect-error-at: 496:172
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 496:167
+// expect-error-at: 496:181
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 499:164
+// expect-error-at: 499:178
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 503:170
+// expect-error-at: 503:184
 // expect-error: NITPICK-BORROW-009
 // expect-error-at: 510:146
 // expect-error: NITPICK-BORROW-009
@@ -383,15 +383,15 @@ func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 
 
 // R15: AN ADDRESS INSIDE `wild` STORAGE IS NOT A ROAD FROM `wild` TO PLAIN: THE HOLD ANSWERS IT.
 mod:p76_addr_of_deref_wild_to_plain = {
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = @(<-a); int64:k = <-p; dalloc(a); pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = (@(<-a)) =>! int64->; int64:k = <-p; dalloc(a); pass k; };
 func:cell_main = int32() { pass (((raw f()) + 60i64) =>! int32); };
 };
 mod:p77_addr_of_elem_wild_to_plain = {
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = @a[0i64]; int64:k = <-p; dalloc(a); pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = (@a[0i64]) =>! int64->; int64:k = <-p; dalloc(a); pass k; };
 };
 mod:p78_field_addr_in_wild_struct = {
 struct:W2 = { int64:n; };
-func:f = int64() never fails { wild W2->:w = alloc(8i64) =>! wild W2->; w.n = 7i64; int64->:p = @w.n; int64:k = <-p; dalloc(w); pass k; };
+func:f = int64() never fails { wild W2->:w = alloc(8i64) =>! wild W2->; w.n = 7i64; int64->:p = (@w.n) =>! int64->; int64:k = <-p; dalloc(w); pass k; };
 };
 mod:wa4_deref_addr_wild = {
 func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = <-(@a); int64:k = <-p; dalloc(a); pass k; };
@@ -405,51 +405,51 @@ func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = 
 
 // DEF-480: A `$$i` HOLDER OF A PLACE OF POINTER TYPE IS HELD AGAINST A FREE AS AN `@` HOLDER IS: `int64->:p = $$i (<-a); dalloc(a);` READ FREED BYTES. `we7`, `wj3` READ NOTHING FREED AND ARE REFUSED ALL THE SAME, THE SAME CLOSED LEXICAL CHOICE AS `@`'S (`we8`, `wj3a`); SCOPE THE HOLDER (`header_ptr_uses_ok.npk`'S `wf8`). `we6` READS `<-p` AFTER THE FREE: ITS REFUSAL IS RIGHT. `wj1`'S TWO REPORTS STAND AT ONE SITE, A `move` OF A POINTER UNDER ITS OWN `$$i`.
 mod:wd14_claim_i_inside_wild = {
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = $$i (<-a); dalloc(a); int64:k = <-p; pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = ($$i (<-a)) =>! int64->; dalloc(a); int64:k = <-p; pass k; };
 };
 mod:we3_claim_i_field_of_wild = {
 struct:WS = { int64:n; };
-func:f = int64() never fails { wild WS->:wp = alloc(8i64) =>! wild WS->; wp.n = 7i64; int64->:p = $$i wp.n; dalloc(wp); int64:k = <-p; pass k; };
+func:f = int64() never fails { wild WS->:wp = alloc(8i64) =>! wild WS->; wp.n = 7i64; int64->:p = ($$i wp.n) =>! int64->; dalloc(wp); int64:k = <-p; pass k; };
 };
 mod:we4_claim_i_elem_of_wild = {
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = $$i a[0i64]; dalloc(a); int64:k = <-p; pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = ($$i a[0i64]) =>! int64->; dalloc(a); int64:k = <-p; pass k; };
 };
 mod:we5_claim_i_then_realloc = {
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = $$i (<-a); wild int64->:b = ralloc(a, 800000i64) =>! wild int64->; int64:k = <-p; dalloc(b); pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = ($$i (<-a)) =>! int64->; wild int64->:b = ralloc(a, 800000i64) =>! wild int64->; int64:k = <-p; dalloc(b); pass k; };
 };
 mod:wf3_claim_i_nested_block = {
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = $$i (<-a); { dalloc(a); } int64:k = <-p; pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = ($$i (<-a)) =>! int64->; { dalloc(a); } int64:k = <-p; pass k; };
 };
 mod:wf9_claim_i_field_string_len = {
 struct:WS = { int64:n; };
-func:f = int64() never fails { wild WS->:wp = alloc(16i64) =>! wild WS->; wp.n = 7i64; WS->:p = $$i (<-wp); dalloc(wp); int64:k = p.n; pass k; };
+func:f = int64() never fails { wild WS->:wp = alloc(16i64) =>! wild WS->; wp.n = 7i64; WS->:p = ($$i (<-wp)) =>! WS->; dalloc(wp); int64:k = p.n; pass k; };
 };
 mod:wf10_claim_i_param_then_free = {
-func:g = int64(wild int64->:a) never fails { int64->:p = $$i (<-a); dalloc(a); pass <-p; };
+func:g = int64(wild int64->:a) never fails { int64->:p = ($$i (<-a)) =>! int64->; dalloc(a); pass <-p; };
 func:f = int64() never fails { wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64:k = raw g(a); pass k; };
 };
 mod:wj1_claim_i_move_of_pointer = {
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = $$i (<-a); wild int64->:b = move(a); int64:k = <-p; dalloc(b); pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = ($$i (<-a)) =>! int64->; wild int64->:b = move(a); int64:k = <-p; dalloc(b); pass k; };
 };
 mod:wj2_claim_i_through_field_freed = {
 struct:WH = { wild int64->:p; };
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; WH:h = WH{ p: a }; int64->:r = $$i (<-h.p); dalloc(h.p); int64:k = <-r; pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; WH:h = WH{ p: a }; int64->:r = ($$i (<-h.p)) =>! int64->; dalloc(h.p); int64:k = <-r; pass k; };
 };
 mod:wj3_claim_i_other_field_held = {
 struct:TW = { wild int64->:p; int64:n; };
 func:f = int64() never fails { wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; TW:h = TW{ p: a, n: 7i64 }; int64->:r = $$i h.n; dalloc(h.p); int64:k = <-r; pass k; };
 };
 mod:we6_claim_i_inside_fn = {
-func:g = int64(wild int64->:a) never fails { int64->:p = $$i (<-a); dalloc(a); pass <-p; };
+func:g = int64(wild int64->:a) never fails { int64->:p = ($$i (<-a)) =>! int64->; dalloc(a); pass <-p; };
 };
 mod:we7_claim_i_alone_ok = {
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = $$i (<-a); int64:k = <-p; dalloc(a); pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = ($$i (<-a)) =>! int64->; int64:k = <-p; dalloc(a); pass k; };
 };
 mod:wf11_claim_i_read_not_write_ok = {
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = $$i (<-a); int64:k = <-p; <-a = 8i64; int64:m = <-p; dalloc(a); pass k + m - 8i64; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = ($$i (<-a)) =>! int64->; int64:k = <-p; <-a = 8i64; int64:m = <-p; dalloc(a); pass k + m - 8i64; };
 };
 mod:wc6b_claim_inside_wild = {
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = $$i (<-a); int64:k = <-p; dalloc(a); pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = ($$i (<-a)) =>! int64->; int64:k = <-p; dalloc(a); pass k; };
 };
 mod:we1_claim_i_owner_moved = {
 struct:OS = { string:s; };
@@ -460,47 +460,47 @@ struct:OS = { string:s; };
 func:f = int64() never fails { OS:h = OS{ s: string_concat("ab", "cd") }; OS->:p = @h; OS:o = move(h); int64:k = p.s.len + 3i64; pass k; };
 };
 mod:wd15_addr_inside_wild = {
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = @(<-a); int64:k = <-p; dalloc(a); pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = (@(<-a)) =>! int64->; int64:k = <-p; dalloc(a); pass k; };
 func:cell_main = int32() { pass (((raw f()) + 60i64) =>! int32); };
 };
 mod:wd16_addr_elem_of_wild = {
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = @a[0i64]; int64:k = <-p; dalloc(a); pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = (@a[0i64]) =>! int64->; int64:k = <-p; dalloc(a); pass k; };
 };
 mod:wd17_claim_m_inside_wild = {
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = $$m (<-a); int64:k = <-p; dalloc(a); pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = ($$m (<-a)) =>! int64->; int64:k = <-p; dalloc(a); pass k; };
 };
 mod:wd18_addr_field_of_wild = {
 struct:WS = { int64:n; };
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; WS:w = WS{ n: 7i64 }; wild WS->:wp = alloc(8i64) =>! wild WS->; int64->:p = @((<-wp).n); int64:k = 7i64; dalloc(a); dalloc(wp); pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; WS:w = WS{ n: 7i64 }; wild WS->:wp = alloc(8i64) =>! wild WS->; int64->:p = (@((<-wp).n)) =>! int64->; int64:k = 7i64; dalloc(a); dalloc(wp); pass k; };
 };
 mod:wf1_claim_i_through_call = {
 func:idp = int64->(int64->:x) never fails { pass x; };
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = raw idp($$i (<-a)); dalloc(a); int64:k = <-p; pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = raw idp(($$i (<-a)) =>! int64->); dalloc(a); int64:k = <-p; pass k; };
 };
 mod:wf1a_addr_through_call = {
 func:idp = int64->(int64->:x) never fails { pass x; };
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = raw idp(@(<-a)); dalloc(a); int64:k = <-p; pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = raw idp((@(<-a)) =>! int64->); dalloc(a); int64:k = <-p; pass k; };
 };
 mod:wf2_claim_i_in_struct = {
 struct:PH = { int64->:p; };
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; PH:h = PH{ p: $$i (<-a) }; dalloc(a); int64:k = <-(h.p); pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; PH:h = PH{ p: ($$i (<-a)) =>! int64-> }; dalloc(a); int64:k = <-(h.p); pass k; };
 };
 mod:wf2a_addr_in_struct = {
 struct:PH = { int64->:p; };
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; PH:h = PH{ p: @(<-a) }; dalloc(a); int64:k = <-(h.p); pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; PH:h = PH{ p: (@(<-a)) =>! int64-> }; dalloc(a); int64:k = <-(h.p); pass k; };
 };
 mod:wf3a_addr_nested_block = {
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = @(<-a); { dalloc(a); } int64:k = <-p; pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = (@(<-a)) =>! int64->; { dalloc(a); } int64:k = <-p; pass k; };
 };
 mod:wf4_claim_i_copy_of_holder = {
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = $$i (<-a); int64->:r = p; dalloc(a); int64:k = <-r; pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = ($$i (<-a)) =>! int64->; int64->:r = p; dalloc(a); int64:k = <-r; pass k; };
 };
 mod:wf4a_addr_copy_of_holder = {
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = @(<-a); int64->:r = p; dalloc(a); int64:k = <-r; pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64->:p = (@(<-a)) =>! int64->; int64->:r = p; dalloc(a); int64:k = <-r; pass k; };
 };
 mod:wj2a_addr_through_field_freed = {
 struct:WH = { wild int64->:p; };
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; WH:h = WH{ p: a }; int64->:r = @(<-h.p); dalloc(h.p); int64:k = <-r; pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; WH:h = WH{ p: a }; int64->:r = (@(<-h.p)) =>! int64->; dalloc(h.p); int64:k = <-r; pass k; };
 };
 
 // R14'S MUST LINE, `q57` TO `q59` (`q57` IS `header_ptr_uses.npk`'S): A ROOTLESS SELECTOR OVER A `List`'S ELEMENT, `q59` WITH A GROWTH IN THE INDEX OF A VIEW OF ITS BINDING: BORROW-009 STANDS IN FRONT (A BORROW CANNOT BE PICKED ON), AND `q59`'S BORROW-012 AT THE VIEW OF THE TEMPORARY. THEY MEASURE THAT REFUSAL AND NOTHING BEHIND IT.

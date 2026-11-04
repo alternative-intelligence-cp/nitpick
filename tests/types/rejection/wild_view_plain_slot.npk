@@ -1,0 +1,150 @@
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 90:59
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 91:60
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 92:57
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 93:73
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 94:89
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 95:75
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 96:64
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 97:71
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 98:90
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 99:100
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 100:72
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 101:67
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 102:117
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 103:84
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 104:79
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 107:110
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 108:115
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 109:70
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 110:73
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 111:73
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 112:81
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 113:82
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 115:80
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 118:66
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 119:70
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 120:70
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 123:68
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 124:73
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 125:68
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 126:75
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 127:83
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 128:86
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 131:65
+mod:wild_view_plain_slot;
+
+// A PLAIN VIEW OVER MANUAL STORAGE SAYS LIVE VALUES ARE THERE (DEF-486, RULED, TYPE-097, landing 177d2), at an element that holds a pointer or drops at all: `v[0].s = x` runs the old `string`'s drop over the block's bytes,
+// and so does a store through an element's address, whatever the view's element (a whole-element store through a view drops nothing, DEF-422, and `@v[0]` hands it to a callee that does). Over room not yet written the view
+// is `wild T[]`; over a live block it's the crossing, `v =>! T[]`, which a `fixed T[]` slot takes too (`=>! fixed T[]` is PARSE-013). One function per slot, form and element, one report each (D-240). The roads and the views
+// that were never inside manual storage: `tests/backend/programs/wild_view_roads_ok.npk`. At an unknown `T` it answers at the instance: `wild_view_generic.npk`.
+error:E5;
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+struct:SS = { string:s; };
+struct:ASS = { SS[2]:q; };
+struct:AS = { string[2]:r; };
+struct:A2S = { SS[1][2]:q2; };
+struct:INN = { ASS:ins; };
+struct:HV = { SS[]:v; };
+struct:API = { int64->[2]:a; };
+struct:Box<T> = { T:x; };
+enum:EV = { Non; A(SS[]); };
+func:setv = NIL(SS[]:v) never fails { pass NIL; };
+func:setf = int64(fixed SS[]:v) never fails { pass v.len; };
+func:setvg<T> = int64(T[]:v) never fails { pass v.len; };
+impl:HV = { func:put = NIL(HV->:self, SS[]:x) never fails { self.v = x; pass NIL; }; };
+
+// Every slot TYPE-097 is asked at.
+func:slot_local = NIL(wild SS->:w) never fails { SS[]:v = #wild_slice<SS>(w, 1i64); pass NIL; };   // site
+func:slot_param = NIL(wild SS->:w) never fails { drop setv(#wild_slice<SS>(w, 1i64)); pass NIL; };   // site
+func:slot_return = SS[](wild SS->:w) never fails { pass #wild_slice<SS>(w, 1i64); };   // site
+func:slot_struct_literal = NIL(wild SS->:w) never fails { HV:h = HV{ v: #wild_slice<SS>(w, 1i64) }; pass NIL; };   // site
+func:slot_field_store = NIL(wild SS->:w, SS[]:p) never fails { HV:h = HV{ v: p }; h.v = #wild_slice<SS>(w, 1i64); pass NIL; };   // site
+func:slot_assign = NIL(wild SS->:w, SS[]:p) never fails { SS[]:v = p; v = #wild_slice<SS>(w, 1i64); pass NIL; };   // site
+func:slot_optional = NIL(wild SS->:w) never fails { SS[]?:ov = #wild_slice<SS>(w, 1i64); pass NIL; };   // site
+func:slot_array_literal = NIL(wild SS->:w) never fails { SS[][1]:a = [#wild_slice<SS>(w, 1i64)]; pass NIL; };   // site
+func:slot_ternary_arm = NIL(wild SS->:w, SS[]:p, bool:c) never fails { SS[]:v = is (c) : #wild_slice<SS>(w, 1i64) : p; pass NIL; };   // site
+func:slot_give = NIL(wild SS->:w, SS[]:p, int32:k) never fails { SS[]:v = pick (k) { (1i32) { give #wild_slice<SS>(w, 1i64); }, (*) { give p; } }; pass NIL; };   // site
+func:slot_variant_payload = NIL(wild SS->:w) never fails { EV:o = EV.A(#wild_slice<SS>(w, 1i64)); pass NIL; };   // site
+func:slot_checked_cast = NIL(wild SS->:w) never fails { SS[]:v = (#wild_slice<SS>(w, 1i64)) => SS[]; pass NIL; };   // site
+func:slot_list_push = NIL(wild SS->:w) never fails { List<SS[]>:l = raw list_init::<SS[]>(4i64); drop list_push(@l, #wild_slice<SS>(w, 1i64)); pass NIL; };   // site
+func:slot_generic_param = NIL(wild SS->:w) never fails { int64:n = raw setvg::<SS>(#wild_slice<SS>(w, 1i64)); pass NIL; };   // site
+func:slot_method_argument = NIL(wild SS->:w, HV->:h) never fails { drop h.put(#wild_slice<SS>(w, 1i64)); pass NIL; };   // site
+
+// A `wild` view enters a plain slot only by the crossing, whole or ranged; a range of a block's inline array is a `wild` view (`z16b`), by every path to it.
+func:form_wild_view_local = NIL(wild SS->:w) never fails { wild SS[]:wv = #wild_slice<SS>(w, 1i64); SS[]:v = wv; pass NIL; };   // site
+func:form_range_of_wild_view = NIL(wild SS->:w) never fails { wild SS[]:wv = #wild_slice<SS>(w, 1i64); SS[]:v = wv[0i64...1i64]; pass NIL; };   // site
+func:form_range_inline = NIL(wild ASS->:w) never fails { SS[]:v = w.q[0i64...2i64]; pass NIL; };   // site
+func:form_range_2d = NIL(wild A2S->:w) never fails { SS[]:v = w.q2[0i64][0i64...1i64]; pass NIL; };   // site
+func:form_range_deref = NIL(wild ASS->:w) never fails { SS[]:v = (<-w).q[0i64...2i64]; pass NIL; };   // site
+func:form_range_nested_member = NIL(wild INN->:w) never fails { SS[]:v = w.ins.q[0i64...2i64]; pass NIL; };   // site
+func:form_range_holds_pointer = NIL(wild API->:w) never fails { int64->[]:v = w.a[0i64...1i64]; pass NIL; };   // site
+// `o1`, closed: an element read through a range is a read through the view, where `w.a[0i64]` reads the same element and forms no view. One shape, two answers, and the road is the direct read.
+func:form_read_through_range = NIL(wild API->:w) never fails { int64->:p = (w.a[0i64...1i64])[0i64]; pass NIL; };   // site
+
+// A `fixed` view says the same of what it reads (`k6`, `k7`, a read of a `string`'s header over bytes).
+func:fixed_local = NIL(wild SS->:w) never fails { fixed SS[]:v = #wild_slice<SS>(w, 1i64); pass NIL; };   // site
+func:fixed_param = NIL(wild SS->:w) never fails { int64:n = raw setf(#wild_slice<SS>(w, 1i64)); pass NIL; };   // site
+func:fixed_range = NIL(wild ASS->:w) never fails { fixed SS[]:v = w.q[0i64...2i64]; pass NIL; };   // site
+
+// The element: a `string` and a `buffer` drop though they hold no plain pointer (`e25`, `e31`), an array or a generic struct by what it holds, an instance of one by its argument.
+func:elem_string = NIL(wild string->:w) never fails { string[]:v = #wild_slice<string>(w, 1i64); pass NIL; };   // site
+func:elem_string_range = NIL(wild AS->:w) never fails { string[]:v = w.r[0i64...2i64]; pass NIL; };   // site
+func:elem_buffer = NIL(wild buffer->:w) never fails { buffer[]:v = #wild_slice<buffer>(w, 1i64); pass NIL; };   // site
+func:elem_array_of_struct = NIL(wild SS[2]->:w) never fails { SS[2][]:v = #wild_slice<SS[2]>(w, 1i64); pass NIL; };   // site
+func:elem_array_of_string = NIL(wild string[2]->:w) never fails { string[2][]:v = #wild_slice<string[2]>(w, 1i64); pass NIL; };   // site
+func:elem_generic_struct = NIL(wild Box<string>->:w) never fails { Box<string>[]:v = #wild_slice<Box<string>>(w, 1i64); pass NIL; };   // site
+
+// In an impl, `Self` is the impl's type, and this rule reads it. A trait's default body holds no word at all: `trait_default_wild.npk` (DEF-490, TYPE-112).
+impl:SS = { func:vw2 = Self[](wild Self->:w) never fails { pass #wild_slice<Self>(w, 1i64); }; };   // site
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (DeadlineExceeded)  { exit 76i32; },
+        (E5)                { exit 75i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

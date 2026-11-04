@@ -1,0 +1,162 @@
+// expect-exit: 0
+// THE ROADS BESIDE `tests/types/rejection/wild_address_plain_slot.npk` (DEF-484, RULED, landing 177d2): the assertion `(@w.s) =>! string->`, written where the author knows a live value is there, at each form,
+// slot and receiver; a `wild` slot takes the address as written; and the places that were never inside manual storage keep their plain address. Every cell's value comes through what the crossing wrote or read
+// (`setsp` stores a seven-byte string), each returns 7, and `main` compares. A crossed address waives nothing: `wild_door_roads.npk` holds its borrow checks.
+mod:wild_address_crossed_ok;
+error:E5;
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+func:mk7 = string() never fails { pass string_concat("abc", "defg"); };
+struct:SS = { string:s; };
+struct:RS = { SS:t; };
+struct:LS = { List<string>:l; };
+struct:LE = { List<SS>:l; };
+struct:HB<T> = { T:v; };
+struct:Ctr = { int64:n; string:s; };
+impl:Ctr:Iterator = { assoc:Item = int64; func:next = int64?(Ctr->:self) never fails { if (self.n >= 2i64) { pass NIL; } self.n = self.n + 1i64; self.s = raw mk7(); pass self.n; }; };
+struct:HI = { Ctr:it; };
+trait:Tr = { func:m = int64(Self->:self) never fails; };
+impl:SS:Tr = { func:m = int64(SS->:self) never fails { self.s = raw mk7(); pass self.s.len; }; };
+impl:SS = { func:rs = int64(SS->:self) never fails { self.s = raw mk7(); pass self.s.len; }; };
+trait:Mf = { func:wr = NIL(Self->:self); };
+impl:SS:Mf = { func:wr = NIL(SS->:self) { self.s = raw mk7(); pass NIL; }; };
+func:setsp = NIL(string->:p) never fails { <-p = raw mk7(); pass NIL; };
+func:setw = NIL(wild string->:p) never fails { <-p = raw mk7(); pass NIL; };
+func:setg<T> = NIL(T->:p, move T:v) never fails { <-p = move(v); pass NIL; };
+func:fwd<T> = NIL(T->:p, move T:v) never fails { drop setg(p, move(v)); pass NIL; };
+thread async func:kid = NIL(string->:p) joins Duration{ ns: 1000000000i64 } { <-p = raw mk7(); pass NIL; };
+func:wrap = string->(wild SS->:w, int64:k) { if (k > 5i64) { fail E5; } pass (@w.s) =>! string->; };
+func:new_ss = wild SS->() never fails { wild SS->:w = alloc(64i64) =>! wild SS->; <-w = SS{ s: raw mks() }; pass w; };
+func:new_rs = wild RS->() never fails { wild RS->:w = alloc(64i64) =>! wild RS->; <-w = RS{ t: SS{ s: raw mks() } }; pass w; };
+
+// THE CROSSING, AT EACH FORM.
+func:c_param = int64() never fails { wild SS->:w = raw new_ss(); drop setsp((@w.s) =>! string->); int64:n = w.s.len; dalloc(w); pass n; };
+func:c_local = int64() never fails { wild SS->:w = raw new_ss(); { string->:q = (@w.s) =>! string->; <-q = raw mk7(); } int64:n = w.s.len; dalloc(w); pass n; };
+func:c_claim_m = int64() never fails { wild SS->:w = raw new_ss(); drop setsp(($$m w.s) =>! string->); int64:n = w.s.len; dalloc(w); pass n; };
+func:c_claim_i = int64() never fails { wild SS->:w = raw new_ss(); int64:n = 0i64; { string->:q = ($$i w.s) =>! string->; n = q.len; } dalloc(w); pass n + 2i64; };
+func:c_receiver = int64() never fails { wild RS->:w = raw new_rs(); int64:n = raw ((@w.t) =>! SS->).rs(); dalloc(w); pass n; };
+func:c_receiver_local = int64() never fails { wild RS->:w = raw new_rs(); int64:n = 0i64; { SS->:tp = (@w.t) =>! SS->; n = raw tp.rs(); } dalloc(w); pass n; };
+func:c_receiver_may_fail = int64() never fails { wild RS->:w = raw new_rs(); { SS->:tp = (@w.t) =>! SS->; tp.wr() ?| NIL; } int64:n = w.t.s.len; dalloc(w); pass n; };
+func:c_list_push = int64() never fails { wild LS->:w = alloc(64i64) =>! wild LS->; <-w = LS{ l: raw list_init::<string>(1i64) }; drop list_push((@w.l) =>! List<string>->, raw mks()); int64:n = w.l.count; dalloc(w); pass n + 6i64; };
+func:c_generic_forward = int64() never fails { wild SS->:w = raw new_ss(); drop fwd((@w.s) =>! string->, raw mk7()); int64:n = w.s.len; dalloc(w); pass n; };
+func:c_result = int64() never fails { wild SS->:w = raw new_ss(); Result<string->>:r = wrap(w, 1i64); if (!(r.is_error)) { <-(r.value) = raw mk7(); } int64:n = w.s.len; dalloc(w); pass n; };
+func:c_bound<T: Tr> = int64(wild HB<T>->:w) never fails { HB<T>->:p = w =>! HB<T>->; pass raw p.v.m(); };
+func:c_bound_at_ss = int64() never fails { wild HB<SS>->:w = alloc(64i64) =>! wild HB<SS>->; w.v = SS{ s: raw mks() }; int64:n = raw c_bound::<SS>(w); dalloc(w); pass n; };
+func:c_trait_qualified = int64() never fails { wild RS->:w = raw new_rs(); int64:n = raw Tr.m((@w.t) =>! SS->); dalloc(w); pass n; };
+// `for (x in w.it)` TAKES `next`'S ADDRESS OFF THE PAGE, AND A `for` OVER THE CROSSING IS NO ROAD (BORROW-009): `next` BY HAND.
+func:c_for_by_hand = int64() never fails { wild HI->:w = alloc(64i64) =>! wild HI->; <-w = HI{ it: Ctr{ n: 0i64, s: raw mks() } }; int64:t = 0i64; { Ctr->:ip = (@w.it) =>! Ctr->; int64:k = 0i64; while (k < 2i64) decreases 2i64 - k { k = k + 1i64; int64?:o = raw ip.next(); t = t + (o ?? 0i64); } } dalloc(w); pass t + 4i64; };
+async func:c_spawned = int64() { wild SS->:w = raw new_ss(); await kid((@w.s) =>! string->) ?| NIL; int64:n = w.s.len; dalloc(w); pass n; };
+
+// A `wild` SLOT TAKES THE ADDRESS AS WRITTEN: THE SLOT SAYS NOTHING IS PROMISED, AND A STORE THROUGH IT DROPS NOTHING (DEF-483).
+func:w_local = int64() never fails { wild SS->:w = raw new_ss(); { wild string->:p = @w.s; <-p = raw mk7(); } int64:n = w.s.len; dalloc(w); pass n; };
+func:w_param = int64() never fails { wild SS->:w = raw new_ss(); drop setw(@w.s); int64:n = w.s.len; dalloc(w); pass n; };
+
+// NOT INSIDE: A LOCAL, A `wild` BINDING'S OWN FIELD (R5'S FRAME), AN ADDRESS THROUGH THE ASSERTION ITSELF, A `List`'S ELEMENT BEHIND A BLOCK (THE `List`'S OWN STORAGE, R5), A VIEW'S ELEMENT.
+func:n_local = int64() never fails { string:s = raw mks(); drop setsp(@s); pass s.len; };
+func:n_wild_binding_field = int64() never fails { wild SS:b = SS{ s: raw mks() }; drop setsp(@b.s); pass b.s.len; };
+func:n_wild_binding_local = int64() never fails { wild SS:b = SS{ s: raw mk7() }; string->:q = @b.s; pass q.len; };
+func:n_wild_array_element = int64() never fails { wild int64[2]:wa = [7i64, 7i64]; int64->:p = @wa[0i64]; pass <-p; };
+func:n_through_assert = int64() never fails { wild SS->:w = raw new_ss(); drop setsp(@(<-(w =>! SS->)).s); int64:n = w.s.len; dalloc(w); pass n; };
+func:n_through_assert_ptr_add = int64() never fails { wild SS->:w = alloc(64i64) =>! wild SS->; <-(#ptr_add<SS>(w, 1i64)) = SS{ s: raw mks() }; drop setsp(@(<-((#ptr_add<SS>(w, 1i64)) =>! SS->)).s); int64:n = (<-(#ptr_add<SS>(w, 1i64))).s.len; dalloc(w); pass n; };
+func:n_list_element_receiver = int64() never fails { wild LE->:w = alloc(64i64) =>! wild LE->; <-w = LE{ l: raw list_init::<SS>(1i64) }; LE->:p = w =>! LE->; drop list_push(@p.l, SS{ s: raw mks() }); int64:n = raw w.l[0i64].rs(); dalloc(w); pass n; };
+func:n_slice_element = int64() never fails { int64[2]:a = [7i64, 7i64]; int64[]:v = a[0i64...2i64]; int64->:p = @v[0i64]; pass <-p; };
+
+// A frame's `simd` lane is inline in the frame (D-194), and a plain `buffer`'s bytes are the buffer's own, the buffer in a block or not (D-341). Neither is inside manual storage.
+struct:BB = { buffer:b; };
+func:n_simd_lane_frame = int64() never fails { simd<int32, 4>:v = simd(1i32, 2i32, 3i32, 7i32); int32->:p = @v[3i64]; pass ((<-p) => int64); };
+func:n_buffer_in_block = int64() never fails { wild BB->:w = alloc(64i64) =>! wild BB->; <-w = BB{ b: buffer_new(16i64) }; int64:n = 0i64; { uint8->:p = $$m w.b[7i64]; <-p = 5u8; n = ((<-p) =>! int64) + 2i64; } BB:o = move(<-w); dalloc(w); pass n; };
+func:n_buffer_local = int64() never fails { buffer:b = buffer_new(16i64); uint8->:p = $$m b[7i64]; <-p = 5u8; pass ((<-p) =>! int64) + 2i64; };
+
+// A KIND THAT READS THROUGH ITS PLACE, each by its crossing over a written block (F4 of 177d2's reopen). An `atomic`'s cell is the place itself, so it takes the block's bytes as bytes and needs no crossing; a lock of this frame is no manual storage.
+struct:HM = { Mutex<int64, 5i32>:m; };
+struct:HR = { RwLock<int64, 5i32>:r; };
+struct:HCV = { CondVar<3i32>:c; };
+struct:HBA = { Barrier<1i32, 5i32>:b; };
+struct:HCH = { Channel<int64, 4i32, 4i64>:c; };
+struct:HAR = { arena<int64>:a; };
+struct:HSA = { shared_arena<int64>:a; };
+struct:HT = { atomic<int64>:t; };
+async func:b_mutex_crossing = int64() { wild HM->:w = alloc(64i64) =>! wild HM->; <-w = HM{ m: mutex(7i64) ?! E5 }; int64:k = 0i64; { Mutex<int64, 5i32>->:p = (@w.m) =>! Mutex<int64, 5i32>->; Guard<int64>:g = await p.acquire(raw duration_ms(50i64)) ?! E5; k = g.value; } HM:o = move(<-w); dalloc(w); pass k; };
+async func:b_rwlock_crossing = int64() { wild HR->:w = alloc(64i64) =>! wild HR->; <-w = HR{ r: rwlock(7i64) ?! E5 }; int64:k = 0i64; { RwLock<int64, 5i32>->:p = (@w.r) =>! RwLock<int64, 5i32>->; RGuard<int64>:g = await p.read(raw duration_ms(50i64)) ?! E5; k = g.value; } HR:o = move(<-w); dalloc(w); pass k; };
+async func:b_condvar_crossing = int64() { wild HCV->:w = alloc(64i64) =>! wild HCV->; <-w = HCV{ c: condvar() ?! E5 }; Mutex<int32, 1i32>:a = mutex(7i32) ?! E5; { CondVar<3i32>->:p = (@w.c) =>! CondVar<3i32>->; Guard<int32>:g = await a.acquire(raw duration_ms(50i64)) ?! E5; await p.timedwait(g, raw duration_ms(5i64)) ?| NIL; } HCV:o = move(<-w); dalloc(w); pass 7i64; };
+async func:b_barrier_crossing = int64() { wild HBA->:w = alloc(64i64) =>! wild HBA->; <-w = HBA{ b: barrier() ?! E5 }; { Barrier<1i32, 5i32>->:p = (@w.b) =>! Barrier<1i32, 5i32>->; await p.arrive(raw duration_ms(50i64)) ?! E5; } HBA:o = move(<-w); dalloc(w); pass 7i64; };
+async func:b_channel_crossing = int64() { wild HCH->:w = alloc(64i64) =>! wild HCH->; <-w = HCH{ c: channel() ?! E5 }; int64:k = 0i64; { Channel<int64, 4i32, 4i64>->:p = (@w.c) =>! Channel<int64, 4i32, 4i64>->; await (<-p).send(7i64, raw duration_ms(50i64)) ?! E5; k = await (<-p).recv(raw duration_ms(50i64)) ?! E5; } HCH:o = move(<-w); dalloc(w); pass k; };
+func:b_arena_crossing = int64() { wild HAR->:w = alloc(64i64) =>! wild HAR->; <-w = HAR{ a: arena_make(2i64) }; { arena<int64>->:p = (@w.a) =>! arena<int64>->; Handle<int64>:h = p.alloc(); } HAR:o = move(<-w); dalloc(w); pass 7i64; };
+func:b_shared_crossing = int64() { wild HSA->:w = alloc(64i64) =>! wild HSA->; <-w = HSA{ a: shared_arena_make(4i64) }; { shared_arena<int64>->:p = (@w.a) =>! shared_arena<int64>->; Handle<int64>:h = p.alloc(7i64); } HSA:o = move(<-w); dalloc(w); pass 7i64; };
+func:b_atomic_in_block = int64() never fails { wild HT->:w = alloc(64i64) =>! wild HT->; discard(memset(w, 0i64, 64i64)); w.t.store(7i64); int64:k = w.t.load(); dalloc(w); pass k; };
+async func:b_wild_pointer_crossed = int64() { wild Mutex<int64, 5i32>->:w = alloc(64i64) =>! wild Mutex<int64, 5i32>->; <-w = mutex(7i64) ?! E5; int64:k = 0i64; { Mutex<int64, 5i32>->:p = w =>! Mutex<int64, 5i32>->; Guard<int64>:g = await p.acquire(raw duration_ms(50i64)) ?! E5; k = g.value; } Mutex<int64, 5i32>:o = move(<-w); dalloc(w); pass k; };
+async func:b_plain_pointer = int64() { Mutex<int64, 5i32>:m = mutex(7i64) ?! E5; Mutex<int64, 5i32>->:p = @m; Guard<int64>:g = await p.acquire(raw duration_ms(50i64)) ?! E5; pass g.value; };
+async func:b_channel_plain_deref = int64() { Channel<int64, 4i32, 4i64>:c = channel() ?! E5; Channel<int64, 4i32, 4i64>->:p = @c; await (<-p).send(7i64, raw duration_ms(50i64)) ?! E5; pass await (<-p).recv(raw duration_ms(50i64)) ?! E5; };
+async func:b_frame_lock = int64() { Mutex<int64, 5i32>:m = mutex(7i64) ?! E5; int64:k = 0i64; { Guard<int64>:g = await m.acquire(raw duration_ms(50i64)) ?! E5; k = g.value; } pass k; };
+// A PICK'S VALUE, AND A `move` OUT OF THE BLOCK, ARE A VALUE AND NOT A PLACE, SO A LOCK'S METHOD ON ONE IS NO ADDRESS OF THE BLOCK (F4 of 177d2's reopen; `f4_place` refuses all four).
+async func:c_mp_pick_barrier = int64() { int32:k = 0i32; Barrier<1i32, 5i32>:a = barrier() ?! E5; Barrier<1i32, 5i32>:b = barrier() ?! E5; await (pick (k) { (0i32) { give move(a); }, (*) { give move(b); } }).arrive(raw duration_ms(50i64)) ?! E5; pass 7i64; };
+async func:c_mp_pick_channel = int64() { int32:k = 0i32; Channel<int64, 4i32, 4i64>:a = channel() ?! E5; Channel<int64, 4i32, 4i64>:b = channel() ?! E5; await (pick (k) { (0i32) { give move(a); }, (*) { give move(b); } }).send(7i64, raw duration_ms(50i64)) ?! E5; pass 7i64; };
+struct:mp_move_field_of_block__HBA = { Barrier<1i32, 5i32>:b; };
+async func:c_mp_move_field_of_block = int64() { wild mp_move_field_of_block__HBA->:w = alloc(64i64) =>! wild mp_move_field_of_block__HBA->; <-w = mp_move_field_of_block__HBA{ b: barrier() ?! E5 }; await (move((<-w).b)).arrive(raw duration_ms(50i64)) ?! E5; dalloc(w); pass 7i64; };
+async func:c_mp_move_whole_of_block = int64() { wild Barrier<1i32, 5i32>->:w = alloc(64i64) =>! wild Barrier<1i32, 5i32>->; <-w = barrier() ?! E5; await (move(<-w)).arrive(raw duration_ms(50i64)) ?! E5; dalloc(w); pass 7i64; };
+async func:main = int32(cstring[]:_~argv) {
+    if ((raw c_param()) != 7i64) { exit 1i32; }
+    if ((raw c_local()) != 7i64) { exit 2i32; }
+    if ((raw c_claim_m()) != 7i64) { exit 3i32; }
+    if ((raw c_claim_i()) != 7i64) { exit 4i32; }
+    if ((raw c_receiver()) != 7i64) { exit 5i32; }
+    if ((raw c_receiver_local()) != 7i64) { exit 6i32; }
+    if ((raw c_receiver_may_fail()) != 7i64) { exit 7i32; }
+    if ((raw c_list_push()) != 7i64) { exit 8i32; }
+    if ((raw c_generic_forward()) != 7i64) { exit 10i32; }
+    if ((raw c_result()) != 7i64) { exit 11i32; }
+    if ((raw c_bound_at_ss()) != 7i64) { exit 12i32; }
+    if ((raw c_trait_qualified()) != 7i64) { exit 13i32; }
+    if ((raw c_for_by_hand()) != 7i64) { exit 14i32; }
+    Result<int64>:r = await c_spawned();
+    if (r.is_error) { exit 15i32; }
+    if (r.value != 7i64) { exit 16i32; }
+    if ((raw w_local()) != 7i64) { exit 17i32; }
+    if ((raw w_param()) != 7i64) { exit 18i32; }
+    if ((raw n_local()) != 7i64) { exit 19i32; }
+    if ((raw n_wild_binding_field()) != 7i64) { exit 20i32; }
+    if ((raw n_wild_binding_local()) != 7i64) { exit 21i32; }
+    if ((raw n_wild_array_element()) != 7i64) { exit 22i32; }
+    if ((raw n_through_assert()) != 7i64) { exit 23i32; }
+    if ((raw n_through_assert_ptr_add()) != 7i64) { exit 24i32; }
+    if ((raw n_list_element_receiver()) != 7i64) { exit 25i32; }
+    if ((raw n_slice_element()) != 7i64) { exit 26i32; }
+    if ((raw n_simd_lane_frame()) != 7i64) { exit 27i32; }
+    if ((raw n_buffer_in_block()) != 7i64) { exit 28i32; }
+    if ((raw n_buffer_local()) != 7i64) { exit 29i32; }
+    if ((await b_mutex_crossing() ?! E5) != 7i64) { exit 30i32; }
+    if ((await b_rwlock_crossing() ?! E5) != 7i64) { exit 31i32; }
+    if ((await b_condvar_crossing() ?! E5) != 7i64) { exit 32i32; }
+    if ((await b_barrier_crossing() ?! E5) != 7i64) { exit 33i32; }
+    if ((await b_channel_crossing() ?! E5) != 7i64) { exit 34i32; }
+    if ((b_arena_crossing() ?! E5) != 7i64) { exit 35i32; }
+    if ((b_shared_crossing() ?! E5) != 7i64) { exit 36i32; }
+    if ((raw b_atomic_in_block()) != 7i64) { exit 37i32; }
+    if ((await b_frame_lock() ?! E5) != 7i64) { exit 38i32; }
+    if ((await b_wild_pointer_crossed() ?! E5) != 7i64) { exit 39i32; }
+    if ((await b_plain_pointer() ?! E5) != 7i64) { exit 40i32; }
+    if ((await b_channel_plain_deref() ?! E5) != 7i64) { exit 41i32; }
+    if ((await c_mp_pick_barrier() ?! E5) != 7i64) { exit 42i32; }
+    if ((await c_mp_pick_channel() ?! E5) != 7i64) { exit 43i32; }
+    if ((await c_mp_move_field_of_block() ?! E5) != 7i64) { exit 44i32; }
+    if ((await c_mp_move_whole_of_block() ?! E5) != 7i64) { exit 45i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (DeadlineExceeded)  { exit 76i32; },
+        (StaleHandle)       { exit 73i32; },
+        (E5)                { exit 75i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

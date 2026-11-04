@@ -417,11 +417,11 @@ func:f = int64() never fails { int64:y = 7i64; int64->:r = @y; int64->:p = @(<-r
 pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
 };
 mod:wf8_claim_i_after_free_read_ok = {
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; { int64->:p = $$i (<-a); int64:j = <-p; discard(j); } dalloc(a); pass 7i64; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; { int64->:p = ($$i (<-a)) =>! int64->; int64:j = <-p; discard(j); } dalloc(a); pass 7i64; };
 pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
 };
 mod:wf8a_addr_after_free_read_ok = {
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; { int64->:p = @(<-a); int64:j = <-p; discard(j); } dalloc(a); pass 7i64; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; { int64->:p = (@(<-a)) =>! int64->; int64:j = <-p; discard(j); } dalloc(a); pass 7i64; };
 pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
 };
 mod:wf7_claim_i_local_wild_array = {
@@ -430,7 +430,7 @@ pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32);
 };
 mod:wd19_arg_claim_i_inside_wild = {
 func:t = int64(int64->:x) never fails { pass <-x; };
-func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64:k = raw t($$i (<-a)); dalloc(a); pass k; };
+func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = alloc(8i64) =>! wild int64->; <-a = 7i64; int64:k = raw t(($$i (<-a)) =>! int64->); dalloc(a); pass k; };
 pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
 };
 

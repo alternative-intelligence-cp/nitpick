@@ -1,0 +1,42 @@
+// expect-exit: 0
+// A LOCK CREATED OVER A RE-USED BLOCK WORKS (DEF-491, RULED 2026-11-03). Every sync cell holds its list lock at +4, and a freed block's payload is poisoned by design (D-183), so a creator that wrote only the state at +0 left a word that read as held, and the first use futex-waited before anything read a deadline. `churn` frees a ladder of string blocks first. Each creator has its own case, and without its write that case hangs.
+mod:lock_word_reused_block_ok;
+error:E9;
+func:churn = int64(int64:n) never fails { string:s = string_concat("abcdefgh", "ijklmnop"); for (int64:i in 0i64...n) { s = string_concat(s, "x"); } pass s.len; };
+async func:c_mutex = int32() { Mutex<int32, 1i32>:a = mutex(7i32) ?! Unreachable; int32:r = 0i32; { Guard<int32>:g = relay await a.acquire(raw duration_ms(500i64)); r = g.value; } pass r; };
+async func:c_rwlock = int32() { RwLock<int32, 2i32>:a = rwlock(7i32) ?! Unreachable; int32:r = 0i32; { Guard<int32>:g = relay await a.write(raw duration_ms(500i64)); r = g.value; } pass r; };
+async func:c_condvar = int32() { CondVar<4i32>:cv = condvar() ?! Unreachable; discard(cv.signal() ?| NIL); discard(cv.broadcast() ?| NIL); pass 7i32; };
+async func:c_barrier = int32() { Barrier<1i32, 6i32>:b = barrier() ?! Unreachable; await b.arrive(raw duration_ms(500i64)) ?! E9; pass 7i32; };
+async func:main = int32(cstring[]:_~argv) {
+    int64:n1 = raw churn(40i64);
+    int32:r1 = await c_mutex() ?! E9;
+    if (r1 != 7i32) { exit 1i32; }
+    int64:n2 = raw churn(40i64);
+    int32:r2 = await c_rwlock() ?! E9;
+    if (r2 != 7i32) { exit 2i32; }
+    int64:n3 = raw churn(40i64);
+    int32:r3 = await c_condvar() ?! E9;
+    if (r3 != 7i32) { exit 3i32; }
+    int64:n4 = raw churn(40i64);
+    int32:r4 = await c_barrier() ?! E9;
+    if (r4 != 7i32) { exit 4i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

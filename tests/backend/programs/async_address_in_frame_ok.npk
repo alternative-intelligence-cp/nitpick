@@ -1,0 +1,185 @@
+// expect-exit: 0
+// A LOCAL WHOSE ADDRESS IS TAKEN IN AN `async` FUNCTION LIVES IN THE RESUMABLE FRAME, from before the address is formed to the function's end (DEF-431, Q4, RULED, F, the frame). `suspend.npk` named `$$x` alone, and `@x` is another node, with no arm at all for a method's auto-referenced receiver, so the local stayed in the resume function's stack and a pointer that survived the park named a dead activation. The read depends on the frame, so an -O0 test can't be trusted to show it: on the base, `r2_field_of_element_control` read 12 at -O0 and 60 at -O2, and `q4_loop_reuses_address_pre` 67 and 46.
+// Each `c_` returns 7 and `main` exits with its case's number otherwise. `stomp` runs on the resumed stack, between the park and the read. The `ctl_` cases read right before the fix too, and each says why it isn't on the list: a later use or a `$$` claim framed the local already, nothing suspends, a parameter is the caller's store into the frame, and a `for` binding is role 4 of `scan_crossing`, framed unconditionally. `ctl_recv_by_value` is a method that takes no address. The refusal the ruling allows beside this is `tests/analysis/rejection/async_address_owner_moved.npk`. A temporary receiver has no local to frame and stays TYPE-103.
+mod:async_address_in_frame_ok;
+error:E9;
+func:stomp = int64(int64:k) never fails { int64[8]:a = [113i64,113i64,113i64,113i64,113i64,113i64,113i64,113i64]; int64:t = 0i64; for (int64:i in 0i64...8i64) { a[i] = 113i64 + k; t = t + a[i]; } pass t; };
+struct:P = { int64:a; int64:b; };
+struct:PH = { int64->:p; };
+struct:SS = { string:s; };
+struct:Job = { int64:n; };
+struct:Hld = { int64:a; Job:j; };
+struct:Grp = { Hld:h; };
+struct:Jv = { int64:n; };
+struct:Tj = { int64:n; };
+trait:Work = { async func:wrun = int64(Self->:self); };
+impl:Job = { async func:run = int64(Job->:self) { await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass self.n; }; func:me = int64->(Job->:self) never fails { pass @self.n; }; };
+impl:Jv = { async func:val = int64(Jv:self) { await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass self.n; }; };
+impl:Tj:Work = { async func:wrun = int64(Tj->:self) { await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass self.n; }; };
+async func:child = int64(int64->:p) { await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass <-p; };
+async func:outer = int64(int64->:p) { int64:a = await child(p) ?! E9; pass a; };
+async func:rec = int64(int64:n) { int64:x = n; int64->:p = @x; if (n > 0i64) { int64:u = await rec(n - 1i64) ?! E9; discard(u); } await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass <-p; };
+async func:p_param = int64(int64:x) { int64->:p = @x; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass <-p; };
+async func:p_param_field = int64(P:h) { int64->:p = @h.b; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass <-p; };
+async func:defer_alias = int64(wild int64->:hb) { int64:x = 7i64; int64->:p = @x; defer { <-hb = <-p; } await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass 7i64; };
+func:rd_seven = bool(int64->:p) never fails { pass ((<-p) == 7i64); };
+enum:Oi = { V(int64); W; };
+async func:c_addr_park_read = int64() { int64:x = 7i64; int64->:p = @x; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass <-p; };
+async func:c_addr_child_reads = int64() { int64:x = 7i64; int64:a = await child(@x) ?! E9; pass a; };
+async func:c_addr_in_holder = int64() { int64:x = 7i64; PH:h = PH{ p: @x }; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass <-(h.p); };
+async func:c_addr_in_array_literal = int64() { int64:x = 7i64; int64->[1]:ps = [@x]; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass <-(ps[0i64]); };
+async func:c_addr_nested_await = int64() { int64:x = 7i64; int64:a = await outer(@x) ?! E9; pass a; };
+async func:c_addr_loop_reuses = int64() { int64:x = 7i64; int64->:p = @x; int64:t = 0i64; int64:k = 0i64; while (k < 3i64) decreases 3i64 - k { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); t = t + <-p; } pass t - 14i64; };
+async func:c_addr_later_for = int64() { int64:x = 7i64; int64->:p = @x; int64:t = 0i64; for (int64:i in 0i64...2i64) { await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); t = <-p; } pass t; };
+async func:c_addr_field = int64() { P:h = P{ a: 1i64, b: 7i64 }; int64->:p = @h.b; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass <-p; };
+async func:c_addr_index = int64() { int64[2]:a = [1i64, 7i64]; int64->:p = @a[1i64]; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass <-p; };
+async func:c_addr_whole_array = int64() { int64[2]:a = [1i64, 7i64]; int64[2]->:p = @a; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass (<-p)[1i64]; };
+async func:c_addr_inner_block = int64() { int64:t = 0i64; { int64:x = 7i64; int64->:p = @x; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); t = <-p; } pass t; };
+async func:c_addr_two_scopes = int64() { int64:t = 0i64; { int64:x = 3i64; int64->:p = @x; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); t = t + <-p; } { int64:x = 4i64; int64->:p = @x; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); t = t + <-p; } pass t; };
+async func:c_addr_wild_cast = int64() { int64:x = 7i64; wild int64->:w = (@x) =>! wild int64->; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass <-w; };
+async func:c_addr_ptr_add = int64() { int64[2]:a = [1i64, 7i64]; wild int64->:w = #ptr_add<int64>((@a[0i64]) =>! wild int64->, 1i64); await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass <-w; };
+async func:c_addr_stack_local = int64() { stack int64:x = 7i64; int64->:p = @x; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass <-p; };
+async func:c_addr_recursive = int64() { int64:r = await rec(7i64) ?! E9; pass r; };
+async func:c_addr_in_value_pick = int64() { int32:s = 1i32; int64:t = pick (s) { (1i32) { int64:c = 7i64; int64->:p = @c; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); give <-p; }, (*) { give 1i64; } }; pass t; };
+async func:c_addr_in_when_body = int64() { int64:t = 0i64; int64:k = 0i64; when (k < 1i64) decreases 1i64 - k { int64:c = 7i64; int64->:p = @c; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); t = <-p; k = 1i64; } then { t = t + 0i64; } end { t = t + 0i64; } pass t; };
+async func:c_addr_in_when_then = int64() { int64:t = 0i64; int64:k = 0i64; when (k < 1i64) decreases 1i64 - k { k = 1i64; } then { int64:c = 7i64; int64->:p = @c; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); t = <-p; } end { t = 1i64; } pass t; };
+async func:c_addr_in_loop = int64() { int64:t = 0i64; loop (0i64, 1i64, 1i64) { int64:c = 7i64; int64->:p = @c; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); t = <-p; } pass t; };
+async func:c_addr_in_till = int64() { int64:t = 0i64; till (1i64, 1i64) { int64:c = 7i64; int64->:p = @c; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); t = <-p; } pass t; };
+async func:c_addr_in_else = int64() { int64:t = 0i64; bool:b = false; if (b) { t = 1i64; } else { int64:c = 7i64; int64->:p = @c; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); t = <-p; } pass t; };
+async func:c_addr_in_for_range = int64() { int64:t = 0i64; for (int64:i in 7i64...8i64) { int64:c = i; int64->:p = @c; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); t = <-p; } pass t; };
+async func:c_addr_in_pick_arm = int64() { Oi:o = Oi.V(7i64); int64:t = 0i64; pick (o) { (Oi.V(n)) { int64:c = n; int64->:p = @c; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); t = <-p; }, (Oi.W) { t = 1i64; } } pass t; };
+async func:c_recv_awaited = int64() { Job:j = Job{ n: 7i64 }; int64:a = await j.run() ?! E9; pass a; };
+async func:c_recv_trait_awaited = int64() { Tj:j = Tj{ n: 7i64 }; int64:a = await j.wrun() ?! E9; pass a; };
+async func:c_recv_returns_pointer = int64() { Job:j = Job{ n: 7i64 }; int64->:p = raw j.me(); await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass <-p; };
+async func:c_recv_field = int64() { Hld:b = Hld{ a: 1i64, j: Job{ n: 7i64 } }; int64:a = await b.j.run() ?! E9; pass a; };
+async func:c_recv_nested_field = int64() { Grp:g = Grp{ h: Hld{ a: 1i64, j: Job{ n: 7i64 } } }; int64:a = await g.h.j.run() ?! E9; pass a; };
+async func:c_recv_array_element = int64() { Job[2]:a = [Job{ n: 1i64 }, Job{ n: 7i64 }]; int64:r = await a[1i64].run() ?! E9; pass r; };
+async func:c_recv_by_pointer_local = int64() { Job:j = Job{ n: 7i64 }; Job->:q = @j; int64:a = await q.run() ?! E9; pass a; };
+async func:c_ctl_addr_post = int64() { int64:x = 7i64; await sleep(raw duration_ms(1i64)) ?| NIL; PH:h = PH{ p: @x }; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass <-(h.p); };
+async func:c_ctl_recv_used_after = int64() { Job:j = Job{ n: 7i64 }; int64:a = await j.run() ?! E9; pass a + j.n - 7i64; };
+async func:c_ctl_addr_used_after = int64() { int64:x = 7i64; int64->:p = @x; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass (<-p) + x - 7i64; };
+async func:c_ctl_addr_write = int64() { int64:x = 7i64; int64->:p = @x; await sleep(raw duration_ms(1i64)) ?| NIL; <-p = 5i64; int64:z = raw stomp(3i64); pass x + 2i64; };
+async func:c_ctl_claim = int64() { int64:x = 7i64; int64->:q = $$i x; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass <-q; };
+async func:c_ctl_no_suspend = int64() { int64:x = 7i64; int64->:p = @x; int64:z = raw stomp(3i64); pass <-p; };
+async func:c_ctl_value_across = int64() { int64:x = 7i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass x; };
+async func:c_ctl_param = int64() { int64:r = await p_param(7i64) ?! E9; pass r; };
+async func:c_ctl_param_field = int64() { int64:r = await p_param_field(P{ a: 1i64, b: 7i64 }) ?! E9; pass r; };
+async func:c_ctl_for_element = int64() { int64[1]:a = [7i64]; int64:t = 0i64; for (int64:v in a) { int64->:p = @v; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); t = <-p; } pass t; };
+async func:c_ctl_for_element_receiver = int64() { Job[1]:a = [Job{ n: 7i64 }]; int64:t = 0i64; for (Job:v in a) { t = await v.run() ?! E9; } pass t; };
+async func:c_ctl_recv_by_value = int64() { Jv:j = Jv{ n: 7i64 }; int64:a = await j.val() ?! E9; pass a; };
+async func:c_ctl_guard_addr = int64() { int64:c = 7i64; int32:s = 1i32; int64:t = 0i64; pick (s) { (1i32) where (raw rd_seven(@c)) { await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); t = c; }, (*) { t = 1i64; } } pass t; };
+async func:main = int32(cstring[]:_~argv) {
+    int64:r1 = await c_addr_park_read() ?! E9;
+    if (r1 != 7i64) { exit 1i32; }
+    int64:r2 = await c_addr_child_reads() ?! E9;
+    if (r2 != 7i64) { exit 2i32; }
+    int64:r3 = await c_addr_in_holder() ?! E9;
+    if (r3 != 7i64) { exit 3i32; }
+    int64:r4 = await c_addr_in_array_literal() ?! E9;
+    if (r4 != 7i64) { exit 4i32; }
+    int64:r5 = await c_addr_nested_await() ?! E9;
+    if (r5 != 7i64) { exit 5i32; }
+    int64:r6 = await c_addr_loop_reuses() ?! E9;
+    if (r6 != 7i64) { exit 6i32; }
+    int64:r7 = await c_addr_later_for() ?! E9;
+    if (r7 != 7i64) { exit 7i32; }
+    int64:r8 = await c_addr_field() ?! E9;
+    if (r8 != 7i64) { exit 8i32; }
+    int64:r9 = await c_addr_index() ?! E9;
+    if (r9 != 7i64) { exit 9i32; }
+    int64:r10 = await c_addr_whole_array() ?! E9;
+    if (r10 != 7i64) { exit 10i32; }
+    int64:r11 = await c_addr_inner_block() ?! E9;
+    if (r11 != 7i64) { exit 11i32; }
+    int64:r12 = await c_addr_two_scopes() ?! E9;
+    if (r12 != 7i64) { exit 12i32; }
+    int64:r13 = await c_addr_wild_cast() ?! E9;
+    if (r13 != 7i64) { exit 13i32; }
+    int64:r14 = await c_addr_ptr_add() ?! E9;
+    if (r14 != 7i64) { exit 14i32; }
+    int64:r15 = await c_addr_stack_local() ?! E9;
+    if (r15 != 7i64) { exit 15i32; }
+    int64:r16 = await c_addr_recursive() ?! E9;
+    if (r16 != 7i64) { exit 16i32; }
+    int64:r17 = await c_addr_in_value_pick() ?! E9;
+    if (r17 != 7i64) { exit 17i32; }
+    int64:r18 = await c_addr_in_when_body() ?! E9;
+    if (r18 != 7i64) { exit 18i32; }
+    int64:r19 = await c_addr_in_when_then() ?! E9;
+    if (r19 != 7i64) { exit 19i32; }
+    int64:r20 = await c_addr_in_loop() ?! E9;
+    if (r20 != 7i64) { exit 20i32; }
+    int64:r21 = await c_addr_in_till() ?! E9;
+    if (r21 != 7i64) { exit 21i32; }
+    int64:r22 = await c_addr_in_else() ?! E9;
+    if (r22 != 7i64) { exit 22i32; }
+    int64:r23 = await c_addr_in_for_range() ?! E9;
+    if (r23 != 7i64) { exit 23i32; }
+    int64:r24 = await c_addr_in_pick_arm() ?! E9;
+    if (r24 != 7i64) { exit 24i32; }
+    int64:r25 = await c_recv_awaited() ?! E9;
+    if (r25 != 7i64) { exit 25i32; }
+    int64:r26 = await c_recv_trait_awaited() ?! E9;
+    if (r26 != 7i64) { exit 26i32; }
+    int64:r27 = await c_recv_returns_pointer() ?! E9;
+    if (r27 != 7i64) { exit 27i32; }
+    int64:r28 = await c_recv_field() ?! E9;
+    if (r28 != 7i64) { exit 28i32; }
+    int64:r29 = await c_recv_nested_field() ?! E9;
+    if (r29 != 7i64) { exit 29i32; }
+    int64:r30 = await c_recv_array_element() ?! E9;
+    if (r30 != 7i64) { exit 30i32; }
+    int64:r31 = await c_recv_by_pointer_local() ?! E9;
+    if (r31 != 7i64) { exit 31i32; }
+    int64:r32 = await c_ctl_addr_post() ?! E9;
+    if (r32 != 7i64) { exit 32i32; }
+    int64:r33 = await c_ctl_recv_used_after() ?! E9;
+    if (r33 != 7i64) { exit 33i32; }
+    int64:r34 = await c_ctl_addr_used_after() ?! E9;
+    if (r34 != 7i64) { exit 34i32; }
+    int64:r35 = await c_ctl_addr_write() ?! E9;
+    if (r35 != 7i64) { exit 35i32; }
+    int64:r36 = await c_ctl_claim() ?! E9;
+    if (r36 != 7i64) { exit 36i32; }
+    int64:r37 = await c_ctl_no_suspend() ?! E9;
+    if (r37 != 7i64) { exit 37i32; }
+    int64:r38 = await c_ctl_value_across() ?! E9;
+    if (r38 != 7i64) { exit 38i32; }
+    int64:r39 = await c_ctl_param() ?! E9;
+    if (r39 != 7i64) { exit 39i32; }
+    int64:r40 = await c_ctl_param_field() ?! E9;
+    if (r40 != 7i64) { exit 40i32; }
+    int64:r41 = await c_ctl_for_element() ?! E9;
+    if (r41 != 7i64) { exit 41i32; }
+    int64:r42 = await c_ctl_for_element_receiver() ?! E9;
+    if (r42 != 7i64) { exit 42i32; }
+    int64:r43 = await c_ctl_recv_by_value() ?! E9;
+    if (r43 != 7i64) { exit 43i32; }
+    int64:r44 = await c_ctl_guard_addr() ?! E9;
+    if (r44 != 7i64) { exit 44i32; }
+    wild int64->:hb = alloc(8i64) =>! wild int64->;
+    <-hb = 0i64;
+    int64:rd = await defer_alias(hb) ?! E9;
+    int64:v = <-hb;
+    dalloc(hb);
+    if ((rd != 7i64) || (v != 7i64)) { exit 45i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

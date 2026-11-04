@@ -1,0 +1,108 @@
+// expect-exit: 0
+// THE ROADS BESIDE `tests/types/rejection/wild_view_plain_slot.npk` AND `wild_view_generic.npk` (DEF-486, z36, RULED, landing 177d2). Over room not yet written the view is `wild T[]`, whose element store drops nothing;
+// over a live block it's the crossing, `v =>! T[]`, which a `fixed T[]` slot takes too; a view over something that isn't manual storage, or of an element with nothing to drop and no pointer to hold, stays plain. A generic's
+// plain `T[]` over a block stands at an argument that doesn't drop, a bare `T: Copy` always, and a generic that crosses or says `wild T[]` at any argument. Every cell's value comes through the view (`mks` makes five bytes), each returns 7, and `main` compares. Before this landing the first four were the only sound spellings too; nothing changes for them.
+mod:wild_view_roads_ok;
+error:E5;
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+struct:SS = { string:s; };
+struct:ASS = { SS[2]:q; };
+struct:API = { int64->[2]:a; };
+struct:HL = { List<SS>:l; };
+struct:HSV = { SS[]:sv; };
+struct:PI = { int64:n; };
+struct:Box<T> = { T:x; };
+struct:WH<T> = { wild T->:w; };
+func:set = NIL(string->:p) never fails { <-p = raw mks(); pass NIL; };
+func:rd = int64(string[]:v) never fails { pass v[0i64].len; };
+func:setw = NIL(wild SS[]:v) never fails { v[0i64].s = raw mks(); pass NIL; };
+func:setr = int64(SS[]:p) never fails { SS[]:v = p[0i64...1i64]; v[0i64].s = raw mks(); pass v[0i64].s.len; };
+func:setp = int64(ASS->:p) never fails { SS[]:v = (<-p).q[0i64...2i64]; v[0i64].s = raw mks(); pass v[0i64].s.len; };
+func:gv<T> = T[](wild T->:w) never fails { pass #wild_slice<T>(w, 1i64); };
+func:fw<T> = T[](wild T->:w) never fails { pass raw gv::<T>(w); };
+func:gb<T> = Box<T>[](wild Box<T>->:w) never fails { pass #wild_slice<Box<T>>(w, 1i64); };
+func:gc<T: Copy> = T[](wild T->:w) never fails { pass #wild_slice<T>(w, 1i64); };
+func:gxc<T> = T[](wild T->:w) never fails { pass #wild_slice<T>(w, 1i64) =>! T[]; };
+func:gwv<T> = int64(wild T->:w) never fails { wild T[]:v = #wild_slice<T>(w, 1i64); pass v.len; };
+impl:<T>:WH<T> = { func:view = T[](WH<T>->:self) never fails { pass #wild_slice<T>(self.w, 1i64); }; };
+func:c_wild_view_writes_room = int64() never fails { wild SS->:w = alloc(256i64) =>! wild SS->; discard(memset(w, 65i64, 256i64)); int64:n = 0i64; { wild SS[]:v = #wild_slice<SS>(w, 1i64); v[0i64].s = raw mks(); n = v[0i64].s.len + 2i64; } SS:o = move(<-w); dalloc(w); pass n; };
+func:c_wild_view_takes_whole = int64() never fails { wild string->:w = alloc(64i64) =>! wild string->; discard(memset(w, 65i64, 64i64)); int64:n = 0i64; { wild string[]:v = #wild_slice<string>(w, 1i64); v[0i64] = raw mks(); n = v[0i64].len + 2i64; } string:o = move(<-w); dalloc(w); pass n; };
+func:c_wild_param_takes_it = int64() never fails { wild SS->:w = alloc(256i64) =>! wild SS->; discard(memset(w, 65i64, 256i64)); drop setw(#wild_slice<SS>(w, 1i64)); int64:n = w.s.len + 2i64; SS:o = move(<-w); dalloc(w); pass n; };
+func:c_range_into_wild_local = int64() never fails { wild ASS->:w = alloc(256i64) =>! wild ASS->; discard(memset(w, 65i64, 256i64)); int64:n = 0i64; { wild SS[]:v = w.q[0i64...2i64]; v[0i64].s = raw mks(); v[1i64].s = raw mks(); n = v[1i64].s.len + 2i64; } ASS:o = move(<-w); dalloc(w); pass n; };
+func:c_crossed_over_written = int64() never fails { wild SS->:w = alloc(256i64) =>! wild SS->; discard(memset(w, 0i64, 256i64)); <-w = SS{ s: raw mks() }; int64:n = 0i64; { SS[]:v = #wild_slice<SS>(w, 1i64) =>! SS[]; v[0i64].s = raw mks(); n = v[0i64].s.len + 2i64; } SS:o = move(<-w); dalloc(w); pass n; };
+func:c_crossed_fixed = int64() never fails { wild SS->:w = alloc(256i64) =>! wild SS->; discard(memset(w, 0i64, 256i64)); <-w = SS{ s: raw mks() }; int64:n = 0i64; { fixed SS[]:v = (#wild_slice<SS>(w, 1i64) =>! SS[]); n = v[0i64].s.len + 2i64; } SS:o = move(<-w); dalloc(w); pass n; };
+func:c_crossed_then_fixed_local = int64() never fails { wild SS->:w = alloc(256i64) =>! wild SS->; discard(memset(w, 0i64, 256i64)); <-w = SS{ s: raw mks() }; int64:n = 0i64; { SS[]:p = #wild_slice<SS>(w, 1i64) =>! SS[]; fixed SS[]:v = p; n = v[0i64].s.len + 2i64; } SS:o = move(<-w); dalloc(w); pass n; };
+func:c_crossed_range = int64() never fails { wild ASS->:w = alloc(256i64) =>! wild ASS->; discard(memset(w, 0i64, 256i64)); w.q = [SS{ s: raw mks() }, SS{ s: raw mks() }]; int64:n = 0i64; { SS[]:v = w.q[0i64...2i64] =>! SS[]; v[0i64].s = raw mks(); n = v[0i64].s.len + 2i64; } ASS:o = move(<-w); dalloc(w); pass n; };
+func:c_range_of_crossed = int64() never fails { wild SS->:w = alloc(256i64) =>! wild SS->; discard(memset(w, 0i64, 256i64)); <-w = SS{ s: raw mks() }; int64:n = 0i64; { SS[]:v = #wild_slice<SS>(w, 1i64) =>! SS[]; SS[]:u = v[0i64...1i64]; u[0i64].s = raw mks(); n = u[0i64].s.len + 2i64; } SS:o = move(<-w); dalloc(w); pass n; };
+func:c_crossed_element_address = int64() never fails { wild string->:w = alloc(256i64) =>! wild string->; discard(memset(w, 0i64, 256i64)); <-w = raw mks(); int64:n = 0i64; { string[]:v = #wild_slice<string>(w, 1i64) =>! string[]; drop set(@v[0i64]); n = v[0i64].len + 2i64; } string:o = move(<-w); dalloc(w); pass n; };
+func:c_crossed_param = int64() never fails { wild string->:w = alloc(256i64) =>! wild string->; discard(memset(w, 0i64, 256i64)); <-w = raw mks(); int64:n = (raw rd(#wild_slice<string>(w, 1i64) =>! string[])) + 2i64; string:o = move(<-w); dalloc(w); pass n; };
+func:c_int_view = int64() never fails { wild int64->:w = alloc(64i64) =>! wild int64->; discard(memset(w, 0i64, 64i64)); int64[]:v = #wild_slice<int64>(w, 1i64); v[0i64] = 7i64; int64:n = v[0i64]; dalloc(w); pass n; };
+func:c_int_view_element_address = int64() never fails { wild int64->:w = alloc(64i64) =>! wild int64->; discard(memset(w, 0i64, 64i64)); int64[]:v = #wild_slice<int64>(w, 1i64); int64->:p = @v[0i64]; <-p = 7i64; int64:n = <-p; dalloc(w); pass n; };
+func:c_no_drop_struct_view = int64() never fails { wild PI->:w = alloc(64i64) =>! wild PI->; discard(memset(w, 0i64, 64i64)); PI[]:v = #wild_slice<PI>(w, 1i64); v[0i64].n = 7i64; int64:n = v[0i64].n; dalloc(w); pass n; };
+func:c_frame_list_range = int64() never fails { List<SS>:l = raw list_init::<SS>(4i64); drop list_push(@l, SS{ s: raw mks() }); SS[]:v = l[0i64...1i64]; v[0i64].s = raw mks(); pass v[0i64].s.len + 2i64; };
+func:c_list_in_block_range = int64() never fails { wild HL->:w = alloc(64i64) =>! wild HL->; discard(memset(w, 0i64, 64i64)); drop list_push((@w.l) =>! List<SS>->, SS{ s: raw mks() }); int64:n = 0i64; { SS[]:v = w.l[0i64...1i64]; v[0i64].s = raw mks(); n = v[0i64].s.len + 2i64; } List<SS>:o = move(w.l); dalloc(w); pass n; };
+func:c_frame_array_range = int64() never fails { SS[2]:a = [SS{ s: raw mks() }, SS{ s: raw mks() }]; SS[]:v = a[0i64...2i64]; v[0i64].s = raw mks(); pass v[0i64].s.len + 2i64; };
+func:c_plain_param_range = int64() never fails { SS[2]:a = [SS{ s: raw mks() }, SS{ s: raw mks() }]; pass (raw setr(a[0i64...2i64])) + 2i64; };
+func:c_plain_pointer_range = int64() never fails { ASS:h = ASS{ q: [SS{ s: raw mks() }, SS{ s: raw mks() }] }; pass (raw setp(@h)) + 2i64; };
+func:c_plain_slice_field_in_block = int64() never fails { wild HSV->:w = alloc(64i64) =>! wild HSV->; wild SS->:b = alloc(64i64) =>! wild SS->; <-b = SS{ s: raw mks() }; (<-w) = HSV{ sv: #wild_slice<SS>(b, 1i64) =>! SS[] }; int64:n = 0i64; { SS[]:v = w.sv; v[0i64].s = raw mks(); n = v[0i64].s.len + 2i64; } SS:o = move(<-b); dalloc(b); dalloc(w); pass n; };
+func:c_range_of_plain_slice_field = int64() never fails { wild HSV->:w = alloc(64i64) =>! wild HSV->; wild SS->:b = alloc(64i64) =>! wild SS->; <-b = SS{ s: raw mks() }; (<-w) = HSV{ sv: #wild_slice<SS>(b, 1i64) =>! SS[] }; int64:n = 0i64; { SS[]:v = w.sv[0i64...1i64]; v[0i64].s = raw mks(); n = v[0i64].s.len + 2i64; } SS:o = move(<-b); dalloc(b); dalloc(w); pass n; };
+func:c_gen_at_int64 = int64() never fails { wild int64->:w = alloc(64i64) =>! wild int64->; discard(memset(w, 0i64, 64i64)); int64[]:v = raw gv::<int64>(w); v[0i64] = 7i64; int64:n = v[0i64]; dalloc(w); pass n; };
+func:c_gen_at_no_drop_struct = int64() never fails { wild PI->:w = alloc(64i64) =>! wild PI->; discard(memset(w, 0i64, 64i64)); PI[]:v = raw gv::<PI>(w); v[0i64].n = 7i64; int64:n = v[0i64].n; dalloc(w); pass n; };
+func:c_gen_forwarded_at_int64 = int64() never fails { wild int64->:w = alloc(64i64) =>! wild int64->; discard(memset(w, 0i64, 64i64)); int64[]:v = raw fw::<int64>(w); v[0i64] = 7i64; int64:n = v[0i64]; dalloc(w); pass n; };
+func:c_gen_box_at_int64 = int64() never fails { wild Box<int64>->:w = alloc(64i64) =>! wild Box<int64>->; discard(memset(w, 0i64, 64i64)); Box<int64>[]:v = raw gb::<int64>(w); v[0i64].x = 7i64; int64:n = v[0i64].x; dalloc(w); pass n; };
+func:c_gen_method_at_int64 = int64() never fails { wild int64->:w = alloc(64i64) =>! wild int64->; discard(memset(w, 0i64, 64i64)); WH<int64>:h = WH{ w: w }; int64[]:v = raw h.view(); v[0i64] = 7i64; int64:n = v[0i64]; dalloc(w); pass n; };
+func:c_gen_copy_bound_at_int64 = int64() never fails { wild int64->:w = alloc(64i64) =>! wild int64->; discard(memset(w, 0i64, 64i64)); int64[]:v = raw gc::<int64>(w); v[0i64] = 7i64; int64:n = v[0i64]; dalloc(w); pass n; };
+func:c_gen_crossed_over_written = int64() never fails { wild SS->:w = alloc(256i64) =>! wild SS->; discard(memset(w, 0i64, 256i64)); <-w = SS{ s: raw mks() }; int64:n = 0i64; { SS[]:v = raw gxc::<SS>(w); v[0i64].s = raw mks(); n = v[0i64].s.len + 2i64; } SS:o = move(<-w); dalloc(w); pass n; };
+func:c_gen_wild_view_at_struct = int64() never fails { wild SS->:w = alloc(256i64) =>! wild SS->; discard(memset(w, 65i64, 256i64)); int64:n = (raw gwv::<SS>(w)) + 6i64; dalloc(w); pass n; };
+func:c_elem_read_direct = int64() never fails { wild API->:w = alloc(256i64) =>! wild API->; discard(memset(w, 0i64, 256i64)); int64->:p = w.a[0i64]; dalloc(w); pass 7i64; };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c_wild_view_writes_room()) != 7i64) { exit 1i32; }
+    if ((raw c_wild_view_takes_whole()) != 7i64) { exit 2i32; }
+    if ((raw c_wild_param_takes_it()) != 7i64) { exit 3i32; }
+    if ((raw c_range_into_wild_local()) != 7i64) { exit 4i32; }
+    if ((raw c_crossed_over_written()) != 7i64) { exit 5i32; }
+    if ((raw c_crossed_fixed()) != 7i64) { exit 6i32; }
+    if ((raw c_crossed_then_fixed_local()) != 7i64) { exit 7i32; }
+    if ((raw c_crossed_range()) != 7i64) { exit 8i32; }
+    if ((raw c_range_of_crossed()) != 7i64) { exit 9i32; }
+    if ((raw c_crossed_element_address()) != 7i64) { exit 10i32; }
+    if ((raw c_crossed_param()) != 7i64) { exit 11i32; }
+    if ((raw c_int_view()) != 7i64) { exit 12i32; }
+    if ((raw c_int_view_element_address()) != 7i64) { exit 13i32; }
+    if ((raw c_no_drop_struct_view()) != 7i64) { exit 14i32; }
+    if ((raw c_frame_list_range()) != 7i64) { exit 15i32; }
+    if ((raw c_list_in_block_range()) != 7i64) { exit 16i32; }
+    if ((raw c_frame_array_range()) != 7i64) { exit 17i32; }
+    if ((raw c_plain_param_range()) != 7i64) { exit 18i32; }
+    if ((raw c_plain_pointer_range()) != 7i64) { exit 19i32; }
+    if ((raw c_plain_slice_field_in_block()) != 7i64) { exit 20i32; }
+    if ((raw c_range_of_plain_slice_field()) != 7i64) { exit 21i32; }
+    if ((raw c_gen_at_int64()) != 7i64) { exit 22i32; }
+    if ((raw c_gen_at_no_drop_struct()) != 7i64) { exit 23i32; }
+    if ((raw c_gen_forwarded_at_int64()) != 7i64) { exit 24i32; }
+    if ((raw c_gen_box_at_int64()) != 7i64) { exit 25i32; }
+    if ((raw c_gen_method_at_int64()) != 7i64) { exit 26i32; }
+    if ((raw c_gen_copy_bound_at_int64()) != 7i64) { exit 27i32; }
+    if ((raw c_gen_crossed_over_written()) != 7i64) { exit 28i32; }
+    if ((raw c_gen_wild_view_at_struct()) != 7i64) { exit 29i32; }
+    if ((raw c_elem_read_direct()) != 7i64) { exit 30i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (DeadlineExceeded)  { exit 76i32; },
+        (E5)                { exit 75i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

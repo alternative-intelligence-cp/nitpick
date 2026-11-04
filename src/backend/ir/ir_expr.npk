@@ -8252,7 +8252,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         drop irw_line(x.fe.w, raw cat3(rcell,
                           " = call ptr @npk_alloc_managed(i64 ",
                           string_concat(rcsz, ")")));
-        drop irw_line(x.fe.w, raw cat3("store i32 0, ptr ", rcell, ""));
+        drop irw_line(x.fe.w, raw cat3("store i64 0, ptr ", rcell, ""));   // +0 the state AND +4 the list lock (DEF-491): a re-used block holds the free poison, and `npk_mx_lock(cell + 4)` waited on it for ever, deadline or not
         string:rwp = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(rwp, " = getelementptr i8, ptr ",
                           string_concat(rcell, ", i64 8")));
@@ -8291,7 +8291,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         string:ccell = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(ccell,
                           " = call ptr @npk_alloc_managed(i64 24)", ""));
-        drop irw_line(x.fe.w, raw cat3("store i32 0, ptr ", ccell, ""));
+        drop irw_line(x.fe.w, raw cat3("store i64 0, ptr ", ccell, ""));   // +0 the state AND +4 the list lock (DEF-491): a re-used block holds the free poison, and `npk_mx_lock(cell + 4)` waited on it for ever, deadline or not
         string:cwp = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(cwp, " = getelementptr i8, ptr ",
                           string_concat(ccell, ", i64 8")));
@@ -8323,7 +8323,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         string:bcell = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(bcell,
                           " = call ptr @npk_alloc_managed(i64 32)", ""));
-        drop irw_line(x.fe.w, raw cat3("store i32 0, ptr ", bcell, ""));
+        drop irw_line(x.fe.w, raw cat3("store i64 0, ptr ", bcell, ""));   // +0 the state AND +4 the list lock (DEF-491): a re-used block holds the free poison, and `npk_mx_lock(cell + 4)` waited on it for ever, deadline or not
         string:bwp = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(bwp, " = getelementptr i8, ptr ",
                           string_concat(bcell, ", i64 8")));
@@ -8377,7 +8377,7 @@ func:call_builtin = IrVal(ExprEmitter->:x, ExprId:id, ExprNode:n,
         drop irw_line(x.fe.w, raw cat3(mcell,
                           " = call ptr @npk_alloc_managed(i64 ",
                           string_concat(mcsz, ")")));
-        drop irw_line(x.fe.w, raw cat3("store i32 0, ptr ", mcell, ""));
+        drop irw_line(x.fe.w, raw cat3("store i64 0, ptr ", mcell, ""));   // +0 the state AND +4 the list lock (DEF-491): a re-used block holds the free poison, and `npk_mx_lock(cell + 4)` waited on it for ever, deadline or not
         string:mwp = raw irw_temp(x.fe.w);
         drop irw_line(x.fe.w, raw cat3(mwp, " = getelementptr i8, ptr ",
                           string_concat(mcell, ", i64 8")));

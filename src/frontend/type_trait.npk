@@ -125,13 +125,29 @@ func:impl_push = NIL(ImplTable->:t, int32:target, int32:trait_id, int32:decl,
 // is read, and were that to move, `List<string->>` would be refused everywhere.
 pub func:check_wild_instance = NIL(TypeResolver->:r, int32:decl, int32:start, int32:count, Span:at) never fails {
     DeclNode:d = raw ast_decl(r.ast, DeclId{ index: decl });
-    if ((d.span.file == 0i32) || (!(raw decl_has(d, raw DECL_HAS_WILD())))) { pass NIL; }
+    bool:has_wild = raw decl_has(d, raw DECL_HAS_WILD());
+    bool:views = raw decl_has(d, raw DECL_VIEWS_T());
+    if ((d.span.file == 0i32) || ((!has_wild) && (!views))) { pass NIL; }
     for (int32:i in 0i32...count) {
         int32:a = raw ast_id_at(r.ast, start, i);
-        if (((raw type_kind(r.types, a)) == (raw TY_FUNC())) || (raw type_contains_borrow(r, a, 0i32, 64i32))) {
+        // AN UNBOUND `Self` (DEF-490's form B): a generic called at `Self` from a trait's default body is recorded once, with `Self` unbound, so no impl's type is here to ask about. `gb::<Self>` at `SS` ran a member store's drop over a block's bytes (74, `s8n`). Closed, whatever the impl: `s8nc` is the price, and so is a marked struct at `Self` in a bodyless signature or an untouched local (`w1`, `w2`, `w4`).
+        if (raw type_holds_self(r.types, r.ast, a, 64i32)) {
+            drop diaglist_push(r.diags, raw diag_error(raw TYPE_WILD_INSTANCE(),
+                "this generic's declaration has `wild`, a `#` form that reads storage or `=>!` in it, or forms a plain view at a type parameter, and a trait names it here with `Self` in a type argument: a trait's `Self` isn't on this page, so nothing can ask what an impl's type holds (D-223, DEF-490) -- declare the method without a body here and write it in each impl, or give each type its own method, where the type is on the page",
+                at));
+            continue;
+        }
+        if (has_wild && (((raw type_kind(r.types, a)) == (raw TY_FUNC())) || (raw type_contains_borrow(r, a, 0i32, 64i32)))) {
             drop diaglist_push(r.diags, raw diag_error(raw TYPE_WILD_INSTANCE(),
                 "this generic's declaration has `wild`, a `#` form that reads storage, or `=>!` in it, and a type argument here is or holds a plain pointer or slice: inside it the address would enter a `wild` slot with no `=>!` (D-223). Instantiate it at a type that owns its data, or write the `wild` slot in a function that names the concrete pointer type",
                 at));
+        } else {
+            // DEF-486 at a `T` the body couldn't see (`z36`): the question R6's gate asks of a known element, asked here of the argument. An argument holding a pointer is the arm above's: the view's `wild` word stands in this declaration or in the instantiated struct's (`zr11`, `zr12`).
+            if (views && (raw type_drops(r, a, 0i32, 64i32))) {
+                drop diaglist_push(r.diags, raw diag_error(raw TYPE_WILD_INSTANCE(),
+                    "this generic forms a plain view over manual storage at a type parameter, and a type argument here drops: a plain `T[]` says live values are there (D-361, DEF-486). Declare the view `wild T[]` in the generic, or write the crossing `v =>! T[]` over a live block, or instantiate it at a type that doesn't drop",
+                    at));
+            }
         }
     }
     pass NIL;

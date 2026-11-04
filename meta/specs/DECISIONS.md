@@ -3781,6 +3781,8 @@ anything decided here.
 
 ## D-056 — Deadlock: lock levels prove the common case, deadlines contain the rest — **SETTLED**
 
+*[2026-11-03, 1.6.1e landing 177d2 — a dated note (DEF-438, DEF-491).]* A `Guard` is one pointer to its cell, and since this landing `acquire`'s result views its receiver, through the guard's release (CONCURRENCY_REFERENCE §9's note of this date). The cell's list-lock word at +4, read first by twelve runtime functions, is written by every creator now: before, a lock created over a re-used block read it as held and hung before anything read a deadline, so a deadline contained nothing there.
+
 > **`Mutex<T, LEVEL>` and `Guard<T>` LANDED at 1.1.11** — builtin type kinds
 > like `Channel`, one managed cell per mutex ([lock | listlock | waiters | T]),
 > the value one pointer. `acquire` is the sole operation: `async`,
@@ -13252,6 +13254,8 @@ finally get names.
 
 ## D-180 — The borrow-across-await rule narrows to borrow-across-SPAWN — **SETTLED; the sanctioned-crossing list grew a fifth member at 1.4.4 (user-ratified)**
 
+*[2026-11-03, 1.6.1e landing 177d2 — a dated note (DEF-431, Q4 of `MANAGEMENT/briefs/177d-held-rulings-2026-11-02.md`).]* This decision rests on "an address-taken local is frame-resident". Until this landing the code did so only for `$$m x`: `@x`, a subobject's address and an auto-referenced receiver left the local on the stack, and a pointer that survived the suspension held a dead activation's address (`x2b`, `x2d`, 67/60). The code now does what the rule says, to the function's end. No rule here changes.
+
 C-8, settled at 1.1.8's close, on evidence that did not exist when the
 question was raised: D-177's crossing-locals analysis is now built, and it
 decides the thing the rule was guessing at.
@@ -16487,6 +16491,8 @@ rules, sharing `NITPICK-ASSIGN-002`. Its sibling — `const` on a LOCAL, accepte
 and meaning nothing — is closed by the retirement itself.
 
 ## D-223 — A borrow never enters a `wild` slot, and rule B becomes one derivation-aware predicate — **SETTLED (user decision, 2026-08-29)**
+
+*[2026-11-03, 1.6.1e landing 177d2 — a dated note (DEF-484, DEF-486, `z36`, DEF-490; `MANAGEMENT/briefs/def484-ruling-2026-11-02.md`).]* TYPE-107's two questions gain three readers: a generic that forms a plain view of `T` over manual storage carries a mark, `DECL_VIEWS_T`, and an instance whose argument holds a pointer or drops is refused; `Self` in a default body is a type parameter, so a default body may not hold the word (TYPE-112) and a generic with the word or the mark isn't called at an unbound `Self`; and an address inside manual storage is of `wild` provenance, the other direction of this decision, TYPE-097 at a plain slot.
 
 Raised by 1.4.6's suite migration. Moving the compiler's own unit tests off
 the seed put four of them under `NITPICK-BORROW-001`: helpers that pass

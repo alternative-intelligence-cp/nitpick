@@ -125,6 +125,7 @@ pub struct:ExprTyper = {
     // THE ENCLOSING FUNCTION'S DECLARATION (1.5.3 step 0): `old(...)` names its
     // parameters and nothing else, and a `for` binding is parameter-shaped.
     int32:fn_decl;
+    bool:wip_mark;   // `wild_into_plain_at` is running quietly over a view at an unknown `T` (`z36`)
     bool:fn_terminal;
     // D-163: the enclosing function declared `never fails` — its body may not
     // `fail`, `relay`, or `return Result{…}`.
@@ -290,7 +291,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
                                  ExprTypes->:expr_types) never fails {
     ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
                              diags: diags, expected: 0i32, expect_refused: false, null_ctx: 0i32, door_role: 0i32, door_count: raw expr_none(), give_ctx: 0i32, give_free: 0i32, ptr_ok: 0i32, scope: scope,
-                             fn_success: 0i32, fn_decl: 0i32, fn_terminal: false, fn_never_fails: false, in_defer: false, fn_is_async: false, fn_gives: false, give_operand: 0i32, await_operand: 0i32, return_lit: 0i32, callee_typing: 0i32, arm_depth: 0i32, givex_depth: 0i32,
+                             fn_success: 0i32, fn_decl: 0i32, wip_mark: false, fn_terminal: false, fn_never_fails: false, in_defer: false, fn_is_async: false, fn_gives: false, give_operand: 0i32, await_operand: 0i32, return_lit: 0i32, callee_typing: 0i32, arm_depth: 0i32, givex_depth: 0i32,
                              counted_depth: 0i32,
                              contract_ctx: 0i32, rules_subject: 0i32,
                              contract_raw_operand: 0i32, in_old: false,
@@ -3329,16 +3330,55 @@ pub func:check_wild_into_plain = NIL(ExprTyper->:e, ExprId:v, int32:slot) never 
     }
     // A SLICE WHOSE ELEMENT HOLDS A POINTER is a plain slot for what it writes, `v[0i64] = q` (R6 of 177c's second rulings; `int64->[]:v = a[0i64...1i64]` over a frame's `wild` array put a
     // frame address in its `wild` cell, `a1r` freed it, 74). A view of bytes, or of anything holding no pointer, writes no address: it stays out of this check.
+    // AND A SLICE WHOSE ELEMENT DROPS (DEF-486, landing 177d2, ruled 2026-11-03 04:38 EST): a plain view says live values are there, whatever it can do with them. `SS[]:v = #wild_slice<SS>(w, 1i64); v[0i64].s = t;` and `string[]:v = ...; string->:p = @v[0i64]; <-p = t;`
+    // drop over the block's bytes, DEF-484's fault by another road, and DEF-484 can't see it: the view is plain, so its element's address answers not manual. The emitter's store asks this same `type_drops` of its target.
     TypeResolver:wr = raw etyper_resolver(e);
-    if (((raw type_kind(e.types, st)) != (raw TY_POINTER()))
-        && (((raw type_kind(e.types, st)) != (raw TY_SLICE())) || (!(raw type_contains_borrow(@wr, raw type_elem(e.types, st), 0i32, 64i32))))) { pass NIL; }
+    if ((raw type_kind(e.types, st)) != (raw TY_POINTER())) {
+        if ((raw type_kind(e.types, st)) != (raw TY_SLICE())) { pass NIL; }
+        int32:vel = raw type_elem(e.types, st);
+        if ((!(raw type_contains_borrow(@wr, vel, 0i32, 64i32))) && (!(raw type_drops(@wr, vel, 0i32, 64i32)))) {
+            if (!(raw type_holds_param(e.types, e.ast, vel, 64i32))) { pass NIL; }
+            // AN UNKNOWN `T` ANSWERS AT ITS INSTANCE (`z36`, TYPE-107): the same walk runs quietly and marks this generic for `check_wild_instance`, which sees what `T` is. A `T: Copy` can't drop, and its bound's own TYPE-017 is the one report.
+            // A TRAIT'S DEFAULT BODY HAS NO SUCH INSTANCE: an impl inherits it with `Self` bound and no argument to read, so it answers here, the closed direction (`zo03`). A PROJECTION HAS NONE EITHER: the mark can't say which `T.Item`, and at `KS` with `assoc:Item = SS` the argument holds nothing that drops (`g8d`).
+            if ((e.self_trait == 0i32) && (!(raw type_holds_assoc(e.types, e.ast, vel, 64i32)))) {
+                e.wip_mark = !(((raw type_kind(e.types, vel)) == (raw TY_PARAM())) && (raw param_is_copy(e, vel)));
+                if (e.wip_mark) { drop wild_into_plain_at(e, v, 300i32); }
+                e.wip_mark = false;
+                pass NIL;
+            }
+        }
+    }
     drop wild_into_plain_at(e, v, 300i32);   // above the parser's 256 levels (PARSE-012): no tree reaches the walk's end, nine nested ternaries hid a `wild` arm at the old 8
     pass NIL;
 };
 
+// The one road out of `wild_into_plain_at`. Quiet, a refusal is the mark instead: this function's generic forms a plain view over manual storage at a `T` its body can't see (`z36`).
+func:wip_refuse = NIL(ExprTyper->:e, move string:m, Span:at) never fails {
+    if (e.wip_mark) {
+        if (e.fn_decl != 0i32) { drop ast_or_decl_flags(e.ast, DeclId{ index: e.fn_decl }, raw DECL_VIEWS_T()); }
+        pass NIL;
+    }
+    discard(raw te_error(e, raw TYPE_WILD_INTO_PLAIN(), move(m), at));
+    pass NIL;
+};
+
+// "Inside manual storage" is DEF-483's line, the one walk `store_place_manual`: not `expr_wild_provenance` (R7's lesson), not `door_place_step`, which answers `@w.l[0]` wild where R5 says the element is the `List`'s and
+// answers false at its fuel's end. A plain `T->` says a live `T` is there, and over a block nothing on the page says so. `=>! T->` is the author's assertion of it, for as long as the pointer is used: it extends no lifetime and
+// waives no borrow check. `@w` over a `wild` binding has no reference step and isn't inside. A `wild` slot never reaches this (`null_ctx`).
+pub func:refuse_manual_address = NIL(ExprTyper->:e, ExprId:place, Span:at) never fails {
+    if (!(raw store_place_manual(e.ast, e.tab, e.interns, e.expr_types, e.types, place, raw STORE_WALK_FUEL()))) { pass NIL; }
+    drop wip_refuse(e, "an address of a place inside manual storage is of wild provenance, and it enters a plain pointer slot only through the explicit crossing `(@p) =>! T->` (D-361, DEF-484): a plain `T->` says a live `T` is there, and that is the author's assertion to make, or the slot is declared `wild`", at);
+    pass NIL;
+};
+
+// A plain `T[]` says live values are there, as a plain `T->` says one is. `=>! fixed T[]` is PARSE-013 (D-348), so a `fixed` slot takes the crossed `T[]`.
+func:wild_view_sentence = string() never fails {
+    pass "a plain `T[]` says live values are there (D-361, DEF-486), and over manual storage nothing on the page says so: over room not yet written declare the view `wild T[]`, and over a live block write the crossing `v =>! T[]`, which a `fixed T[]` slot takes too";
+};
+
 func:wild_into_plain_at = NIL(ExprTyper->:e, ExprId:v, int32:d) never fails {
     // Past the fuel the value can't be read, and a fuel that answers safe when it runs out is DEF-430's fault: the closed direction, as `refuse_header_ptr_place` has it.
-    if (d <= 0i32) { discard(raw te_error(e, raw TYPE_WILD_INTO_PLAIN(), "a value too deep to read for its provenance enters a plain pointer slot (D-361): name a part of it first", (raw ast_expr(e.ast, v)).span)); pass NIL; }
+    if (d <= 0i32) { drop wip_refuse(e, "a value too deep to read for its provenance enters a plain pointer slot (D-361): name a part of it first", (raw ast_expr(e.ast, v)).span); pass NIL; }
     if (raw expr_is_none(v)) { pass NIL; }
     if ((raw exprtypes_get(e.expr_types, v)) == 0i32) { pass NIL; }   // already refused (D-240), `.ptr`'s own question among them
     ExprNode:n = raw ast_expr(e.ast, v);
@@ -3357,6 +3397,11 @@ func:wild_into_plain_at = NIL(ExprTyper->:e, ExprId:v, int32:d) never fails {
     // `<-blk`, `(raw mka(a))[0i64]` each held a `wild` value with no cast on the page. Only this check asks, for R7's reason; a `List`'s element stays a plain slot (R5).
     if ((n.kind == ExprKind.ExprEmphaticUnwrapExpr) || (n.kind == ExprKind.ExprEmphaticCoalesceExpr) || (n.kind == ExprKind.ExprAwaitExpr) || (n.kind == ExprKind.ExprMoveExpr)
         || (n.kind == ExprKind.ExprRawUnwrapExpr) || (n.kind == ExprKind.ExprRelayExpr) || (n.kind == ExprKind.ExprDerefExpr) || (n.kind == ExprKind.ExprSpreadExpr)) { drop wild_into_plain_at(e, raw expr_operand(n), d - 1i32); pass NIL; }
+    // A RANGE IS A VIEW OF WHAT IT RANGES OVER, so it asks DEF-484's walk (DEF-486's `z16b`): `w.q[0i64...2i64]` over a block holds no `wild` word for `place_wild` below to read, and a `List`'s range is the `List`'s (R5).
+    if ((n.kind == ExprKind.ExprIndexExpr) && ((raw ast_expr(e.ast, raw expr_rhs(n))).kind == ExprKind.ExprRangeExpr) && (raw store_place_manual(e.ast, e.tab, e.interns, e.expr_types, e.types, v, raw STORE_WALK_FUEL()))) {
+        drop wip_refuse(e, raw wild_view_sentence(), n.span);
+        pass NIL;
+    }
     if ((n.kind == ExprKind.ExprIndexExpr) && (raw header_ptr_read(e.ast, e.interns, e.expr_types, e.types, raw expr_lhs(n)))) { drop wild_into_plain_at(e, raw expr_operand(raw ast_expr(e.ast, raw expr_lhs(n))), d - 1i32); pass NIL; }
     if ((n.kind == ExprKind.ExprIndexExpr) && ((raw ast_expr(e.ast, raw expr_lhs(n))).kind != ExprKind.ExprIdentifierExpr) && ((raw ast_expr(e.ast, raw expr_lhs(n))).kind != ExprKind.ExprMemberAccessExpr)
         && ((raw type_kind(e.types, raw exprtypes_get(e.expr_types, raw expr_lhs(n)))) != (raw TY_STRUCT()))) { drop wild_into_plain_at(e, raw expr_lhs(n), d - 1i32); pass NIL; }
@@ -3364,6 +3409,8 @@ func:wild_into_plain_at = NIL(ExprTyper->:e, ExprId:v, int32:d) never fails {
     // freed (`a3b`, 74); only `=>! T->` crosses. Only this check asks: in `expr_wild_provenance` the same answer relaxed TYPE-104 (`xg2`, a `move` through a plain parameter) and TYPE-032 and
     // stopped a store's drop, because to those readers `wild` provenance is a surrender of tracking, and a checked cast surrenders none.
     if ((n.kind == ExprKind.ExprCastExpr) && (((raw expr_cast_quals(n)) & ((raw QUAL_WILD()) | (raw QUAL_WILDX()))) == 0i32)) { drop wild_into_plain_at(e, raw expr_operand(n), d - 1i32); pass NIL; }
+    // AN ADDRESS OF A PLACE INSIDE MANUAL STORAGE IS OF `wild` PROVENANCE (DEF-484, landing 177d2; `MANAGEMENT/briefs/def484-ruling-2026-11-02.md`): `@p`, `$$i p`, `$$m p`, and an auto-referenced receiver at its call.
+    if ((n.kind == ExprKind.ExprAddressOfExpr) || (n.kind == ExprKind.ExprBorrowExpr)) { drop refuse_manual_address(e, raw expr_operand(n), n.span); pass NIL; }
     if ((n.kind != ExprKind.ExprCastExpr) && (!(raw expr_wild_provenance(e.ast, e.tab, e.interns, e.expr_types, e.types, v, 16i32)))
         && (!((n.kind == ExprKind.ExprSafeNavExpr) && (raw place_wild(e.ast, e.tab, e.expr_types, e.types, v))))
         && (!((n.kind == ExprKind.ExprBuiltinExpr) && (raw string_eq(raw intern_get(e.interns, n.payload =>! int32), "wild_slice"))))) { pass NIL; }
@@ -3373,7 +3420,8 @@ func:wild_into_plain_at = NIL(ExprTyper->:e, ExprId:v, int32:d) never fails {
             m = "`#ptr_add`'s result is a wild pointer (BUILTIN_REFERENCE: pointer arithmetic is the manual regime's, legal in a `wild` context alone), and it enters a plain pointer slot only through the explicit crossing `… =>! T->` (D-361): declare the slot `wild`, dereference the result in place, or write the cast";
         }
     }
-    discard(raw te_error(e, raw TYPE_WILD_INTO_PLAIN(), move(m), n.span));
+    if ((raw type_kind(e.types, raw exprtypes_get(e.expr_types, v))) == (raw TY_SLICE())) { m = raw wild_view_sentence(); }
+    drop wip_refuse(e, move(m), n.span);
     pass NIL;
 };
 

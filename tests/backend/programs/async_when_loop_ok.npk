@@ -1,0 +1,45 @@
+// expect-exit: 0
+// A `when`'S BODY LOOPS, AND ITS BACK EDGE IS `while`'S (DEF-494's face W, RULED 2026-11-03): a local declared before the `when` and last read in the body, before its park, is read again on the next turn, so it lives in the frame. `then` and `end` run once, past the junction, outside the loop.
+// Each `c_` takes its value as a parameter, so no optimiser can forward a constant past the park, and returns 7; `main` exits with its case's number otherwise. `stomp` runs on the resumed stack. The `ctl_` cases read right before this landing too.
+mod:async_when_loop_ok;
+error:E9;
+func:stomp = int64(int64:k) never fails { int64[8]:a = [113i64,113i64,113i64,113i64,113i64,113i64,113i64,113i64]; int64:t = 0i64; for (int64:i in 0i64...8i64) { a[i] = 113i64 + k; t = t + a[i]; } pass t; };
+async func:c_when_read_before_park = int64(int64:v) { int64:x = v; int64:k = 0i64; int64:t = 0i64; when (k < 2i64) decreases 2i64 - k { t = x; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); k = k + 1i64; } then { t = t + 0i64; } end { t = t + 0i64; } pass t; };
+async func:c_when_two_reads_before_park = int64(int64:v) { int64:x = v; int64:y = v - 7i64; int64:k = 0i64; int64:t = 0i64; when (k < 2i64) decreases 2i64 - k { t = x + y; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); k = k + 1i64; } then { t = t + 0i64; } end { t = t + 0i64; } pass t; };
+async func:c_when_in_when = int64(int64:v) { int64:x = v; int64:i = 0i64; int64:t = 0i64; when (i < 2i64) decreases 2i64 - i { int64:j = 0i64; when (j < 2i64) decreases 2i64 - j { t = x; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); j = j + 1i64; } then { t = t + 0i64; } end { t = t + 0i64; } i = i + 1i64; } then { t = t + 0i64; } end { t = t + 0i64; } pass t; };
+async func:c_ctl_while_twin = int64(int64:v) { int64:x = v; int64:k = 0i64; int64:t = 0i64; while (k < 2i64) decreases 2i64 - k { t = x; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); k = k + 1i64; } pass t; };
+async func:c_ctl_when_then_runs_once = int64(int64:v) { int64:x = v; int64:k = 0i64; int64:t = 0i64; when (k < 1i64) decreases 1i64 - k { k = k + 1i64; } then { await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); t = x; } end { t = 1i64; } pass t; };
+async func:c_ctl_when_read_after_park = int64(int64:v) { int64:x = v; int64:k = 0i64; int64:t = 0i64; when (k < 2i64) decreases 2i64 - k { await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); t = x; k = k + 1i64; } then { t = t + 0i64; } end { t = t + 0i64; } pass t; };
+async func:main = int32(cstring[]:_~argv) {
+    int64:r1 = await c_when_read_before_park(7i64) ?! E9;
+    if (r1 != 7i64) { exit 1i32; }
+    int64:r2 = await c_when_two_reads_before_park(7i64) ?! E9;
+    if (r2 != 7i64) { exit 2i32; }
+    int64:r3 = await c_when_in_when(7i64) ?! E9;
+    if (r3 != 7i64) { exit 3i32; }
+    int64:r4 = await c_ctl_while_twin(7i64) ?! E9;
+    if (r4 != 7i64) { exit 4i32; }
+    int64:r5 = await c_ctl_when_then_runs_once(7i64) ?! E9;
+    if (r5 != 7i64) { exit 5i32; }
+    int64:r6 = await c_ctl_when_read_after_park(7i64) ?! E9;
+    if (r6 != 7i64) { exit 6i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

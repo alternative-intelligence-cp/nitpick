@@ -1529,6 +1529,10 @@ func:check_for = NIL(ExprTyper->:e, StmtNode:s) never fails {
     }
     // AN ELEMENT ENTERS THE BINDING AS A STORE'S VALUE DOES (D-361): `for (int64->:p in wa)` over a `wild` array held a `wild` value with no cast on the page, where `wa[0i64]` is TYPE-097.
     if (!is_iter) { drop check_wild_into_plain(e, raw stmt_for_iter(e.ast, s), bt); }
+    // `for (x in w.it)` LOWERS TO `next(@it)`, a receiver DEF-484 asks about with no call on the page. A `for` over the crossing is BORROW-009 (a `for` binding isn't tracked by the escape analysis, so a borrow can't be iterated over), so the road is `next` by hand.
+    if (is_iter && (raw expr_is_place(e.ast, raw stmt_for_iter(e.ast, s), 300i32)) && (raw store_place_manual(e.ast, e.tab, e.interns, e.expr_types, e.types, raw stmt_for_iter(e.ast, s), raw STORE_WALK_FUEL()))) {
+        discard(raw te_error(e, raw TYPE_WILD_INTO_PLAIN(), "a `for` over an iterator inside manual storage takes its address for `next`, and an address of a place inside manual storage enters a plain `Self->` only through the explicit crossing (D-361, DEF-484); a `for` has no spelling for it, since a `for` over the crossing is BORROW-009: call `next` by hand on `((@w.it) =>! It->)`", s.span));
+    }
     // THE IMPLICIT `next` IS A CALL (DEF-396): in a `pure` body it is held to
     // the same D-221 rule as an explicit `it.next()`. Only an Iterator
     // implementor is routed here; a range/slice/array iterates with no user call.
@@ -3584,6 +3588,12 @@ func:check_decl = NIL(ExprTyper->:e, DeclId:id, int32:scope) never fails {
             DeclId:tmid = raw item_member(e.ast, d, k);
             DeclNode:tm = raw ast_decl(e.ast, tmid);
             if (tm.kind == DeclKind.DeclFunctionDecl) {
+                // A DEFAULT BODY HOLDS NO WORD (DEF-490, TYPE-112, ruled 2026-11-03 06:21 EST). D-223 and `z36` ask what a generic's argument holds, and an impl inheriting this body has no argument to read: `mcpy(w, (v =>! wild Self->), 8i64)` at a `Self` holding a plain pointer kept a dead frame's address (159, `d3c`). Closed at the declaration, for a capability no program uses, and not walked per impl.
+                if ((raw decl_has(tm, raw DECL_HAS_WILD())) && (!(raw stmt_is_none(raw fn_body(e.ast, tm))))) {
+                    discard(raw te_error(e, raw TYPE_DEFAULT_BODY_WILD(),
+                        "a trait's default body can't hold `wild`, `=>!` or a `#` form that reads storage: its `Self` isn't on this page, so nothing can ask what an impl's type holds (DEF-490) -- declare the method without a body here and write it in each impl, or give each type its own method, where the type is on the page",
+                        tm.span));
+                }
                 drop check_function(e, tmid, scope);
             }
         }

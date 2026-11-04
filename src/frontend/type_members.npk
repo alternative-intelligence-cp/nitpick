@@ -2280,6 +2280,10 @@ func:recv_effect_site = ExprId(ExprTyper->:e, ExprId:id, int32:fuel) never fails
     pass a;
 };
 
+func:kind_reads_through_place = bool(int32:k) never fails {
+    pass (k == (raw TY_MUTEX())) || (k == (raw TY_RWLOCK())) || (k == (raw TY_CONDVAR())) || (k == (raw TY_BARRIER())) || (k == (raw TY_CHANNEL())) || (k == (raw TY_ARENA())) || (k == (raw TY_SHARED_ARENA()));
+};
+
 pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
     // A RECEIVER THAT NAMES A MODULE (D-273, 1.5.4c): the call is a direct
     // call of the member. Asked first -- the receiver is a namespace, and
@@ -2375,6 +2379,13 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
                 pass 0i32;
             }
         }
+    }
+
+    // DEF-484'S FOURTH FORM AT A BUILT-IN KIND (F4 of 177d2's reopen): the dispatch below returns before `check_args`' line, and these seven read through what their place holds, so `w.m.acquire(d)` handed the runtime a block's bytes as a cell (97 over a memset block, a `Channel` a failed `recv`). `atomic`, `simd`, `tfp`, `dim`, `tern` and `complex` hold their value in the place: `emit_expr` reads the bytes as bytes, as `w.x` does, and an atomic's cell is the place itself. A pointer receiver passes its value and takes `recv`'s peel, so it's asked of the receiver's own type.
+    // A `wild` POINTER TO ONE AS THE RECEIVER ANSWERS AS `rd1(w)` DOES (TYPE-097): its value is what the runtime reads through. `recv` is peeled, so this asks the receiver's own type; a place of the kind isn't a pointer slot and passes here, to the next line.
+    if (raw kind_reads_through_place(raw type_kind(e.types, recv))) { drop check_wild_into_plain(e, raw expr_operand(n), raw exprtypes_get(e.expr_types, raw expr_operand(n))); }
+    if ((raw kind_reads_through_place(raw type_kind(e.types, raw exprtypes_get(e.expr_types, raw expr_operand(n))))) && (raw expr_is_place(e.ast, raw expr_operand(n), 300i32))) {
+        drop refuse_manual_address(e, raw expr_operand(n), (raw ast_expr(e.ast, raw expr_operand(n))).span);
     }
 
     // THE ARENA'S OWN OPERATIONS (D-017, D-152) — six methods the TYPE
@@ -2867,6 +2878,8 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
             drop check_wild_into_plain(e, wrv, p0);
         } else {
             if (ptr_recv && (raw place_wild(e.ast, e.tab, e.expr_types, e.types, wrv)) && (raw door_gated(e, wrt))) { drop list_push(@e.expr_types.door, wrv.index); }
+            // DEF-484's fourth form: `w.t.rs()` hands `Self->` the address `@w.t`, so it answers as `rs(@w.t)` does. The spelling is `((@w.t) =>! SS->).rs()`: a pointer receiver passes its value. A receiver that isn't a place (a ternary, a cast) is a value with its own answers (TYPE-046, EMIT-002): one mistake, one report (D-240).
+            if (ptr_recv && (raw expr_is_place(e.ast, wrv, 300i32))) { drop refuse_manual_address(e, wrv, (raw ast_expr(e.ast, wrv)).span); }
         }
     }
     pass (raw check_args(e, ft, start, count, 1i32, n.span, raw exprtypes_callee(e.expr_types, id)));

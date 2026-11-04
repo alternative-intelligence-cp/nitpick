@@ -1,0 +1,51 @@
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 26:82
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 27:94
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 28:92
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 29:92
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 30:94
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 31:74
+mod:wild_instance_self;
+
+// A GENERIC WITH THE WORD OR THE VIEW MARK, CALLED AT `Self` FROM A DEFAULT BODY (DEF-490's form B, TYPE-107, ruled 2026-11-03 06:21 EST). The body holds no word of its own, so TYPE-112 doesn't reach it, and the instance is recorded once with `Self` unbound (`fninst_concrete`): `gc::<Self>` at
+// `SS`, then a member store through the view, ran a drop over a block's bytes (74, `s8n`). No impl's type is here to ask about, so the answer is closed, whatever the impl: `s8nc`, at a pointer-free type, is the price. Through a generic with no mark:
+// `tests/backend/rejection/wild_instance_self_forward.npk`. The road is the one TYPE-112 names.
+struct:SS = { string:s; };
+struct:Box<T> = { T:x; };
+struct:GP<T> = { T:x; };
+struct:HB = { wild int8->:b; };
+struct:WH<T> = { wild T->:w; };
+func:gc<T> = T[](HB->:h) never fails { pass #wild_slice<T>(h.b =>! wild T->, 1i64); };
+func:mk<T> = wild T[](HB->:h) never fails { pass #wild_slice<T>(h.b =>! wild T->, 1i64); };
+func:gm<T> = T[](HB->:h) never fails { T[]:v = raw mk::<T>(h) =>! T[]; pass v; };
+trait:B1 = { func:at_self = Self[](Self->:self, HB->:h) never fails { pass raw gc::<Self>(h); }; };   // site NITPICK-TYPE-107
+trait:B2 = { func:at_box_of_self = Box<Self>[](Self->:self, HB->:h) never fails { pass raw gc::<Box<Self>>(h); }; };   // site NITPICK-TYPE-107
+trait:B3 = { func:at_optional_self = Self?[](Self->:self, HB->:h) never fails { pass raw gc::<Self?>(h); }; };   // site NITPICK-TYPE-107
+trait:B4 = { func:at_self_pointer = Self->[](Self->:self, HB->:h) never fails { pass raw gc::<Self->>(h); }; };   // site NITPICK-TYPE-107
+trait:B5 = { func:at_array_of_self = Self[2][](Self->:self, HB->:h) never fails { pass raw gc::<Self[2]>(h); }; };   // site NITPICK-TYPE-107
+trait:B6 = { func:marked_type_at_self = int64(Self->:self) never fails { WH<Self>?:q = NIL; pass 7i64; }; };   // site NITPICK-TYPE-107
+impl:SS:B1 = { };
+impl:<T>:GP<T>:B1 = { };
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

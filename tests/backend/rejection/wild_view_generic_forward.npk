@@ -1,0 +1,28 @@
+// expect-error: NITPICK-TYPE-107
+// expect-error-at: 9:55
+mod:wild_view_generic_forward;
+
+// z36's forwarding: `fw<T>` forms no view, and `gv::<T>` inside it is an instance at a parameter, so only the emitter's worklist sees `gv` at `SS`. It is a `tests/backend/rejection/` file for that reason (`wild_generic_transitive.npk`'s).
+error:E5;
+struct:SS = { string:s; };
+func:gv<T> = T[](wild T->:w) never fails { pass #wild_slice<T>(w, 1i64); };
+func:fw<T> = T[](wild T->:w) never fails { pass raw gv::<T>(w); };
+func:main = int32(cstring[]:_~argv) { wild SS->:w = alloc(64i64) =>! wild SS->; discard(memset(w, 65i64, 64i64)); SS[]:v = raw fw::<SS>(w); dalloc(w); exit 7i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (DeadlineExceeded)  { exit 76i32; },
+        (E5)                { exit 75i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -250,8 +250,10 @@ pub func:store_place_manual = bool(Ast->:ast, SymbolTable->:tab, InternTable->:i
     }
     if (k == ExprKind.ExprIndexExpr) {
         int32:ibk = raw type_kind(types, raw exprtypes_get(etypes, raw expr_lhs(n)));
-        if ((ibk == (raw TY_POINTER())) || (ibk == (raw TY_SLICE()))) { pass (raw store_value_manual(ast, tab, interns, etypes, types, raw expr_lhs(n), d - 1i32)); }
-        if (ibk == (raw TY_ARRAY())) { pass (raw store_place_manual(ast, tab, interns, etypes, types, raw expr_lhs(n), d - 1i32)); }
+        // A `buffer` is indexed and ranged like a slice of bytes (D-341), so its value decides: `wild buffer:b` is manual, a local or a plain field in a block isn't.
+        if ((ibk == (raw TY_POINTER())) || (ibk == (raw TY_SLICE())) || (ibk == (raw TY_BUFFER()))) { pass (raw store_value_manual(ast, tab, interns, etypes, types, raw expr_lhs(n), d - 1i32)); }
+        // A lane is inline in its `simd`, as an element is in its array (D-194).
+        if ((ibk == (raw TY_ARRAY())) || (ibk == (raw TY_SIMD()))) { pass (raw store_place_manual(ast, tab, interns, etypes, types, raw expr_lhs(n), d - 1i32)); }
         if (ibk == (raw TY_STRUCT())) { pass false; }
         pass true;
     }

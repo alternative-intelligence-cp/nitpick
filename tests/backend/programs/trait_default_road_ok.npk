@@ -1,0 +1,60 @@
+// expect-exit: 0
+// THE ROAD BESIDE `tests/types/rejection/trait_default_wild.npk` AND `wild_instance_self.npk` (DEF-490, ruled 2026-11-03 06:21 EST): the trait declares the member with no body, the header may say `wild`, and each impl writes the body, where the type is on the page. `#size_of<Self>` in a default body isn't the word, and a default body calling a generic with neither the word nor the mark stays open.
+mod:trait_default_road_ok;
+struct:PI = { int64:n; };
+struct:PP = { int64->:p; };
+struct:A8 = { int64:n; };
+struct:A16 = { int64:n; int64:m; };
+struct:HB = { wild int8->:b; };
+struct:GP<T> = { T:x; };
+func:gc<T> = T[](HB->:h) never fails { pass #wild_slice<T>(h.b =>! wild T->, 1i64); };
+func:idt<T> = T->(T->:p) never fails { pass p; };
+trait:VT = { func:keept = NIL(wild Self->:w, Self->:v) never fails; };
+impl:PI:VT = { func:keept = NIL(wild PI->:w, PI->:v) never fails { discard(mcpy(w, (v =>! wild PI->), 8i64)); pass NIL; }; };
+impl:PP:VT = { func:keept = NIL(wild PP->:w, PP->:v) never fails { discard(mcpy(w, (v =>! wild PP->), 8i64)); pass NIL; }; };
+trait:VN = { func:vw = PI[](Self->:self, HB->:h) never fails; };
+impl:PI:VN = { func:vw = PI[](PI->:self, HB->:h) never fails { pass raw gc::<PI>(h); }; };
+impl:A8:VN = { func:vw = PI[](A8->:self, HB->:h) never fails { pass raw gc::<PI>(h); }; };
+trait:VM = { func:vs = PI[](Self->:self, HB->:h) never fails; };
+impl:PI:VM = { func:vs = PI[](PI->:self, HB->:h) never fails { pass raw gc::<Self>(h); }; };
+impl:<T>:GP<T> = { func:vg = GP<T>[](GP<T>->:self, HB->:h) never fails { pass raw gc::<Self>(h); }; };
+trait:VZ = {
+    func:q = int64(Self->:self) never fails { pass #size_of<Self>(); };
+    func:same = int64(Self->:self) never fails { Self->:r = raw idt::<Self>(self); pass 7i64; };
+};
+impl:A8:VZ = { };
+impl:A16:VZ = { };
+func:c_written_in_the_impl_at_int = int64() never fails { wild PI->:w = alloc(64i64) =>! wild PI->; PI:v = PI{ n: 7i64 }; drop VT.keept(w, @v); int64:r = w.n; dalloc(w); pass r; };
+func:c_written_in_the_impl_at_pointer = int64() never fails { wild PP->:w = alloc(64i64) =>! wild PP->; int64:x = 7i64; PP:v = PP{ p: @x }; drop VT.keept(w, @v); int64:r = <-(w.p); dalloc(w); pass r; };
+func:c_own_method_at_named_type = int64() never fails { wild int8->:b = alloc(256i64); discard(memset(b, 0i64, 256i64)); HB:h = HB{ b: b }; PI:k = PI{ n: 1i64 }; PI[]:v = raw k.vw(@h); v[0i64].n = 7i64; int64:r = v[0i64].n; dalloc(b); pass r; };
+func:c_own_method_at_self = int64() never fails { wild int8->:b = alloc(256i64); discard(memset(b, 0i64, 256i64)); HB:h = HB{ b: b }; PI:k = PI{ n: 1i64 }; PI[]:v = raw k.vs(@h); v[0i64].n = 7i64; int64:r = v[0i64].n; dalloc(b); pass r; };
+func:c_generic_impl_own_method_at_self = int64() never fails { wild int8->:b = alloc(256i64); discard(memset(b, 0i64, 256i64)); HB:h = HB{ b: b }; GP<int64>:k = GP{ x: 1i64 }; GP<int64>[]:v = raw k.vg(@h); v[0i64].x = 7i64; int64:r = v[0i64].x; dalloc(b); pass r; };
+func:c_size_of_self = int64() never fails { A8:a = A8{ n: 1i64 }; A16:b = A16{ n: 1i64, m: 2i64 }; if (((raw a.q()) == 8i64) && ((raw b.q()) == 16i64)) { pass 7i64; } pass 0i64; };
+func:c_no_mark_at_self = int64() never fails { A8:a = A8{ n: 1i64 }; pass (raw a.same()); };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c_written_in_the_impl_at_int()) != 7i64) { exit 1i32; }
+    if ((raw c_written_in_the_impl_at_pointer()) != 7i64) { exit 2i32; }
+    if ((raw c_own_method_at_named_type()) != 7i64) { exit 3i32; }
+    if ((raw c_own_method_at_self()) != 7i64) { exit 4i32; }
+    if ((raw c_generic_impl_own_method_at_self()) != 7i64) { exit 5i32; }
+    if ((raw c_size_of_self()) != 7i64) { exit 6i32; }
+    if ((raw c_no_mark_at_self()) != 7i64) { exit 7i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

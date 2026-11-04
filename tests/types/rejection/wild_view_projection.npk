@@ -1,0 +1,45 @@
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 24:73
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 25:85
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 26:83
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 27:85
+mod:wild_view_projection;
+
+// A VIEW AT A PROJECTION ANSWERS AT THE DECLARATION (DEF-486's `z36`, ruled 2026-11-03 05:26 EST). `check_wild_instance` reads the type arguments, and a projection isn't one: at `KS` with `assoc:Item = SS` the argument holds nothing that
+// drops and `KS.Item` does, so the mark couldn't see it and a member store through the view ran a drop over a block's bytes (74). A plain view whose element holds a `T.Item` at any depth is TYPE-097 here, whatever the impl binds, `int64` included: the
+// closed reading, as `Self` in a default body. The roads, `wild T.Item[]` and the assertion `=>! T.Item[]`: `tests/backend/programs/wild_view_projection_ok.npk`. Forwarded to a generic, a projection answers at the instance: `tests/backend/rejection/wild_view_projection_forward.npk`.
+struct:SS = { string:s; };
+struct:Box<T> = { T:x; };
+trait:Sz = { assoc:Item; func:one = int64(Self:self); };
+struct:KS = { int64:n; };
+struct:KI = { int64:n; };
+struct:KP = { int64:n; };
+impl:KS:Sz = { assoc:Item = SS; func:one = int64(KS:self) { pass 1i64; }; };
+impl:KI:Sz = { assoc:Item = int64; func:one = int64(KI:self) { pass 1i64; }; };
+impl:KP:Sz = { assoc:Item = int64->; func:one = int64(KP:self) { pass 1i64; }; };
+func:gv<T> = T[](wild T->:w) never fails { pass #wild_slice<T>(w, 1i64); };
+func:item_view<T: Sz> = T.Item[](T:k, wild int8->:w) never fails { pass #wild_slice<T.Item>(w =>! wild T.Item->, 1i64); };   // site
+func:box_of_item_view<T: Sz> = Box<T.Item>[](T:k, wild int8->:w) never fails { pass #wild_slice<Box<T.Item>>(w =>! wild Box<T.Item>->, 1i64); };   // site
+func:optional_item_view<T: Sz> = T.Item?[](T:k, wild int8->:w) never fails { pass #wild_slice<T.Item?>(w =>! wild T.Item?->, 1i64); };   // site
+func:fixed_item_view<T: Sz> = fixed T.Item[](T:k, wild int8->:w) never fails { pass #wild_slice<T.Item>(w =>! wild T.Item->, 1i64); };   // site
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

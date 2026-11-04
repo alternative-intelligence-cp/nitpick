@@ -65,7 +65,7 @@ use "../types.npk".*;
 use "../type_trait.npk".*;
 use "../expr_types.npk".*;
 use "../type_resolve.npk".*;   // `fold_const` — one evaluator, one idea of constant
-use "../type_layout.npk".*;    // `type_contains_guard` -- ensured before it is read (D-227)
+use "../type_layout.npk".*;    // `type_contains_guard` -- a walk at query time, reading no bit (D-227)
 use "./analysis_codes.npk".*;
 
 // NO LEVEL AT ALL, spelled as a value rather than a flag beside one. A function
@@ -965,7 +965,7 @@ func:call_holds = int32(Locks->:x, int32:target) never fails {
 // the lease -- so a function that hands a user-levelled lease on WRITES the
 // clause, D-056's "what marks an acquisition is a contract"), a bounded trait
 // method (the result may hold the bound), or the result's TYPE, which can carry
-// a `Guard`/`RGuard` (`type_contains_guard`, ensured first: D-227). A result of
+// a `Guard`/`RGuard` (`type_contains_guard`, a walk at query time: D-227). A result of
 // any other type holds nothing, whatever its callee took and released inside.
 func:hold_visible = bool(Locks->:x, int32:target, ExprId:call) never fails {
     if (target <= 0i32)          { pass false; }
@@ -977,7 +977,7 @@ func:hold_visible = bool(Locks->:x, int32:target, ExprId:call) never fails {
     }
     int32:ty = raw exprtypes_get(x.etypes, call);
     if (ty == 0i32) { pass false; }
-    pass (raw type_contains_guard(x.tyres, ty, x.cur_scope, 64i32));
+    pass (raw type_contains_guard(x.tyres, ty, x.cur_scope));
 };
 
 // The lowest level an initialiser's calls may leave held, unwrapping the operators

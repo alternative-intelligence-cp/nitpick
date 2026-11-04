@@ -40,8 +40,12 @@ func:popc__m7_copy_pop_ok<T: Copy> = T(Vc__m7_copy_pop_ok<T>->:v) never fails { 
 func:c_m7_copy_pop_ok = int64() never fails { wild int8->:raw_it = alloc(16i64); wild int64->:it = raw_it =>! wild int64->; (<-it) = 7i64; Vc__m7_copy_pop_ok<int64>:v = Vc__m7_copy_pop_ok{ items: it, count: 1i64 }; int64:r = raw popc__m7_copy_pop_ok::<int64>(@v); dalloc(raw_it); pass r; };
 // m9_slice_local_wild_ok; on 177a: exit=67, here: exit=67.
 struct:V__m9_slice_local_wild_ok = { wild string->:items; int64:count; };
-func:popw__m9_slice_local_wild_ok = string(V__m9_slice_local_wild_ok->:v) never fails { string[]:s = #wild_slice<string>(v.items, v.count); v.count = v.count - 1i64; pass move(s[v.count]); };
+func:popw__m9_slice_local_wild_ok = string(V__m9_slice_local_wild_ok->:v) never fails { wild string[]:s = #wild_slice<string>(v.items, v.count); v.count = v.count - 1i64; pass move(s[v.count]); };
 func:c_m9_slice_local_wild_ok = int64() never fails { wild int8->:raw_it = alloc(2i64 * 24i64); wild string->:it = raw_it =>! wild string->; (<-it) = string_concat("ab", "cde"); V__m9_slice_local_wild_ok:v = V__m9_slice_local_wild_ok{ items: it, count: 1i64 }; string:t = raw popw__m9_slice_local_wild_ok(@v); int64:n = t.len + 2i64; dalloc(raw_it); pass n; };
+// m9t_slice_local_plain_generic_ok (177d2, 2026-11-03): m9 is `wild string[]` since DEF-486 (a plain `string[]` over a block is TYPE-097), so the PLAIN slice local's relaxation stands here, on `T` at `int64`.
+struct:V__m9t<T> = { wild T->:items; int64:count; };
+func:popw__m9t<T> = T(V__m9t<T>->:v) never fails { T[]:s = #wild_slice<T>(v.items, v.count); v.count = v.count - 1i64; pass move(s[v.count]); };
+func:c_m9t = int64() never fails { wild int8->:raw_it = alloc(16i64); wild int64->:it = raw_it =>! wild int64->; (<-it) = 5i64; V__m9t<int64>:v = V__m9t{ items: it, count: 1i64 }; int64:t = raw popw__m9t::<int64>(@v); int64:n = t + 2i64; dalloc(raw_it); pass n; };
 // m13b_wild_local_repointed_out_ok; on 177a: exit=67, here: exit=67.
 struct:H__m13b_wild_local_repointed_out_ok = { string:s; int64:k; };
 func:g__m13b_wild_local_repointed_out_ok = int64(wild H__m13b_wild_local_repointed_out_ok->:q) never fails { wild H__m13b_wild_local_repointed_out_ok->:w = NULL; w = q; string:t = move((<-w).s); pass t.len + 2i64; };
@@ -231,6 +235,7 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw c_m6_prelude_shape_ok()) != 7i64) { exit 14i32; }
     if ((raw c_m7_copy_pop_ok()) != 7i64) { exit 15i32; }
     if ((raw c_m9_slice_local_wild_ok()) != 7i64) { exit 16i32; }
+    if ((raw c_m9t()) != 7i64) { exit 89i32; }
     if ((raw c_m13b_wild_local_repointed_out_ok()) != 7i64) { exit 18i32; }
     if ((raw c_p7_through_holder_T()) != 10i64) { exit 19i32; }
     if ((raw c_m14_inline_cast_move_ok()) != 7i64) { exit 20i32; }

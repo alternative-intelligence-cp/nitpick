@@ -1,0 +1,48 @@
+// expect-error: NITPICK-TYPE-112
+// expect-error-at: 21:14
+// expect-error: NITPICK-TYPE-112
+// expect-error-at: 22:14
+// expect-error: NITPICK-TYPE-112
+// expect-error-at: 23:14
+// expect-error: NITPICK-TYPE-112
+// expect-error-at: 24:14
+// expect-error: NITPICK-TYPE-112
+// expect-error-at: 27:5
+// expect-error: NITPICK-TYPE-112
+// expect-error-at: 29:14
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 29:84
+mod:trait_default_wild;
+
+// A TRAIT'S DEFAULT BODY HOLDS NO WORD (DEF-490, TYPE-112, ruled 2026-11-03 06:21 EST): no `wild`, no `=>!`, no `#` form that reads storage. D-223 and `z36` ask what a generic's argument holds, and an impl inheriting a default body has no argument to
+// read, so nothing can ask what `Self` is: `mcpy(w, (v =>! wild Self->), 8i64)` at a `Self` holding a plain pointer kept a dead frame's address in a block, the dead slot read through it (159, `d3c`). Closed at the member, whatever the impls are. The road, a
+// member with no body and its body in each impl, or each type's own method, where the type is on the page: `tests/backend/programs/trait_default_road_ok.npk`. `#size_of<Self>` isn't the word.
+struct:PP = { int64->:p; };
+trait:A1 = { func:mcpy_of_self = NIL(wild Self->:w, Self->:v) never fails { discard(mcpy(w, (v =>! wild Self->), 8i64)); pass NIL; }; };   // site NITPICK-TYPE-112
+trait:A2 = { func:word_in_header_alone = NIL(Self->:self, wild int8->:w) never fails { pass NIL; }; };   // site NITPICK-TYPE-112
+trait:A3 = { func:word_in_a_local = NIL(Self->:self) never fails { wild int8->:b = alloc(8i64); dalloc(b); pass NIL; }; };   // site NITPICK-TYPE-112
+trait:A4 = { func:assertion_alone = int64(Self->:self) never fails { int32:k = 7i64 =>! int32; pass (k =>! int64); }; };   // site NITPICK-TYPE-112
+trait:A5 = {
+    func:one_without_a_body = int64(Self->:self, wild int8->:w) never fails;
+    func:one_with = int64(Self->:self, wild int8->:w) never fails { pass 7i64; };   // site NITPICK-TYPE-112
+};
+trait:A6 = { func:the_view_and_the_word = Self[](wild Self->:w) never fails { pass #wild_slice<Self>(w, 1i64); }; };   // sites NITPICK-TYPE-112 NITPICK-TYPE-097
+impl:PP:A1 = { };
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

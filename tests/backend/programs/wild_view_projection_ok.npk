@@ -1,0 +1,49 @@
+// expect-exit: 0
+// THE ROADS BESIDE `tests/types/rejection/wild_view_projection.npk` (ruled 2026-11-03 05:26 EST): a view at a projection is declared `wild T.Item[]`, or the author asserts it with `=>! T.Item[]`, and a projection forwarded to a generic answers at that generic's instance.
+mod:wild_view_projection_ok;
+struct:SS = { string:s; };
+struct:Box<T> = { T:x; };
+trait:Sz = { assoc:Item; func:one = int64(Self:self); };
+struct:KS = { int64:n; };
+struct:KI = { int64:n; };
+struct:KP = { int64:n; };
+impl:KS:Sz = { assoc:Item = SS; func:one = int64(KS:self) { pass 1i64; }; };
+impl:KI:Sz = { assoc:Item = int64; func:one = int64(KI:self) { pass 1i64; }; };
+impl:KP:Sz = { assoc:Item = int64->; func:one = int64(KP:self) { pass 1i64; }; };
+func:gv<T> = T[](wild T->:w) never fails { pass #wild_slice<T>(w, 1i64); };
+func:a1<T: Sz> = wild T.Item[](T:k, wild int8->:w) never fails { pass #wild_slice<T.Item>(w =>! wild T.Item->, 1i64); };
+func:a2<T: Sz> = T.Item[](T:k, wild int8->:w) never fails { pass (#wild_slice<T.Item>(w =>! wild T.Item->, 1i64) =>! T.Item[]); };
+func:a3<T: Sz> = T.Item[](T:k, wild int8->:w) never fails { pass raw gv::<T.Item>(w =>! wild T.Item->); };
+func:a4<T> = Box<T>[](wild int8->:w) never fails { pass raw gv::<Box<T>>(w =>! wild Box<T>->); };
+func:c_wild_return_drops = int64() never fails { wild int8->:b = alloc(256i64); discard(memset(b, 65i64, 256i64)); KS:k = KS{ n: 1i64 }; wild SS[]:v = raw a1::<KS>(k, b); int64:n = v.len; dalloc(b); pass n + 6i64; };
+func:c_wild_return_int = int64() never fails { wild int8->:b = alloc(256i64); discard(memset(b, 0i64, 256i64)); KI:k = KI{ n: 1i64 }; wild int64[]:v = raw a1::<KI>(k, b); int64:n = v.len; dalloc(b); pass n + 6i64; };
+func:c_crossing_int = int64() never fails { wild int8->:b = alloc(256i64); discard(memset(b, 0i64, 256i64)); KI:k = KI{ n: 1i64 }; int64[]:v = raw a2::<KI>(k, b); v[0i64] = 7i64; int64:r = v[0i64]; dalloc(b); pass r; };
+func:c_crossing_drops_len = int64() never fails { wild int8->:b = alloc(256i64); discard(memset(b, 0i64, 256i64)); KS:k = KS{ n: 1i64 }; SS[]:v = raw a2::<KS>(k, b); int64:n = v.len; dalloc(b); pass n + 6i64; };
+func:c_forwarded_projection_int = int64() never fails { wild int8->:b = alloc(256i64); discard(memset(b, 0i64, 256i64)); KI:k = KI{ n: 1i64 }; int64[]:v = raw a3::<KI>(k, b); v[0i64] = 7i64; int64:r = v[0i64]; dalloc(b); pass r; };
+func:c_forwarded_box_int = int64() never fails { wild int8->:b = alloc(256i64); discard(memset(b, 0i64, 256i64)); Box<int64>[]:v = raw a4::<int64>(b); v[0i64].x = 7i64; int64:r = v[0i64].x; dalloc(b); pass r; };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c_wild_return_drops()) != 7i64) { exit 1i32; }
+    if ((raw c_wild_return_int()) != 7i64) { exit 2i32; }
+    if ((raw c_crossing_int()) != 7i64) { exit 3i32; }
+    if ((raw c_crossing_drops_len()) != 7i64) { exit 4i32; }
+    if ((raw c_forwarded_projection_int()) != 7i64) { exit 5i32; }
+    if ((raw c_forwarded_box_int()) != 7i64) { exit 6i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

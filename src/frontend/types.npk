@@ -253,7 +253,6 @@ pub struct:TypeTable = {
     // inside -- the typed HOLD a value can carry out of a function, which is
     // what tells the lock walk a binding of a call's result may raise the held
     // level (DEF-181's over-restriction: a helper's `int32` holds nothing).
-    List<int32>:hasguard;
 
     // THE UNIT TABLE (D-196, 1.3.3): each `unit:` declaration's evaluated
     // exponent vector, keyed by DECL index — visibility stays the symbol
@@ -385,16 +384,15 @@ pub func:tt_intern = int32(TypeTable->:t, int32:kind, int32:a, int32:b, int32:c,
     Type:n = Type{ kind: kind, a: a, b: b, c: c,
                    size: size, align: align, name: name };
     int32:id = raw tt_id(t.items.count);   // BEFORE the push
-    // ALL SEVEN, ALWAYS. The six bit lists get "not computed" explicitly; this
+    // ALL SIX, ALWAYS. The five bit lists get "not computed" explicitly; this
     // is the invariant `tt_grow`'s tail fill held for haspt and drops and never
-    // held for haschan and hasborrow (`hasguard` joined at landing 127).
+    // held for haschan and hasborrow.
     drop list_push(@t.items, n);
     drop list_push(@t.haspt, 0i32);
     drop list_push(@t.drops, 0i32);
     drop list_push(@t.haschan, 0i32);
     drop list_push(@t.hasborrow, 0i32);
     drop list_push(@t.hasshared, 0i32);
-    drop list_push(@t.hasguard, 0i32);
     // ... and the instance index's two (DEF-92, 1.5.8c step 4b): not held, hash 0
     // -- the flag is what says so, never the hash.
     drop list_push(@t.inst_hash, 0i64);
@@ -612,19 +610,6 @@ pub func:tt_hasshared = int32(TypeTable->:t, int32:id) never fails {
     pass (t.hasshared[id => int64]);
 };
 
-// The guard-containment bit, written once by layout (D-339, landing 127).
-pub func:tt_set_hasguard = NIL(TypeTable->:t, int32:id, bool:has) never fails {
-    if (id < 0i32) { !!! BoundsId; }
-    if ((id => int64) >= t.hasguard.count) { !!! BoundsId; }
-    t.hasguard[id => int64] = 1i32;
-    if (has) { t.hasguard[id => int64] = 2i32; }
-    pass NIL;
-};
-pub func:tt_hasguard = int32(TypeTable->:t, int32:id) never fails {
-    if (id < 0i32) { pass 0i32; }
-    if ((id => int64) >= t.hasguard.count) { pass 0i32; }
-    pass (t.hasguard[id => int64]);
-};
 
 // DOES A VALUE OF THIS TYPE OWN ANYTHING THAT MUST BE RELEASED (D-183)?
 //
@@ -1507,7 +1492,6 @@ pub func:typetable_init = TypeTable() never fails {
         haschan: raw list_init::<int32>(n),
         hasborrow: raw list_init::<int32>(n),
         hasshared: raw list_init::<int32>(n),
-        hasguard: raw list_init::<int32>(n),
         unit_decls: raw list_init::<int32>(16i64),
         unit_vecs: raw list_init::<int64>(16i64),
         index: raw list_init::<int32>(256i64),
@@ -1888,73 +1872,11 @@ pub func:type_contains_shared_recorded = bool(TypeTable->:t, int32:id, int32:fue
 // only when the result's type can carry a guard (or the callee's own contract
 // says the result is a lease: `acquires N`). A pointer, a slice, a `dyn` or a
 // handle may POINT at a guard and does not carry it: the holder's own binding
-// is where the hold was raised. The bit is layout's, on the same walk as the
-// other four; every kind answers here explicitly, under an EMPTY excuse table
-// in the walkers-total instrument. Reached through type_layout's
-// `type_contains_guard`, which ENSURES first (D-227): the lock rounds run
-// before `finish_layouts`.
-pub func:type_contains_guard_recorded = bool(TypeTable->:t, int32:id, int32:fuel) never fails {
-    if (fuel <= 0i32) { pass true; }
-    if (id <= 0i32) { pass false; }
-    int32:k = raw type_kind(t, id);
-    // The holds themselves.
-    if (k == (raw TY_GUARD()))   { pass true; }
-    if (k == (raw TY_RGUARD()))  { pass true; }
-    // Wrappers, and a range, answer from what they carry.
-    if (k == (raw TY_ARRAY()))    { pass (raw type_contains_guard_recorded(t, raw type_elem(t, id), fuel - 1i32)); }
-    if (k == (raw TY_OPTIONAL())) { pass (raw type_contains_guard_recorded(t, raw type_elem(t, id), fuel - 1i32)); }
-    if (k == (raw TY_RESULT()))   { pass (raw type_contains_guard_recorded(t, raw type_elem(t, id), fuel - 1i32)); }
-    if (k == (raw TY_RANGE()))    { pass (raw type_contains_guard_recorded(t, raw type_elem(t, id), fuel - 1i32)); }
-    // Structs and enums answer from layout's walk, like the other four bits.
-    if (k == (raw TY_STRUCT()))   { pass ((raw tt_hasguard(t, id)) == 2i32); }
-    if (k == (raw TY_ENUM()))     { pass ((raw tt_hasguard(t, id)) == 2i32); }
-    // Something that may point at a hold does not carry it.
-    if (k == (raw TY_POINTER())) { pass false; }
-    if (k == (raw TY_SLICE()))   { pass false; }
-    if (k == (raw TY_DYN()))     { pass false; }
-    if (k == (raw TY_ANY()))     { pass false; }
-    if (k == (raw TY_HANDLE()))  { pass false; }
-    // The cells, the endpoints and the owning byte cells carry no hold.
-    if (k == (raw TY_MUTEX()))        { pass false; }
-    if (k == (raw TY_RWLOCK()))       { pass false; }
-    if (k == (raw TY_CONDVAR()))      { pass false; }
-    if (k == (raw TY_BARRIER()))      { pass false; }
-    if (k == (raw TY_ATOMIC()))       { pass false; }
-    if (k == (raw TY_ARENA()))        { pass false; }
-    if (k == (raw TY_SHARED_ARENA())) { pass false; }
-    if (k == (raw TY_CHANNEL()))      { pass false; }
-    if (k == (raw TY_OWNEDFD()))      { pass false; }
-    if (k == (raw TY_STRING()))       { pass false; }
-    if (k == (raw TY_CSTRING()))      { pass false; }
-    if (k == (raw TY_BUFFER()))       { pass false; }
-    // Values that carry no hold: the scalars, the tier, a code word, a code
-    // address.
-    if (k == (raw TY_INVALID())) { pass false; }
-    if (k == (raw TY_NIL()))     { pass false; }
-    if (k == (raw TY_BOOL()))    { pass false; }
-    if (k == (raw TY_INT()))     { pass false; }
-    if (k == (raw TY_CHAR()))    { pass false; }
-    if (k == (raw TY_FLOAT()))   { pass false; }
-    if (k == (raw TY_TBB()))     { pass false; }
-    if (k == (raw TY_TFP()))     { pass false; }
-    if (k == (raw TY_DIM()))     { pass false; }
-    if (k == (raw TY_TERN()))    { pass false; }
-    if (k == (raw TY_FRAC()))    { pass false; }
-    if (k == (raw TY_COMPLEX())) { pass false; }
-    if (k == (raw TY_SIMD()))    { pass false; }
-    if (k == (raw TY_KERNEL()))  { pass false; }
-    if (k == (raw TY_FLAGS()))   { pass false; }
-    if (k == (raw TY_ERROR()))   { pass false; }
-    if (k == (raw TY_FUNC()))          { pass false; }
-    if (k == (raw TY_FUNC_VARIADIC())) { pass false; }
-    // Not runtime values, or resolved before any binding asks.
-    if (k == (raw TY_TRAIT()))    { pass false; }
-    if (k == (raw TY_COMPTIME())) { pass false; }
-    if (k == (raw TY_SELF()))     { pass false; }
-    if (k == (raw TY_PARAM()))    { pass false; }
-    if (k == (raw TY_ASSOC()))    { pass false; }
-    pass false;
-};
+// is where the hold was raised. There is no bit for this one (landing 177d2):
+// the answer is an exact walk at query time, `guard_walk` in type_layout.npk,
+// reached by its `type_contains_guard`. Every kind answers there explicitly,
+// under an EMPTY excuse table in the walkers-total instrument, and that
+// function's comment says why layout can't hold the answer.
 
 // --- what a channel may carry (TYPE-057, 1.4.7 OWED-8; total since D-235) -------
 //
@@ -2411,6 +2333,55 @@ pub func:type_kind_stateful = bool(int32:kind) never fails {
 };
 
 // --- walks over a type's structure (moved here from ir_types.npk at 1.6.1e landing 96) ----
+
+// DOES THIS TYPE HOLD A TYPE PARAMETER BY VALUE (DEF-365, landing 172)? A `T`, `Self` or an associated type,
+// or a kind that keeps one in its storage: an array's element, an Optional's, a Result's, an atomic's, a generic
+// struct's or enum's type arguments. A pointer or a slice owns nothing it reaches. No other kind is walked, and
+// not because none holds a parameter (this comment said so until R1's commit; C2 of the review of 99f83e7): a
+// `range<T>` is refused by the typer (TYPE-008; c2r), an `arena<T>` by value is an owner to `type_drops` and
+// refused as one by the spawn rule (c2a), a Channel crosses by design (D-181), and an owner of any other kind is refused by
+// `type_drops` there. `type_drops_recorded` is read everywhere and keeps its answers. Asked by the spawn rule and, since landing 177d2, by R6's gate (DEF-486's `z36`).
+// Past the fuel the answer is YES, the closed reading (DEF-54).
+pub func:type_holds_param = bool(TypeTable->:t, Ast->:ast, int32:ty, int32:fuel) never fails {
+    pass (raw type_holds_unknown(t, ast, ty, fuel, 0i32));
+};
+
+// THE SAME WALK, ASKING ONLY FOR A PROJECTION (`T.Item`; landing 177d2, ruled 2026-11-03 05:26 EST). No instance's type arguments name what a projection is, so R6's gate can't hand one to `check_wild_instance`. Past the fuel, YES.
+pub func:type_holds_assoc = bool(TypeTable->:t, Ast->:ast, int32:ty, int32:fuel) never fails {
+    pass (raw type_holds_unknown(t, ast, ty, fuel, 1i32));
+};
+
+// AND ASKING ONLY FOR AN UNBOUND `Self` (DEF-490's form B, ruled 2026-11-03 06:21 EST), its base through a projection and its target through a pointer or a slice: `Self` in a default body is recorded unbound, so an instance's argument can name it at any depth. Past the fuel, YES.
+pub func:type_holds_self = bool(TypeTable->:t, Ast->:ast, int32:ty, int32:fuel) never fails {
+    pass (raw type_holds_unknown(t, ast, ty, fuel, 2i32));
+};
+
+// `ask`: 0 any of the three, 1 a projection, 2 `Self`.
+func:type_holds_unknown = bool(TypeTable->:t, Ast->:ast, int32:ty, int32:fuel, int32:ask) never fails {
+    if (fuel <= 0i32) { pass true; }
+    if (ty == 0i32) { pass false; }
+    int32:k = raw type_kind(t, ty);
+    if (k == (raw TY_SELF())) { pass (ask != 1i32); }
+    if (k == (raw TY_PARAM())) { pass (ask == 0i32); }
+    if (k == (raw TY_ASSOC())) {
+        if (ask != 2i32) { pass true; }
+        pass (raw type_holds_unknown(t, ast, raw type_assoc_base(t, ty), fuel - 1i32, ask));
+    }
+    if ((ask == 2i32) && ((k == (raw TY_POINTER())) || (k == (raw TY_SLICE())))) {
+        pass (raw type_holds_unknown(t, ast, raw type_elem(t, ty), fuel - 1i32, ask));
+    }
+    if ((k == (raw TY_ARRAY())) || (k == (raw TY_OPTIONAL())) || (k == (raw TY_RESULT())) || (k == (raw TY_ATOMIC()))) {
+        pass (raw type_holds_unknown(t, ast, raw type_elem(t, ty), fuel - 1i32, ask));
+    }
+    if ((k == (raw TY_STRUCT())) || (k == (raw TY_ENUM()))) {
+        int32:n = raw type_args_count_of(t, ty);
+        int32:s = raw type_args_start_of(t, ty);
+        for (int32:i in 0i32...n) {
+            if (raw type_holds_unknown(t, ast, raw ast_id_at(ast, s, i), fuel - 1i32, ask)) { pass true; }
+        }
+    }
+    pass false;
+};
 
 // DOES THIS TYPE MENTION A GENERIC PARAMETER anywhere in its structure? (1.0.7)
 // A `List<T>` recorded for a literal inside `list_make<T>`'s body is

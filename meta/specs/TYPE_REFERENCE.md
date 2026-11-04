@@ -2343,6 +2343,7 @@ Everything below follows from that one sentence, and nothing beyond it is part o
   A `=>!` or `=>` between two PLAIN pointer types with unrelated pointees (`hp =>! S->` over an `H2->`) is refused in safe code,
   `NITPICK-TYPE-032` (D-365, landing 167, the author's ruling of 2026-10-29): a pointer is retyped only to its own type, to or from
   `any->`, or across the wild boundary.
+- *[2026-11-03, 1.6.1e landing 177d2, DEF-484, DEF-486, `z36`, the projection:]* **An address inside manual storage and a plain view over it are of `wild` provenance too:** MEMORY_REFERENCE §1.1d's note of this date has the rule and its roads. TYPE-097 at the plain slot; TYPE-107 at an instance of a generic that forms such a view at an unknown `T`.
 - **A value of wild provenance enters a plain pointer slot only through `=>! T->`
   (D-361, 1.6.1e landing 121; S-138 option (a)).** `wild` is a place qualifier and no
   part of the pointer type, so until landing 121 a `wild` binding's value, a

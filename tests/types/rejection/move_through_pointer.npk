@@ -13,9 +13,9 @@
 // expect-error: NITPICK-TYPE-104
 // expect-error-at: 205:225
 // expect-error: NITPICK-TYPE-104
-// expect-error-at: 209:183
+// expect-error-at: 209:169
 // expect-error: NITPICK-TYPE-104
-// expect-error-at: 213:266
+// expect-error-at: 213:181
 // expect-error: NITPICK-TYPE-104
 // expect-error-at: 217:132
 // expect-error: NITPICK-TYPE-104
@@ -35,7 +35,7 @@
 // expect-error: NITPICK-TYPE-104
 // expect-error-at: 253:95
 // expect-error: NITPICK-TYPE-104
-// expect-error-at: 257:308
+// expect-error-at: 257:253
 // expect-error: NITPICK-TYPE-104
 // expect-error-at: 261:272
 // expect-error: NITPICK-TYPE-104
@@ -45,7 +45,7 @@
 // expect-error: NITPICK-TYPE-047
 // expect-error-at: 295:65
 // expect-error: NITPICK-TYPE-104
-// expect-error-at: 300:182
+// expect-error-at: 300:156
 // expect-error: NITPICK-TYPE-104
 // expect-error-at: 308:167
 // expect-error: NITPICK-TYPE-104
@@ -204,14 +204,14 @@ func:mk__q8_field_order = H__q8_field_order() never fails { pass H__q8_field_ord
 struct:W__q8_field_order = { wild H__q8_field_order->:p; wild H__q8_field_order->:r; };
 func:g__q8_field_order = int64(W__q8_field_order->:o) never fails { H__q8_field_order:h = raw mk__q8_field_order(); for (int64:i in 0i64...2i64) { o.p = o.r; o.r = (@h) =>! wild H__q8_field_order->; } string:t = move((<-o.p).s); pass t.len; };
 func:c_q8_field_order = int64() never fails { wild H__q8_field_order->:it = alloc(24i64) =>! wild H__q8_field_order->; (<-it) = raw mk__q8_field_order(); W__q8_field_order:w = W__q8_field_order{ p: it, r: it }; pass raw g__q8_field_order(@w); };
-// q9_wild_slice_repoint_param; on 177a: exit=65; here: TYPE-104×1.
-struct:V__q9_wild_slice_repoint_param = { wild string->:items; int64:count; };
-func:g__q9_wild_slice_repoint_param = int64(V__q9_wild_slice_repoint_param->:v, string[]:p) never fails { string[]:s = #wild_slice<string>(v.items, v.count); s = p; string:t = move(s[0i64]); pass t.len; };
-func:c_q9_wild_slice_repoint_param = int64() never fails { wild string->:it = alloc(48i64) =>! wild string->; (<-it) = string_concat("ab", "cde"); V__q9_wild_slice_repoint_param:v = V__q9_wild_slice_repoint_param{ items: it, count: 1i64 }; string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; pass raw g__q9_wild_slice_repoint_param(@v, a[0i64...2i64]); };
-// q10_wild_slice_repoint_own; on 177a: exit=65; here: TYPE-104×1.
-struct:V__q10_wild_slice_repoint_own = { wild string->:items; int64:count; };
-func:g__q10_wild_slice_repoint_own = int64(V__q10_wild_slice_repoint_own->:v, string[]:p) never fails { string[2]:o = [string_concat("ab", "cde"), string_concat("fg", "hij")]; string[]:s = #wild_slice<string>(v.items, v.count); s = o[0i64...2i64]; string:t = move(s[0i64]); pass t.len; };
-func:c_q10_wild_slice_repoint_own = int64() never fails { wild string->:it = alloc(48i64) =>! wild string->; (<-it) = string_concat("ab", "cde"); V__q10_wild_slice_repoint_own:v = V__q10_wild_slice_repoint_own{ items: it, count: 1i64 }; string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; pass raw g__q10_wild_slice_repoint_own(@v, a[0i64...2i64]); };
+// q9_wild_slice_repoint_param; on 177a: exit=65; here: TYPE-104×1. Re-spelled at 177d2 (2026-11-03): a plain `string[]` over a block is TYPE-097 since DEF-486, and the crossing is TYPE-104 at any `move`, re-pointed or not, so the cell stands on `T` at `int64`; what it measures is unchanged.
+struct:V__q9_wild_slice_repoint_param<T> = { wild T->:items; int64:count; };
+func:g__q9_wild_slice_repoint_param<T> = int64(V__q9_wild_slice_repoint_param<T>->:v, T[]:p) never fails { T[]:s = #wild_slice<T>(v.items, v.count); s = p; T:t = move(s[0i64]); pass 7i64; };
+func:c_q9_wild_slice_repoint_param = int64() never fails { wild int64->:it = alloc(48i64) =>! wild int64->; (<-it) = 5i64; V__q9_wild_slice_repoint_param<int64>:v = V__q9_wild_slice_repoint_param{ items: it, count: 1i64 }; int64[2]:a = [5i64, 6i64]; pass raw g__q9_wild_slice_repoint_param::<int64>(@v, a[0i64...2i64]); };
+// q10_wild_slice_repoint_own; on 177a: exit=65; here: TYPE-104×1. Re-spelled at 177d2 (2026-11-03): a plain `string[]` over a block is TYPE-097 since DEF-486, and the crossing is TYPE-104 at any `move`, re-pointed or not, so the cell stands on `T` at `int64`; what it measures is unchanged.
+struct:V__q10_wild_slice_repoint_own<T> = { wild T->:items; int64:count; };
+func:g__q10_wild_slice_repoint_own<T> = int64(V__q10_wild_slice_repoint_own<T>->:v, T[2]:o) never fails { T[]:s = #wild_slice<T>(v.items, v.count); s = o[0i64...2i64]; T:t = move(s[0i64]); pass 7i64; };
+func:c_q10_wild_slice_repoint_own = int64() never fails { wild int64->:it = alloc(48i64) =>! wild int64->; (<-it) = 5i64; V__q10_wild_slice_repoint_own<int64>:v = V__q10_wild_slice_repoint_own{ items: it, count: 1i64 }; int64[2]:a = [5i64, 6i64]; pass raw g__q10_wild_slice_repoint_own::<int64>(@v, a); };
 // q12_plain_copy_of_param; on 177a: exit=65; here: TYPE-104×1.
 struct:V__q12_plain_copy_of_param = { wild string->:items; int64:count; };
 func:g__q12_plain_copy_of_param = int64(V__q12_plain_copy_of_param->:v, string[]:p) never fails { string[]:u = p; string:t = move(u[0i64]); pass t.len; };
@@ -252,9 +252,9 @@ func:c_m5_plain_wild_plain = int64() never fails { X__m5_plain_wild_plain:x = X_
 struct:Hd__m8_generic_T_plain<T> = { T:v; };
 func:takev__m8_generic_T_plain<T> = T(Hd__m8_generic_T_plain<T>->:h) never fails { pass move(h.v); };
 func:c_m8_generic_T_plain = int64() never fails { Hd__m8_generic_T_plain<string>:h = Hd__m8_generic_T_plain{ v: string_concat("ab", "cde") }; string:t = raw takev__m8_generic_T_plain::<string>(@h); pass t.len + h.v.len; };
-// m10_slice_local_of_local; on 177a: exit=65; here: TYPE-104×1.
-struct:V__m10_slice_local_of_local = { wild string->:items; int64:count; };
-func:c_m10_slice_local_of_local = int64() never fails { wild string->:it = alloc(2i64 * 24i64) =>! wild string->; (<-it) = string_concat("ab", "cde"); V__m10_slice_local_of_local:v = V__m10_slice_local_of_local{ items: it, count: 1i64 }; string[]:s = #wild_slice<string>(v.items, v.count); string:t = move(s[0i64]); pass t.len + v.items[0i64].len; };
+// m10_slice_local_of_local; on 177a: exit=65; here: TYPE-104×1. Re-spelled at 177d2 (2026-11-03): a plain `string[]` over a block is TYPE-097 since DEF-486, and the crossing is TYPE-104 at any `move`, re-pointed or not, so the cell stands on `T` at `int64`; what it measures is unchanged.
+struct:V__m10_slice_local_of_local<T> = { wild T->:items; int64:count; };
+func:g__m10_slice_local_of_local<T> = int64() never fails { wild T->:it = alloc(2i64 * 24i64) =>! wild T->; V__m10_slice_local_of_local<T>:v = V__m10_slice_local_of_local{ items: it, count: 1i64 }; T[]:s = #wild_slice<T>(v.items, v.count); T:t = move(s[0i64]); pass 7i64; }; func:c_m10_slice_local_of_local = int64() never fails { pass raw g__m10_slice_local_of_local::<int64>(); };
 // m13_wild_local_repointed; on 177a: exit=67; here: TYPE-104×1.
 struct:H__m13_wild_local_repointed = { string:s; int64:k; };
 fixed wild H__m13_wild_local_repointed->:P = NULL;
@@ -295,10 +295,10 @@ func:c_p7_through_holder = int64() never fails {
 func:g__m11_pass_deref_plain = string(string->:p) never fails { pass (<-p); };
 func:c_m11_pass_deref_plain = int64() never fails { string:s = string_concat("ab", "cde"); string:t = raw g__m11_pass_deref_plain(@s); pass t.len + s.len; };
 // k2_realloc_field_ok MOVED to the `_ok` at build 7 (2026-11-01 18:28 EST): the bare `alloc` call is an origin outside the frame now (the walk's omission, below), so the cell is legal, 65 at both legs.
-// q11_wild_slice_copy_ok; on 177a: exit=65; here: TYPE-104×1.
-struct:V__q11_wild_slice_copy_ok = { wild string->:items; int64:count; };
-func:g__q11_wild_slice_copy_ok = int64(V__q11_wild_slice_copy_ok->:v, string[]:p) never fails { string[]:s = #wild_slice<string>(v.items, v.count); string[]:u = s; string:t = move(u[0i64]); pass t.len; };
-func:c_q11_wild_slice_copy_ok = int64() never fails { wild string->:it = alloc(48i64) =>! wild string->; (<-it) = string_concat("ab", "cde"); V__q11_wild_slice_copy_ok:v = V__q11_wild_slice_copy_ok{ items: it, count: 1i64 }; string[2]:a = [string_concat("ab", "cde"), string_concat("fg", "hij")]; pass raw g__q11_wild_slice_copy_ok(@v, a[0i64...2i64]); };
+// q11_wild_slice_copy_ok; on 177a: exit=65; here: TYPE-104×1. Re-spelled at 177d2 (2026-11-03): a plain `string[]` over a block is TYPE-097 since DEF-486, and the crossing is TYPE-104 at any `move`, re-pointed or not, so the cell stands on `T` at `int64`; what it measures is unchanged.
+struct:V__q11_wild_slice_copy_ok<T> = { wild T->:items; int64:count; };
+func:g__q11_wild_slice_copy_ok<T> = int64(V__q11_wild_slice_copy_ok<T>->:v) never fails { T[]:s = #wild_slice<T>(v.items, v.count); T[]:u = s; T:t = move(u[0i64]); pass 7i64; };
+func:c_q11_wild_slice_copy_ok = int64() never fails { wild int64->:it = alloc(48i64) =>! wild int64->; (<-it) = 5i64; V__q11_wild_slice_copy_ok<int64>:v = V__q11_wild_slice_copy_ok{ items: it, count: 1i64 }; pass raw g__q11_wild_slice_copy_ok::<int64>(@v); };
 // i1_cast_local_addr; on 177a: exit=65; here: TYPE-104×1.
 struct:H__i1_cast_local_addr = { string:s; };
 struct:Q__i1_cast_local_addr = { H__i1_cast_local_addr->:hp; };

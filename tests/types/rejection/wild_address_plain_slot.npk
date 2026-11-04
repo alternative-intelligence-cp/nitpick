@@ -1,0 +1,257 @@
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 153:63
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 154:66
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 155:66
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 156:61
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 157:64
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 158:64
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 159:60
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 162:94
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 163:71
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 164:59
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 165:92
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 166:70
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 167:75
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 168:67
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 169:118
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 170:107
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 171:69
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 172:65
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 173:126
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 174:78
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 175:78
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 176:108
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 177:56
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 180:60
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 181:62
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 182:69
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 183:70
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 184:64
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 185:85
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 186:95
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 187:112
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 188:75
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 189:69
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 192:75
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 193:70
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 194:76
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 195:80
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 196:75
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 201:93
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 202:95
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 203:70
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 214:74
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 215:81
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 216:81
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 217:166
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 218:60
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 219:65
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 220:64
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 221:71
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 222:146
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 223:94
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 224:85
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 225:93
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 229:83
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 230:91
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 231:91
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 232:169
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 233:69
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 234:66
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 235:80
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 236:163
+// expect-error: NITPICK-TYPE-097
+// expect-error-at: 237:66
+mod:wild_address_plain_slot;
+
+// AN ADDRESS OF A PLACE INSIDE MANUAL STORAGE IS OF `wild` PROVENANCE (DEF-484, RULED, TYPE-097, landing 177d2): `@p`, `$$i p`, `$$m p` and an auto-referenced receiver, "inside manual storage" read by
+// DEF-483's one walk, `store_place_manual`. A plain `T->` says a live `T` is there. `string->:p = @w.s;` over an unwritten block said so with nothing on the page, and `<-p = v` ran the old value's drop
+// over the block's bytes (`m9b` 74). `(@w.s) =>! string->` says it on the page, and a `wild` slot takes the address as written: `tests/backend/programs/wild_address_crossed_ok.npk` holds both roads and the
+// places that aren't inside. One function per form and slot, one report each (D-240). The crossed address keeps every borrow check: `tests/analysis/rejection/wild_door_roads.npk`.
+error:E5;
+func:mks = string() never fails { pass string_concat("ab", "cde"); };
+struct:SS = { string:s; };
+struct:RS = { SS:t; };
+struct:AS = { SS[2]:r; };
+struct:LS = { List<string>:l; };
+struct:LE = { List<SS>:l; };
+struct:PH = { string->:p; };
+struct:WF = { wild SS->:n; };
+struct:OE = { string?:o; };
+struct:HB<T> = { T:v; };
+struct:Ctr = { int64:n; };
+impl:Ctr:Iterator = { assoc:Item = int64; func:next = int64?(Ctr->:self) never fails { pass NIL; }; };
+struct:HI = { Ctr:it; };
+trait:Tr = { func:m = int64(Self->:self) never fails; };
+impl:SS:Tr = { func:m = int64(SS->:self) never fails { pass 7i64; }; };
+impl:SS = { func:rs = int64(SS->:self) never fails { pass 7i64; }; func:me = SS->(SS->:self) never fails { pass self; }; };
+func:setsp = NIL(string->:p) never fails { pass NIL; };
+func:setg<T> = NIL(T->:p) never fails { pass NIL; };
+thread async func:kid = NIL(string->:p) joins Duration{ ns: 1000000000i64 } { pass NIL; };
+
+// THE FORMS, AT A BINDING AND AT A PARAMETER.
+func:addr_local = NIL(wild SS->:w) never fails { string->:p = @w.s; pass NIL; };   // site
+func:claim_i_local = NIL(wild SS->:w) never fails { string->:p = $$i w.s; pass NIL; };   // site
+func:claim_m_local = NIL(wild SS->:w) never fails { string->:p = $$m w.s; pass NIL; };   // site
+func:addr_param = NIL(wild SS->:w) never fails { drop setsp(@w.s); pass NIL; };   // site
+func:claim_i_param = NIL(wild SS->:w) never fails { drop setsp($$i w.s); pass NIL; };   // site
+func:claim_m_param = NIL(wild SS->:w) never fails { drop setsp($$m w.s); pass NIL; };   // site
+func:receiver = int64(wild RS->:w) never fails { pass raw w.t.rs(); };   // site
+
+// THE SLOTS.
+func:slot_assign = NIL(wild SS->:w) never fails { string:x = raw mks(); string->:p = @x; p = @w.s; pass NIL; };   // site
+func:slot_struct_field = NIL(wild SS->:w) never fails { PH:h = PH{ p: @w.s }; pass NIL; };   // site
+func:slot_pass = string->(wild SS->:w) never fails { pass @w.s; };   // site
+func:slot_pass_may_fail = string->(wild SS->:w, int64:k) { if (k > 5i64) { fail E5; } pass @w.s; };   // site
+func:slot_long_return = string->(wild SS->:w) { return Result{value: @w.s}; };   // site
+func:slot_array_literal = NIL(wild SS->:w) never fails { string->[1]:a = [@w.s]; pass NIL; };   // site
+func:slot_optional = NIL(wild SS->:w) never fails { string->?:o = @w.s; pass NIL; };   // site
+func:slot_give = NIL(wild SS->:w, int32:i) never fails { string:x = raw mks(); string->:q = pick (i) { (1i32) { give @w.s; }, (*) { give @x; } }; pass NIL; };   // site
+func:slot_ternary_arm = NIL(wild SS->:w, bool:c) never fails { string:x = raw mks(); drop setsp(is (c) : (@w.s) : (@x)); pass NIL; };   // site
+func:slot_checked_cast = NIL(wild SS->:w) never fails { drop setsp((@w.s) => string->); pass NIL; };   // site
+func:slot_readdress = NIL(wild SS->:w) never fails { drop setsp(@(<-(@w.s))); pass NIL; };   // site
+func:slot_list_value = NIL(wild SS->:w) never fails { List<string->>:l = raw list_init::<string->>(1i64); drop list_push(@l, @w.s); pass NIL; };   // site
+func:slot_list_push_receiver = NIL(wild LS->:w) never fails { drop list_push(@w.l, raw mks()); pass NIL; };   // site
+func:slot_generic_param = NIL(wild SS->:w) never fails { drop setg::<string>(@w.s); pass NIL; };   // site
+func:slot_function_value = NIL(wild SS->:w) never fails { func NIL(string->) never fails:g = setsp; drop g(@w.s); pass NIL; };   // site
+async func:slot_spawned = NIL(wild SS->:w) { await kid(@w.s) ?| NIL; pass NIL; };   // site
+
+// THE PLACES INSIDE, EVERY STEP OF THE WALK.
+func:place_whole = NIL(wild SS->:w) never fails { SS->:q = @(<-w); pass NIL; };   // site
+func:place_element = NIL(wild SS->:w) never fails { SS->:q = @w[1i64]; pass NIL; };   // site
+func:place_inline_array = NIL(wild AS->:w) never fails { drop setsp(@w.r[1i64].s); pass NIL; };   // site
+func:place_nested_member = NIL(wild RS->:w) never fails { drop setsp(@w.t.s); pass NIL; };   // site
+func:place_ptr_add = NIL(wild SS->:w) never fails { drop setsp(@(<-(#ptr_add<SS>(w, 1i64))).s); pass NIL; };   // site
+func:place_cast_to_wild = NIL() never fails { SS:t = SS{ s: raw mks() }; drop setsp(@(<-((@t) =>! wild SS->)).s); pass NIL; };   // site
+func:place_wild_field_of_local = NIL(wild SS->:b) never fails { WF:h = WF{ n: b }; drop setsp(@h.n.s); pass NIL; };   // site
+func:place_wild_view_element = NIL(wild SS->:w) never fails { wild SS[]:v = #wild_slice<SS>(w, 1i64); SS->:q = @v[0i64]; pass NIL; };   // site
+func:place_optional_member = NIL(wild OE->:w) never fails { string?->:q = @w.o; pass NIL; };   // site
+func:place_generic_whole<T> = NIL(wild T->:w) never fails { T->:p = @(<-w); pass NIL; };   // site
+
+// THE RECEIVERS, WHERE THE ADDRESS IS NOT ON THE PAGE: A METHOD THAT HANDS `self` BACK, AN ELEMENT, A TRAIT'S METHOD AT A BOUND, THE TRAIT-QUALIFIED SPELLING, AND `for`'S `next(@it)`.
+func:receiver_returns_self = NIL(wild RS->:w) never fails { SS->:q = raw w.t.me(); pass NIL; };   // site
+func:receiver_element = int64(wild AS->:w) never fails { pass raw w.r[1i64].rs(); };   // site
+func:receiver_bound<T: Tr> = int64(wild HB<T>->:w) never fails { pass raw w.v.m(); };   // site
+func:receiver_trait_qualified = int64(wild RS->:w) never fails { pass raw Tr.m(@w.t); };   // site
+func:receiver_for_next = int64(wild HI->:w) never fails { int64:t = 0i64; for (int64:x in w.it) { t = t + x; } pass t; };   // site
+
+// A `buffer` holds its bytes behind its pointer, so its VALUE decides (D-341): a `wild buffer` is manual, as a `wild` slice is, by-value or in a field. A `simd` holds its lanes inline, so its PLACE decides.
+struct:WBF = { wild buffer:b; };
+struct:BV = { simd<int32, 4>:v; };
+func:wild_buffer_local = NIL() never fails { wild buffer:b = buffer_new(16i64); uint8->:p = $$m b[7i64]; pass NIL; };   // site
+func:wild_buffer_field = NIL() never fails { WBF:h = WBF{ b: buffer_new(16i64) }; uint8->:p = $$m h.b[7i64]; pass NIL; };   // site
+func:simd_lane_in_block = NIL(wild BV->:w) never fails { int32->:p = @w.v[3i64]; pass NIL; };   // site
+
+// A KIND THAT READS THROUGH ITS PLACE IS THE FOURTH FORM TOO (F4 of 177d2's reopen): the built-in dispatch returned before `check_args`' line, so `w.m.acquire(d)` handed the runtime a block's bytes as a cell (97 over a memset block, a `Channel` a failed `recv`), and over a written block it ran on an assertion nobody wrote. An `atomic`, a `simd`, a `tfp`, a `tern` and a `complex` hold their value in the place and read its bytes as bytes, so they aren't here: `wild_address_crossed_ok`'s `b_atomic_in_block`. Each kind's road is its crossing, in that file.
+struct:HM = { Mutex<int64, 5i32>:m; };
+struct:HR = { RwLock<int64, 5i32>:r; };
+struct:HCV = { CondVar<3i32>:c; };
+struct:HBA = { Barrier<1i32, 5i32>:b; };
+struct:HCH = { Channel<int64, 4i32, 4i64>:c; };
+struct:HAR = { arena<int64>:a; };
+struct:HSA = { shared_arena<int64>:a; };
+struct:HMS = { Mutex<int64, 5i32>[1]:ms; };
+async func:mutex_in_block = int64(wild HM->:w) { Guard<int64>:g = await w.m.acquire(raw duration_ms(50i64)) ?! E5; pass 7i64; };   // site
+async func:rwlock_read_in_block = int64(wild HR->:w) { RGuard<int64>:g = await w.r.read(raw duration_ms(50i64)) ?! E5; pass 7i64; };   // site
+async func:rwlock_write_in_block = int64(wild HR->:w) { Guard<int64>:g = await w.r.write(raw duration_ms(50i64)) ?! E5; pass 7i64; };   // site
+async func:condvar_in_block = int64(wild HCV->:w) { Mutex<int32, 1i32>:a = mutex(7i32) ?! E5; Guard<int32>:g = await a.acquire(raw duration_ms(50i64)) ?! E5; await w.c.timedwait(g, raw duration_ms(5i64)) ?| NIL; pass 7i64; };   // site
+async func:barrier_in_block = int64(wild HBA->:w) { await w.b.arrive(raw duration_ms(50i64)) ?! E5; pass 7i64; };   // site
+async func:channel_in_block = int64(wild HCH->:w) { pass await w.c.recv(raw duration_ms(50i64)) ?! E5; };   // site
+func:arena_in_block = int64(wild HAR->:w) { Handle<int64>:h = w.a.alloc(); pass 7i64; };   // site
+func:shared_arena_in_block = int64(wild HSA->:w) { Handle<int64>:h = w.a.alloc(7i64); pass 7i64; };   // site
+async func:lock_in_written_block = int64() { wild HM->:w = alloc(64i64) =>! wild HM->; <-w = HM{ m: mutex(7i64) ?! E5 }; Guard<int64>:g = await w.m.acquire(raw duration_ms(50i64)) ?! E5; pass 7i64; };   // site
+async func:lock_through_deref = int64(wild Mutex<int64, 5i32>->:w) { Guard<int64>:g = await (<-w).acquire(raw duration_ms(50i64)) ?! E5; pass 7i64; };   // site
+async func:lock_element_in_block = int64(wild HMS->:w) { Guard<int64>:g = await w.ms[0i64].acquire(raw duration_ms(50i64)) ?! E5; pass 7i64; };   // site
+async func:channel_through_deref = int64(wild Channel<int64, 4i32, 4i64>->:w) { pass await (<-w).recv(raw duration_ms(50i64)) ?! E5; };   // site
+
+// A `wild` POINTER TO ONE, AS THE RECEIVER, answers as `rd1(w)` does (management_19's ruling of 11:26 EST): its value is what the runtime reads through, written block or not. A channel's `send` and `recv` are `await`ed through `(<-p)`, above, since `await`'s test (`type_expr.npk`, `aw_chan`) doesn't peel a pointer to one: `await p.recv(d)` is TYPE-043 over a plain pointer too. A pointer FIELD read out of a block isn't this: `w.p.acquire(d)` reads a plain field's bytes, the author's (`def484-ruling` §1, DEF-483 §2).
+struct:WM = { wild Mutex<int64, 5i32>->:w; };
+async func:wp_mutex = int64(wild Mutex<int64, 5i32>->:w) { Guard<int64>:g = await w.acquire(raw duration_ms(50i64)) ?! E5; pass 7i64; };   // site
+async func:wp_rwlock_read = int64(wild RwLock<int64, 5i32>->:w) { RGuard<int64>:g = await w.read(raw duration_ms(50i64)) ?! E5; pass 7i64; };   // site
+async func:wp_rwlock_write = int64(wild RwLock<int64, 5i32>->:w) { Guard<int64>:g = await w.write(raw duration_ms(50i64)) ?! E5; pass 7i64; };   // site
+async func:wp_condvar = int64(wild CondVar<3i32>->:w) { Mutex<int32, 1i32>:a = mutex(7i32) ?! E5; Guard<int32>:g = await a.acquire(raw duration_ms(50i64)) ?! E5; await w.timedwait(g, raw duration_ms(5i64)) ?| NIL; pass 7i64; };   // site
+async func:wp_barrier = int64(wild Barrier<1i32, 5i32>->:w) { await w.arrive(raw duration_ms(50i64)) ?! E5; pass 7i64; };   // site
+func:wp_arena = int64(wild arena<int64>->:w) { Handle<int64>:h = w.alloc(); pass 7i64; };   // site
+func:wp_shared_arena = int64(wild shared_arena<int64>->:w) { Handle<int64>:h = w.alloc(7i64); pass 7i64; };   // site
+async func:wp_written_block = int64() { wild Mutex<int64, 5i32>->:w = alloc(64i64) =>! wild Mutex<int64, 5i32>->; <-w = mutex(7i64) ?! E5; Guard<int64>:g = await w.acquire(raw duration_ms(50i64)) ?! E5; pass 7i64; };   // site
+async func:wp_wild_field = int64(WM:h) { Guard<int64>:g = await h.w.acquire(raw duration_ms(50i64)) ?! E5; pass 7i64; };   // site
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (DeadlineExceeded)  { exit 76i32; },
+        (StaleHandle)       { exit 73i32; },
+        (E5)                { exit 75i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

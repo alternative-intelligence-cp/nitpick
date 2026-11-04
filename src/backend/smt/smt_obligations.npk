@@ -140,11 +140,13 @@ func:obl_finish = NIL(ExprEmitter->:x, string:symbol, Encoder->:en) never fails 
         }
     }
     if (!c.obl.want_files) { pass NIL; }
+    // `obl` is a `wild ObTable->`, handed in by `npkc.npk` over its own live local: every list in it is written, and a plain pointer says so (DEF-484).
+    ObTable->:ob = c.obl =>! ObTable->;
     int64:checks = 0i64;
     for (int64:oi2 in 0i64...en.obls.count) { if (en.obls[oi2].encoded) { checks = checks + 1i64; } }
-    drop list_push(@c.obl.files, raw enc_file_text(en));
-    drop list_push(@c.obl.file_syms, string_concat(symbol, ""));
-    drop list_push(@c.obl.file_checks, checks);
+    drop list_push(@ob.files, raw enc_file_text(en));
+    drop list_push(@ob.file_syms, string_concat(symbol, ""));
+    drop list_push(@ob.file_checks, checks);
     // THE FILE'S RECURSIVE GROUP AND WHETHER ITS FUNCTION STATES A MEASURE
     // (D-305 (7), 1.5.8c step 4): `index.txt`'s fourth and fifth columns -- the
     // runners derive a `stack-depth` row's verdict from the `terminate` call
@@ -160,16 +162,16 @@ func:obl_finish = NIL(ExprEmitter->:x, string:symbol, Encoder->:en) never fails 
             fmeasured = !(raw verify_is_none(raw fn_measure(en.ast, fdn)));
         }
     }
-    drop list_push(@c.obl.file_groups, fgroup);
-    drop list_push(@c.obl.file_measured, fmeasured);
+    drop list_push(@ob.file_groups, fgroup);
+    drop list_push(@ob.file_measured, fmeasured);
     string:fno = raw file_number(c.obl.files.count);
     // THE TIER-2 TWIN (D-281): the rows the Real-interval abstraction may
     // decide, in a file of their own beside the tier-1 file.
     List<int64>:t2ks = raw list_init::<int64>(4i64);
     string:t2 = raw enc_t2_text(en, @t2ks);
     if (t2ks.count > 0i64) {
-        drop list_push(@c.obl.t2_names, string_concat(fno, ""));
-        drop list_push(@c.obl.t2_texts, move(t2));
+        drop list_push(@ob.t2_names, string_concat(fno, ""));
+        drop list_push(@ob.t2_texts, move(t2));
         string:ix = string_concat(fno, "\t");
         ix = string_concat(ix, int_to_string(t2ks.count));
         ix = string_concat(ix, "\t");
@@ -177,7 +179,7 @@ func:obl_finish = NIL(ExprEmitter->:x, string:symbol, Encoder->:en) never fails 
             if (ti > 0i64) { ix = string_concat(ix, ","); }
             ix = string_concat(ix, int_to_string(t2ks[ti]));
         }
-        drop list_push(@c.obl.t2_index, move(ix));
+        drop list_push(@ob.t2_index, move(ix));
     }
     // THE FUNCTION'S ROWS START HERE (DEF-82): the emitter counts a `defer`
     // body's copies into this batch as it lowers the body, which happens
@@ -216,11 +218,11 @@ func:obl_finish = NIL(ExprEmitter->:x, string:symbol, Encoder->:en) never fails 
         r = string_concat(r, int_to_string(en.obls[oi3].group => int64));
         // THE TENTH FIELD IS THE TABLE'S (DEF-82, 1.5.8b step 5): one copy's
         // traps here, multiplied by the copies the emitter writes.
-        drop list_push(@c.obl.row_traps, en.obls[oi3].traps);
-        drop list_push(@c.obl.row_defer, en.obls[oi3].defer_stmt);
+        drop list_push(@ob.row_traps, en.obls[oi3].traps);
+        drop list_push(@ob.row_defer, en.obls[oi3].defer_stmt);
         int32:mult = 1i32;
         if (en.obls[oi3].defer_stmt != 0i32) { mult = 0i32; }
-        drop list_push(@c.obl.row_mult, mult);
+        drop list_push(@ob.row_mult, mult);
         // THE TIER (D-281, 1.5.4b step 3): the eleventh field.
         string:tl = "\t";
         tl = string_concat(tl, string_from_bytes(en.obls[oi3].tier.ptr, en.obls[oi3].tier.len));
@@ -229,8 +231,8 @@ func:obl_finish = NIL(ExprEmitter->:x, string:symbol, Encoder->:en) never fails 
         // row's guard. That guard exists only where its check is emitted.
         tl = string_concat(tl, "\t");
         tl = string_concat(tl, int_to_string(en.obls[oi3].ctx => int64));
-        drop list_push(@c.obl.row_tail, move(tl));
-        drop list_push(@c.obl.rows, move(r));
+        drop list_push(@ob.row_tail, move(tl));
+        drop list_push(@ob.rows, move(r));
     }
     pass NIL;
 };

@@ -1,0 +1,462 @@
+// expect-exit: 0
+// THE ROADS BESIDE `tests/analysis/rejection/guard_views_its_lock.npk` (DEF-438, RULED, a view, landing 177d2). A guard over a borrowed owner's mutex leaves its function freely, within that owner's life, and the view stops neither the guard's
+// own writes to the protected value (D-056) nor a sibling field nor what a lock is for. Each cell's value comes through the guard or the lock, each returns 7, and `main` compares.
+mod:guard_views_its_lock_ok;
+error:E9;
+struct:GH = { Guard<int32>:g; };
+struct:MH = { Mutex<int32, 1i32>:m; int32:n; };
+struct:AM = { Mutex<int32, 1i32>[1]:a; };
+async func:hold = Guard<int32>(Mutex<int32, 1i32>->:m) { Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64)); pass g; };
+async func:fwd = Guard<int32>(move Guard<int32>:g) { pass move(g); };
+func:bump = NIL(Guard<int32>->:g) never fails { g.value = g.value + 1i32; pass NIL; };
+func:lvl = int64(Mutex<int32, 1i32>->:m) never fails { pass 7i64; };
+func:vw = Mutex<int32, 1i32>->(Mutex<int32, 1i32>->:m) never fails { pass m; };
+func:getp = Mutex<int32, 1i32>->(MH->:h) never fails { pass @h.m; };
+impl:MH = { async func:lk = Guard<int32>(MH->:self) { pass relay await self.m.acquire(raw duration_ms(500i64)); }; };
+async func:sib = int32(MH->:h) { Guard<int32>:g = relay await h.m.acquire(raw duration_ms(500i64)); h.n = 2i32; pass g.value; };
+async func:rp = Guard<int32>(MH->:h) { Guard<int32>:g = relay await h.m.acquire(raw duration_ms(500i64)); pass g; };
+async func:mk = GH(MH->:h) { Guard<int32>:g = relay await h.m.acquire(raw duration_ms(500i64)); pass GH{ g: move(g) }; };
+async func:gc = Guard<int32>(MH->:h) { pass relay await (raw getp(h)).acquire(raw duration_ms(500i64)); };
+async func:ga = Guard<int32>(AM->:p) { pass relay await p.a[0i64].acquire(raw duration_ms(500i64)); };
+async func:gs = Guard<int32>(Mutex<int32, 1i32>[]:s) { pass relay await s[0i64].acquire(raw duration_ms(500i64)); };
+async func:fill = NIL(Guard<int32>->:gp, Mutex<int32, 2i32>->:m) { Guard<int32>:t = relay await m.acquire(raw duration_ms(500i64)); <-gp = move(t); pass NIL; };
+async func:wk = NIL(Mutex<int32, 1i32>->:m) { Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64)); g.value = g.value + 1i32; pass NIL; };
+enum:ET = { A(int32); Z; };
+#[derive(Clone)]
+enum:ES = { A(string); Z; };
+enum:EP = { A(int32->); Y(int32); };
+struct:SS = { string:s; int32:n; };
+struct:Box<T> = { T:x; };
+struct:LH = { List<Guard<int32>>:gs; };
+func:re_grow = int64(List<int64>->:l) never fails { for (int64:i in 0i64...64i64) { drop list_push(l, 9i64); } pass 0i64; };
+func:re_rd = int64(List<int64>->:l) never fails { pass 0i64; };
+func:re_rd2 = int64(Mutex<int32, 2i32>->:m) never fails { pass 0i64; };
+async func:re_wk = NIL(Mutex<int32, 2i32>->:m) { Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64)); g.value = g.value + 1i32; pass NIL; };
+trait:Tr = { func:m = int32(Self->:self); };
+impl:GH:Tr = { func:m = int32(GH->:self) { pass 7i32; }; };
+struct:LF = { List<GF>:gs; };
+struct:GF = { Guard<int32>:g; };
+func:re_absorb = NIL(List<int64>->:l, move GH:o) never fails { drop list_push(l, o.g.value => int64); pass NIL; };
+async func:fp_first = int32(move Mutex<int32, 2i32>:a, move GH:h) { Guard<int32>:t = relay await a.acquire(raw duration_ms(500i64)); h.g = move(t); pass h.g.value; };
+async func:fp_ptr = int32(move GH:h, Mutex<int32, 2i32>->:a) { Guard<int32>:t = relay await a.acquire(raw duration_ms(500i64)); h.g = move(t); pass h.g.value; };
+async func:pep = int32(Guard<EP>->:p) { pick (p.value) { (EP.A(x)) { pass <-x; }, (EP.Y(y)) { pass 1i32; } } pass 2i32; };
+async func:pes = int32(Mutex<ES, 1i32>->:pm) { Guard<ES>:g = relay await pm.acquire(raw duration_ms(500i64)); pick (g.value) { (ES.A(_)) { pass 7i32; }, (ES.Z) { pass 1i32; } } pass 2i32; };
+async func:c_lv_at_pointer_acquire = int32() { Mutex<int32, 1i32>:m = mutex(7i32) ?! Unreachable; Mutex<int32, 1i32>->:p = @m; int32:r = 0i32; { Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64)); r = g.value; } int32:r2 = 0i32; { Guard<int32>:g2 = relay await p.acquire(raw duration_ms(500i64)); r2 = g2.value; } pass r2; };
+async func:c_lv_holder_at_pointer_read = int32() { MH:h = MH{ m: mutex(7i32) ?! Unreachable, n: 1i32 }; MH->:q = @h; int32:r = 0i32; { Guard<int32>:g = relay await h.m.acquire(raw duration_ms(500i64)); r = g.value; } int32:n = q.n; pass r + n - 1i32; };
+async func:c_borrowed_mutex_return = int32() { Mutex<int32, 1i32>:a = mutex(7i32) ?! Unreachable; int32:r = 0i32; { Guard<int32>:g = relay await hold(@a); r = g.value; } pass r; };
+async func:c_rw_read_kept = int32() { RwLock<int32, 1i32>:a = rwlock(7i32) ?! Unreachable; int32:r = 0i32; { RGuard<int32>:g = relay await a.read(raw duration_ms(500i64)); r = g.value; } pass r; };
+async func:c_forwarded_twice_kept = int32() { Mutex<int32, 1i32>:a = mutex(7i32) ?! Unreachable; Guard<int32>:g0 = relay await a.acquire(raw duration_ms(500i64)); Guard<int32>:g1 = relay await fwd(move(g0)); Guard<int32>:g2 = relay await fwd(move(g1)); pass g2.value; };
+async func:c_lock_before_holder = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! Unreachable; Mutex<int32, 1i32>:z = mutex(1i32) ?! Unreachable; Guard<int32>:g = relay await z.acquire(raw duration_ms(500i64)); g = relay await a.acquire(raw duration_ms(500i64)); pass g.value; };
+async func:c_later_guard_earlier_lock = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! Unreachable; Mutex<int32, 1i32>:z = mutex(1i32) ?! Unreachable; Guard<int32>:g = relay await z.acquire(raw duration_ms(500i64)); Guard<int32>:t = relay await a.acquire(raw duration_ms(500i64)); g = move(t); pass g.value; };
+async func:c_pointer_before_holder = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! Unreachable; Mutex<int32, 2i32>->:pa = @a; Mutex<int32, 1i32>:z = mutex(1i32) ?! Unreachable; Guard<int32>:g = relay await z.acquire(raw duration_ms(500i64)); g = relay await pa.acquire(raw duration_ms(500i64)); pass g.value; };
+async func:c_callee_lock_before_holder = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! Unreachable; Mutex<int32, 1i32>:z = mutex(1i32) ?! Unreachable; Guard<int32>:g = relay await z.acquire(raw duration_ms(500i64)); relay await fill(@g, @a); pass g.value; };
+async func:c_whole_struct_lock_before_holder = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! Unreachable; Mutex<int32, 1i32>:z = mutex(1i32) ?! Unreachable; Guard<int32>:g0 = relay await z.acquire(raw duration_ms(500i64)); GH:h = GH{ g: move(g0) }; Guard<int32>:t = relay await a.acquire(raw duration_ms(500i64)); h = GH{ g: move(t) }; pass h.g.value; };
+async func:c_later_lock_later_guard = int32() { Mutex<int32, 1i32>:z = mutex(1i32) ?! Unreachable; Guard<int32>:g = relay await z.acquire(raw duration_ms(500i64)); Mutex<int32, 2i32>:a = mutex(7i32) ?! Unreachable; Guard<int32>:t = relay await a.acquire(raw duration_ms(500i64)); pass t.value; };
+async func:c_value_not_guard = int32() { Mutex<int32, 1i32>:a = mutex(7i32) ?! Unreachable; Guard<int32>:g = relay await a.acquire(raw duration_ms(500i64)); pass g.value; };
+async func:c_own_mutation = int32() { Mutex<int32, 1i32>:a = mutex(1i32) ?! Unreachable; int32:r = 0i32; { Guard<int32>:g = relay await a.acquire(raw duration_ms(500i64)); g.value = g.value + 1i32; g.value = g.value + 5i32; r = g.value; } pass r; };
+async func:c_helper_writes_through_guard = int32() { Mutex<int32, 1i32>:a = mutex(6i32) ?! Unreachable; int32:r = 0i32; { Guard<int32>:g = relay await a.acquire(raw duration_ms(500i64)); drop bump(@g); r = g.value; } pass r; };
+async func:c_sibling_field_local = int32() { MH:h = MH{ m: mutex(7i32) ?! Unreachable, n: 1i32 }; Guard<int32>:g = relay await h.m.acquire(raw duration_ms(500i64)); h.n = 2i32; pass g.value; };
+async func:c_sibling_field_param = int32() { MH:h = MH{ m: mutex(7i32) ?! Unreachable, n: 1i32 }; pass relay await sib(@h); };
+async func:c_returned_through_param = int32() { MH:h = MH{ m: mutex(7i32) ?! Unreachable, n: 1i32 }; int32:r = 0i32; { Guard<int32>:g = relay await rp(@h); r = g.value; } pass r; };
+async func:c_struct_returned_through_param = int32() { MH:h = MH{ m: mutex(7i32) ?! Unreachable, n: 1i32 }; GH:o = relay await mk(@h); pass o.g.value; };
+async func:c_method_summary_kept = int32() { MH:h = MH{ m: mutex(7i32) ?! Unreachable, n: 1i32 }; int32:r = 0i32; { Guard<int32>:g = relay await h.lk(); r = g.value; } pass r; };
+async func:c_call_result_pointer = int32() { MH:h = MH{ m: mutex(7i32) ?! Unreachable, n: 1i32 }; int32:r = 0i32; { Guard<int32>:g = relay await (raw getp(@h)).acquire(raw duration_ms(500i64)); r = g.value; } pass r; };
+async func:c_pointer_param_chain = int32() { MH:h = MH{ m: mutex(7i32) ?! Unreachable, n: 1i32 }; int32:r = 0i32; { Guard<int32>:g = relay await gc(@h); r = g.value; } pass r; };
+async func:c_array_in_param = int32() { AM:h = AM{ a: [mutex(7i32) ?! Unreachable] }; int32:r = 0i32; { Guard<int32>:g = relay await ga(@h); r = g.value; } pass r; };
+async func:c_slice_param = int32() { Mutex<int32, 1i32>[1]:a = [mutex(7i32) ?! Unreachable]; int32:r = 0i32; { Guard<int32>:g = relay await gs(a[0i64...1i64]); r = g.value; } pass r; };
+async func:c_ascending = int32() { Mutex<int32, 1i32>:a = mutex(7i32) ?! Unreachable; Mutex<int32, 2i32>:b = mutex(0i32) ?! Unreachable; Guard<int32>:g = relay await a.acquire(raw duration_ms(500i64)); Guard<int32>:h = relay await b.acquire(raw duration_ms(500i64)); pass g.value + h.value; };
+async func:c_loop_reacquire = int32() { Mutex<int32, 1i32>:a = mutex(7i32) ?! Unreachable; int32:r = 0i32; for (int32:i in 0i32...3i32) { Guard<int32>:g = relay await a.acquire(raw duration_ms(500i64)); r = g.value; } pass r; };
+async func:c_block_then_reacquire = int32() { Mutex<int32, 1i32>:a = mutex(7i32) ?! Unreachable; int32:r = 0i32; { Guard<int32>:g = relay await a.acquire(raw duration_ms(500i64)); } { Guard<int32>:h = relay await a.acquire(raw duration_ms(500i64)); r = h.value; } pass r; };
+async func:c_local_struct = int32() { Mutex<int32, 1i32>:a = mutex(7i32) ?! Unreachable; Guard<int32>:g = relay await a.acquire(raw duration_ms(500i64)); GH:h = GH{ g: move(g) }; pass h.g.value; };
+async func:c_address_to_callee_while_held = int32() { Mutex<int32, 1i32>:a = mutex(7i32) ?! Unreachable; Guard<int32>:g = relay await a.acquire(raw duration_ms(500i64)); int64:n = raw lvl(@a); pass g.value + ((n - n) =>! int32); };
+async func:c_user_view_of_lock_then_acquire = int32() { Mutex<int32, 1i32>:a = mutex(7i32) ?! Unreachable; Mutex<int32, 1i32>->:p = raw vw(@a); int32:r = 0i32; { Guard<int32>:g = relay await a.acquire(raw duration_ms(500i64)); r = g.value; } int64:n = raw lvl(p); pass r; };
+async func:c_timedwait = int32() { Mutex<int32, 1i32>:a = mutex(7i32) ?! Unreachable; CondVar<2i32>:c = condvar() ?! Unreachable; int32:r = 0i32; { Guard<int32>:g = relay await a.acquire(raw duration_ms(500i64)); await c.timedwait(g, raw duration_ms(1i64)) ?| NIL; r = 7i32; } pass r; };
+async func:c_spawned_workers = int32() { Mutex<int32, 1i32>:a = mutex(5i32) ?! Unreachable; { drop wk(@a); drop wk(@a); } int32:r = 0i32; { Guard<int32>:g = relay await a.acquire(raw duration_ms(500i64)); r = g.value; } pass r; };
+async func:c_outer_holder_outer_lock = int32() { Mutex<int32, 1i32>:a = mutex(1i32) ?! Unreachable; Mutex<int32, 2i32>:b = mutex(7i32) ?! Unreachable; Guard<int32>:g = relay await a.acquire(raw duration_ms(500i64)); { g = relay await b.acquire(raw duration_ms(500i64)); } pass g.value; };
+async func:c_dv_scalar_binding = int32() { Mutex<ET, 1i32>:m = mutex(ET.A(7i32)) ?! Unreachable; Guard<ET>:g = relay await m.acquire(raw duration_ms(500i64)); pick (g.value) { (ET.A(x)) { pass x; }, (ET.Z) { pass 1i32; } } pass 2i32; };
+async func:c_dv_scalar_no_binding = int32() { Mutex<ET, 1i32>:m = mutex(ET.A(7i32)) ?! Unreachable; Guard<ET>:g = relay await m.acquire(raw duration_ms(500i64)); pick (g.value) { (ET.A(_)) { pass 7i32; }, (ET.Z) { pass 1i32; } } pass 2i32; };
+async func:c_dv_int_selector = int32() { Mutex<int32, 1i32>:m = mutex(7i32) ?! Unreachable; Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64)); pick (g.value) { (7i32) { pass 7i32; }, (*) { pass 1i32; } } pass 2i32; };
+async func:c_dv_scalar_copied_first = int32() { Mutex<ET, 1i32>:m = mutex(ET.A(7i32)) ?! Unreachable; Guard<ET>:g = relay await m.acquire(raw duration_ms(500i64)); ET:c = g.value; pick (c) { (ET.A(x)) { pass x; }, (ET.Z) { pass 1i32; } } pass 2i32; };
+async func:c_dv_string_cloned_first = int32() { Mutex<ES, 1i32>:m = mutex(ES.A(string_concat("ab", "cd"))) ?! Unreachable; Guard<ES>:g = relay await m.acquire(raw duration_ms(500i64)); ES:c = g.value.clone() ?! Unreachable; pick (c) { (ES.A(x)) { pass ((string_bytes(x)[0i64] => int64) - 90i64) =>! int32; }, (ES.Z) { pass 1i32; } } pass 2i32; };
+async func:c_dv_field_read = int32() { Mutex<SS, 1i32>:m = mutex(SS{ s: string_concat("ab", "cd"), n: 7i32 }) ?! Unreachable; Guard<SS>:g = relay await m.acquire(raw duration_ms(500i64)); pass g.value.n; };
+async func:c_dv_string_view_read = int32() { Mutex<SS, 1i32>:m = mutex(SS{ s: string_concat("ab", "cd"), n: 7i32 }) ?! Unreachable; Guard<SS>:g = relay await m.acquire(raw duration_ms(500i64)); pass ((string_bytes(g.value.s)[0i64] => int64) - 90i64) =>! int32; };
+async func:c_dv_elements_indexed = int32() { string[2]:a0 = [string_concat("a", "b"), string_concat("c", "d")]; Mutex<string[2], 1i32>:m = mutex(move(a0)) ?! Unreachable; Guard<string[2]>:g = relay await m.acquire(raw duration_ms(500i64)); int64:n = 3i64; for (int64:i in 0i64...2i64) { n = n + string_bytes(g.value[i]).len; } pass n =>! int32; };
+async func:c_dv_guard_by_pointer = int32() { int32:k = 7i32; Mutex<EP, 1i32>:m = mutex(EP.A(@k)) ?! Unreachable; Guard<EP>:g = relay await m.acquire(raw duration_ms(500i64)); pass relay await pep(@g); };
+async func:c_dv_lock_through_parameter = int32() { Mutex<ES, 1i32>:m = mutex(ES.A(string_concat("ab", "cd"))) ?! Unreachable; pass relay await pes(@m); };
+async func:c_re_index_reads = int32() { Mutex<int32, 1i32>[1]:ms = [mutex(7i32) ?! Unreachable]; List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); int64[]:v = l[0i64...1i64]; int32:r = 0i32; { Guard<int32>:g = relay await ms[raw re_rd(@l)].acquire(raw duration_ms(500i64)); r = g.value; } pass r + ((v[0i64] - 1i64) =>! int32); };
+async func:c_re_growth_hoisted = int32() { Mutex<int32, 1i32>[1]:ms = [mutex(7i32) ?! Unreachable]; List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); int64:i = raw re_grow(@l); int64[]:v = l[0i64...1i64]; int32:r = 0i32; { Guard<int32>:g = relay await ms[i].acquire(raw duration_ms(500i64)); r = g.value; } pass r + ((v[0i64] - 1i64) =>! int32); };
+async func:c_re_lent_index_reads = int32() { Mutex<int32, 1i32>[1]:ms = [mutex(7i32) ?! Unreachable]; Mutex<int32, 2i32>:a = mutex(5i32) ?! Unreachable; int32:r = 0i32; { drop re_wk(@a); Guard<int32>:g = relay await ms[raw re_rd2(@a)].acquire(raw duration_ms(500i64)); r = g.value; } pass r; };
+async func:c_fp_lock_first = int32() { Mutex<int32, 1i32>:z = mutex(1i32) ?! Unreachable; Guard<int32>:g0 = relay await z.acquire(raw duration_ms(500i64)); pass relay await fp_first(mutex(7i32) ?! Unreachable, GH{ g: move(g0) }); };
+async func:c_fp_lock_by_pointer = int32() { Mutex<int32, 2i32>:m = mutex(7i32) ?! Unreachable; Mutex<int32, 1i32>:z = mutex(1i32) ?! Unreachable; Guard<int32>:g0 = relay await z.acquire(raw duration_ms(500i64)); pass relay await fp_ptr(GH{ g: move(g0) }, @m); };
+async func:c_gl_lock_first = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! Unreachable; List<Guard<int32>>:l = raw list_init::<Guard<int32>>(2i64); Guard<int32>:t = relay await a.acquire(raw duration_ms(500i64)); drop list_push(@l, move(t)); pass 7i32; };
+async func:c_gl_user_generic_lock_first = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! Unreachable; Mutex<int32, 1i32>:z = mutex(1i32) ?! Unreachable; Guard<int32>:g0 = relay await z.acquire(raw duration_ms(500i64)); Box<Guard<int32>>:b = Box{ x: move(g0) }; Guard<int32>:t = relay await a.acquire(raw duration_ms(500i64)); b.x = move(t); pass b.x.value; };
+async func:c_gl_struct_field_lock_first = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! Unreachable; LH:h = LH{ gs: raw list_init::<Guard<int32>>(2i64) }; Guard<int32>:t = relay await a.acquire(raw duration_ms(500i64)); drop list_push(@h.gs, move(t)); pass 7i32; };
+async func:c_gd_lock_first = int32() { Mutex<int32, 1i32>:z = mutex(1i32) ?! Unreachable; Guard<int32>:g0 = relay await z.acquire(raw duration_ms(500i64)); Mutex<int32, 2i32>:a = mutex(7i32) ?! Unreachable; Guard<int32>:t = relay await a.acquire(raw duration_ms(500i64)); GH:o0 = GH{ g: move(g0) }; dyn Tr:d = move(o0); GH:o = GH{ g: move(t) }; d = move(o); pass d.m() ?! E9; };
+async func:c_gd_first_binding = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! Unreachable; Guard<int32>:t = relay await a.acquire(raw duration_ms(500i64)); GH:o = GH{ g: move(t) }; dyn Tr:d = move(o); pass d.m() ?! E9; };
+async func:c_gd_list_lock_first = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! Unreachable; Guard<int32>:t = relay await a.acquire(raw duration_ms(500i64)); GH:o = GH{ g: move(t) }; List<dyn Tr>:l = raw list_init::<dyn Tr>(2i64); drop list_push(@l, move(o)); pass 7i32; };
+async func:c_gf_lock_first = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! Unreachable; Guard<int32>:t = relay await a.acquire(raw duration_ms(500i64)); LF:h = LF{ gs: raw list_init::<GF>(2i64) }; drop list_push(@h.gs, GF{ g: move(t) }); pass 7i32; };
+async func:c_gl_value_read_out = int32() { List<int64>:l = raw list_init::<int64>(2i64); Mutex<int32, 2i32>:a = mutex(7i32) ?! Unreachable; Guard<int32>:t = relay await a.acquire(raw duration_ms(500i64)); GH:o = GH{ g: move(t) }; drop re_absorb(@l, move(o)); pass l[0i64] =>! int32; };
+
+// THE CLAUSE'S CONTROLS (management_19's clause of 12:28 EST): the lock declared first, a value with no destructor, a value that views no lock. An `int` view later, or a plain pointer re-aimed, stays free.
+trait:q6c_dyn_no_view__Tr = { func:m = int32(Self->:self); };
+struct:q6c_dyn_no_view__N = { int32:v; };
+impl:q6c_dyn_no_view__N:q6c_dyn_no_view__Tr = { func:m = int32(q6c_dyn_no_view__N->:self) { pass 7i32; }; };
+async func:c_q6c_dyn_no_view = int32() { q6c_dyn_no_view__N:o0 = q6c_dyn_no_view__N{ v: 1i32 }; dyn q6c_dyn_no_view__Tr:d = move(o0); q6c_dyn_no_view__N:o = q6c_dyn_no_view__N{ v: 2i32 }; dyn q6c_dyn_no_view__Tr:e = move(o); d = move(e); pass d.m() ?! E9; };
+trait:q6c_dyn_view_later_int__Tr = { func:m = int32(Self->:self); };
+struct:q6c_dyn_view_later_int__PV = { int32->:p; };
+impl:q6c_dyn_view_later_int__PV:q6c_dyn_view_later_int__Tr = { func:m = int32(q6c_dyn_view_later_int__PV->:self) { pass 7i32; }; };
+async func:c_q6c_dyn_view_later_int = int32() { int32:y = 1i32; q6c_dyn_view_later_int__PV:o0 = q6c_dyn_view_later_int__PV{ p: @y }; dyn q6c_dyn_view_later_int__Tr:d = move(o0); int32:x = 2i32; q6c_dyn_view_later_int__PV:o = q6c_dyn_view_later_int__PV{ p: @x }; dyn q6c_dyn_view_later_int__Tr:e = move(o); d = move(e); pass d.m() ?! E9; };
+trait:q6c_earlier_lock_later_guard__Tr = { func:m = int32(Self->:self); };
+struct:q6c_earlier_lock_later_guard__GH = { Guard<int32>:g; };
+impl:q6c_earlier_lock_later_guard__GH:q6c_earlier_lock_later_guard__Tr = { func:m = int32(q6c_earlier_lock_later_guard__GH->:self) { pass 7i32; }; };
+async func:c_q6c_earlier_lock_later_guard = int32() { Mutex<int32, 1i32>:z = mutex(1i32) ?! E9; Guard<int32>:g0 = await z.acquire(raw duration_ms(500i64)) ?! E9; q6c_earlier_lock_later_guard__GH:o0 = q6c_earlier_lock_later_guard__GH{ g: move(g0) }; Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; dyn q6c_earlier_lock_later_guard__Tr:d = move(o0); Guard<int32>:t = await a.acquire(raw duration_ms(500i64)) ?! E9; q6c_earlier_lock_later_guard__GH:o = q6c_earlier_lock_later_guard__GH{ g: move(t) }; dyn q6c_earlier_lock_later_guard__Tr:e = move(o); d = move(e); pass 7i32; };
+struct:q6c_list_view_later_int__PV = { int32->:p; };
+async func:c_q6c_list_view_later_int = int32() { List<q6c_list_view_later_int__PV>:l = raw list_init::<q6c_list_view_later_int__PV>(2i64); int32:x = 2i32; drop list_push(@l, q6c_list_view_later_int__PV{ p: @x }); pass 7i32; };
+trait:q6c_lock_first_dyn__Tr = { func:m = int32(Self->:self); };
+struct:q6c_lock_first_dyn__GH = { Guard<int32>:g; };
+impl:q6c_lock_first_dyn__GH:q6c_lock_first_dyn__Tr = { func:m = int32(q6c_lock_first_dyn__GH->:self) { pass 7i32; }; };
+async func:c_q6c_lock_first_dyn = int32() { Mutex<int32, 1i32>:z = mutex(1i32) ?! E9; Guard<int32>:g0 = await z.acquire(raw duration_ms(500i64)) ?! E9; q6c_lock_first_dyn__GH:o0 = q6c_lock_first_dyn__GH{ g: move(g0) }; Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; Guard<int32>:t = await a.acquire(raw duration_ms(500i64)) ?! E9; q6c_lock_first_dyn__GH:o = q6c_lock_first_dyn__GH{ g: move(t) }; dyn q6c_lock_first_dyn__Tr:d = move(o0); dyn q6c_lock_first_dyn__Tr:e = move(o); d = move(e); pass 7i32; };
+struct:q6c_lock_first_stale__LH = { List<q6c_lock_first_stale__GH>:gs; };
+struct:q6c_lock_first_stale__GH = { Guard<int32>:g; };
+async func:c_q6c_lock_first_stale = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; Guard<int32>:t = await a.acquire(raw duration_ms(500i64)) ?! E9; q6c_lock_first_stale__LH:h = q6c_lock_first_stale__LH{ gs: raw list_init::<q6c_lock_first_stale__GH>(2i64) }; q6c_lock_first_stale__LH:v = q6c_lock_first_stale__LH{ gs: raw list_init::<q6c_lock_first_stale__GH>(2i64) }; drop list_push(@v.gs, q6c_lock_first_stale__GH{ g: move(t) }); h = move(v); pass 7i32; };
+async func:c_q6c_plain_pointer_reaim = int32() { Mutex<int32, 2i32>:a0 = mutex(1i32) ?! E9; Mutex<int32, 2i32>->:p = @a0; Mutex<int32, 2i32>:b = mutex(7i32) ?! E9; p = @b; Guard<int32>:g = await p.acquire(raw duration_ms(500i64)) ?! E9; pass 7i32; };
+struct:q6c_pointer_struct_reaim__PM = { Mutex<int32, 2i32>->:m; };
+async func:c_q6c_pointer_struct_reaim = int32() { Mutex<int32, 2i32>:a0 = mutex(1i32) ?! E9; q6c_pointer_struct_reaim__PM:h = q6c_pointer_struct_reaim__PM{ m: @a0 }; Mutex<int32, 2i32>:b = mutex(7i32) ?! E9; h = q6c_pointer_struct_reaim__PM{ m: @b }; Guard<int32>:g = await h.m.acquire(raw duration_ms(500i64)) ?! E9; pass 7i32; };
+trait:q9c_helper_lock_first__Tr = { func:m = int32(Self->:self); };
+struct:q9c_helper_lock_first__GH = { Guard<int32>:g; };
+impl:q9c_helper_lock_first__GH:q9c_helper_lock_first__Tr = { func:m = int32(q9c_helper_lock_first__GH->:self) { pass 7i32; }; };
+struct:q9c_helper_lock_first__N = { int32:v; };
+impl:q9c_helper_lock_first__N:q9c_helper_lock_first__Tr = { func:m = int32(q9c_helper_lock_first__N->:self) { pass 7i32; }; };
+trait:q9c_helper_lock_first__Lk = { async func:take = q9c_helper_lock_first__GH(Self->:self) acquires <= 2i32; };
+struct:q9c_helper_lock_first__LK = { Mutex<int32, 2i32>:m; };
+impl:q9c_helper_lock_first__LK:q9c_helper_lock_first__Lk = { async func:take = q9c_helper_lock_first__GH(q9c_helper_lock_first__LK->:self) acquires <= 2i32 { Guard<int32>:t = await self.m.acquire(raw duration_ms(500i64)) ?! E9; pass q9c_helper_lock_first__GH{ g: move(t) }; }; };
+struct:q9c_helper_lock_first__DS = { dyn q9c_helper_lock_first__Lk:l; };
+async func:q9c_helper_lock_first__take2 = q9c_helper_lock_first__GH(q9c_helper_lock_first__DS->:s) acquires <= 2i32 { pass await s.l.take() ?! E9; };
+async func:c_q9c_helper_lock_first = int32() { q9c_helper_lock_first__LK:k0 = q9c_helper_lock_first__LK{ m: mutex(7i32) ?! E9 }; q9c_helper_lock_first__DS:s = q9c_helper_lock_first__DS{ l: move(k0) }; q9c_helper_lock_first__N:o0 = q9c_helper_lock_first__N{ v: 1i32 }; dyn q9c_helper_lock_first__Tr:d = move(o0); q9c_helper_lock_first__GH:o = await q9c_helper_lock_first__take2(@s) ?! E9; dyn q9c_helper_lock_first__Tr:e = move(o); d = move(e); pass 7i32; };
+trait:q9c_lock_before_holder_dyn_recv__Tr = { func:m = int32(Self->:self); };
+struct:q9c_lock_before_holder_dyn_recv__GH = { Guard<int32>:g; };
+impl:q9c_lock_before_holder_dyn_recv__GH:q9c_lock_before_holder_dyn_recv__Tr = { func:m = int32(q9c_lock_before_holder_dyn_recv__GH->:self) { pass 7i32; }; };
+struct:q9c_lock_before_holder_dyn_recv__N = { int32:v; };
+impl:q9c_lock_before_holder_dyn_recv__N:q9c_lock_before_holder_dyn_recv__Tr = { func:m = int32(q9c_lock_before_holder_dyn_recv__N->:self) { pass 7i32; }; };
+trait:q9c_lock_before_holder_dyn_recv__Lk = { async func:take = q9c_lock_before_holder_dyn_recv__GH(Self->:self) acquires <= 2i32; };
+struct:q9c_lock_before_holder_dyn_recv__LK = { Mutex<int32, 2i32>:m; };
+impl:q9c_lock_before_holder_dyn_recv__LK:q9c_lock_before_holder_dyn_recv__Lk = { async func:take = q9c_lock_before_holder_dyn_recv__GH(q9c_lock_before_holder_dyn_recv__LK->:self) acquires <= 2i32 { Guard<int32>:t = await self.m.acquire(raw duration_ms(500i64)) ?! E9; pass q9c_lock_before_holder_dyn_recv__GH{ g: move(t) }; }; };
+async func:c_q9c_lock_before_holder_dyn_recv = int32() { q9c_lock_before_holder_dyn_recv__N:o0 = q9c_lock_before_holder_dyn_recv__N{ v: 1i32 }; q9c_lock_before_holder_dyn_recv__LK:k0 = q9c_lock_before_holder_dyn_recv__LK{ m: mutex(7i32) ?! E9 }; dyn q9c_lock_before_holder_dyn_recv__Lk:s = move(k0); dyn q9c_lock_before_holder_dyn_recv__Tr:d = move(o0); q9c_lock_before_holder_dyn_recv__GH:o = await s.take() ?! E9; dyn q9c_lock_before_holder_dyn_recv__Tr:e = move(o); d = move(e); pass 7i32; };
+struct:q3_stale_both_lock_first_ctl__LH = { List<q3_stale_both_lock_first_ctl__GH>:gs; }; struct:q3_stale_both_lock_first_ctl__GH = { Guard<int32>:g; };
+async func:c_q3_stale_both_lock_first_ctl = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; Guard<int32>:t = await a.acquire(raw duration_ms(500i64)) ?! E9; q3_stale_both_lock_first_ctl__LH:h = q3_stale_both_lock_first_ctl__LH{ gs: raw list_init::<q3_stale_both_lock_first_ctl__GH>(2i64) }; q3_stale_both_lock_first_ctl__LH:v = q3_stale_both_lock_first_ctl__LH{ gs: raw list_init::<q3_stale_both_lock_first_ctl__GH>(2i64) }; drop list_push(@v.gs, q3_stale_both_lock_first_ctl__GH{ g: move(t) }); h = move(v); pass 7i32; };
+trait:q5_dyn_into_dyn_lock_first_ctl__Tr = { func:m = int32(Self->:self); }; struct:q5_dyn_into_dyn_lock_first_ctl__GH = { Guard<int32>:g; }; impl:q5_dyn_into_dyn_lock_first_ctl__GH:q5_dyn_into_dyn_lock_first_ctl__Tr = { func:m = int32(q5_dyn_into_dyn_lock_first_ctl__GH->:self) { pass 7i32; }; };
+async func:c_q5_dyn_into_dyn_lock_first_ctl = int32() { Mutex<int32, 1i32>:z = mutex(1i32) ?! E9; Guard<int32>:g0 = await z.acquire(raw duration_ms(500i64)) ?! E9; Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; Guard<int32>:t = await a.acquire(raw duration_ms(500i64)) ?! E9; q5_dyn_into_dyn_lock_first_ctl__GH:o0 = q5_dyn_into_dyn_lock_first_ctl__GH{ g: move(g0) }; dyn q5_dyn_into_dyn_lock_first_ctl__Tr:d = move(o0); q5_dyn_into_dyn_lock_first_ctl__GH:o = q5_dyn_into_dyn_lock_first_ctl__GH{ g: move(t) }; dyn q5_dyn_into_dyn_lock_first_ctl__Tr:e = move(o); d = move(e); pass d.m() ?! E9; };
+trait:m2c_slice_lock_first_ctl__Tr = { func:m = int32(Self->:self); };
+struct:m2c_slice_lock_first_ctl__GH = { Guard<int32>:g; };
+impl:m2c_slice_lock_first_ctl__GH:m2c_slice_lock_first_ctl__Tr = { func:m = int32(m2c_slice_lock_first_ctl__GH->:self) { pass 7i32; }; };
+async func:m2c_slice_lock_first_ctl__gs = Guard<int32>(Mutex<int32, 2i32>[]:s) { pass relay await s[0i64].acquire(raw duration_ms(500i64)); };
+async func:c_m2c_slice_lock_first_ctl = int32() { Mutex<int32, 2i32>[1]:l = [mutex(7i32) ?! E9]; Mutex<int32, 1i32>:z = mutex(1i32) ?! E9; Guard<int32>:g0 = await z.acquire(raw duration_ms(500i64)) ?! E9; m2c_slice_lock_first_ctl__GH:o0 = m2c_slice_lock_first_ctl__GH{ g: move(g0) }; dyn m2c_slice_lock_first_ctl__Tr:d = move(o0); Guard<int32>:t = await m2c_slice_lock_first_ctl__gs(l[0i64...1i64]) ?! E9; m2c_slice_lock_first_ctl__GH:o = m2c_slice_lock_first_ctl__GH{ g: move(t) }; dyn m2c_slice_lock_first_ctl__Tr:e = move(o); d = move(e); pass 7i32; };
+trait:m10c_ptr_struct_lock_first__Tr = { func:m = int32(Self->:self); };
+struct:m10c_ptr_struct_lock_first__GH = { Guard<int32>:g; };
+impl:m10c_ptr_struct_lock_first__GH:m10c_ptr_struct_lock_first__Tr = { func:m = int32(m10c_ptr_struct_lock_first__GH->:self) { pass 7i32; }; };
+struct:m10c_ptr_struct_lock_first__PM = { Mutex<int32, 2i32>->:m; };
+async func:m10c_ptr_struct_lock_first__gs = Guard<int32>(m10c_ptr_struct_lock_first__PM->:h) { pass await h.m.acquire(raw duration_ms(500i64)) ?! E9; };
+async func:c_m10c_ptr_struct_lock_first = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; m10c_ptr_struct_lock_first__PM:s = m10c_ptr_struct_lock_first__PM{ m: @a }; Mutex<int32, 1i32>:z = mutex(1i32) ?! E9; Guard<int32>:g0 = await z.acquire(raw duration_ms(500i64)) ?! E9; m10c_ptr_struct_lock_first__GH:o0 = m10c_ptr_struct_lock_first__GH{ g: move(g0) }; dyn m10c_ptr_struct_lock_first__Tr:d = move(o0); Guard<int32>:t = await m10c_ptr_struct_lock_first__gs(@s) ?! E9; m10c_ptr_struct_lock_first__GH:o = m10c_ptr_struct_lock_first__GH{ g: move(t) }; dyn m10c_ptr_struct_lock_first__Tr:e = move(o); d = move(e); pass 7i32; };
+trait:m7c_struct_of_slice_lock_first__Tr = { func:m = int32(Self->:self); };
+struct:m7c_struct_of_slice_lock_first__GH = { Guard<int32>:g; };
+impl:m7c_struct_of_slice_lock_first__GH:m7c_struct_of_slice_lock_first__Tr = { func:m = int32(m7c_struct_of_slice_lock_first__GH->:self) { pass 7i32; }; };
+struct:m7c_struct_of_slice_lock_first__SS = { Mutex<int32, 2i32>[]:s; };
+async func:m7c_struct_of_slice_lock_first__gs = Guard<int32>(m7c_struct_of_slice_lock_first__SS->:h) { pass await h.s[0i64].acquire(raw duration_ms(500i64)) ?! E9; };
+async func:c_m7c_struct_of_slice_lock_first = int32() { Mutex<int32, 2i32>[1]:l = [mutex(7i32) ?! E9]; m7c_struct_of_slice_lock_first__SS:h = m7c_struct_of_slice_lock_first__SS{ s: l[0i64...1i64] }; Mutex<int32, 1i32>:z = mutex(1i32) ?! E9; Guard<int32>:g0 = await z.acquire(raw duration_ms(500i64)) ?! E9; m7c_struct_of_slice_lock_first__GH:o0 = m7c_struct_of_slice_lock_first__GH{ g: move(g0) }; dyn m7c_struct_of_slice_lock_first__Tr:d = move(o0); Guard<int32>:t = await m7c_struct_of_slice_lock_first__gs(@h) ?! E9; m7c_struct_of_slice_lock_first__GH:o = m7c_struct_of_slice_lock_first__GH{ g: move(t) }; dyn m7c_struct_of_slice_lock_first__Tr:e = move(o); d = move(e); pass 7i32; };
+trait:m5c_slice_of_ptr_lock_first__Tr = { func:m = int32(Self->:self); };
+struct:m5c_slice_of_ptr_lock_first__GH = { Guard<int32>:g; };
+impl:m5c_slice_of_ptr_lock_first__GH:m5c_slice_of_ptr_lock_first__Tr = { func:m = int32(m5c_slice_of_ptr_lock_first__GH->:self) { pass 7i32; }; };
+async func:m5c_slice_of_ptr_lock_first__gs = Guard<int32>(Mutex<int32, 2i32>->[]:s) { pass await s[0i64].acquire(raw duration_ms(500i64)) ?! E9; };
+async func:c_m5c_slice_of_ptr_lock_first = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; Mutex<int32, 2i32>->[1]:l = [@a]; Mutex<int32, 1i32>:z = mutex(1i32) ?! E9; Guard<int32>:g0 = await z.acquire(raw duration_ms(500i64)) ?! E9; m5c_slice_of_ptr_lock_first__GH:o0 = m5c_slice_of_ptr_lock_first__GH{ g: move(g0) }; dyn m5c_slice_of_ptr_lock_first__Tr:d = move(o0); Guard<int32>:t = await m5c_slice_of_ptr_lock_first__gs(l[0i64...1i64]) ?! E9; m5c_slice_of_ptr_lock_first__GH:o = m5c_slice_of_ptr_lock_first__GH{ g: move(t) }; dyn m5c_slice_of_ptr_lock_first__Tr:e = move(o); d = move(e); pass 7i32; };
+trait:m1c_ptr_ptr_first_ctl__Tr = { func:m = int32(Self->:self); };
+struct:m1c_ptr_ptr_first_ctl__GH = { Guard<int32>:g; };
+impl:m1c_ptr_ptr_first_ctl__GH:m1c_ptr_ptr_first_ctl__Tr = { func:m = int32(m1c_ptr_ptr_first_ctl__GH->:self) { pass 7i32; }; };
+async func:c_m1c_ptr_ptr_first_ctl = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; Mutex<int32, 2i32>->:p = @a; Mutex<int32, 2i32>->->:pp = @p; Mutex<int32, 1i32>:z = mutex(1i32) ?! E9; Guard<int32>:g0 = await z.acquire(raw duration_ms(500i64)) ?! E9; m1c_ptr_ptr_first_ctl__GH:o0 = m1c_ptr_ptr_first_ctl__GH{ g: move(g0) }; dyn m1c_ptr_ptr_first_ctl__Tr:d = move(o0); Guard<int32>:t = await (<-pp).acquire(raw duration_ms(500i64)) ?! E9; m1c_ptr_ptr_first_ctl__GH:o = m1c_ptr_ptr_first_ctl__GH{ g: move(t) }; dyn m1c_ptr_ptr_first_ctl__Tr:e = move(o); d = move(e); pass 7i32; };
+trait:m11c_value_shows_lock_first__Tr = { func:m = int32(Self->:self); };
+struct:m11c_value_shows_lock_first__GH = { Guard<int32>:g; };
+impl:m11c_value_shows_lock_first__GH:m11c_value_shows_lock_first__Tr = { func:m = int32(m11c_value_shows_lock_first__GH->:self) { pass 7i32; }; };
+struct:m11c_value_shows_lock_first__PM = { Mutex<int32, 2i32>->:m; };
+async func:m11c_value_shows_lock_first__gs = Guard<int32>(m11c_value_shows_lock_first__PM->:h) { pass await h.m.acquire(raw duration_ms(500i64)) ?! E9; };
+async func:c_m11c_value_shows_lock_first = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; m11c_value_shows_lock_first__PM:s = m11c_value_shows_lock_first__PM{ m: @a }; Mutex<int32, 1i32>:z = mutex(1i32) ?! E9; Guard<int32>:g0 = await z.acquire(raw duration_ms(500i64)) ?! E9; m11c_value_shows_lock_first__GH:o0 = m11c_value_shows_lock_first__GH{ g: move(g0) }; dyn m11c_value_shows_lock_first__Tr:d = move(o0); Guard<int32>:t = await m11c_value_shows_lock_first__gs(@s) ?! E9; m11c_value_shows_lock_first__GH:o = m11c_value_shows_lock_first__GH{ g: move(t) }; d = move(o); pass 7i32; };
+
+// A LOCK LENT TO A TASK AND TAKEN BY ITS PARENT, AT AN INDEX, A FIELD'S INDEX AND NO INDEX: `skip_lent` is restored after the index walk, so the parent's own `acquire` still judges no lend (F1 of 177d2's reopen; `f1_lent_restore` refuses all three, the control included).
+async func:ml_lent_index__wk = NIL(Mutex<int32, 1i32>->:m) { Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64)); g.value = g.value + 1i32; pass NIL; };
+async func:c_ml_lent_index = int32() { Mutex<int32, 1i32>[1]:ms = [mutex(6i32) ?! E9]; { drop ml_lent_index__wk(@ms[0i64]); { Guard<int32>:g = relay await ms[0i64].acquire(raw duration_ms(500i64)); g.value = g.value + 0i32; } } Guard<int32>:h = relay await ms[0i64].acquire(raw duration_ms(500i64)); pass h.value; };
+async func:ml_lent_index_field__wk = NIL(Mutex<int32, 1i32>->:m) { Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64)); g.value = g.value + 1i32; pass NIL; };
+struct:ml_lent_index_field__AM = { Mutex<int32, 1i32>[1]:a; };
+async func:c_ml_lent_index_field = int32() { ml_lent_index_field__AM:s = ml_lent_index_field__AM{ a: [mutex(6i32) ?! E9] }; { drop ml_lent_index_field__wk(@s.a[0i64]); { Guard<int32>:g = relay await s.a[0i64].acquire(raw duration_ms(500i64)); g.value = g.value + 0i32; } } Guard<int32>:h = relay await s.a[0i64].acquire(raw duration_ms(500i64)); pass h.value; };
+async func:ml_lent_noindex_ctl__wk = NIL(Mutex<int32, 1i32>->:m) { Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64)); g.value = g.value + 1i32; pass NIL; };
+async func:c_ml_lent_noindex_ctl = int32() { Mutex<int32, 1i32>:m = mutex(6i32) ?! E9; { drop ml_lent_noindex_ctl__wk(@m); { Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64)); g.value = g.value + 0i32; } } Guard<int32>:h = relay await m.acquire(raw duration_ms(500i64)); pass h.value; };
+
+// RIGHT PROGRAMS THE WALK MUST NOT REFUSE (management_19's ruling of 17:45 EST): a `List` before its element, recursive, mutual, generic recursive, a three-way generic cycle, a phantom argument. The `r` cells take and release a lock inside the callee, so a walk that wrongly answers yes refuses them, a lost `seen` or a fuel-out; `f_chain_100` is 100 `List`s deep, inside the fuel.
+struct:p1_plain_list_before_decl__LP = { List<p1_plain_list_before_decl__PH>:ps; }; struct:p1_plain_list_before_decl__PH = { int32:v; };
+async func:p1_plain_list_before_decl__mk = p1_plain_list_before_decl__LP() { pass p1_plain_list_before_decl__LP{ ps: raw list_init::<p1_plain_list_before_decl__PH>(2i64) }; };
+async func:c_p1_plain_list_before_decl = int32() { Mutex<int32, 2i32>:b = mutex(7i32) ?! E9; p1_plain_list_before_decl__LP:w = await p1_plain_list_before_decl__mk() ?! E9; Guard<int32>:t2 = await b.acquire(raw duration_ms(500i64)) ?! E9; pass 7i32; };
+struct:p2_recursive__N = { List<p2_recursive__N>:kids; int32:v; };
+async func:p2_recursive__mk = p2_recursive__N() { pass p2_recursive__N{ kids: raw list_init::<p2_recursive__N>(2i64), v: 7i32 }; };
+async func:c_p2_recursive = int32() { Mutex<int32, 2i32>:b = mutex(7i32) ?! E9; p2_recursive__N:w = await p2_recursive__mk() ?! E9; Guard<int32>:t2 = await b.acquire(raw duration_ms(500i64)) ?! E9; pass 7i32; };
+struct:p3_mutual__A = { List<p3_mutual__B>:b; }; struct:p3_mutual__B = { List<p3_mutual__A>:a; };
+async func:p3_mutual__mk = p3_mutual__A() { pass p3_mutual__A{ b: raw list_init::<p3_mutual__B>(2i64) }; };
+async func:c_p3_mutual = int32() { Mutex<int32, 2i32>:b = mutex(7i32) ?! E9; p3_mutual__A:w = await p3_mutual__mk() ?! E9; Guard<int32>:t2 = await b.acquire(raw duration_ms(500i64)) ?! E9; pass 7i32; };
+struct:p4_generic_recursive__G<T> = { List<p4_generic_recursive__G<T>>:kids; T:v; };
+async func:p4_generic_recursive__mk = p4_generic_recursive__G<int32>() { pass p4_generic_recursive__G{ kids: raw list_init::<p4_generic_recursive__G<int32>>(2i64), v: 7i32 }; };
+async func:c_p4_generic_recursive = int32() { Mutex<int32, 2i32>:b = mutex(7i32) ?! E9; p4_generic_recursive__G<int32>:w = await p4_generic_recursive__mk() ?! E9; Guard<int32>:t2 = await b.acquire(raw duration_ms(500i64)) ?! E9; pass 7i32; };
+struct:p5_three_cycle_generic__X<T> = { List<p5_three_cycle_generic__Y<T>>:y; T:v; }; struct:p5_three_cycle_generic__Y<T> = { List<p5_three_cycle_generic__Z<T>>:z; }; struct:p5_three_cycle_generic__Z<T> = { List<p5_three_cycle_generic__X<T>>:x; };
+async func:p5_three_cycle_generic__mk = p5_three_cycle_generic__X<int32>() { pass p5_three_cycle_generic__X{ y: raw list_init::<p5_three_cycle_generic__Y<int32>>(2i64), v: 7i32 }; };
+async func:c_p5_three_cycle_generic = int32() { Mutex<int32, 2i32>:b = mutex(7i32) ?! E9; p5_three_cycle_generic__X<int32>:w = await p5_three_cycle_generic__mk() ?! E9; Guard<int32>:t2 = await b.acquire(raw duration_ms(500i64)) ?! E9; pass 7i32; };
+struct:p6_phantom_arg_guard__P<T> = { int32:x; }; struct:p6_phantom_arg_guard__GH = { Guard<int32>:g; };
+async func:p6_phantom_arg_guard__mk = p6_phantom_arg_guard__P<p6_phantom_arg_guard__GH>() { pass p6_phantom_arg_guard__P{ x: 7i32 }; };
+async func:c_p6_phantom_arg_guard = int32() { Mutex<int32, 2i32>:b = mutex(7i32) ?! E9; p6_phantom_arg_guard__P<p6_phantom_arg_guard__GH>:w = await p6_phantom_arg_guard__mk() ?! E9; Guard<int32>:t2 = await b.acquire(raw duration_ms(500i64)) ?! E9; pass 7i32; };
+struct:r1_plain_list_before_decl__LP = { List<r1_plain_list_before_decl__PH>:ps; }; struct:r1_plain_list_before_decl__PH = { int32:v; };
+async func:r1_plain_list_before_decl__mk = r1_plain_list_before_decl__LP(Mutex<int32, 3i32>->:m) { Guard<int32>:t = await m.acquire(raw duration_ms(500i64)) ?! E9; pass r1_plain_list_before_decl__LP{ ps: raw list_init::<r1_plain_list_before_decl__PH>(2i64) }; };
+async func:c_r1_plain_list_before_decl = int32() { Mutex<int32, 3i32>:a = mutex(7i32) ?! E9; Mutex<int32, 2i32>:b = mutex(7i32) ?! E9; r1_plain_list_before_decl__LP:w = await r1_plain_list_before_decl__mk(@a) ?! E9; Guard<int32>:t2 = await b.acquire(raw duration_ms(500i64)) ?! E9; pass 7i32; };
+struct:r2_recursive__N = { List<r2_recursive__N>:kids; int32:v; };
+async func:r2_recursive__mk = r2_recursive__N(Mutex<int32, 3i32>->:m) { Guard<int32>:t = await m.acquire(raw duration_ms(500i64)) ?! E9; pass r2_recursive__N{ kids: raw list_init::<r2_recursive__N>(2i64), v: 7i32 }; };
+async func:c_r2_recursive = int32() { Mutex<int32, 3i32>:a = mutex(7i32) ?! E9; Mutex<int32, 2i32>:b = mutex(7i32) ?! E9; r2_recursive__N:w = await r2_recursive__mk(@a) ?! E9; Guard<int32>:t2 = await b.acquire(raw duration_ms(500i64)) ?! E9; pass 7i32; };
+struct:r3_mutual__A = { List<r3_mutual__B>:b; }; struct:r3_mutual__B = { List<r3_mutual__A>:a; };
+async func:r3_mutual__mk = r3_mutual__A(Mutex<int32, 3i32>->:m) { Guard<int32>:t = await m.acquire(raw duration_ms(500i64)) ?! E9; pass r3_mutual__A{ b: raw list_init::<r3_mutual__B>(2i64) }; };
+async func:c_r3_mutual = int32() { Mutex<int32, 3i32>:a = mutex(7i32) ?! E9; Mutex<int32, 2i32>:b = mutex(7i32) ?! E9; r3_mutual__A:w = await r3_mutual__mk(@a) ?! E9; Guard<int32>:t2 = await b.acquire(raw duration_ms(500i64)) ?! E9; pass 7i32; };
+struct:r4_generic_recursive__G<T> = { List<r4_generic_recursive__G<T>>:kids; T:v; };
+async func:r4_generic_recursive__mk = r4_generic_recursive__G<int32>(Mutex<int32, 3i32>->:m) { Guard<int32>:t = await m.acquire(raw duration_ms(500i64)) ?! E9; pass r4_generic_recursive__G{ kids: raw list_init::<r4_generic_recursive__G<int32>>(2i64), v: 7i32 }; };
+async func:c_r4_generic_recursive = int32() { Mutex<int32, 3i32>:a = mutex(7i32) ?! E9; Mutex<int32, 2i32>:b = mutex(7i32) ?! E9; r4_generic_recursive__G<int32>:w = await r4_generic_recursive__mk(@a) ?! E9; Guard<int32>:t2 = await b.acquire(raw duration_ms(500i64)) ?! E9; pass 7i32; };
+struct:r5_three_cycle_generic__X<T> = { List<r5_three_cycle_generic__Y<T>>:y; T:v; }; struct:r5_three_cycle_generic__Y<T> = { List<r5_three_cycle_generic__Z<T>>:z; }; struct:r5_three_cycle_generic__Z<T> = { List<r5_three_cycle_generic__X<T>>:x; };
+async func:r5_three_cycle_generic__mk = r5_three_cycle_generic__X<int32>(Mutex<int32, 3i32>->:m) { Guard<int32>:t = await m.acquire(raw duration_ms(500i64)) ?! E9; pass r5_three_cycle_generic__X{ y: raw list_init::<r5_three_cycle_generic__Y<int32>>(2i64), v: 7i32 }; };
+async func:c_r5_three_cycle_generic = int32() { Mutex<int32, 3i32>:a = mutex(7i32) ?! E9; Mutex<int32, 2i32>:b = mutex(7i32) ?! E9; r5_three_cycle_generic__X<int32>:w = await r5_three_cycle_generic__mk(@a) ?! E9; Guard<int32>:t2 = await b.acquire(raw duration_ms(500i64)) ?! E9; pass 7i32; };
+enum:r6_enum_recursive__E = { A(List<r6_enum_recursive__E>); B; };
+async func:r6_enum_recursive__mk = r6_enum_recursive__E(Mutex<int32, 3i32>->:m) { Guard<int32>:t = await m.acquire(raw duration_ms(500i64)) ?! E9; pass r6_enum_recursive__E.B; };
+async func:c_r6_enum_recursive = int32() { Mutex<int32, 3i32>:a = mutex(7i32) ?! E9; Mutex<int32, 2i32>:b = mutex(7i32) ?! E9; r6_enum_recursive__E:w = await r6_enum_recursive__mk(@a) ?! E9; Guard<int32>:t2 = await b.acquire(raw duration_ms(500i64)) ?! E9; pass 7i32; };
+struct:f_chain_100__C0 = { List<f_chain_100__C1>:n; };
+struct:f_chain_100__C1 = { List<f_chain_100__C2>:n; };
+struct:f_chain_100__C2 = { List<f_chain_100__C3>:n; };
+struct:f_chain_100__C3 = { List<f_chain_100__C4>:n; };
+struct:f_chain_100__C4 = { List<f_chain_100__C5>:n; };
+struct:f_chain_100__C5 = { List<f_chain_100__C6>:n; };
+struct:f_chain_100__C6 = { List<f_chain_100__C7>:n; };
+struct:f_chain_100__C7 = { List<f_chain_100__C8>:n; };
+struct:f_chain_100__C8 = { List<f_chain_100__C9>:n; };
+struct:f_chain_100__C9 = { List<f_chain_100__C10>:n; };
+struct:f_chain_100__C10 = { List<f_chain_100__C11>:n; };
+struct:f_chain_100__C11 = { List<f_chain_100__C12>:n; };
+struct:f_chain_100__C12 = { List<f_chain_100__C13>:n; };
+struct:f_chain_100__C13 = { List<f_chain_100__C14>:n; };
+struct:f_chain_100__C14 = { List<f_chain_100__C15>:n; };
+struct:f_chain_100__C15 = { List<f_chain_100__C16>:n; };
+struct:f_chain_100__C16 = { List<f_chain_100__C17>:n; };
+struct:f_chain_100__C17 = { List<f_chain_100__C18>:n; };
+struct:f_chain_100__C18 = { List<f_chain_100__C19>:n; };
+struct:f_chain_100__C19 = { List<f_chain_100__C20>:n; };
+struct:f_chain_100__C20 = { List<f_chain_100__C21>:n; };
+struct:f_chain_100__C21 = { List<f_chain_100__C22>:n; };
+struct:f_chain_100__C22 = { List<f_chain_100__C23>:n; };
+struct:f_chain_100__C23 = { List<f_chain_100__C24>:n; };
+struct:f_chain_100__C24 = { List<f_chain_100__C25>:n; };
+struct:f_chain_100__C25 = { List<f_chain_100__C26>:n; };
+struct:f_chain_100__C26 = { List<f_chain_100__C27>:n; };
+struct:f_chain_100__C27 = { List<f_chain_100__C28>:n; };
+struct:f_chain_100__C28 = { List<f_chain_100__C29>:n; };
+struct:f_chain_100__C29 = { List<f_chain_100__C30>:n; };
+struct:f_chain_100__C30 = { List<f_chain_100__C31>:n; };
+struct:f_chain_100__C31 = { List<f_chain_100__C32>:n; };
+struct:f_chain_100__C32 = { List<f_chain_100__C33>:n; };
+struct:f_chain_100__C33 = { List<f_chain_100__C34>:n; };
+struct:f_chain_100__C34 = { List<f_chain_100__C35>:n; };
+struct:f_chain_100__C35 = { List<f_chain_100__C36>:n; };
+struct:f_chain_100__C36 = { List<f_chain_100__C37>:n; };
+struct:f_chain_100__C37 = { List<f_chain_100__C38>:n; };
+struct:f_chain_100__C38 = { List<f_chain_100__C39>:n; };
+struct:f_chain_100__C39 = { List<f_chain_100__C40>:n; };
+struct:f_chain_100__C40 = { List<f_chain_100__C41>:n; };
+struct:f_chain_100__C41 = { List<f_chain_100__C42>:n; };
+struct:f_chain_100__C42 = { List<f_chain_100__C43>:n; };
+struct:f_chain_100__C43 = { List<f_chain_100__C44>:n; };
+struct:f_chain_100__C44 = { List<f_chain_100__C45>:n; };
+struct:f_chain_100__C45 = { List<f_chain_100__C46>:n; };
+struct:f_chain_100__C46 = { List<f_chain_100__C47>:n; };
+struct:f_chain_100__C47 = { List<f_chain_100__C48>:n; };
+struct:f_chain_100__C48 = { List<f_chain_100__C49>:n; };
+struct:f_chain_100__C49 = { List<f_chain_100__C50>:n; };
+struct:f_chain_100__C50 = { List<f_chain_100__C51>:n; };
+struct:f_chain_100__C51 = { List<f_chain_100__C52>:n; };
+struct:f_chain_100__C52 = { List<f_chain_100__C53>:n; };
+struct:f_chain_100__C53 = { List<f_chain_100__C54>:n; };
+struct:f_chain_100__C54 = { List<f_chain_100__C55>:n; };
+struct:f_chain_100__C55 = { List<f_chain_100__C56>:n; };
+struct:f_chain_100__C56 = { List<f_chain_100__C57>:n; };
+struct:f_chain_100__C57 = { List<f_chain_100__C58>:n; };
+struct:f_chain_100__C58 = { List<f_chain_100__C59>:n; };
+struct:f_chain_100__C59 = { List<f_chain_100__C60>:n; };
+struct:f_chain_100__C60 = { List<f_chain_100__C61>:n; };
+struct:f_chain_100__C61 = { List<f_chain_100__C62>:n; };
+struct:f_chain_100__C62 = { List<f_chain_100__C63>:n; };
+struct:f_chain_100__C63 = { List<f_chain_100__C64>:n; };
+struct:f_chain_100__C64 = { List<f_chain_100__C65>:n; };
+struct:f_chain_100__C65 = { List<f_chain_100__C66>:n; };
+struct:f_chain_100__C66 = { List<f_chain_100__C67>:n; };
+struct:f_chain_100__C67 = { List<f_chain_100__C68>:n; };
+struct:f_chain_100__C68 = { List<f_chain_100__C69>:n; };
+struct:f_chain_100__C69 = { List<f_chain_100__C70>:n; };
+struct:f_chain_100__C70 = { List<f_chain_100__C71>:n; };
+struct:f_chain_100__C71 = { List<f_chain_100__C72>:n; };
+struct:f_chain_100__C72 = { List<f_chain_100__C73>:n; };
+struct:f_chain_100__C73 = { List<f_chain_100__C74>:n; };
+struct:f_chain_100__C74 = { List<f_chain_100__C75>:n; };
+struct:f_chain_100__C75 = { List<f_chain_100__C76>:n; };
+struct:f_chain_100__C76 = { List<f_chain_100__C77>:n; };
+struct:f_chain_100__C77 = { List<f_chain_100__C78>:n; };
+struct:f_chain_100__C78 = { List<f_chain_100__C79>:n; };
+struct:f_chain_100__C79 = { List<f_chain_100__C80>:n; };
+struct:f_chain_100__C80 = { List<f_chain_100__C81>:n; };
+struct:f_chain_100__C81 = { List<f_chain_100__C82>:n; };
+struct:f_chain_100__C82 = { List<f_chain_100__C83>:n; };
+struct:f_chain_100__C83 = { List<f_chain_100__C84>:n; };
+struct:f_chain_100__C84 = { List<f_chain_100__C85>:n; };
+struct:f_chain_100__C85 = { List<f_chain_100__C86>:n; };
+struct:f_chain_100__C86 = { List<f_chain_100__C87>:n; };
+struct:f_chain_100__C87 = { List<f_chain_100__C88>:n; };
+struct:f_chain_100__C88 = { List<f_chain_100__C89>:n; };
+struct:f_chain_100__C89 = { List<f_chain_100__C90>:n; };
+struct:f_chain_100__C90 = { List<f_chain_100__C91>:n; };
+struct:f_chain_100__C91 = { List<f_chain_100__C92>:n; };
+struct:f_chain_100__C92 = { List<f_chain_100__C93>:n; };
+struct:f_chain_100__C93 = { List<f_chain_100__C94>:n; };
+struct:f_chain_100__C94 = { List<f_chain_100__C95>:n; };
+struct:f_chain_100__C95 = { List<f_chain_100__C96>:n; };
+struct:f_chain_100__C96 = { List<f_chain_100__C97>:n; };
+struct:f_chain_100__C97 = { List<f_chain_100__C98>:n; };
+struct:f_chain_100__C98 = { List<f_chain_100__C99>:n; };
+struct:f_chain_100__C99 = { List<f_chain_100__C100>:n; };
+struct:f_chain_100__C100 = { int32:v; };
+async func:f_chain_100__mk = f_chain_100__C0(Mutex<int32, 3i32>->:m) { Guard<int32>:t = await m.acquire(raw duration_ms(500i64)) ?! E9; pass f_chain_100__C0{ n: raw list_init::<f_chain_100__C1>(2i64) }; };
+async func:c_f_chain_100 = int32() { Mutex<int32, 3i32>:a = mutex(7i32) ?! E9; Mutex<int32, 2i32>:b = mutex(7i32) ?! E9; f_chain_100__C0:w = await f_chain_100__mk(@a) ?! E9; Guard<int32>:t2 = await b.acquire(raw duration_ms(500i64)) ?! E9; pass 7i32; };
+
+// DEF-511'S CONTROLS: the lock first, the local aimed before the holder, and each of `r4`'s with its lock first.
+struct:k3c_lock_first__GO = { Guard<int32>?:g; };
+struct:k3c_lock_first__PS = { Mutex<int32, 2i32>->:p; };
+async func:k3c_lock_first__mp = k3c_lock_first__GO(k3c_lock_first__PS->:s) acquires <= 2 { Mutex<int32, 2i32>->:q = s.p; Guard<int32>:t = await q.acquire(raw duration_ms(500i64)) ?! E9; pass k3c_lock_first__GO{ g: move(t) }; };
+async func:c_k3c_lock_first = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; k3c_lock_first__PS:s = k3c_lock_first__PS{ p: @a }; k3c_lock_first__GO:h = k3c_lock_first__GO{ g: NIL }; h = await k3c_lock_first__mp(@s) ?! E9; pass 7i32; };
+struct:k6c_aim_before_holder__GO = { Guard<int32>?:g; };
+async func:c_k6c_aim_before_holder = int32() { Mutex<int32, 2i32>:a0 = mutex(1i32) ?! E9; Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; Mutex<int32, 2i32>->:q = @a0; q = @a; k6c_aim_before_holder__GO:h = k6c_aim_before_holder__GO{ g: NIL }; Guard<int32>:t = await q.acquire(raw duration_ms(500i64)) ?! E9; h = k6c_aim_before_holder__GO{ g: move(t) }; pass 7i32; };
+trait:r4c_array_of_ptr_lock_first__Tr = { func:m = int32(Self->:self); };
+struct:r4c_array_of_ptr_lock_first__GH = { Guard<int32>:g; };
+impl:r4c_array_of_ptr_lock_first__GH:r4c_array_of_ptr_lock_first__Tr = { func:m = int32(r4c_array_of_ptr_lock_first__GH->:self) { pass 7i32; }; };
+async func:r4c_array_of_ptr_lock_first__gs = Guard<int32>(Mutex<int32, 2i32>->[1]:s) { pass await s[0i64].acquire(raw duration_ms(500i64)) ?! E9; };
+async func:c_r4c_array_of_ptr_lock_first = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; Mutex<int32, 2i32>->[1]:l = [@a]; Mutex<int32, 1i32>:z = mutex(1i32) ?! E9; Guard<int32>:g0 = await z.acquire(raw duration_ms(500i64)) ?! E9; r4c_array_of_ptr_lock_first__GH:o0 = r4c_array_of_ptr_lock_first__GH{ g: move(g0) }; dyn r4c_array_of_ptr_lock_first__Tr:d = move(o0); Guard<int32>:t = await r4c_array_of_ptr_lock_first__gs(l) ?! E9; r4c_array_of_ptr_lock_first__GH:o = r4c_array_of_ptr_lock_first__GH{ g: move(t) }; dyn r4c_array_of_ptr_lock_first__Tr:e = move(o); d = move(e); pass 7i32; };
+trait:r4c_optional_ptr_lock_first__Tr = { func:m = int32(Self->:self); };
+struct:r4c_optional_ptr_lock_first__GH = { Guard<int32>:g; };
+impl:r4c_optional_ptr_lock_first__GH:r4c_optional_ptr_lock_first__Tr = { func:m = int32(r4c_optional_ptr_lock_first__GH->:self) { pass 7i32; }; };
+async func:r4c_optional_ptr_lock_first__gs = Guard<int32>(Mutex<int32, 2i32>->?:s, Mutex<int32, 2i32>->:fb) { Mutex<int32, 2i32>->:p = s ?? fb; pass await p.acquire(raw duration_ms(500i64)) ?! E9; };
+async func:c_r4c_optional_ptr_lock_first = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; Mutex<int32, 2i32>->?:l = @a; Mutex<int32, 1i32>:z = mutex(1i32) ?! E9; Guard<int32>:g0 = await z.acquire(raw duration_ms(500i64)) ?! E9; r4c_optional_ptr_lock_first__GH:o0 = r4c_optional_ptr_lock_first__GH{ g: move(g0) }; dyn r4c_optional_ptr_lock_first__Tr:d = move(o0); Guard<int32>:t = await r4c_optional_ptr_lock_first__gs(l, @a) ?! E9; r4c_optional_ptr_lock_first__GH:o = r4c_optional_ptr_lock_first__GH{ g: move(t) }; dyn r4c_optional_ptr_lock_first__Tr:e = move(o); d = move(e); pass 7i32; };
+async func:main = int32(cstring[]:_~argv) {
+    if ((await c_lv_at_pointer_acquire() ?! E9) != 7i32) { exit 1i32; }
+    if ((await c_lv_holder_at_pointer_read() ?! E9) != 7i32) { exit 2i32; }
+    if ((await c_borrowed_mutex_return() ?! E9) != 7i32) { exit 3i32; }
+    if ((await c_rw_read_kept() ?! E9) != 7i32) { exit 4i32; }
+    if ((await c_forwarded_twice_kept() ?! E9) != 7i32) { exit 5i32; }
+    if ((await c_lock_before_holder() ?! E9) != 7i32) { exit 6i32; }
+    if ((await c_later_guard_earlier_lock() ?! E9) != 7i32) { exit 7i32; }
+    if ((await c_pointer_before_holder() ?! E9) != 7i32) { exit 8i32; }
+    if ((await c_callee_lock_before_holder() ?! E9) != 7i32) { exit 9i32; }
+    if ((await c_whole_struct_lock_before_holder() ?! E9) != 7i32) { exit 10i32; }
+    if ((await c_later_lock_later_guard() ?! E9) != 7i32) { exit 11i32; }
+    if ((await c_value_not_guard() ?! E9) != 7i32) { exit 12i32; }
+    if ((await c_own_mutation() ?! E9) != 7i32) { exit 13i32; }
+    if ((await c_helper_writes_through_guard() ?! E9) != 7i32) { exit 14i32; }
+    if ((await c_sibling_field_local() ?! E9) != 7i32) { exit 15i32; }
+    if ((await c_sibling_field_param() ?! E9) != 7i32) { exit 16i32; }
+    if ((await c_returned_through_param() ?! E9) != 7i32) { exit 17i32; }
+    if ((await c_struct_returned_through_param() ?! E9) != 7i32) { exit 18i32; }
+    if ((await c_method_summary_kept() ?! E9) != 7i32) { exit 19i32; }
+    if ((await c_call_result_pointer() ?! E9) != 7i32) { exit 20i32; }
+    if ((await c_pointer_param_chain() ?! E9) != 7i32) { exit 21i32; }
+    if ((await c_array_in_param() ?! E9) != 7i32) { exit 22i32; }
+    if ((await c_slice_param() ?! E9) != 7i32) { exit 23i32; }
+    if ((await c_ascending() ?! E9) != 7i32) { exit 24i32; }
+    if ((await c_loop_reacquire() ?! E9) != 7i32) { exit 25i32; }
+    if ((await c_block_then_reacquire() ?! E9) != 7i32) { exit 26i32; }
+    if ((await c_local_struct() ?! E9) != 7i32) { exit 27i32; }
+    if ((await c_address_to_callee_while_held() ?! E9) != 7i32) { exit 28i32; }
+    if ((await c_user_view_of_lock_then_acquire() ?! E9) != 7i32) { exit 29i32; }
+    if ((await c_timedwait() ?! E9) != 7i32) { exit 30i32; }
+    if ((await c_spawned_workers() ?! E9) != 7i32) { exit 31i32; }
+    if ((await c_outer_holder_outer_lock() ?! E9) != 7i32) { exit 32i32; }
+    if ((await c_dv_scalar_binding() ?! E9) != 7i32) { exit 33i32; }
+    if ((await c_dv_scalar_no_binding() ?! E9) != 7i32) { exit 34i32; }
+    if ((await c_dv_int_selector() ?! E9) != 7i32) { exit 35i32; }
+    if ((await c_dv_scalar_copied_first() ?! E9) != 7i32) { exit 36i32; }
+    if ((await c_dv_string_cloned_first() ?! E9) != 7i32) { exit 37i32; }
+    if ((await c_dv_field_read() ?! E9) != 7i32) { exit 38i32; }
+    if ((await c_dv_string_view_read() ?! E9) != 7i32) { exit 39i32; }
+    if ((await c_dv_elements_indexed() ?! E9) != 7i32) { exit 40i32; }
+    if ((await c_dv_guard_by_pointer() ?! E9) != 7i32) { exit 41i32; }
+    if ((await c_dv_lock_through_parameter() ?! E9) != 7i32) { exit 42i32; }
+    if ((await c_re_index_reads() ?! E9) != 7i32) { exit 43i32; }
+    if ((await c_re_growth_hoisted() ?! E9) != 7i32) { exit 44i32; }
+    if ((await c_re_lent_index_reads() ?! E9) != 7i32) { exit 45i32; }
+    if ((await c_fp_lock_first() ?! E9) != 7i32) { exit 46i32; }
+    if ((await c_fp_lock_by_pointer() ?! E9) != 7i32) { exit 47i32; }
+    if ((await c_gl_lock_first() ?! E9) != 7i32) { exit 48i32; }
+    if ((await c_gl_user_generic_lock_first() ?! E9) != 7i32) { exit 49i32; }
+    if ((await c_gl_struct_field_lock_first() ?! E9) != 7i32) { exit 50i32; }
+    if ((await c_gd_lock_first() ?! E9) != 7i32) { exit 51i32; }
+    if ((await c_gd_first_binding() ?! E9) != 7i32) { exit 52i32; }
+    if ((await c_gd_list_lock_first() ?! E9) != 7i32) { exit 53i32; }
+    if ((await c_gf_lock_first() ?! E9) != 7i32) { exit 54i32; }
+    if ((await c_gl_value_read_out() ?! E9) != 7i32) { exit 55i32; }
+    if ((await c_q6c_dyn_no_view() ?! E9) != 7i32) { exit 56i32; }
+    if ((await c_q6c_dyn_view_later_int() ?! E9) != 7i32) { exit 57i32; }
+    if ((await c_q6c_earlier_lock_later_guard() ?! E9) != 7i32) { exit 58i32; }
+    if ((await c_q6c_list_view_later_int() ?! E9) != 7i32) { exit 59i32; }
+    if ((await c_q6c_lock_first_dyn() ?! E9) != 7i32) { exit 60i32; }
+    if ((await c_q6c_lock_first_stale() ?! E9) != 7i32) { exit 61i32; }
+    if ((await c_q6c_plain_pointer_reaim() ?! E9) != 7i32) { exit 62i32; }
+    if ((await c_q6c_pointer_struct_reaim() ?! E9) != 7i32) { exit 63i32; }
+    if ((await c_q9c_helper_lock_first() ?! E9) != 7i32) { exit 64i32; }
+    if ((await c_q9c_lock_before_holder_dyn_recv() ?! E9) != 7i32) { exit 65i32; }
+    if ((await c_q3_stale_both_lock_first_ctl() ?! E9) != 7i32) { exit 66i32; }
+    if ((await c_q5_dyn_into_dyn_lock_first_ctl() ?! E9) != 7i32) { exit 67i32; }
+    if ((await c_m2c_slice_lock_first_ctl() ?! E9) != 7i32) { exit 68i32; }
+    if ((await c_m10c_ptr_struct_lock_first() ?! E9) != 7i32) { exit 69i32; }
+    if ((await c_m7c_struct_of_slice_lock_first() ?! E9) != 7i32) { exit 70i32; }
+    if ((await c_m5c_slice_of_ptr_lock_first() ?! E9) != 7i32) { exit 71i32; }
+    if ((await c_m1c_ptr_ptr_first_ctl() ?! E9) != 7i32) { exit 72i32; }
+    if ((await c_m11c_value_shows_lock_first() ?! E9) != 7i32) { exit 73i32; }
+    if ((await c_ml_lent_index() ?! E9) != 7i32) { exit 74i32; }
+    if ((await c_ml_lent_index_field() ?! E9) != 7i32) { exit 75i32; }
+    if ((await c_ml_lent_noindex_ctl() ?! E9) != 7i32) { exit 76i32; }
+    if ((await c_p1_plain_list_before_decl() ?! E9) != 7i32) { exit 77i32; }
+    if ((await c_p2_recursive() ?! E9) != 7i32) { exit 78i32; }
+    if ((await c_p3_mutual() ?! E9) != 7i32) { exit 79i32; }
+    if ((await c_p4_generic_recursive() ?! E9) != 7i32) { exit 80i32; }
+    if ((await c_p5_three_cycle_generic() ?! E9) != 7i32) { exit 81i32; }
+    if ((await c_p6_phantom_arg_guard() ?! E9) != 7i32) { exit 82i32; }
+    if ((await c_r1_plain_list_before_decl() ?! E9) != 7i32) { exit 83i32; }
+    if ((await c_r2_recursive() ?! E9) != 7i32) { exit 84i32; }
+    if ((await c_r3_mutual() ?! E9) != 7i32) { exit 85i32; }
+    if ((await c_r4_generic_recursive() ?! E9) != 7i32) { exit 86i32; }
+    if ((await c_r5_three_cycle_generic() ?! E9) != 7i32) { exit 87i32; }
+    if ((await c_r6_enum_recursive() ?! E9) != 7i32) { exit 88i32; }
+    if ((await c_f_chain_100() ?! E9) != 7i32) { exit 89i32; }
+    if ((await c_k3c_lock_first() ?! E9) != 7i32) { exit 90i32; }
+    if ((await c_k6c_aim_before_holder() ?! E9) != 7i32) { exit 91i32; }
+    if ((await c_r4c_array_of_ptr_lock_first() ?! E9) != 7i32) { exit 92i32; }
+    if ((await c_r4c_optional_ptr_lock_first() ?! E9) != 7i32) { exit 93i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

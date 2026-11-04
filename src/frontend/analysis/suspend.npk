@@ -19,9 +19,12 @@
 //   scope-exit drop glue lands for managed locals, droppable locals gain the
 //   same end-of-scope use HERE, for the same reason.)
 //
-//   AN ADDRESS OUTLIVES ITS MENTION. `@x` hands out a pointer this walk does
-//   not follow, so the local is treated as used to the function's end. C-8
-//   narrows what a borrow may cross; this walk only keeps the SLOT alive.
+//   AN ADDRESS OUTLIVES ITS MENTION. `@x`, `$$i x`, `$$m x` and a method's
+//   auto-referenced receiver hand out a pointer this walk does not follow, so
+//   the local is treated as used to the function's end (DEF-431: until then
+//   only the `$$` claims were, and `await child(@x)` left `x` in a dead resume
+//   stack). C-8 narrows what a borrow may cross; this walk only keeps the SLOT
+//   alive.
 //
 // A `drop work()` spawn is NOT a suspension: the spawn allocates and links,
 // and control continues without yielding. The join that later drives the
@@ -58,6 +61,7 @@ use "../parse_decl.npk".*;
 use "../parse_decorate.npk".*;
 use "../types.npk".*;
 use "../expr_types.npk".*;
+use "../type_members.npk".*;   // type_param_at_of: the receiver's parameter (DEF-431)
 use "../builtins.npk".*;     // builtin_views (D-249)
 use "./analysis_codes.npk".*;
 
@@ -236,6 +240,46 @@ func:reg_extend = NIL(Suspend->:x, int32:sym_id, int64:at) never fails {
     }
     if (at > x.luse[idx]) { x.luse[idx] = at; }
     pass NIL;
+};
+
+// THE ADDRESS RULE (DEF-431, Q4 ruled the frame): the local at the root of a
+// place whose address is handed out lives in the frame to the function's end,
+// whatever the place's path below it. Not to the pointer's last use: a copy, a
+// field, a callee, a back edge or a `defer` can keep the access past the last
+// named use. Storage only, no permission to outlive a scope or move the owner.
+// A parameter (`reg_extend`'s early return) and a `for` binding (role 4 of
+// `scan_crossing`) are framed already. Past the fuel it refuses: a root it
+// cannot name would be a stale read with no sign.
+func:suspend_addr_root = NIL(Suspend->:x, ExprId:place) never fails {
+    PlaceRoot:r = raw place_root(x.ast, place, raw SUSPEND_DEPTH());
+    if (r.exhausted) {
+        drop suspend_err(x,
+            "this place nests deeper than the suspend walk follows, so the local whose address it hands out cannot be kept in the frame",
+            (raw ast_expr(x.ast, place)).span);
+        pass NIL;
+    }
+    if (raw expr_is_none(r.id)) { pass NIL; }
+    ExprNode:rn = raw ast_expr(x.ast, r.id);
+    if (rn.kind == ExprKind.ExprIdentifierExpr) {
+        drop reg_extend(x, rn.a, x.fn_end);
+    }
+    pass NIL;
+};
+
+// Does this method call take its receiver's ADDRESS? `escape.npk`'s
+// `recv_is_auto_ref`, read off this pass's own tables, and closed where a
+// builtin kind's intercept has no signature to read: more crossing, never less.
+// No recorded type answers true as well: a qualifier (`m.f(x)`) costs nothing,
+// since `reg_extend` drops whatever a statement didn't declare. A pointer receiver
+// hands over its value, and what it names was framed where its address was formed.
+func:recv_takes_address = bool(Suspend->:x, ExprId:call, ExprId:recv) never fails {
+    int32:rt = raw exprtypes_get(x.ets, recv);
+    if (rt == 0i32) { pass true; }
+    if ((raw type_kind(x.types, rt)) == (raw TY_POINTER())) { pass false; }
+    int32:ft = raw exprtypes_callee_ft(x.ets, call);
+    if (ft == 0i32) { pass true; }
+    if ((raw type_param_count_of(x.types, ft)) <= 0i32) { pass false; }
+    pass ((raw type_kind(x.types, raw type_param_at_of(x.ast, x.types, ft, 0i32))) == (raw TY_POINTER()));
 };
 
 func:reg_use = NIL(Suspend->:x, int32:sym_id, int64:at) never fails {
@@ -476,9 +520,13 @@ func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
         pass NIL;
     }
     if (s.kind == StmtKind.StmtWhenStmt) {
+        // A `when`'S BODY LOOPS (DEF-494's face W): its back edge is `while`'s,
+        // and `then` and `end` run once, past the junction, outside it.
+        drop loop_push(x, s.span);
         drop check_first_eval(x, raw stmt_cond(s));
         drop suspend_expr(x, raw stmt_cond(s), fuel - 1i32);
         drop suspend_stmt(x, raw stmt_when_body(x.ast, s), fuel - 1i32);
+        drop loop_pop(x);
         drop suspend_stmt(x, raw stmt_when_then(x.ast, s), fuel - 1i32);
         drop suspend_stmt(x, raw stmt_when_end(x.ast, s), fuel - 1i32);
         pass NIL;
@@ -632,19 +680,23 @@ func:suspend_expr = NIL(Suspend->:x, ExprId:id, int32:fuel) never fails {
         pass NIL;
     }
 
-    // `@x` hands out an address the walk does not follow: the local stays
-    // live to the function's end, whatever C-8 later says about the borrow.
-    if (n.kind == ExprKind.ExprBorrowExpr) {
+    // `@x` and `$$x` hand out an address the walk does not follow: the local
+    // stays live to the function's end, whatever C-8 later says about the
+    // borrow. `@` is `ExprAddressOfExpr` and only `$$` is `ExprBorrowExpr`: this
+    // arm named the second alone until DEF-431.
+    if ((n.kind == ExprKind.ExprBorrowExpr) || (n.kind == ExprKind.ExprAddressOfExpr)) {
         drop suspend_expr(x, raw expr_operand(n), fuel - 1i32);
-        PlaceRoot:r = raw place_root(x.ast, raw expr_operand(n),
-                                     raw SUSPEND_DEPTH());
-        if (!(raw expr_is_none(r.id))) {
-            ExprNode:rn = raw ast_expr(x.ast, r.id);
-            if (rn.kind == ExprKind.ExprIdentifierExpr) {
-                drop reg_extend(x, rn.a, x.fn_end);
-            }
-        }
+        drop suspend_addr_root(x, raw expr_operand(n));
         pass NIL;
+    }
+
+    // A METHOD'S AUTO-REFERENCED RECEIVER IS `@` WITH NO `@` IN THE SOURCE
+    // (DEF-431): `await b.rd()` hands `rd` `b`'s address to read after its own
+    // park, `raw b.me()` hands it back. The shape walk below reads the slots.
+    if (n.kind == ExprKind.ExprMethodCallExpr) {
+        if (raw recv_takes_address(x, id, raw expr_operand(n))) {
+            drop suspend_addr_root(x, raw expr_operand(n));
+        }
     }
 
     // A RANGE-VIEW ALIASES ITS ARRAY (1.1.13-close, D-191): `arr[lo...hi]`
