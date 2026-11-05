@@ -132,6 +132,8 @@ lowers to building one.
 
 > *[2026-11-04, 1.6.1e landing 177d2b, DEF-519:]* **The tail is storage built for the call, so the slot itself is a borrow of its function's frame.** `pass vs`, a range of it, a local copy or holder that leaves, a helper handed it, a forwarding spread and a store through a parameter are `NITPICK-BORROW-001` or `NITPICK-BORROW-002`, as `@vs[0i64]` always was, where the view read whatever the stack held next once the caller had returned. An element read out of it is the argument, on the summary's variadic bit: `pass vs[0i64]` and a `for` over its elements (DEF-517, CONTROL_REFERENCE §2.3). The callee can't tell a caller that keeps the view in its own frame from one that returns it, so a right program of that shape is refused too, a spread's included: copy what you need out of the tail.
 
+> *[2026-11-05, 1.6.1e landing 177d2b's GO, DEF-567, open:]* **A pointer to the tail isn't covered yet.** `int32[]->:pp = @vs;` then `pass <-pp;`, `int32[]:c = <-pp; pass c;`, `<-out = <-pp;` or a call handed `<-pp` compiles and reads dead stack, and an element of a tail of pointers handed back through a pointer to the tail has no chain either: `int32->[]->:pp = @vs; pass (<-pp)[0i64];` reads a local of a frame that's gone. Read the tail by its name, and copy what you need. A `pick` over a local struct holding the tail is `NITPICK-BORROW-009` even when only an element leaves: read the element from `vs`.
+
 The format-directed form — a bare `..*` following a `fmt` parameter — was
 **removed by D-053** along with the `fmt` type itself. Formatting is ordinary
 functions returning `string`, spliced by `&{ }` interpolation, so no signature

@@ -276,6 +276,10 @@ written. Always.**
 > invoker's do, wherever the macro was written. So `#caller(p) = @s;` over the macro's own `s` is
 > `NITPICK-BORROW-002`, as the same store in a plain inner block is, through a field, a callee's
 > store and a nested macro too. The analyses read the second through `scope_life_parent`.
+>
+> *[2026-11-05, 1.6.1e landing 177d2b's GO — a dated note (DEF-565, open).]* An expression macro's block
+> isn't covered yet: `#caller(p) = @s;` over a local in an arm of a value `pick` in an expression macro
+> compiles and reads freed bytes, and a lock declared there can be acquired after it.
 
 **A macro is invocable only in the module that declares it** (D-124). It is not
 exported, `use` does not bind it, `pub` on it changes nothing, and a module nested
