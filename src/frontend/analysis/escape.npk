@@ -1636,6 +1636,8 @@ func:ref_root_is_frame_owned = bool(Escape->:x, ViewRef:r) never fails {
             if (pt == 0i32) { pass true; }
             pass ((raw type_kind(x.types, pt)) != (raw TY_POINTER()));
         }
+        // A variadic tail is built for the call (DEF-519). Asked only over a borrowy argument, and an element read out of it isn't one.
+        if (pd.kind == DeclKind.DeclVariadicSpec) { pass true; }
     }
     pass false;
 };
@@ -3246,6 +3248,22 @@ pub func:escape_value_views = NIL(Escape->:x, ExprId:id, List<ViewRef>->:out) ne
     drop collect_view_refs(x, id, raw CARRY_FUEL(), out);
     pass NIL;
 };
+// WHAT A `for` OR `pick` BINDING HOLDS IS WHAT ITS SOURCE REACHES (DEF-517). Such a binding has no initialiser: its value comes
+// from the iterable or selector the resolver linked it to, so a read of it carries that expression's refs, and
+// `for (int32[]:q in ps) { pass q; }` hands the caller `ps`'s chain. On main before this it carried nothing: the slice read freed
+// bytes in the caller (`for_pick_binding_source.npk`) and a guard through it hung on a freed lock. They're the WHOLE source's refs,
+// not the one element's: wider than the value, the closed direction.
+// NOTHING IS REPORTED FROM THIS WALK: the source has its own walk at its statement, and that's where a refusal of it belongs. A
+// read of the binding isn't a second occasion to refuse the iterable, and `reporting` is restored on the way out for what follows.
+func:push_source_refs = NIL(Escape->:x, int32:link, int32:depth, List<ViewRef>->:out) never fails {
+    if (link == 0i32) { pass NIL; }
+    bool:was_reporting = x.reporting;
+    x.reporting = false;
+    drop collect_view_refs(x, ExprId{ index: link }, depth, out);
+    x.reporting = was_reporting;
+    pass NIL;
+};
+
 func:collect_view_refs = NIL(Escape->:x, ExprId:id, int32:depth, List<ViewRef>->:out) never fails {
     if (raw expr_is_none(id)) { pass NIL; }
     if (depth <= 0i32) { pass NIL; }
@@ -3269,19 +3287,25 @@ func:collect_view_refs = NIL(Escape->:x, ExprId:id, int32:depth, List<ViewRef>->
     if (n.kind == ExprKind.ExprIdentifierExpr) {
         if (n.a == 0i32) { pass NIL; }
         Symbol:isy = raw symtab_get(x.tab, n.a);
-        // A `for` BINDING CARRIES WHAT IT HOLDS, as a local does (DEF-288): its
-        // value is the element's, and an iterable whose elements could carry a
-        // borrow of this frame was refused at the loop (`for_binding_can_carry`),
-        // so what it may hold is what was stored into it -- its own chain, kept
-        // by its declaration. It is no parameter, and its value is not "older
-        // than this frame": a PASS ref of it read as the caller's value.
+        // A `for` BINDING CARRIES WHAT IT HOLDS, as a local does (DEF-288): what
+        // was stored into it, its own chain kept by its declaration, and what its
+        // iterable reaches (DEF-517, `push_source_refs`). An iterable holding a
+        // borrow of this frame was refused at the loop (`for_binding_can_carry`).
+        // It is no parameter, and its value is not "older than this frame": a PASS
+        // ref of it read as the caller's value.
         if (raw symbol_is_loop_binding(x, isy)) {
             drop push_binding_refs(x, n.a, out);
+            drop push_source_refs(x, isy.link, d, out);
             pass NIL;
         }
+        // A PATTERN BINDING CARRIES WHAT ITS SELECTOR REACHES (DEF-517). A selector
+        // holding a borrow of this frame was refused at the `pick` (`escape_untracked`).
+        if (isy.origin_kind == (raw SYM_PAT())) { drop push_source_refs(x, isy.link, d, out); pass NIL; }
         if (isy.origin_kind == (raw SYM_DECL())) {
             DeclNode:idl = raw ast_decl(x.ast, DeclId{ index: isy.origin });
-            if (idl.kind == DeclKind.DeclParamDecl) {
+            // A VARIADIC SLOT IS A PARAMETER TO THE SUMMARY (DEF-517's variadic face): `param_decl_index` answers 31,
+            // "any", but no ref of it was ever pushed, so `pass vs[0i64]` handed the caller a view it had no chain for.
+            if ((idl.kind == DeclKind.DeclParamDecl) || (idl.kind == DeclKind.DeclVariadicSpec)) {
                 drop list_push(out, ViewRef{ root: n.a, place: id.index, kind: raw REF_PASS(), path: 0i32 });
             }
             pass NIL;
@@ -3918,7 +3942,7 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) never fails {
     if (s.kind == StmtKind.StmtForStmt) {
         // ONLY AN ELEMENT THAT CAN CARRY A POINTER CAN CARRY A BORROW (1.5.1b
         // step 2, found by the first sweep). The refusal guards the loop
-        // BINDING, which the analysis does not track; a range's elements are
+        // BINDING, which has no verdict of its own; a range's elements are
         // integers and a `uint8[]`'s are bytes, so nothing a borrow could
         // ride reaches the binding however borrowed the bound's operands are
         // -- and under D-249 a view-holding local's `.len` in a bound is
@@ -3940,10 +3964,11 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) never fails {
         // call nothing; a pointer is handed as itself, judged by its own walk (`fb`, refused below when it
         // carries a borrow). An untyped iterable lends: the closed direction.
         if (raw for_iter_lends(x, fit)) { drop escape_mark_lends(x, fit); }
-        if (fb && (raw for_binding_can_carry(x, fit))) {
+        // A `for` OVER A VARIADIC TAIL READS ITS ELEMENTS (DEF-519), each on the summary's PASS bit, as an index does.
+        if (fb && (raw for_binding_can_carry(x, fit)) && (!(raw escape_tail_slot(x, fit)))) {
             ExprNode:fnode = raw ast_expr(x.ast, fit);
             drop escape_err(x, raw BORROW_UNTRACKED(),
-                "a borrow cannot be iterated over: a `for` binding is not tracked by the escape analysis, so a borrow reaching one could not be followed",
+                "a borrow of this frame cannot be iterated over: a `for` binding has no borrow state of its own in the escape analysis, so a borrow of this frame reaching one could not be followed",
                 fnode.span);
         }
         drop escape_stmt(x, raw stmt_for_body(x.ast, s));
@@ -3951,7 +3976,7 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) never fails {
     }
     if (s.kind == StmtKind.StmtPickStmt) {
         drop escape_untracked(x, raw pick_selector(s),
-            "a borrow cannot be picked on: a pattern binding is not tracked by the escape analysis, so a borrow reaching one could not be followed");
+            "a borrow of this frame cannot be picked on: a pattern binding has no borrow state of its own in the escape analysis, so a borrow of this frame reaching one could not be followed");
         drop escape_stmt_window(x, raw pick_arm_start(s), raw pick_arm_count(s));
         pass NIL;
     }
@@ -4763,8 +4788,8 @@ func:root_is = bool(Escape->:x, ExprId:id, int32:sym) never fails {
 func:ident_holds = bool(Escape->:x, int32:sym_index) never fails {
     if (sym_index == 0i32) { pass true; }   // unresolved: cannot vouch
     Symbol:sy = raw symtab_get(x.tab, sym_index);
-    // a by-value parameter marked by a call's store into it (1.6.1 step 0)
-    if (sy.origin_kind == (raw SYM_DECL())) { pass (raw escape_param_holds(x, sy.origin)); }
+    // a by-value parameter marked by a call's store into it (1.6.1 step 0), and a variadic tail (DEF-519)
+    if (sy.origin_kind == (raw SYM_DECL())) { pass (raw escape_decl_holds(x, sy.origin)); }
     if (sy.origin_kind != (raw SYM_STMT())) { pass false; }
     if (sy.origin < 0i32)           { pass true; }   // cannot vouch
     if (sy.origin >= x.holds_count) { pass true; }   // cannot vouch
@@ -5124,7 +5149,7 @@ func:scope_strictly_inside = bool(SymbolTable->:tab, int32:inner, int32:outer) n
     if (inner <= 0i32) { pass false; }
     int32:p = inner;
     for (int32:hop in 0i32...256i32) {
-        p = raw scope_parent(tab, p);
+        p = raw scope_life_parent(tab, p);
         if (p == outer) { pass true; }
         if (p <= 0i32) { pass false; }
     }
@@ -5176,10 +5201,10 @@ func:place_may_be_lock = bool(Escape->:x, int32:ty) never fails {
 
 // A GUARD'S RELEASE READS ITS LOCK (DEF-438, RULED: the view "lasts through the guard's release"). Bindings of one block drop in reverse order, so a guard stored into a holder declared BEFORE its lock in the same block outlives the lock by one step: the lock's drop frees the cell and the release reads it (`npk_guard_release`, 124 on a futex over the freed bytes, `rv1`). Rule 3's scopes can't see one block's order, and no other holder's drop reads through what it holds (no impl of `Drop` exists). A later-declared GUARD isn't a later-declared lock: `move(t)` answers its own lock (`cc6`). A binding that holds its own lock and its guard answers too: its fields drop in reverse, and with the guard's field first the lock goes first (`rv12`; the other order, `rv10`, is the closed answer's price).
 func:refuse_guard_before_lock = bool(Escape->:x, int32:holder, ExprId:place, ExprId:val, Span:at) never fails {
-    // THE VALUE'S TYPE ANSWERS TOO: a `dyn` holder's type shows no guard (`d = move(o)` over a struct holding one), and the value's own `GH` does. A `move(o) => dyn Tr` is asked of its operand, the type the cast hides. A holder and a value whose types BOTH show no guard (a `dyn`, a struct or `List` of `dyn`) answer by the place they view: a value with a destructor over a place that can be a lock fires, and that refuses a right program too, one that views a lock, atomic, arena, `dyn` or `T` declared later and holds no guard; its road is one line, declare it first. Left open, DEF-505, MEDIUM, six cells, all through a `dyn` or a `T`: a guard hidden behind a `dyn` whose lock the viewed place only reaches through a pointer, slice or `dyn` inside another slice or struct, handed to a helper that returns the guard (`m7_struct_of_slice`, `m10_ptr_struct_helper`, `q9_struct_dyn_field_helper`), and a holder typed `T`, which `type_drops` says no of (`g_T_value_lock`, `g_T_value_ptr_struct`, `i5_guard_inert_first_same_block`).
+    // THE VALUE'S TYPE ANSWERS TOO: a `dyn` holder's type shows no guard (`d = move(o)` over a struct holding one), and the value's own `GH` does. A `move(o) => dyn Tr` is asked of its operand, the type the cast hides. A holder and a value whose types BOTH show no guard (a `dyn`, a struct or `List` of `dyn`) answer by the place they view: a value with a destructor over a place that can be a lock fires, and that refuses a right program too, one that views a lock, atomic, arena, `dyn` or `T` declared later and holds no guard; its road is one line, declare it first. A value whose type shows a guard answers for ANY later local it views, a plain `int32` too; the same road. Left open: a lock's, atomic's or arena's element holding the guard, DEF-512; and DEF-505, MEDIUM, six cells, all through a `dyn` or a `T`: a guard hidden behind a `dyn` whose lock the viewed place only reaches through a pointer, slice or `dyn` inside another slice or struct, handed to a helper that returns the guard (`m7_struct_of_slice`, `m10_ptr_struct_helper`, `q9_struct_dyn_field_helper`), and a holder typed `T`, which `type_drops` says no of (`g_T_value_lock`, `g_T_value_ptr_struct`, `i5_guard_inert_first_same_block`).
     bool:shown = ((raw type_contains_guard(x.tr, raw exprtypes_get(x.etypes, place), x.scope)) || (raw type_contains_guard(x.tr, raw exprtypes_get(x.etypes, val), x.scope)) || (((raw ast_expr(x.ast, val)).kind == ExprKind.ExprDynCastExpr) && (raw type_contains_guard(x.tr, raw exprtypes_get(x.etypes, raw expr_operand(raw ast_expr(x.ast, val))), x.scope))));
     int32:hscope = (raw symtab_get(x.tab, holder)).scope;
-    // A PARAMETER DROPS AFTER EVERY BLOCK OF THE BODY (`ir_stmt.npk`), so as a holder it answers for the body block's lock too, the block DEF-252's exemption (`holder_scope_root`) lets a borrow through from: `h.g = move(t)` on `move GH:h`, over a body-local lock, hung in the release at exit (F2 of 177d2's reopen). A deeper block is rule 3's already, one report.
+    // A PARAMETER DROPS AFTER EVERY BLOCK OF THE BODY (`ir_stmt.npk`), so as a holder it answers for the body block's lock too, the block DEF-252's exemption (`holder_scope_root`) lets a borrow through from: `h.g = move(t)` on `move GH:h`, over a body-local lock, hung in the release at exit (F2 of 177d2's reopen). A deeper block is rule 3's already, one report. A parameter can't be declared later, so its road is one line after the lock, `SH:h2 = move(h);`, and the guard goes into `h2`.
     List<ViewRef>:refs = raw list_init::<ViewRef>(4i64);
     drop collect_view_refs(x, val, raw ESCAPE_DEPTH(), @refs);
     for (int64:i in 0i64...refs.count) {
@@ -5586,6 +5611,8 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
         if (!(raw expr_is_none(raw view_place(x, n)))) {
             if (raw view_verdict(x, raw expr_lhs(n), n.span)) { pass true; }
         }
+        // AN ELEMENT READ OUT OF A VARIADIC TAIL IS THE ARGUMENT, not the tail (DEF-519): it travels by the summary's PASS bit (DEF-517).
+        else { if (raw escape_tail_slot(x, raw expr_lhs(n))) { pass false; } }
         pass (raw verdict_borrowy(x, id, base));
     }
 
@@ -5772,7 +5799,7 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
     // is the dangling return it always was, not a laundering.
     if (n.kind == ExprKind.ExprPickExpr) {
         drop escape_untracked(x, raw pickx_selector(n),
-            "a borrow cannot be picked on: a pattern binding is not tracked by the escape analysis, so a borrow reaching one could not be followed");
+            "a borrow of this frame cannot be picked on: a pattern binding has no borrow state of its own in the escape analysis, so a borrow of this frame reaching one could not be followed");
         // THE ARMS ARE WALKED ONCE (DEF-278, landing 152): the statement walk
         // reaches every `give` under them -- at the arm's top level, under an
         // `if`, inside a loop -- and its `give` arm ORs the operand's verdict
@@ -5803,23 +5830,23 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
     pass (raw escape_children(x, n, d));
 };
 
-// A BORROW REACHING A BINDING THE ANALYSIS DOES NOT TRACK.
+// A BORROW OF THIS FRAME REACHING A BINDING THAT HAS NO VERDICT OF ITS OWN.
 //
-// THREE KINDS OF BINDING EXIST AND ONE OF THEM IS TRACKED. A local records whether
+// THREE KINDS OF BINDING EXIST AND ONE OF THEM HAS A VERDICT. A local records whether
 // it holds a borrow, because a local is declared by a statement and the mark hangs
 // on the statement's index. A `pick` pattern binding and a `for` loop binding are
-// neither — each takes its value from a destructuring, and following a borrow into
-// one means modelling which part of the scrutinee each name receives.
+// neither — each takes its value from a destructuring, and a verdict for one means
+// modelling which part of the scrutinee each name receives.
 //
 // SO THE SELECTOR IS REFUSED RATHER THAN THE BINDING BEING ASSUMED CLEAN. The
 // alternative is `escape_binding` quietly answering `false` for two of the three
 // binding kinds, which is an escape hatch reached by writing `pick`.
 //
-// This costs almost nothing today, because rule 3 already refuses storing a borrow
-// into any aggregate — so a struct being destructured cannot contain one unless it
-// was BUILT with one in this frame, which is the narrow case this catches. Modelling
-// the pattern properly belongs with 0.5.4, where the pattern-to-type machinery is
-// built; refusing until then is a decision, not a gap left open.
+// WHAT A BINDING'S READ CARRIES IS ANOTHER MATTER (DEF-517): its REFS are its source's
+// (`push_source_refs`), so a caller's storage reached through one travels up in the
+// summary. It's the VERDICT, the question this refusal stands in for, that stops at
+// the binding: `escape_binding` answers `false` for it, and that's safe only because
+// the source was refused here when it holds a borrow of this frame.
 // Can the binding a `for` makes over `iter` carry a pointer at all? A range
 // binds its element type, an array or slice its element; anything else, or an
 // untyped node, answers true (fail closed).
@@ -5857,6 +5884,24 @@ func:escape_untracked = NIL(Escape->:x, ExprId:id, move string:msg) never fails 
     pass NIL;
 };
 
+// WHAT A DECLARATION'S NAME HOLDS. A by-value parameter holds what a call stored into it. A VARIADIC TAIL IS STORAGE BUILT FOR THE
+// CALL (DEF-519): it dies with the caller's statement or frame and the callee can't tell, so the slot itself is a borrow of this
+// frame, as `@vs[0i64]` always was. An element of it isn't: `escape_tail_slot`'s readers.
+func:escape_decl_holds = bool(Escape->:x, int32:decl) never fails {
+    if ((raw ast_decl(x.ast, DeclId{ index: decl })).kind == DeclKind.DeclVariadicSpec) { pass true; }
+    pass (raw escape_param_holds(x, decl));
+};
+
+// IS THIS EXPRESSION A VARIADIC SLOT'S NAME, the tail itself (DEF-519)?
+func:escape_tail_slot = bool(Escape->:x, ExprId:id) never fails {
+    if (raw expr_is_none(id)) { pass false; }
+    ExprNode:n = raw ast_expr(x.ast, id);
+    if ((n.kind != ExprKind.ExprIdentifierExpr) || (n.a == 0i32)) { pass false; }
+    Symbol:s = raw symtab_get(x.tab, n.a);
+    if (s.origin_kind != (raw SYM_DECL())) { pass false; }
+    pass ((raw ast_decl(x.ast, DeclId{ index: s.origin })).kind == DeclKind.DeclVariadicSpec);
+};
+
 // A NAME'S BORROW STATE. Only a LOCAL can hold one: a global outlives every frame
 // and a parameter belongs to the caller — see `escape_call` for why a parameter is
 // not treated as a borrow here.
@@ -5864,7 +5909,7 @@ func:escape_binding = bool(Escape->:x, ExprNode:n) never fails {
     if (n.a == 0i32) { pass false; }
     Symbol:s = raw symtab_get(x.tab, n.a);
     // a by-value parameter marked by a call's store into it (1.6.1 step 0)
-    if (s.origin_kind == (raw SYM_DECL())) { pass (raw escape_param_holds(x, s.origin)); }
+    if (s.origin_kind == (raw SYM_DECL())) { pass (raw escape_decl_holds(x, s.origin)); }
     if (s.origin_kind != (raw SYM_STMT())) { pass false; }
     pass (raw escape_holds(x, s.origin));
 };

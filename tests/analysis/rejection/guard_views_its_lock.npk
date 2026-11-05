@@ -469,7 +469,7 @@ async func:gl_optional = int32() { List<Guard<int32>>?:o = NIL; Mutex<int32, 2i3
 async func:gl_mk = List<Guard<int32>>(Mutex<int32, 2i32>->:m) { List<Guard<int32>>:l = raw list_init::<Guard<int32>>(2i64); Guard<int32>:t = relay await m.acquire(raw duration_ms(500i64)); drop list_push(@l, move(t)); pass l; };
 async func:gl_hold_carried = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! Unreachable; Mutex<int32, 1i32>:b = mutex(7i32) ?! Unreachable; List<Guard<int32>>:l = relay await gl_mk(@a); Guard<int32>:g = relay await b.acquire(raw duration_ms(500i64)); pass g.value; };   // site NITPICK-LOCK-001
 
-// THE VALUE'S TYPE ANSWERS WHEN THE HOLDER'S SHOWS NOTHING (F3, and DEF-505 for what it leaves): a `dyn`'s type shows no guard, nor does a struct laid out before the element its `List` field holds. `d = move(o)` over a struct holding a guard hung in the release; `=> dyn Tr` is asked of its operand. A holder and a value that BOTH show none stay open, and the row names them.
+// THE VALUE'S TYPE ANSWERS WHEN THE HOLDER'S SHOWS NOTHING (F3, and DEF-505 for what it leaves): a `dyn`'s type shows no guard, nor does a struct laid out before the element its `List` field holds. `d = move(o)` over a struct holding a guard hung in the release; `=> dyn Tr` is asked of its operand. A holder and a value that BOTH show none answer by the place they view, the clause below; DEF-505 and DEF-512's element are what that leaves, and their rows name them.
 trait:Tr = { func:m = int32(Self->:self); };
 impl:GH:Tr = { func:m = int32(GH->:self) { pass 7i32; }; };
 struct:DH = { dyn Tr:d; };
@@ -767,7 +767,7 @@ struct:s6b_array_of_list_stale__AL = { List<s6b_array_of_list_stale__GH>[1]:gs; 
 async func:s6b_array_of_list_stale__mk = s6b_array_of_list_stale__AL(Mutex<int32, 3i32>->:m) { Guard<int32>:t = await m.acquire(raw duration_ms(500i64)) ?! E9; s6b_array_of_list_stale__GH:g0 = s6b_array_of_list_stale__GH{ g: move(t) }; List<s6b_array_of_list_stale__GH>:y = raw list_init::<s6b_array_of_list_stale__GH>(2i64); drop list_push(@y, move(g0)); pass s6b_array_of_list_stale__AL{ gs: [move(y)] }; };
 async func:s6b_array_of_list_stale = int32() { Mutex<int32, 3i32>:a = mutex(7i32) ?! E9; Mutex<int32, 2i32>:b = mutex(7i32) ?! E9; s6b_array_of_list_stale__AL:w = await s6b_array_of_list_stale__mk(@a) ?! E9; Guard<int32>:t2 = await b.acquire(raw duration_ms(500i64)) ?! E9; pass 7i32; };   // site NITPICK-LOCK-001
 
-// A HELPER'S LOCAL COPY OF ITS LOCK POINTER (DEF-511): `q = m; q.acquire(d)` carries `q`'s own chain, `m`, as a value of `q` would. `m5`, `r4_array_of_ptr`, `r4_optional_ptr` hid behind the same missing bit, and were DEF-505's.
+// A HELPER'S LOCAL COPY OF ITS LOCK POINTER (DEF-511): `q = m; q.acquire(d)` carries `q`'s own chain, `m`, as a value of `q` would. `m5`, `r4_array_of_ptr`, `r4_optional_ptr` hid behind the same missing pass bit (`arg_refs_pass` at the guard arm), and were DEF-505's.
 struct:k1_copy_of_field__GO = { Guard<int32>?:g; };
 struct:k1_copy_of_field__PS = { Mutex<int32, 2i32>->:p; };
 async func:k1_copy_of_field__mp = Guard<int32>(k1_copy_of_field__PS->:s) acquires <= 2 { Mutex<int32, 2i32>->:q = s.p; pass await q.acquire(raw duration_ms(500i64)) ?! E9; };

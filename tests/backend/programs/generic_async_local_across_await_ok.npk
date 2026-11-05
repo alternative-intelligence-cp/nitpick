@@ -1,0 +1,347 @@
+// expect-exit: 0
+mod:generic_async_local_across_await_ok;
+// A LOCAL WHOSE TYPE HOLDS A TYPE PARAMETER LIVES IN THE FRAME ACROSS A SUSPENSION (DEF-533, landing 177d2b). An owning local is
+// used at its scope's exit, where its drop reads it, so the suspend walk keeps it in the coroutine's frame; the checker marks which
+// declarations own, and it asked `type_drops`, which reads a bare `T` as owning nothing. So in a generic `async` function a `T`,
+// `T?`, `T[1]`, `Result<T>` or `Bx<T>` local declared before an `await` and not named after it stayed in the resume function's own
+// allocas, and at an instance that owns (a `string`, a `List`, a `buffer`, a struct or an array of them) the drop after the `await`
+// read a slot nothing had written: 74 or 97 at `opt -O2`, right at -O0 only because old stack bytes survive. THE PROGRAM STAGE RUNS
+// `opt -O2`, AND THAT IS THE LEG THIS TEST CAN FAIL ON. `t_*` are the forms of the declared type, `i_*` the instance types, `p_*`
+// the places the declaration stands in and the ways the function is reached, `c_*` the controls, whose emission the fix leaves alone.
+error:Bad;
+mod:t_T = {
+error:E5_t_T;
+async func:hp<T> = int32(move T:v) { T:x = move(v); await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_t_T; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_t_T; pass v; };
+};
+mod:t_opt = {
+error:E5_t_opt;
+async func:hp<T> = int32(move T:v) { T?:x = move(v); await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_t_opt; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_t_opt; pass v; };
+};
+mod:t_opt_nil = {
+error:E5_t_opt_nil;
+async func:hp<T> = int32(move T:v) { T?:x = NIL; await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_t_opt_nil; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_t_opt_nil; pass v; };
+};
+mod:t_arr1 = {
+error:E5_t_arr1;
+async func:hp<T> = int32(move T:v) { T[1]:x = [move(v)]; await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_t_arr1; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_t_arr1; pass v; };
+};
+mod:t_res = {
+error:E5_t_res;
+async func:hp<T> = int32(move T:v) { Result<T>:x = Result{ value: move(v) }; await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_t_res; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_t_res; pass v; };
+};
+mod:t_bx = {
+error:E5_t_bx;
+struct:Bx<T> = { T:v; };
+async func:hp<T> = int32(move T:v) { Bx<T>:x = Bx{ v: move(v) }; await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_t_bx; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_t_bx; pass v; };
+};
+mod:t_bxbx = {
+error:E5_t_bxbx;
+struct:Bx<T> = { T:v; };
+async func:hp<T> = int32(move T:v) { Bx<Bx<T>>:x = Bx{ v: Bx{ v: move(v) } }; await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_t_bxbx; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_t_bxbx; pass v; };
+};
+mod:t_bx_opt = {
+error:E5_t_bx_opt;
+struct:Bx<T> = { T:v; };
+async func:hp<T> = int32(move T:v) { Bx<T?>:x = Bx{ v: move(v) }; await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_t_bx_opt; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_t_bx_opt; pass v; };
+};
+mod:t_pair = {
+error:E5_t_pair;
+struct:Pr<A, B> = { A:a; B:b; };
+async func:hp<T> = int32(move T:v) { Pr<int32, T>:x = Pr{ a: 1i32, b: move(v) }; await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_t_pair; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_t_pair; pass v; };
+};
+mod:t_list_c = {
+error:E5_t_list_c;
+async func:hp<T> = int32(move T:v) { List<T>:x = raw list_init::<T>(1i64); drop list_push(@x, move(v)); await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_t_list_c; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_t_list_c; pass v; };
+};
+mod:i_struct = {
+error:E5_i_struct;
+struct:S2 = { string:s; int32:k; };
+async func:hp<T> = int32(move T:v) { T:x = move(v); await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { S2:o = S2{ s: string_concat("ab","cd"), k: 1i32 }; int32:k = await hp(move(o)) ?! E5_i_struct; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_i_struct; pass v; };
+};
+mod:i_list = {
+error:E5_i_list;
+async func:hp<T> = int32(move T:v) { T:x = move(v); await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { List<string>:o = raw list_init::<string>(2i64); drop list_push(@o, string_concat("ab","cd")); int32:k = await hp(move(o)) ?! E5_i_list; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_i_list; pass v; };
+};
+mod:i_optstr = {
+error:E5_i_optstr;
+async func:hp<T> = int32(move T:v) { T:x = move(v); await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string?:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_i_optstr; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_i_optstr; pass v; };
+};
+mod:i_arr = {
+error:E5_i_arr;
+async func:hp<T> = int32(move T:v) { T:x = move(v); await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string[2]:o = [string_concat("ab","cd"), string_concat("ab","cd")]; int32:k = await hp(move(o)) ?! E5_i_arr; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_i_arr; pass v; };
+};
+mod:i_buffer = {
+error:E5_i_buffer;
+async func:hp<T> = int32(move T:v) { T:x = move(v); await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { buffer:o = buffer_new(16i64); int32:k = await hp(move(o)) ?! E5_i_buffer; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_i_buffer; pass v; };
+};
+mod:i_int_c = {
+error:E5_i_int_c;
+async func:hp<T> = int32(move T:v) { T:x = move(v); await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { int32:k = await hp(97i64) ?! E5_i_int_c; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_i_int_c; pass v; };
+};
+mod:p_block = {
+error:E5_p_block;
+async func:hp<T> = int32(move T:v) { { T:x = move(v); await sleep(raw duration_ms(20i64)) ?| NIL; } pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_p_block; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_p_block; pass v; };
+};
+mod:p_if = {
+error:E5_p_if;
+async func:hp<T> = int32(move T:v, int32:k) { if (k == 1i32) { T:x = move(v); await sleep(raw duration_ms(20i64)) ?| NIL; } pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o), 1i32) ?! E5_p_if; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_p_if; pass v; };
+};
+mod:p_pick_arm = {
+error:E5_p_pick_arm;
+async func:hp<T> = int32(move T:v, int32:k) { pick (k) { (1i32) { T:x = move(v); await sleep(raw duration_ms(20i64)) ?| NIL; }, (*) { } } pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o), 1i32) ?! E5_p_pick_arm; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_p_pick_arm; pass v; };
+};
+mod:p_loop_opt_nil = {
+error:E5_p_loop_opt_nil;
+async func:hp<T> = int32(move T:v) { int32:i = 0i32; while (i < 2i32) decreases 2i32 - i { T?:x = NIL; await sleep(raw duration_ms(20i64)) ?| NIL; i = i + 1i32; } pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_p_loop_opt_nil; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_p_loop_opt_nil; pass v; };
+};
+mod:p_moved_out = {
+error:E5_p_moved_out;
+func:eat<T> = int32(move T:v) never fails { pass 0i32; };
+async func:hp<T> = int32(move T:v) { T:x = move(v); discard(raw eat(move(x))); await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_p_moved_out; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_p_moved_out; pass v; };
+};
+mod:p_cond_assign_not = {
+error:E5_p_cond_assign_not;
+async func:hp<T> = int32(move T:v, int32:k) { T:x; if (k == 2i32) { x = move(v); } await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o), 1i32) ?! E5_p_cond_assign_not; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_p_cond_assign_not; pass v; };
+};
+mod:p_cond_assign_yes = {
+error:E5_p_cond_assign_yes;
+async func:hp<T> = int32(move T:v, int32:k) { T:x; if (k == 2i32) { x = move(v); } await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o), 2i32) ?! E5_p_cond_assign_yes; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_p_cond_assign_yes; pass v; };
+};
+mod:p_two_awaits = {
+error:E5_p_two_awaits;
+async func:hp<T> = int32(move T:v) { T:x = move(v); await sleep(raw duration_ms(20i64)) ?| NIL; await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_p_two_awaits; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_p_two_awaits; pass v; };
+};
+mod:p_scalar_sibling = {
+error:E5_p_scalar_sibling;
+async func:hp<T> = int32(move T:v) { int64:n = 5i64; T:x = move(v); await sleep(raw duration_ms(20i64)) ?| NIL; if (n == 5i64) { pass 7i32; } pass 8i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_p_scalar_sibling; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_p_scalar_sibling; pass v; };
+};
+mod:p_spawned = {
+error:E5_p_spawned;
+async func:hp<T> = NIL(move T:v) { T:x = move(v); await sleep(raw duration_ms(20i64)) ?| NIL; pass NIL; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); drop hp(move(o)); pass 7i32; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_p_spawned; pass v; };
+};
+mod:p_method = {
+error:E5_p_method;
+struct:Bx<T> = { T:v; };
+impl:<T>:Bx<T> = { async func:hold = int32(Bx<T>->:self, move T:w) { T:x = move(w); await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; }; };
+pub async func:f = int32() { Bx<string>:b = Bx{ v: string_concat("ab","cd") }; string:o = string_concat("ab","cd"); int32:k = await b.hold(move(o)) ?! E5_p_method; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_p_method; pass v; };
+};
+mod:p_two_params_ab = {
+error:E5_p_two_params_ab;
+async func:hp<A, B> = int32(move A:a, move B:b) { B:y = move(b); A:x = move(a); await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(5i64, move(o)) ?! E5_p_two_params_ab; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_p_two_params_ab; pass v; };
+};
+mod:p_two_params_ba = {
+error:E5_p_two_params_ba;
+async func:hp<A, B> = int32(move A:a, move B:b) { B:y = move(b); A:x = move(a); await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o), 5i64) ?! E5_p_two_params_ba; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_p_two_params_ba; pass v; };
+};
+mod:p_nested_generic = {
+error:E5_p_nested_generic;
+async func:inner<T> = int32(move T:v) { T:x = move(v); await sleep(raw duration_ms(20i64)) ?| NIL; pass 3i32; };
+async func:hp<T> = int32(move T:v, move T:w) { T:y = move(w); int32:a = await inner(move(v)) ?! E5_p_nested_generic; pass a + 4i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); string:p = string_concat("ab","cd"); int32:k = await hp(move(o), move(p)) ?! E5_p_nested_generic; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_p_nested_generic; pass v; };
+};
+mod:c_used_after = {
+error:E5_c_used_after;
+func:eat<T> = int32(move T:v) never fails { pass 0i32; };
+async func:hp<T> = int32(move T:v) { T:x = move(v); await sleep(raw duration_ms(20i64)) ?| NIL; discard(raw eat(move(x))); pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_c_used_after; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_c_used_after; pass v; };
+};
+mod:c_decl_after = {
+error:E5_c_decl_after;
+async func:hp<T> = int32(move T:v) { await sleep(raw duration_ms(20i64)) ?| NIL; T:x = move(v); pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_c_decl_after; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_c_decl_after; pass v; };
+};
+mod:c_nonasync = {
+error:E5_c_nonasync;
+func:hq<T> = int32(move T:v) never fails { T:x = move(v); pass 7i32; };
+async func:hp<T> = int32(move T:v) { await sleep(raw duration_ms(20i64)) ?| NIL; pass raw hq(move(v)); };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_c_nonasync; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_c_nonasync; pass v; };
+};
+mod:c_string_local = {
+error:E5_c_string_local;
+async func:hp = int32(move string:v) { string:x = move(v); await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_c_string_local; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_c_string_local; pass v; };
+};
+mod:c_param_only = {
+error:E5_c_param_only;
+async func:hp<T> = int32(move T:v) { await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_c_param_only; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_c_param_only; pass v; };
+};
+mod:c_await_in_init = {
+error:E5_c_await_in_init;
+async func:mk<T> = T(move T:v) { await sleep(raw duration_ms(20i64)) ?| NIL; pass v; };
+async func:hp<T> = int32(move T:v) { T:x = await mk(move(v)) ?! E5_c_await_in_init; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_c_await_in_init; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_c_await_in_init; pass v; };
+};
+mod:c_ptr_local = {
+error:E5_c_ptr_local;
+async func:hp<T> = int32(move T:v) { T->:p = @v; await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string:o = string_concat("ab","cd"); int32:k = await hp(move(o)) ?! E5_c_ptr_local; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_c_ptr_local; pass v; };
+};
+mod:c_slice_local = {
+error:E5_c_slice_local;
+async func:hp<T> = int32(T[1]->:a) { T[]:s = (<-a)[0i64...1i64]; await sleep(raw duration_ms(20i64)) ?| NIL; pass 7i32; };
+pub async func:f = int32() { string[1]:o = [string_concat("ab","cd")]; int32:k = await hp(@o) ?! E5_c_slice_local; pass k; };
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_c_slice_local; pass v; };
+};
+async func:main = int32(cstring[]:_~argv) {
+    { int32:v = await t_T.cell_main() ?! Bad; if (v != 7i32) { exit 100i32; } }
+    { int32:v = await t_opt.cell_main() ?! Bad; if (v != 7i32) { exit 101i32; } }
+    { int32:v = await t_opt_nil.cell_main() ?! Bad; if (v != 7i32) { exit 102i32; } }
+    { int32:v = await t_arr1.cell_main() ?! Bad; if (v != 7i32) { exit 103i32; } }
+    { int32:v = await t_res.cell_main() ?! Bad; if (v != 7i32) { exit 104i32; } }
+    { int32:v = await t_bx.cell_main() ?! Bad; if (v != 7i32) { exit 105i32; } }
+    { int32:v = await t_bxbx.cell_main() ?! Bad; if (v != 7i32) { exit 106i32; } }
+    { int32:v = await t_bx_opt.cell_main() ?! Bad; if (v != 7i32) { exit 107i32; } }
+    { int32:v = await t_pair.cell_main() ?! Bad; if (v != 7i32) { exit 108i32; } }
+    { int32:v = await t_list_c.cell_main() ?! Bad; if (v != 7i32) { exit 109i32; } }
+    { int32:v = await i_struct.cell_main() ?! Bad; if (v != 7i32) { exit 110i32; } }
+    { int32:v = await i_list.cell_main() ?! Bad; if (v != 7i32) { exit 111i32; } }
+    { int32:v = await i_optstr.cell_main() ?! Bad; if (v != 7i32) { exit 112i32; } }
+    { int32:v = await i_arr.cell_main() ?! Bad; if (v != 7i32) { exit 113i32; } }
+    { int32:v = await i_buffer.cell_main() ?! Bad; if (v != 7i32) { exit 114i32; } }
+    { int32:v = await i_int_c.cell_main() ?! Bad; if (v != 7i32) { exit 115i32; } }
+    { int32:v = await p_block.cell_main() ?! Bad; if (v != 7i32) { exit 116i32; } }
+    { int32:v = await p_if.cell_main() ?! Bad; if (v != 7i32) { exit 117i32; } }
+    { int32:v = await p_pick_arm.cell_main() ?! Bad; if (v != 7i32) { exit 118i32; } }
+    { int32:v = await p_loop_opt_nil.cell_main() ?! Bad; if (v != 7i32) { exit 119i32; } }
+    { int32:v = await p_moved_out.cell_main() ?! Bad; if (v != 7i32) { exit 120i32; } }
+    { int32:v = await p_cond_assign_not.cell_main() ?! Bad; if (v != 7i32) { exit 121i32; } }
+    { int32:v = await p_cond_assign_yes.cell_main() ?! Bad; if (v != 7i32) { exit 122i32; } }
+    { int32:v = await p_two_awaits.cell_main() ?! Bad; if (v != 7i32) { exit 123i32; } }
+    { int32:v = await p_scalar_sibling.cell_main() ?! Bad; if (v != 7i32) { exit 124i32; } }
+    { int32:v = await p_spawned.cell_main() ?! Bad; if (v != 7i32) { exit 125i32; } }
+    { int32:v = await p_method.cell_main() ?! Bad; if (v != 7i32) { exit 126i32; } }
+    { int32:v = await p_two_params_ab.cell_main() ?! Bad; if (v != 7i32) { exit 127i32; } }
+    { int32:v = await p_two_params_ba.cell_main() ?! Bad; if (v != 7i32) { exit 128i32; } }
+    { int32:v = await p_nested_generic.cell_main() ?! Bad; if (v != 7i32) { exit 129i32; } }
+    { int32:v = await c_used_after.cell_main() ?! Bad; if (v != 7i32) { exit 130i32; } }
+    { int32:v = await c_decl_after.cell_main() ?! Bad; if (v != 7i32) { exit 131i32; } }
+    { int32:v = await c_nonasync.cell_main() ?! Bad; if (v != 7i32) { exit 132i32; } }
+    { int32:v = await c_string_local.cell_main() ?! Bad; if (v != 7i32) { exit 133i32; } }
+    { int32:v = await c_param_only.cell_main() ?! Bad; if (v != 7i32) { exit 134i32; } }
+    { int32:v = await c_await_in_init.cell_main() ?! Bad; if (v != 7i32) { exit 135i32; } }
+    { int32:v = await c_ptr_local.cell_main() ?! Bad; if (v != 7i32) { exit 136i32; } }
+    { int32:v = await c_slice_local.cell_main() ?! Bad; if (v != 7i32) { exit 137i32; } }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (Bad)              { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (generic_async_local_across_await_ok.E5_t_T) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_t_opt) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_t_opt_nil) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_t_arr1) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_t_res) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_t_bx) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_t_bxbx) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_t_bx_opt) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_t_pair) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_t_list_c) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_i_struct) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_i_list) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_i_optstr) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_i_arr) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_i_buffer) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_i_int_c) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_p_block) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_p_if) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_p_pick_arm) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_p_loop_opt_nil) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_p_moved_out) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_p_cond_assign_not) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_p_cond_assign_yes) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_p_two_awaits) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_p_scalar_sibling) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_p_spawned) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_p_method) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_p_two_params_ab) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_p_two_params_ba) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_p_nested_generic) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_c_used_after) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_c_decl_after) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_c_nonasync) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_c_string_local) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_c_param_only) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_c_await_in_init) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_c_ptr_local) { exit 75i32; },
+        (generic_async_local_across_await_ok.E5_c_slice_local) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

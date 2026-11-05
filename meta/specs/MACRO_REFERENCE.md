@@ -269,6 +269,13 @@ written. Always.**
 > the caller had one (a lone identifier, a comparison's operand — arithmetic read right by the
 > constant folder's accident). The emitter reads the resolver's symbol now; the rule holds in the
 > emitted program as it held in the checked one.
+>
+> *[2026-11-04, 1.6.1e landing 177d2b — a dated note (DEF-509).]* A statement macro's block has two
+> enclosing scopes, and each question has its own. Its NAMES answer to the scope the macro was
+> written in, the rule above, and its LIFE to the block it was invoked in: its locals die before the
+> invoker's do, wherever the macro was written. So `#caller(p) = @s;` over the macro's own `s` is
+> `NITPICK-BORROW-002`, as the same store in a plain inner block is, through a field, a callee's
+> store and a nested macro too. The analyses read the second through `scope_life_parent`.
 
 **A macro is invocable only in the module that declares it** (D-124). It is not
 exported, `use` does not bind it, `pub` on it changes nothing, and a module nested

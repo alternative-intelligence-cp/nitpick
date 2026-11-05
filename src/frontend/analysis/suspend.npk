@@ -4,9 +4,12 @@
 // where a plain alloca would die between `resume` calls. This is also the
 // surface C-8's borrow-across-await narrowing reads.
 //
-// THE POSITION MODEL IS SOURCE ORDER, NOT DATAFLOW. A local crosses if a
-// suspension point sits between its declaration and its last use — with three
-// widenings that make source order sound where control flow bends:
+// THE POSITION MODEL IS THE WALK'S ORDER, NOT DATAFLOW. A position is a tick of
+// this walk, taken as it gets there, and it goes in the order the code runs. The
+// text doesn't: a macro body's text is where the macro is declared, wherever it's
+// called (DEF-496). A local crosses if a suspension point sits between its
+// declaration and its last use — with these widenings that make the order sound
+// where control flow bends:
 //
 //   LOOPS RE-ENTER. A suspension inside a loop is crossed by any local
 //   declared OUTSIDE that loop and used at-or-after the loop's start: the back
@@ -15,9 +18,14 @@
 //   crossing test measures against those as well as the point itself.
 //
 //   `defer` RUNS AT SCOPE EXIT. A use inside a `defer` body happens at the
-//   function's end, wherever the text sits — so it is recorded there. (When
-//   scope-exit drop glue lands for managed locals, droppable locals gain the
-//   same end-of-scope use HERE, for the same reason.)
+//   function's end, wherever it's written, so it is recorded there. A droppable
+//   local gets the same use at its declaration, for the same reason (D-183).
+//
+//   A CLAUSE IS A READ AT EVERY HEAD. A loop's `invariant` and `decreases` run
+//   at each trip, after whatever parked in the trip before, and a clause can be
+//   the only mention of a local (DEF-494's face C). So they are walked inside the
+//   loop's own window, as the condition is. A clause cannot hold a park itself
+//   (TYPE-060, D-221), so it only ever adds uses.
 //
 //   AN ADDRESS OUTLIVES ITS MENTION. `@x`, `$$i x`, `$$m x` and a method's
 //   auto-referenced receiver hand out a pointer this walk does not follow, so
@@ -35,16 +43,11 @@
 // BINDERS ARE KEYED BY STATEMENT INDEX — the var-decl statement a local's
 // symbol names as its origin — which is the same key the emitter holds at the
 // declaration site, so the mark travels on `ExprTypes` like every other
-// checker-to-emitter fact. A var-decl registers when walked, positioned at
-// the STATEMENT'S END: the name binds after the initialiser runs, so a
-// suspension inside the initialiser is before the local exists, not across
-// it. A binder this walk does not visit (a `for` element, a pick arm's
-// pattern binding) registers lazily at its first use, positioned at its
-// origin statement's start — sound today because the backend refuses a
-// suspension inside a `for` body or a `pick` until stage D lifts those
-// rungs, and stage D's obligation includes registering those binders
-// eagerly (a never-used droppable arm binding is invisible to lazy
-// registration).
+// checker-to-emitter fact. A var-decl registers when walked, past its
+// initialiser: the name binds after that runs, so a suspension inside the
+// initialiser is before the local exists, not across it. Only a var-decl has a
+// statement for its origin (`SYM_STMT`). A `for` element and a pick arm's pattern
+// binding are framed by their own roles and never reach this registry.
 
 mod:suspend;
 
@@ -103,13 +106,8 @@ pub struct:Suspend = {
     int64:fn_end;
     bool:in_defer;
 
-    // THE WALK'S CURSOR — the largest position touched so far. Statement and
-    // expression spans in this compiler are FIRST-TOKEN spans, so "the end of
-    // the statement" cannot be read off a span; the cursor supplies it: a
-    // binder or suspension that must sit AFTER everything just walked takes
-    // `max(its own span end, cursor + 1)`. Positions grow with the text, so
-    // the cursor never overtakes anything later.
-    int64:cursor;
+    // THE WALK'S CLOCK, one tick per position (`walk_tick`).
+    int64:clock;
 };
 
 pub func:suspend_init = Suspend(Ast->:ast, SymbolTable->:tab, ExprTypes->:ets,
@@ -127,7 +125,7 @@ pub func:suspend_init = Suspend(Ast->:ast, SymbolTable->:tab, ExprTypes->:ets,
                          lsflat: raw list_init::<int64>(64i64),
                          lstack: h =>! wild int64->,
                          ldepth: 0i32, fn_end: 0i64, in_defer: false,
-                         cursor: 0i64 };
+                         clock: 0i64 };
     pass x;
 };
 
@@ -136,25 +134,14 @@ func:suspend_err = NIL(Suspend->:x, move string:msg, Span:sp) never fails {
     pass NIL;
 };
 
-// A span's place in the one order this walk measures with: file first, offset
-// within it. Positions from different files (a macro splice) still get a total
-// order — an artificial one, which can only err toward MORE crossing, never
-// less, because every comparison stays consistent within the walk.
-func:pos_of = int64(Span:sp) never fails {
-    pass ((sp.file => int64) * 4294967296i64) + (sp.offset => int64);
-};
-
-func:pos_end = int64(Span:sp) never fails {
-    pass ((sp.file => int64) * 4294967296i64)
-         + ((sp.offset + sp.len) => int64);
+// The next position in the one order this walk measures with. A declaration, a
+// use, a loop's start and a suspension each take one as the walk reaches them.
+func:walk_tick = int64(Suspend->:x) never fails {
+    x.clock = x.clock + 1i64;
+    pass x.clock;
 };
 
 // --- the locals registry ------------------------------------------------------------
-
-func:cur_touch = NIL(Suspend->:x, int64:at) never fails {
-    if (at > x.cursor) { x.cursor = at; }
-    pass NIL;
-};
 
 // int64 BY THE INDEX RULE: the index follows its count, and no external
 // contract pins this one -- every consumer is a local in this file.
@@ -167,8 +154,16 @@ func:reg_find = int64(Suspend->:x, int32:stmt_index) never fails {
     pass 0i64 - 1i64;
 };
 
+// A use met before its var-decl's walk has no road today, since a name is in scope
+// from its declaration on. Were one to appear, 0 sits before every suspension, so
+// it answers on the crossing side.
+func:reg_find_or_add = int64(Suspend->:x, int32:stmt_index) never fails {
+    int64:idx = raw reg_find(x, stmt_index);
+    if (idx >= 0i64) { pass idx; }
+    pass (raw reg_add(x, stmt_index, 0i64));
+};
+
 func:reg_add = int64(Suspend->:x, int32:stmt_index, int64:at) never fails {
-    drop cur_touch(x, at);
     int64:idx = x.lstmt.count;
     // ALL THREE, ALWAYS.
     drop list_push(@x.lstmt, stmt_index);
@@ -177,16 +172,6 @@ func:reg_add = int64(Suspend->:x, int32:stmt_index, int64:at) never fails {
     pass idx;
 };
 
-// One mention of a name. Only a LOCAL registers — a symbol whose origin is a
-// statement. Parameters are frame-resident by construction (the caller stored
-// them into the frame), so they are exactly the bindings this walk exempts.
-// Extend a local's recorded use to `at` WITHOUT moving the walk's cursor
-// — the address-taken extension. The use is SEMANTIC (the alias lives on
-// to `at`), not textual (the walk is still standing where it stood), and
-// routing it through `reg_use` slammed the cursor to `fn_end`: every
-// suspension after the first `@x` was then positioned past the function's
-// end, and nothing declared before it ever crossed again (1.1.13-close —
-// found when the range-view rule below inherited the slam).
 // A LENDING PICK'S VIEWS ADDRESS THE SELECTOR (D-266, 1.5.2h): an arm that
 // binds takes the selector's storage by address, so the selector's root --
 // through views, to the name that is not one -- lives to the function's end,
@@ -229,15 +214,14 @@ func:suspend_pick_views = NIL(Suspend->:x, ExprId:sel, int32:start, int32:count)
     pass NIL;
 };
 
+// Extend a local's recorded use to `at`, the address-taken extension. The use is
+// SEMANTIC (the alias lives on to `at`), and the walk is still standing where it
+// stood, so it takes no tick.
 func:reg_extend = NIL(Suspend->:x, int32:sym_id, int64:at) never fails {
     if (sym_id == 0i32) { pass NIL; }
     Symbol:s = raw symtab_get(x.tab, sym_id);
     if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
-    int64:idx = raw reg_find(x, s.origin);
-    if (idx < 0i64) {
-        StmtNode:o = raw ast_stmt(x.ast, StmtId{ index: s.origin });
-        idx = raw reg_add(x, s.origin, raw pos_of(o.span));
-    }
+    int64:idx = raw reg_find_or_add(x, s.origin);
     if (at > x.luse[idx]) { x.luse[idx] = at; }
     pass NIL;
 };
@@ -282,19 +266,17 @@ func:recv_takes_address = bool(Suspend->:x, ExprId:call, ExprId:recv) never fail
     pass ((raw type_kind(x.types, raw type_param_at_of(x.ast, x.types, ft, 0i32))) == (raw TY_POINTER()));
 };
 
-func:reg_use = NIL(Suspend->:x, int32:sym_id, int64:at) never fails {
+// One mention of a name. Only a LOCAL registers — a symbol whose origin is a
+// statement. Parameters are frame-resident by construction (the caller stored
+// them into the frame), so they are exactly the bindings this walk exempts.
+func:reg_use = NIL(Suspend->:x, int32:sym_id) never fails {
     if (sym_id == 0i32) { pass NIL; }
     Symbol:s = raw symtab_get(x.tab, sym_id);
     if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
-    int64:idx = raw reg_find(x, s.origin);
-    if (idx < 0i64) {
-        StmtNode:o = raw ast_stmt(x.ast, StmtId{ index: s.origin });
-        idx = raw reg_add(x, s.origin, raw pos_of(o.span));
-    }
-    // The cursor takes the TEXTUAL position; the recorded use takes the
-    // semantic one (a defer body runs at scope exit).
-    drop cur_touch(x, at);
-    int64:pt = at;
+    int64:idx = raw reg_find_or_add(x, s.origin);
+    // The clock takes the walk's step; the recorded use takes the semantic one
+    // (a defer body runs at scope exit).
+    int64:pt = raw walk_tick(x);
     if (x.in_defer) { pt = x.fn_end; }
     if (pt > x.luse[idx]) { x.luse[idx] = pt; }
     pass NIL;
@@ -302,15 +284,14 @@ func:reg_use = NIL(Suspend->:x, int32:sym_id, int64:at) never fails {
 
 // --- suspension points --------------------------------------------------------------
 
-func:susp_add = NIL(Suspend->:x, int64:at) never fails {
-    drop cur_touch(x, at);
+func:susp_add = NIL(Suspend->:x) never fails {
     // The window's START is `lsflat`'s length BEFORE this point's loops are
     // appended, so it is read first. A BULK reserve, like `Sink`'s: the loop
     // below appends `ldepth` of them, and one doubling need not cover that.
     int64:flat_start = x.lsflat.count;
     drop list_reserve(@x.lsflat, x.ldepth => int64);
     // ALL THREE, ALWAYS.
-    drop list_push(@x.spos, at);
+    drop list_push(@x.spos, raw walk_tick(x));
     drop list_push(@x.sls, flat_start);
     drop list_push(@x.slc, x.ldepth);
     int32:i = 0i32;
@@ -364,7 +345,6 @@ func:suspend_decl = NIL(Suspend->:x, DeclId:id) never fails {
         // is the order's ceiling.
         x.fn_end = 9223372036854775807i64;
         x.in_defer = false;
-        x.cursor = 0i64;
 
         drop suspend_stmt(x, body, raw SUSPEND_DEPTH());
         drop suspend_settle(x);
@@ -428,13 +408,26 @@ func:loop_push = NIL(Suspend->:x, Span:sp) never fails {
             sp);
         pass NIL;
     }
-    x.lstack[x.ldepth => int64] = raw pos_of(sp);
+    x.lstack[x.ldepth => int64] = raw walk_tick(x);
     x.ldepth = x.ldepth + 1i32;
     pass NIL;
 };
 
 func:loop_pop = NIL(Suspend->:x) never fails {
     if (x.ldepth > 0i32) { x.ldepth = x.ldepth - 1i32; }
+    pass NIL;
+};
+
+// A loop's clauses, read at each head: every conjunct of the `invariant`, and the
+// `decreases` expression (`unbounded` has none, and `suspend_expr` leaves on none).
+func:suspend_clauses = NIL(Suspend->:x, VerifyId:inv, VerifyId:meas, int32:fuel) never fails {
+    if (!(raw verify_is_none(inv))) {
+        VerifyNode:iv = raw ast_verify(x.ast, inv);
+        drop suspend_expr_window(x, raw invariant_start(iv), raw invariant_count(iv), fuel);
+    }
+    if (!(raw verify_is_none(meas))) {
+        drop suspend_expr(x, raw measure_expr(raw ast_verify(x.ast, meas)), fuel - 1i32);
+    }
     pass NIL;
 };
 
@@ -455,19 +448,15 @@ func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
             drop suspend_expr(x, init, fuel - 1i32);
         }
         // AFTER the initialiser: the name binds once the initialiser has run,
-        // so a suspension inside it is before this local, not across it — the
-        // cursor places the binder past everything the initialiser touched.
+        // so a suspension inside it is before this local, not across it.
         int64:idx = raw reg_find(x, id.index);
         if (idx < 0i64) {
-            int64:dat = raw pos_end(s.span);
-            if (x.cursor >= dat) { dat = x.cursor + 1i64; }
-            int64:ni = raw reg_add(x, id.index, dat);
+            int64:ni = raw reg_add(x, id.index, raw walk_tick(x));
             // A DROPPABLE LOCAL IS USED AT ITS SCOPE'S EXIT (D-183, 1.2.4b):
             // the drop reads the value there, so its life runs past its last
             // textual mention. Recorded at the function's end — the same
-            // conservative position `defer` bodies and `@x` already take,
-            // under the walk's doctrine that source order may only err
-            // toward MORE crossing. The checker marked which var-decls own;
+            // conservative position `defer` bodies and `@x` already take.
+            // The checker marked which var-decls own;
             // a function with no suspensions never consults any of this.
             if (raw exprtypes_owning_decl(x.ets, id.index)) {
                 if (x.fn_end > x.luse[ni]) {
@@ -515,6 +504,7 @@ func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
         drop loop_push(x, s.span);
         drop check_first_eval(x, raw stmt_cond(s));
         drop suspend_expr(x, raw stmt_cond(s), fuel - 1i32);
+        drop suspend_clauses(x, raw stmt_while_invariant(x.ast, s), raw stmt_while_measure(x.ast, s), fuel);
         drop suspend_stmt(x, raw stmt_body(x.ast, s), fuel - 1i32);
         drop loop_pop(x);
         pass NIL;
@@ -525,6 +515,7 @@ func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
         drop loop_push(x, s.span);
         drop check_first_eval(x, raw stmt_cond(s));
         drop suspend_expr(x, raw stmt_cond(s), fuel - 1i32);
+        drop suspend_clauses(x, raw stmt_when_invariant(x.ast, s), raw stmt_when_measure(x.ast, s), fuel);
         drop suspend_stmt(x, raw stmt_when_body(x.ast, s), fuel - 1i32);
         drop loop_pop(x);
         drop suspend_stmt(x, raw stmt_when_then(x.ast, s), fuel - 1i32);
@@ -543,6 +534,7 @@ func:suspend_stmt = NIL(Suspend->:x, StmtId:id, int32:fuel) never fails {
         drop loop_push(x, s.span);
         drop check_first_eval(x, raw stmt_for_iter(x.ast, s));
         drop suspend_expr(x, raw stmt_for_iter(x.ast, s), fuel - 1i32);
+        drop suspend_clauses(x, raw stmt_for_invariant(x.ast, s), raw stmt_for_measure(x.ast, s), fuel);
         drop suspend_stmt(x, raw stmt_for_body(x.ast, s), fuel - 1i32);
         drop loop_pop(x);
         pass NIL;
@@ -618,6 +610,7 @@ func:suspend_counted = NIL(Suspend->:x, StmtNode:s, int32:fuel) never fails {
         drop check_first_eval(x, raw stmt_counted_arg(x.ast, s, i));
         drop suspend_expr(x, raw stmt_counted_arg(x.ast, s, i), fuel - 1i32);
     }
+    drop suspend_clauses(x, raw stmt_counted_invariant(x.ast, s), raw stmt_counted_measure(x.ast, s), fuel);
     drop suspend_stmt(x, raw stmt_counted_body(s), fuel - 1i32);
     drop loop_pop(x);
     pass NIL;
@@ -634,7 +627,7 @@ func:suspend_expr = NIL(Suspend->:x, ExprId:id, int32:fuel) never fails {
     }
 
     if (n.kind == ExprKind.ExprIdentifierExpr) {
-        drop reg_use(x, n.a, raw pos_of(n.span));
+        drop reg_use(x, n.a);
         pass NIL;
     }
 
@@ -642,15 +635,13 @@ func:suspend_expr = NIL(Suspend->:x, ExprId:id, int32:fuel) never fails {
     // evaluate before the machine can yield, so the point lands after their
     // uses (walked first) and they do not cross it.
     if (n.kind == ExprKind.ExprAwaitExpr) {
-        // A CHANNEL await's operand is RE-READ AFTER the suspension: the
-        // retry loop loads the handle again on every turn, so its receiver
-        // is live across the wait and must be frame-resident. An ordinary
-        // await consumes its arguments INTO the callee's frame before
-        // suspending, so those uses are genuinely before the point. The
-        // difference is which side of `susp_add` the operand is walked on,
-        // and getting it wrong left the handle in an alloca that the resume
-        // path found full of garbage — a stale-handle error with no stale
-        // handle in sight.
+        // A CHANNEL await's operand is walked past the point, so the receiver's
+        // local stays in the frame. That's more than the emission needs today:
+        // `ch.try` loads the handle and the deadline from their own frame slots,
+        // both computed once before it, so nothing re-reads the operand, and the
+        // other order moves only that local's slot. An ordinary await consumes
+        // its arguments INTO the callee's frame before suspending, so those uses
+        // are genuinely before the point.
         ExprId:awop2 = raw expr_operand(n);
         ExprNode:awn2 = raw ast_expr(x.ast, awop2);
         bool:chan_await = false;
@@ -663,9 +654,7 @@ func:suspend_expr = NIL(Suspend->:x, ExprId:id, int32:fuel) never fails {
             }
         }
         if (chan_await) {
-            int64:cat = raw pos_of(n.span);
-            if (x.cursor >= cat) { cat = x.cursor + 1i64; }
-            drop susp_add(x, cat);
+            drop susp_add(x);
             drop suspend_expr(x, awop2, fuel - 1i32);
             pass NIL;
         }
@@ -674,9 +663,7 @@ func:suspend_expr = NIL(Suspend->:x, ExprId:id, int32:fuel) never fails {
         // an async function VALUE is unspellable — the func-type grammar
         // carries no `async` — so the case has no program to arise in.)
         drop suspend_expr(x, awop2, fuel - 1i32);
-        int64:sat = raw pos_end(n.span);
-        if (x.cursor >= sat) { sat = x.cursor + 1i64; }
-        drop susp_add(x, sat);
+        drop susp_add(x);
         pass NIL;
     }
 
@@ -780,9 +767,7 @@ func:suspend_expr = NIL(Suspend->:x, ExprId:id, int32:fuel) never fails {
             bool:is_park = raw string_eq(sbn, "suspend_io");
             if (raw string_eq(sbn, "suspend_until")) { is_park = true; }
             if (is_park) {
-                int64:pat = raw pos_end(n.span);
-                if (x.cursor >= pat) { pat = x.cursor + 1i64; }
-                drop susp_add(x, pat);
+                drop susp_add(x);
             }
         }
         pass NIL;

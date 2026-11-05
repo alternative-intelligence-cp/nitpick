@@ -1,0 +1,93 @@
+// expect-exit: 0
+// An arm that gives on every road reads what every road did (DEF-526): assigned, tested or sealed on each, or before the pick; nested value picks; a road that also leaves by `pass`.
+mod:give_leaves_its_arm_ok;
+error:E9;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+struct:SP = { string:s; int64->:p; };
+struct:SN = { string:s; int64:n; };
+func:eatp = int64(move SP:v) never fails { pass 0i64; };
+func:eatn = int64(move SN:v) never fails { pass 0i64; };
+func:eatw = int64(move wild int8->:w) never fails { dalloc(w); pass 0i64; };
+enum:E = { A(string); Z; };
+
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E9; };
+struct:Box = { string:s; int64:n; };
+enum:Os = { V(string); W(string); Z; };
+macro:mv = (S) { (raw eats(move(S))) == 1i64; };
+macro:gv = (N) { if (N == 1i64) { give 3i64; } };
+macro:gv_bare = () { give 3i64; };
+macro:gv_after = (N, X) { if (N == 1i64) { X = 7i64; give 3i64; } };
+func:n_defer_in_a_block_that_ends_before_the_give = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { { defer { x = 7i64; } } give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };
+func:n_give_value_assigns = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { give (pick (n) { (*) { x = 7i64; give 1i64; } }); }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };
+func:n_value_pick_of_a_pick_arm_by_a_macro = int64() never fails { int64:n = 1i64; int64:q = pick (n) { (1i64) { #gv(n); give 7i64; }, (*) { give 2i64; } }; n = q; pass 7i64; };
+func:n_nested_in_the_selector = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (pick (n) { (1i64) { if (n == 1i64) { give 1i64; } give 2i64; }, (*) { give 2i64; } }) { (1i64) { x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };
+func:n_loop_in_an_arm_with_a_pick_in_it = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { x = 7i64; for (int64:i in 0i64...2i64) { int64:t = pick (i) { (0i64) { give 1i64; }, (*) { give 2i64; } }; if (t == 2i64) { give 3i64; } } give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };
+func:n_inner_every_road_assigns = int64() never fails { int64:x; int64:n = 1i64; int64:p = pick (n) { (1i64) { int64:q = pick (n) { (1i64) { x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; give q; }, (*) { x = 7i64; give 2i64; } }; n = p; pass x; };
+func:n_inner_early_outer_assigns_after = int64() never fails { int64:x; int64:n = 1i64; int64:p = pick (n) { (1i64) { int64:q = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } give 1i64; }, (*) { give 2i64; } }; x = 7i64; give q; }, (*) { x = 7i64; give 2i64; } }; n = p; pass x; };
+func:n_inner_early_in_a_road_that_assigned = int64() never fails { int64:x; int64:n = 1i64; int64:p = pick (n) { (1i64) { x = 7i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } give 1i64; }, (*) { give 2i64; } }; if (q == 3i64) { give 3i64; } give q; }, (*) { x = 7i64; give 2i64; } }; n = p; pass x; };
+func:n_t6_road_assigns_too = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { x = 7i64; give 3i64; } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };
+func:n_if_else_both_give = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { x = 7i64; give 1i64; } else { x = 7i64; give 3i64; } }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };
+func:n_assigned_before_the_road = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { x = 7i64; if (n == 1i64) { give 3i64; } give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };
+func:n_assigned_before_the_pick = int64() never fails { int64:x = 7i64; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } give 1i64; }, (*) { give 2i64; } }; n = q; pass x; };
+func:n_assigned_before_a_for_road = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { x = 7i64; for (int64:i in 0i64...1i64) { give 3i64; } give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };
+func:n_macro_road_assigns_too = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { #gv_after(n, x); x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };
+func:n_tested_on_every_road = int64() never fails { Result<int64>:r = bad(); int64:n = 1i64; r = ok(); int64:q = pick (n) { (1i64) { if (n == 1i64) { if (r.is_error) { pass 1i64; } give 3i64; } if (r.is_error) { pass 1i64; } give 1i64; }, (*) { if (r.is_error) { pass 1i64; } give 2i64; } }; n = q; pass r.value; };
+func:n_tested_before_the_pick = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } give 1i64; }, (*) { give 2i64; } }; n = q; pass r.value; };
+func:n_sealed_on_every_road = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { wildx_seal(page); give 3i64; } wildx_seal(page); give 1i64; }, (*) { wildx_seal(page); give 2i64; } }; n = q; discard(wildx_call(page, 5i64)); wildx_free(page); pass 7i64; };
+func:n_sealed_before_the_pick = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8; int64:n = 1i64; wildx_seal(page); int64:q = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } give 1i64; }, (*) { give 2i64; } }; n = q; discard(wildx_call(page, 5i64)); wildx_free(page); pass 7i64; };
+func:n_moved_on_no_road = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } give 1i64; }, (*) { give 2i64; } }; n = q; pass raw rds(s); };
+func:n_moved_on_a_road_reassigned_on_that_road = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { discard(raw eats(move(s))); s = raw mk(); give 3i64; } give 1i64; }, (*) { give 2i64; } }; n = q; pass raw rds(s); };
+func:n_road_leaves_by_pass_too = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 2i64) { pass 1i64; } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };
+func:n_plain_arm_form = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };
+func:n_every_arm_leaves_nothing_gives = int64() never fails { int64:n = 1i64; int64:q = pick (n) { (2i64) { pass 1i64; }, (*) { give 7i64; } }; pass q; };
+func:n_value_pick_of_a_consuming_arm = int64() never fails { int64:x; Os:o = Os.V(raw mk()); int64:q = pick (move(o)) { (Os.V(a)) { x = 7i64; give raw rds(a); }, (*) { x = 7i64; give 2i64; } }; pass x + q - q; };
+func:n_lending_road = int64() never fails { int64:x; Os:o = Os.V(raw mk()); int64:q = pick (o) { (Os.V(a)) { x = 7i64; if ((raw rds(a)) == 7i64) { give 3i64; } give 1i64; }, (*) { x = 7i64; give 2i64; } }; pass x + q - q; };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw n_defer_in_a_block_that_ends_before_the_give()) != 7i64) { exit 1i32; }
+    if ((raw n_give_value_assigns()) != 7i64) { exit 1i32; }
+    if ((raw n_value_pick_of_a_pick_arm_by_a_macro()) != 7i64) { exit 1i32; }
+    if ((raw n_nested_in_the_selector()) != 7i64) { exit 1i32; }
+    if ((raw n_loop_in_an_arm_with_a_pick_in_it()) != 7i64) { exit 1i32; }
+    if ((raw n_inner_every_road_assigns()) != 7i64) { exit 1i32; }
+    if ((raw n_inner_early_outer_assigns_after()) != 7i64) { exit 1i32; }
+    if ((raw n_inner_early_in_a_road_that_assigned()) != 7i64) { exit 1i32; }
+    if ((raw n_t6_road_assigns_too()) != 7i64) { exit 1i32; }
+    if ((raw n_if_else_both_give()) != 7i64) { exit 1i32; }
+    if ((raw n_assigned_before_the_road()) != 7i64) { exit 1i32; }
+    if ((raw n_assigned_before_the_pick()) != 7i64) { exit 1i32; }
+    if ((raw n_assigned_before_a_for_road()) != 7i64) { exit 1i32; }
+    if ((raw n_macro_road_assigns_too()) != 7i64) { exit 1i32; }
+    if ((raw n_tested_on_every_road()) != 7i64) { exit 1i32; }
+    if ((raw n_tested_before_the_pick()) != 7i64) { exit 1i32; }
+    if ((raw n_sealed_on_every_road()) != 7i64) { exit 1i32; }
+    if ((raw n_sealed_before_the_pick()) != 7i64) { exit 1i32; }
+    if ((raw n_moved_on_no_road()) != 7i64) { exit 1i32; }
+    if ((raw n_moved_on_a_road_reassigned_on_that_road()) != 7i64) { exit 1i32; }
+    if ((raw n_road_leaves_by_pass_too()) != 7i64) { exit 1i32; }
+    if ((raw n_plain_arm_form()) != 7i64) { exit 1i32; }
+    if ((raw n_every_arm_leaves_nothing_gives()) != 7i64) { exit 1i32; }
+    if ((raw n_value_pick_of_a_consuming_arm()) != 7i64) { exit 1i32; }
+    if ((raw n_lending_road()) != 7i64) { exit 1i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

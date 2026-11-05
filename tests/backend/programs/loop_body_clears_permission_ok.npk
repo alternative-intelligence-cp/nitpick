@@ -1,0 +1,55 @@
+// expect-exit: 0
+// What a loop body doesn't rewrite stays good after it, and a body that tests for itself keeps what it tested (DEF-522): `n7` reads above the rewrite and leaves on its error, so the read's good on every trip.
+mod:loop_body_clears_permission_ok;
+error:E9;
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E9; };
+func:rewrite = int64(Result<int64>->:p) never fails { <-p = bad(); pass 0i64; };
+macro:rw = (R) { R = bad(); };
+func:n1_body_checks_each_trip_reads_after = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64:k = 0i64; while (k < 1i64) decreases 1i64 - k { r = ok(); if (r.is_error) { pass 1i64; } k = k + 1i64; } pass r.value; };
+func:n2_body_checks_and_reads_inside = int64() never fails { int64:k = 0i64; int64:t = 0i64; while (k < 1i64) decreases 1i64 - k { Result<int64>:q = ok(); if (q.is_error) { pass 1i64; } t = q.value; k = k + 1i64; } pass t; };
+func:n3_body_reads_a_checked_result_it_never_writes = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64:k = 0i64; int64:t = 0i64; while (k < 1i64) decreases 1i64 - k { t = r.value; k = k + 1i64; } pass t; };
+func:n4_when_then_reads_a_checked_result = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64:k = 0i64; int64:t = 0i64; when (k < 1i64) decreases 1i64 - k { k = k + 1i64; } then { t = r.value; } end { t = 1i64; } pass t; };
+func:n5_body_rewrites_and_reseals_page = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; wildx_seal(page); wildx_free(page); for (int64:i in 0i64...1i64) { page = wildx_alloc(64i64) =>! wildx uint8->; wildx_seal(page); wildx_free(page); } pass 7i64; };
+func:n6_total_pick_every_arm_seals = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; int64:n = 1i64; pick (n) { (1i64) { wildx_seal(page); }, (*) { wildx_seal(page); } } wildx_free(page); pass 7i64; };
+func:n7_idiom_read_rewrite_test_and_leave = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64:k = 0i64; int64:t = 0i64; while (k < 2i64) decreases 2i64 - k { t = r.value; r = ok(); if (r.is_error) { pass 1i64; } k = k + 1i64; } pass t; };
+func:n8_idiom_after_the_loop_too = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64:k = 0i64; while (k < 2i64) decreases 2i64 - k { r = ok(); if (r.is_error) { pass 1i64; } k = k + 1i64; } pass r.value; };
+func:n9_test_again_after_the_loop = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; for (int64:i in 0i64...1i64) { r = ok(); } if (r.is_error) { pass 1i64; } pass r.value; };
+func:n10_body_writes_other_result = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; Result<int64>:q = ok(); for (int64:i in 0i64...1i64) { q = bad(); } if (!q.is_error) { pass 1i64; } pass r.value; };
+func:n11_body_assigns_a_local_read_after_with_a_first_value = int64() never fails { int64:x = 7i64; for (int64:i in 0i64...1i64) { x = 7i64; } pass x; };
+func:n12_when_then_end_test_for_themselves = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64:k = 0i64; when (k < 1i64) decreases 1i64 - k { k = k + 1i64; } then { r = ok(); if (r.is_error) { pass 1i64; } } end { r = ok(); if (r.is_error) { pass 1i64; } } if (r.is_error) { pass 1i64; } pass r.value; };
+func:n13_loop_seals_each_trip_page_called_inside = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8; wildx_seal(page); for (int64:i in 0i64...2i64) { discard(wildx_call(page, 5i64)); } wildx_free(page); pass 7i64; };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw n1_body_checks_each_trip_reads_after()) != 7i64) { exit 1i32; }
+    if ((raw n2_body_checks_and_reads_inside()) != 7i64) { exit 1i32; }
+    if ((raw n3_body_reads_a_checked_result_it_never_writes()) != 7i64) { exit 1i32; }
+    if ((raw n4_when_then_reads_a_checked_result()) != 7i64) { exit 1i32; }
+    if ((raw n5_body_rewrites_and_reseals_page()) != 7i64) { exit 1i32; }
+    if ((raw n6_total_pick_every_arm_seals()) != 7i64) { exit 1i32; }
+    if ((raw n7_idiom_read_rewrite_test_and_leave()) != 7i64) { exit 1i32; }
+    if ((raw n8_idiom_after_the_loop_too()) != 7i64) { exit 1i32; }
+    if ((raw n9_test_again_after_the_loop()) != 7i64) { exit 1i32; }
+    if ((raw n10_body_writes_other_result()) != 7i64) { exit 1i32; }
+    if ((raw n11_body_assigns_a_local_read_after_with_a_first_value()) != 7i64) { exit 1i32; }
+    if ((raw n12_when_then_end_test_for_themselves()) != 7i64) { exit 1i32; }
+    if ((raw n13_loop_seals_each_trip_page_called_inside()) != 7i64) { exit 1i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

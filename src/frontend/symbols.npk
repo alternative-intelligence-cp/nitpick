@@ -77,7 +77,10 @@ pub struct:Symbol = {
     int32:next;          // next symbol in the SAME scope, or 0
     // D-266 (1.5.2h): for a `SYM_PAT` symbol, the ExprId index of its pick's
     // SELECTOR, so "is this binding a view" is read off the selector's own
-    // spelling (`sym_is_view`) and no flag can drift from it. 0 elsewhere.
+    // spelling (`sym_is_view`) and no flag can drift from it. DEF-517: for a `for`
+    // binding, a `SYM_DECL`, the ExprId index of its ITERABLE, read by the escape
+    // analysis's `push_source_refs` alone; every pattern reader asks `SYM_PAT` first.
+    // 0 elsewhere.
     int32:link;
 
     // THE SCOPE THIS NAME OPENS, for a symbol that names a NAMESPACE — a nested
@@ -100,6 +103,9 @@ pub func:SCOPE_FUNCTION = int32() never fails { pass 2i32; };
 pub func:SCOPE_BLOCK = int32() never fails    { pass 3i32; };
 
 pub struct:Scope = {
+    // WHERE A MACRO'S BLOCK RUNS (DEF-509): a statement macro's block has the macro's home as its `parent`,
+    // for hygiene, and dies inside the invocation's block all the same. 0 for every other scope.
+    int32:site;
     int32:parent;
     int32:kind;
     int32:first;
@@ -188,7 +194,7 @@ pub func:symtab_init = SymbolTable() never fails {
                           origin: 0i32, flags: 0i32, next: 0i32, inner: 0i32, link: 0i32 };
     drop list_push(@t.syms, none);
 
-    Scope:root = Scope{ parent: 0i32, kind: 0i32, first: 0i32 };
+    Scope:root = Scope{ site: 0i32, parent: 0i32, kind: 0i32, first: 0i32 };
     drop list_push(@t.scopes, root);
 
     pass t;
@@ -207,11 +213,25 @@ func:symtab_id = int32(int64:n) never fails {
 };
 
 pub func:scope_open = int32(SymbolTable->:t, int32:parent, int32:kind) never fails {
-    Scope:s = Scope{ parent: parent, kind: kind, first: 0i32 };
+    Scope:s = Scope{ site: 0i32, parent: parent, kind: kind, first: 0i32 };
     // READ BEFORE THE PUSH -- `list_push` performs the increment.
     int32:id = raw symtab_id(t.scopes.count);
     drop list_push(@t.scopes, s);
     pass id;
+};
+
+pub func:scope_set_site = NIL(SymbolTable->:t, int32:scope, int32:site) never fails {
+    Scope:sc = t.scopes[scope => int64];
+    sc.site = site;
+    t.scopes[scope => int64] = sc;
+    pass NIL;
+};
+
+// THE SCOPE A SCOPE DIES INSIDE: `parent` answers a name's question and this a lifetime's (DEF-509).
+pub func:scope_life_parent = int32(SymbolTable->:t, int32:scope) never fails {
+    Scope:sc = t.scopes[scope => int64];
+    if (sc.site != 0i32) { pass sc.site; }
+    pass sc.parent;
 };
 
 pub func:scope_parent = int32(SymbolTable->:t, int32:scope) never fails {
@@ -339,7 +359,8 @@ pub func:symtab_set_local_ord = NIL(SymbolTable->:t, int32:sym, int32:ord) never
 };
 
 // A PATTERN BINDING'S SELECTOR (D-266, 1.5.2h): written by the resolver as it
-// declares the names of a `pick` arm's pattern; read by `sym_is_view`.
+// declares the names of a `pick` arm's pattern; read by `sym_is_view`. A `for`
+// BINDING'S ITERABLE (DEF-517): written as it declares the binding.
 pub func:symtab_set_link = NIL(SymbolTable->:t, int32:sym, int32:link) never fails {
     if (sym <= 0i32) { pass NIL; }
     if ((sym => int64) >= t.syms.count) { pass NIL; }

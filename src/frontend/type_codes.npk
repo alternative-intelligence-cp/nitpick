@@ -758,5 +758,7 @@ pub func:TYPE_FOR_BINDING_WRITE = string() never fails { pass "NITPICK-TYPE-108"
 pub func:TYPE_NO_LOOP = string() never fails { pass "NITPICK-TYPE-109"; };
 // A BARE `break` WHOSE NEAREST BREAKABLE IS A `pick` ARM (DEF-465, RULED, landing 177d1): an arm ends by itself, and leaving the loop takes `break label;`. `check_leaver`.
 pub func:TYPE_ARM_BREAK = string() never fails { pass "NITPICK-TYPE-110"; };
+// A `fall` GOES TO A LATER ARM OF ITS `pick`, BY SOURCE ORDER (DEF-487, RULED, landing 177d2b): one to the same or an earlier arm is a loop that carries neither `decreases` nor `unbounded`, and D-304 declined a silent hang as the default. The road: a loop around the `pick`.
+pub func:TYPE_FALL_BACK = string() never fails { pass "NITPICK-TYPE-111"; };
 // A TRAIT'S DEFAULT BODY HOLDS NO `wild`, `=>!` OR STORAGE-READING `#` FORM (DEF-490, ruled 2026-11-03 06:21 EST): its `Self` isn't on the page.
 pub func:TYPE_DEFAULT_BODY_WILD = string() never fails { pass "NITPICK-TYPE-112"; };

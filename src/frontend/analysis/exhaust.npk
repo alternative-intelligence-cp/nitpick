@@ -75,7 +75,7 @@ func:exhaust_err = NIL(Exhaust->:x, move string:code, move string:msg, Span:sp) 
 // discarded — which is the shape that lets a guard slip back into a coverage count
 // when somebody adds a case later.
 
-// THESE FOUR TAKE THE AST AND NOT THE CONTEXT, and that is load-bearing rather
+// THESE FIVE TAKE THE AST AND NOT THE CONTEXT, and that is load-bearing rather
 // than tidy. `pick_covers_all` below answers the same coverage question WITHOUT
 // reporting, for definite assignment to consume — and a helper that carried a
 // `DiagList` could report from inside it. Taking only what the question needs makes
@@ -90,6 +90,19 @@ func:arm_is_wildcard = bool(Ast->:ast, StmtNode:arm) never fails {
     if (raw pat_is_none(p)) { pass false; }
     PatNode:pn = raw ast_pat(ast, p);
     pass (pn.kind == PatKind.PatWildcard);
+};
+
+// AN UNGUARDED STRUCT DESTRUCTURE (1.0.9c) CATCHES EVERY VALUE, AS `(*)` DOES: it binds the
+// struct's fields and always matches, and the emitter's chain branches to it unconditionally
+// (`saw_total`, DEF-385). The guard is asked first and the pattern only of an arm without one,
+// as the note above this group says. An absent pattern is the `PatNone` node, which answers false.
+//
+// ONE PREDICATE FOR BOTH READERS (DEF-537). `check_pick` took a destructure as covering the
+// selector and `pick_covers_all` had no struct case, so a struct `pick` was exhaustive to the
+// one and partial to the other: definite assignment kept what held before the pick, and a
+// `Result` its arm rewrote stayed checked, a page it re-made stayed sealed.
+func:arm_is_struct_destructure = bool(Ast->:ast, StmtNode:arm) never fails {
+    pass ((!(raw arm_is_guarded(arm))) && ((raw ast_pat(ast, raw arm_pattern(arm))).kind == PatKind.PatStructDestructure));
 };
 
 // AN `ERR:` ARM, AND ONLY AN UNGUARDED ONE.
@@ -206,13 +219,28 @@ pub func:check_pick = NIL(Exhaust->:x, ExprId:selector, int32:start,
     // fields and always matches, so one covers the selector exactly as `(*)`
     // does. A struct has no listable values and no `==` (D-169), so a
     // destructure (or a wildcard) is the only way a struct `pick` is exhaustive.
+    //
+    // A GUARDED ONE COVERS NOTHING (DEF-545, with DEF-472), as a guarded `(*)`
+    // doesn't: its guard can refuse the value. Any destructure passed here until
+    // landing 177d2b, so a `pick` whose every arm was guarded was exhaustive to this
+    // check and partial to `pick_covers_all` and to the emitter, whose chain ends in
+    // a trap: a value no guard took trapped at run time, and what a guarded arm
+    // un-permitted was lost to definite assignment, as in DEF-537. The question is
+    // `arm_is_struct_destructure`'s now, asked here and there.
+    //
+    // ITS OWN WORDS, under the code of a selector that listing can't cover. The text
+    // below this case says "needs a `(*)` arm", which is true of a struct too, and it
+    // doesn't say why the destructure the author wrote doesn't count.
     if (kind == (raw TY_STRUCT())) {
         for (int32:si in 0i32...count) {
             StmtNode:sarm = raw ast_stmt(x.ast,
                                 raw pick_arm_at(x.ast, start, si));
-            PatNode:spn = raw ast_pat(x.ast, raw arm_pattern(sarm));
-            if (spn.kind == PatKind.PatStructDestructure) { pass NIL; }
+            if (raw arm_is_struct_destructure(x.ast, sarm)) { pass NIL; }
         }
+        drop exhaust_err(x, raw PICK_NEEDS_WILDCARD(),
+            "a struct `pick` is exhaustive only with an arm that has no `where` guard, `(*)` or a destructure: a guard may refuse the value, so a guarded arm covers nothing",
+            at);
+        pass NIL;
     }
 
     if (kind == (raw TY_ENUM())) {
@@ -689,9 +717,11 @@ func:exhaust_window = NIL(Exhaust->:x, int32:start, int32:count, int32:depth) ne
 // `ERR:` arm silently look like a definite-assignment problem.
 pub func:pick_covers_all = bool(Ast->:ast, TypeTable->:types, ExprTypes->:etypes,
                                 ExprId:selector, int32:start, int32:count) never fails {
+    // AN ARM THAT CATCHES EVERY VALUE ALWAYS RUNS when no arm before it took the value: `(*)`,
+    // or an unguarded struct destructure (DEF-537).
     for (int32:i in 0i32...count) {
         StmtNode:arm = raw ast_stmt(ast, raw pick_arm_at(ast, start, i));
-        if (raw arm_is_wildcard(ast, arm)) { pass true; }
+        if ((raw arm_is_wildcard(ast, arm)) || (raw arm_is_struct_destructure(ast, arm))) { pass true; }
     }
 
     int32:ty = raw exprtypes_get(etypes, selector);
@@ -725,8 +755,8 @@ pub func:pick_covers_all = bool(Ast->:ast, TypeTable->:types, ExprTypes->:etypes
         pass false;
     }
 
-    // ANYTHING ELSE CANNOT BE COVERED BY LISTING, so without a wildcard it is not
-    // exhaustive — which is the same answer `check_pick` gives, reached the same
-    // way.
+    // ANYTHING ELSE CANNOT BE COVERED BY LISTING, so without an arm that catches
+    // every value it is not exhaustive — which is the same answer `check_pick`
+    // gives, reached the same way.
     pass false;
 };

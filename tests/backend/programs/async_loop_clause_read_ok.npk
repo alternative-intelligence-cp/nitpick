@@ -1,0 +1,156 @@
+// expect-exit: 0
+// A LOOP'S CLAUSE IS A READ AT EVERY HEAD (DEF-494's face C, RULED 2026-11-03): a local that only an `invariant` or a `decreases` names is read after a park in the body, or in a statement before the loop, or in a `defer`, so the walk keeps it in the frame. Left out of the walk, its slot is a dead resume alloca: a false `InvariantViolated` or `DecreasesViolated`, the failsafe's 84 or 95.
+// Each `c_` takes its value as a parameter, so no optimiser can forward a constant past the park, and returns 7. EACH CASE IS ITS OWN SPAWNED TASK, and that's the test's reach: every resume frame then starts at the executor's depth, where the other tasks' frames and the executor's calls write between activations. Awaited one after another from `main`, a child's frame sits below `main`'s large one, out of their reach, and all 40 read right on the walk with no clause step. A wrong value is `Unreachable`'s 74. A `c_ctl_` reads right with the clause step off, and stays here as the road or the twin of a `c_`. A park in a clause is TYPE-060 (D-221), `await`, `pick` and `suspend_until` alike, so a clause only adds uses.
+mod:async_loop_clause_read_ok;
+error:E9;
+func:stomp = int64(int64:k) never fails { int64[8]:a = [113i64,113i64,113i64,113i64,113i64,113i64,113i64,113i64]; int64:t = 0i64; for (int64:i in 0i64...8i64) { a[i] = 113i64 + k; t = t + a[i]; } pass t; };
+struct:SS = { int64:a; int64:b; };
+impl:SS = { func:get = int64(SS:self) pure never fails { pass self.a; }; func:getp = int64(SS->:self) pure never fails { pass self.a; }; };
+enum:Oi = { V(int64); Z; };
+enum:Os = { V(string); Z; };
+func:same = int64(int64:a) pure never fails { pass a; };
+func:rd = int64(int64->:p) pure never fails { pass <-p; };
+func:hd = int64(fixed int64[]:p) pure never fails { pass 7i64; };
+macro:plus0 = (X) { X + 0i64; };
+async func:c_while_measure = int64(int64:v) { int64:n = v - 5i64; int64:k = 0i64; while (k < 2i64) decreases n - k { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_while_invariant = int64(int64:v) { int64:n = v; int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant n == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_when_measure = int64(int64:v) { int64:n = v - 5i64; int64:k = 0i64; when (k < 2i64) decreases n - k { await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); k = k + 1i64; } then { k = k + 0i64; } end { k = k + 0i64; } pass 7i64; };
+async func:c_when_invariant = int64(int64:v) { int64:n = v; int64:k = 0i64; when (k < 2i64) decreases 2i64 - k invariant n == 7i64 { await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); k = k + 1i64; } then { k = k + 0i64; } end { k = k + 0i64; } pass 7i64; };
+async func:c_for_range_invariant = int64(int64:v) { int64:n = v; for (int64:i in 0i64...2i64) invariant n == 7i64 { await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_for_array_invariant = int64(int64:v) { int64:n = v; int64[2]:q = [1i64, 2i64]; for (int64:e in q) invariant n == 7i64 { await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_loop_invariant = int64(int64:v) { int64:n = v; loop (0i64, 2i64, 1i64) invariant n == 7i64 { await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_till_invariant = int64(int64:v) { int64:n = v; till (2i64, 1i64) invariant n == 7i64 { await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_both_clauses = int64(int64:v) { int64:n = v - 5i64; int64:m = v; int64:k = 0i64; while (k < 2i64) decreases n - k invariant m == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_second_conjunct = int64(int64:v) { int64:n = v; int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant k >= 0i64, n == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_unbounded_invariant = int64(int64:v) { int64:n = v; int64:k = 0i64; while (k < 2i64) unbounded invariant n == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_field = int64(int64:v) { SS:s = SS{ a: v, b: 1i64 }; int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant s.a == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_element = int64(int64:v) { int64[2]:q = [v, v]; int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant q[1i64] == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_optional = int64(int64:v) { int64?:o = v; int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant (o ?? 0i64) == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_through_call = int64(int64:v) { int64:n = v; int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant (raw same(n)) == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_measure_through_call = int64(int64:v) { int64:n = v - 5i64; int64:k = 0i64; while (k < 2i64) decreases (raw same(n)) - k { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_measure_through_macro = int64(int64:v) { int64:n = v - 5i64; int64:k = 0i64; while (k < 2i64) decreases #plus0(n) - k { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_method_receiver = int64(int64:v) { SS:s = SS{ a: v, b: 1i64 }; int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant (raw s.get()) == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_pointer_receiver = int64(int64:v) { SS:s = SS{ a: v, b: 1i64 }; int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant (raw s.getp()) == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_address_in_clause = int64(int64:v) { int64:n = v; int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant (raw rd(@n)) == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_park_before_the_loop = int64(int64:v) { int64:n = v; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant n == 7i64 { k = k + 1i64; } pass 7i64; };
+async func:c_measure_park_before_the_loop = int64(int64:v) { int64:n = v - 5i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); int64:k = 0i64; while (k < 2i64) decreases n - k { k = k + 1i64; } pass 7i64; };
+async func:c_inner_clause_park_in_outer = int64(int64:v) { int64:n = v; int64:j = 0i64; while (j < 2i64) decreases 2i64 - j { j = j + 1i64; int64:k = 0i64; while (k < 1i64) decreases 1i64 - k invariant n == 7i64 { k = k + 1i64; } await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_outer_clause_park_in_inner = int64(int64:v) { int64:n = v; int64:j = 0i64; while (j < 2i64) decreases 2i64 - j invariant n == 7i64 { j = j + 1i64; int64:k = 0i64; while (k < 1i64) decreases 1i64 - k { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } } pass 7i64; };
+async func:c_local_of_the_outer_body = int64(int64:v) { int64:j = 0i64; while (j < 2i64) decreases 2i64 - j { j = j + 1i64; int64:n = v; int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant n == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } } pass 7i64; };
+async func:c_loop_in_a_defer = int64(int64:v) { int64:n = v; defer { int64:k = 0i64; while (k < 1i64) decreases 1i64 - k invariant n == 7i64 { k = k + 1i64; } } await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pass 7i64; };
+async func:c_park_in_a_then = int64(int64:v) { int64:n = v; int64:k = 0i64; when (k < 1i64) decreases 1i64 - k { k = k + 1i64; } then { await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } end { k = k + 0i64; } int64:j = 0i64; while (j < 1i64) decreases 1i64 - j invariant n == 7i64 { j = j + 1i64; } pass 7i64; };
+async func:c_loop_in_a_pick_arm = int64(int64:v) { int32:sel = 1i32; int64:n = v; pick (sel) { (1i32) { int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant n == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } }, (*) { discard(0i32); } } pass 7i64; };
+async func:c_loop_in_a_value_pick = int64(int64:v) { int32:sel = 1i32; int64:n = v; int64:r = pick (sel) { (1i32) { int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant n == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } give 7i64; }, (*) { give 1i64; } }; pass r; };
+async func:c_suspend_until_parks = int64(int64:v) { int64:n = v; int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant n == 7i64 { k = k + 1i64; suspend_until(mono_now() + 2000000i64); int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_ctl_parameter = int64(int64:v) { int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant v == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_ctl_old_of_a_parameter = int64(int64:v) { int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant old(v) == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_ctl_owner_len = int64(int64:v) { string:s = "abcdefg"; int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant s.len == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_ctl_lending_pick_binding = int64(int64:v) { Oi:o = Oi.V(v); int64:r = 0i64; pick (o) { (Oi.V(n)) { int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant n == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } r = 7i64; }, (*) { r = 1i64; } } pass r; };
+async func:c_ctl_consuming_pick_binding = int64(int64:v) { Os:o = Os.V("abcdefg"); int64:r = 0i64; pick (move(o)) { (Os.V(n)) { int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant n.len == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } r = 7i64; }, (*) { r = 1i64; } } pass r; };
+async func:c_ctl_for_binding = int64(int64:v) { int64[2]:q = [v, v]; for (int64:e in q) { int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant e == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } } pass 7i64; };
+async func:c_ctl_range_view = int64(int64:v) { int64[2]:q = [v, v]; int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant (raw hd(q[0i64...2i64])) == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:c_ctl_read_in_the_body_too = int64(int64:v) { int64:n = v; int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant n == 7i64 { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); discard(n); } pass 7i64; };
+async func:c_ctl_prove = int64(int64:v) { int64:n = v; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); prove(n == 7i64); pass 7i64; };
+async func:c_ctl_where_guard = int64(int64:v) { int64:n = v; int32:sel = 1i32; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); pick (sel) { (1i32) where (n == 7i64) { pass 7i64; }, (*) { pass 1i64; } } pass 2i64; };
+async func:d_c_while_measure = NIL() { int64:r = await c_while_measure(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_while_invariant = NIL() { int64:r = await c_while_invariant(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_when_measure = NIL() { int64:r = await c_when_measure(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_when_invariant = NIL() { int64:r = await c_when_invariant(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_for_range_invariant = NIL() { int64:r = await c_for_range_invariant(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_for_array_invariant = NIL() { int64:r = await c_for_array_invariant(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_loop_invariant = NIL() { int64:r = await c_loop_invariant(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_till_invariant = NIL() { int64:r = await c_till_invariant(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_both_clauses = NIL() { int64:r = await c_both_clauses(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_second_conjunct = NIL() { int64:r = await c_second_conjunct(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_unbounded_invariant = NIL() { int64:r = await c_unbounded_invariant(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_field = NIL() { int64:r = await c_field(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_element = NIL() { int64:r = await c_element(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_optional = NIL() { int64:r = await c_optional(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_through_call = NIL() { int64:r = await c_through_call(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_measure_through_call = NIL() { int64:r = await c_measure_through_call(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_measure_through_macro = NIL() { int64:r = await c_measure_through_macro(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_method_receiver = NIL() { int64:r = await c_method_receiver(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_pointer_receiver = NIL() { int64:r = await c_pointer_receiver(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_address_in_clause = NIL() { int64:r = await c_address_in_clause(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_park_before_the_loop = NIL() { int64:r = await c_park_before_the_loop(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_measure_park_before_the_loop = NIL() { int64:r = await c_measure_park_before_the_loop(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_inner_clause_park_in_outer = NIL() { int64:r = await c_inner_clause_park_in_outer(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_outer_clause_park_in_inner = NIL() { int64:r = await c_outer_clause_park_in_inner(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_local_of_the_outer_body = NIL() { int64:r = await c_local_of_the_outer_body(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_loop_in_a_defer = NIL() { int64:r = await c_loop_in_a_defer(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_park_in_a_then = NIL() { int64:r = await c_park_in_a_then(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_loop_in_a_pick_arm = NIL() { int64:r = await c_loop_in_a_pick_arm(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_loop_in_a_value_pick = NIL() { int64:r = await c_loop_in_a_value_pick(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_suspend_until_parks = NIL() { int64:r = await c_suspend_until_parks(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_ctl_parameter = NIL() { int64:r = await c_ctl_parameter(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_ctl_old_of_a_parameter = NIL() { int64:r = await c_ctl_old_of_a_parameter(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_ctl_owner_len = NIL() { int64:r = await c_ctl_owner_len(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_ctl_lending_pick_binding = NIL() { int64:r = await c_ctl_lending_pick_binding(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_ctl_consuming_pick_binding = NIL() { int64:r = await c_ctl_consuming_pick_binding(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_ctl_for_binding = NIL() { int64:r = await c_ctl_for_binding(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_ctl_range_view = NIL() { int64:r = await c_ctl_range_view(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_ctl_read_in_the_body_too = NIL() { int64:r = await c_ctl_read_in_the_body_too(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_ctl_prove = NIL() { int64:r = await c_ctl_prove(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:d_c_ctl_where_guard = NIL() { int64:r = await c_ctl_where_guard(7i64) ?! E9; if (r != 7i64) { #unreachable(); } pass NIL; };
+async func:main = int32(cstring[]:_~argv) {
+    drop d_c_while_measure();
+    drop d_c_while_invariant();
+    drop d_c_when_measure();
+    drop d_c_when_invariant();
+    drop d_c_for_range_invariant();
+    drop d_c_for_array_invariant();
+    drop d_c_loop_invariant();
+    drop d_c_till_invariant();
+    drop d_c_both_clauses();
+    drop d_c_second_conjunct();
+    drop d_c_unbounded_invariant();
+    drop d_c_field();
+    drop d_c_element();
+    drop d_c_optional();
+    drop d_c_through_call();
+    drop d_c_measure_through_call();
+    drop d_c_measure_through_macro();
+    drop d_c_method_receiver();
+    drop d_c_pointer_receiver();
+    drop d_c_address_in_clause();
+    drop d_c_park_before_the_loop();
+    drop d_c_measure_park_before_the_loop();
+    drop d_c_inner_clause_park_in_outer();
+    drop d_c_outer_clause_park_in_inner();
+    drop d_c_local_of_the_outer_body();
+    drop d_c_loop_in_a_defer();
+    drop d_c_park_in_a_then();
+    drop d_c_loop_in_a_pick_arm();
+    drop d_c_loop_in_a_value_pick();
+    drop d_c_suspend_until_parks();
+    drop d_c_ctl_parameter();
+    drop d_c_ctl_old_of_a_parameter();
+    drop d_c_ctl_owner_len();
+    drop d_c_ctl_lending_pick_binding();
+    drop d_c_ctl_consuming_pick_binding();
+    drop d_c_ctl_for_binding();
+    drop d_c_ctl_range_view();
+    drop d_c_ctl_read_in_the_body_too();
+    drop d_c_ctl_prove();
+    drop d_c_ctl_where_guard();
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 90i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (InvariantViolated) { exit 84i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

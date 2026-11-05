@@ -211,6 +211,10 @@ pub struct:Assign = {
     int32:defer_blk;           // the enclosing block's depth while a `defer` body is walked, 0 outside one
     int32:defer_cur;           // that `defer` statement's id
     int32:scope;               // the module scope of the declaration being walked, for `type_drops`
+    AssignState:give_road;     // what stood at the `give`s of the arm being walked, merged (DEF-526)
+    bool:give_seen;            // that arm has had one
+    AssignState:fall_road;     // what stood at the `fall`s of the pick being walked, merged (DEF-437)
+    bool:fall_seen;            // that pick has had one
 };
 
 pub func:assign_init = Assign(Ast->:ast, SymbolTable->:tab,
@@ -246,7 +250,9 @@ pub func:assign_init = Assign(Ast->:ast, SymbolTable->:tab,
                        pat_first: pfirst, pat_next: pnext, pat_count: pc, sym_count: sc,
                        addr_taken: a1 =>! wild bool->, fn_slots: 0i32, collecting: false, addr_deep: false,
                        defer_read: a2 =>! wild int32->, defer_stmt: a3 =>! wild int32->,
-                       defer_now: a4 =>! wild bool->, defer_blk: 0i32, defer_cur: 0i32, scope: 0i32 };
+                       defer_now: a4 =>! wild bool->, defer_blk: 0i32, defer_cur: 0i32, scope: 0i32,
+                       give_road: raw state_new(1i32), give_seen: false,
+                       fall_road: raw state_new(1i32), fall_seen: false };
     pass x;
 };
 
@@ -339,22 +345,25 @@ func:state_merge = NIL(AssignState:dst, AssignState:a, bool:a_exits,
         drop state_overwrite(dst, a);
         pass NIL;
     }
-    // THE FOUR DIRECTIONS, SIDE BY SIDE, because they are not all the same and the
+    // THE DIRECTIONS, SIDE BY SIDE, because they are not all the same and the
     // asymmetry is the thing to get wrong.
     //
-    //   must     INTERSECTS — assigned on one arm and not the other is NOT assigned.
-    //   may      UNIONS     — assigned on either is possibly assigned.
-    //   moved    UNIONS     — moved on one arm and not the other IS moved.
-    //   freed    UNIONS     — likewise.
-    //   checked  INTERSECTS — checked on one arm only is NOT checked.
+    //   must        INTERSECTS — assigned on one arm and not the other is NOT assigned.
+    //   may         UNIONS     — assigned on either is possibly assigned.
+    //   moved       UNIONS     — moved on one arm and not the other IS moved.
+    //   freed       UNIONS     — likewise.
+    //   checked     INTERSECTS — checked on one arm only is NOT checked.
+    //   errchecked  INTERSECTS — likewise.
+    //   sealed_any  UNIONS     — sealed on either may be sealed: no write.
+    //   sealed_firm INTERSECTS — sealed on one arm only is not sealed: no call.
     //
-    // TWO INTERSECT AND THREE UNION, and the split is not arbitrary: `must` and
-    // `checked` are the two that PERMIT something — a read, or a read of a tainted
-    // value — and the other three FORBID something. A permission has to hold on
-    // every path; a prohibition has to fire on any of them. Being wrong towards
-    // `false` refuses correct code for the first pair and lets a defect through for
-    // the second, so a shared helper taking one direction would be right about two
-    // of the five and silently wrong about three.
+    // FOUR INTERSECT AND FOUR UNION, and the split is not arbitrary: the four that
+    // intersect PERMIT something, a read, a read of a tainted value or a call, and
+    // the four that union FORBID something. A permission has to hold on every path;
+    // a prohibition has to fire on any of them. Being wrong towards `false` refuses
+    // correct code for the first four and lets a defect through for the second, so a
+    // shared helper taking one direction would be silently wrong about half of them.
+    // `bootstrap/harness/assign_fields.py` holds every writer of these to this table.
     int64:i = 0i64;
     while (i < (dst.count => int64)) decreases (dst.count => int64) - i {
         dst.must[i] = a.must[i] && b.must[i];
@@ -370,6 +379,15 @@ func:state_merge = NIL(AssignState:dst, AssignState:a, bool:a_exits,
     pass NIL;
 };
 
+// A `defer` BODY'S WRITE OF A `fixed` IS ITS WRITE (DEF-525): the second one is refused
+// where it stands. The rest of what the body did comes at the block's end.
+func:state_carry_may = NIL(AssignState:dst, AssignState:body) never fails {
+    for (int64:i in 0i64...(dst.count => int64)) {
+        dst.may[i] = dst.may[i] || body.may[i];
+    }
+    pass NIL;
+};
+
 // A LOOP BODY MAY RUN ZERO TIMES, so nothing it assigns is assigned after it — but
 // everything it assigns is still POSSIBLY assigned, which is what stops a `fixed`
 // binding being written once per iteration.
@@ -379,12 +397,13 @@ func:state_absorb_may = NIL(AssignState:dst, AssignState:body) never fails {
         dst.may[i] = dst.may[i] || body.may[i];
         // A LOOP BODY THAT MOVES SOMETHING MOVES IT ON THE SECOND ITERATION TOO,
         // so what the body moved or freed survives the loop even though what it
-        // ASSIGNED does not. The three that union survive; the one that intersects
-        // does not.
+        // ASSIGNED does not. Of the eight facts, the four that forbid are carried here
+        // and union (`may`, `moved`, `freed`, `sealed_any`). The four that permit
+        // intersect (`must`, `checked`, `errchecked`, `sealed_firm`), and they're
+        // `state_intersect_must`'s.
         dst.moved[i] = dst.moved[i] || body.moved[i];
         dst.freed[i] = dst.freed[i] || body.freed[i];
-        // sealed UNIONS (a body that seals leaves the page possibly-sealed);
-        // sealed_firm does NOT survive a zero-iteration loop (like must/checked).
+        // sealed UNIONS (a body that seals leaves the page possibly-sealed).
         dst.sealed_any[i] = dst.sealed_any[i] || body.sealed_any[i];
         i = i + 1i64;
     }
@@ -925,6 +944,7 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
     if (s.kind == StmtKind.StmtBlockStmt) {
         drop assign_stmt_window(x, st, raw stmt_list_start(s),
                                 raw stmt_list_count(s), d);
+        drop defer_bodies_land(x, st, raw stmt_list_start(s), raw stmt_list_count(s), d);
         drop defer_reads_end(x, depth);   // the block's `defer`s have run (DEF-405)
         pass NIL;
     }
@@ -1023,9 +1043,13 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
     // on any path that leaves early, which is the same use-before-write the rest of
     // this file exists to refuse.
     //
-    // Its assignments do not survive it, because the code after a `defer` runs
-    // BEFORE the deferred body does.
+    // Its effects don't reach the code after it in this block, which runs BEFORE
+    // the body does. They reach the code after the block (`defer_bodies_land`, DEF-525),
+    // where a silent walk gets them, so one walk of a body is all a silent walk needs:
+    // a nest of n bodies isn't walked 2^n times. `may` alone comes back at once: a body's
+    // write is still the first write of a `fixed`, wherever the next one stands.
     if (s.kind == StmtKind.StmtDeferStmt) {
+        if (x.quiet) { pass NIL; }
         StmtId:body = StmtId{ index: s.a };
         AssignState:dv = raw state_copy(st);
         // IT INHERITS NO `is_error` REFINEMENT (DEF-405 (i), landing 176): the body runs at the block's
@@ -1035,7 +1059,7 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
         // AFTER the walk (`defer_reads_merge`), so the body's own move or free of what it reads
         // (`defer { dalloc(buf); }`) is the idiom, while a move, free or `pass` of a pending binding before
         // the block ends is refused where it stands. A body nested in another `defer` body leaves its reads
-        // for the outer merge (they run at the outer body's exit too). The pre-walk collects nothing.
+        // for the outer merge (they run at the outer body's exit too).
         int32:outer_blk = x.defer_blk;
         int32:outer_cur = x.defer_cur;
         // THE OUTER BODY'S READS BEFORE A NESTED `defer` ARE THE OUTER BODY'S (176b; review A's R2): `defer_now` is set aside
@@ -1046,15 +1070,14 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
         if (ns < 1i64) { ns = 1i64; }
         wild bool->:held = alloc(ns * #size_of<bool>()) =>! wild bool->;
         for (int64:i in 0i64...ns) { held[i] = x.defer_now[i]; x.defer_now[i] = false; }
-        if (!x.collecting) {
-            drop state_clear_refinements(dv);
-            x.defer_blk = depth + 1i32;   // the enclosing block's depth: its statements are walked at `depth`
-            x.defer_cur = id.index;
-        }
+        drop state_clear_refinements(dv);
+        x.defer_blk = depth + 1i32;   // the enclosing block's depth: its statements are walked at `depth`
+        x.defer_cur = id.index;
         drop assign_stmt(x, dv, body, d);
+        drop state_carry_may(st, dv);
         x.defer_blk = outer_blk;
         x.defer_cur = outer_cur;
-        if (!x.collecting) { drop defer_reads_merge(x, depth + 1i32, id.index, outer_blk == 0i32); }
+        drop defer_reads_merge(x, depth + 1i32, id.index, outer_blk == 0i32);
         for (int64:i in 0i64...ns) { if (held[i]) { x.defer_now[i] = true; } }
         dalloc(held);
         pass NIL;
@@ -1062,7 +1085,15 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
 
     if (s.kind == StmtKind.StmtBreakStmt)    { pass NIL; }
     if (s.kind == StmtKind.StmtContinueStmt) { pass NIL; }
-    if (s.kind == StmtKind.StmtFallStmt)     { pass NIL; }
+    // A `fall` LEAVES ITS ARM WHERE IT STANDS TOO (DEF-437), for the body of a later arm (DEF-487), and it owes
+    // `give_road_note`'s note. ONE ROAD FOR THE PICK, whichever label each `fall` names: a labelled arm takes
+    // them all, which refuses more and never less. Its storage is made at the pick's first `fall`, so a pick
+    // with none allocates nothing for it.
+    if (s.kind == StmtKind.StmtFallStmt) {
+        if (x.fall_seen) { drop state_merge(x.fall_road, x.fall_road, false, st, false); }
+        else             { x.fall_road = raw state_copy(st); x.fall_seen = true; }
+        pass NIL;
+    }
 
     // `pass`, `fail`, `return`, `exit` and the six that carry one expression. Each
     // READS its operand, which is the whole of what this analysis owes them.
@@ -1075,6 +1106,12 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
     if (s.kind == StmtKind.StmtReturnStmt) { drop assign_expr(x, st, raw stmt_operand(s), d); pass NIL; }
     if (s.kind == StmtKind.StmtExitStmt)   { drop assign_expr(x, st, raw stmt_expr(s), d); pass NIL; }
 
+    if (s.kind == StmtKind.StmtGiveStmt) {
+        drop assign_expr(x, st, raw stmt_expr(s), d);
+        drop give_road_note(x, st);
+        pass NIL;
+    }
+
     if (raw stmt_carries_expr(s.kind)) {
         drop assign_expr(x, st, raw stmt_expr(s), d);
         pass NIL;
@@ -1083,6 +1120,36 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
     drop assign_err(x, raw ASSIGN_INTERNAL(),
         "this statement kind has no entry in the definite-assignment walk, so its contents cannot be checked",
         s.span);
+    pass NIL;
+};
+
+// WHAT A `defer` DID, THE CODE AFTER ITS BLOCK INHERITS (DEF-525). The bodies run here,
+// last first, and the walk goes on from what they left. Silent: each body reported where
+// it's written, one level below the block's statements, as it's walked there. Only a road
+// that falls through the block's end reads this state: an arm
+// that leaves by `pass` or `fail` has nothing after it, and one that leaves by `break` or
+// `continue` is dropped at `state_merge` (DEF-429).
+func:defer_bodies_land = NIL(Assign->:x, AssignState:st, int32:start,
+                             int32:count, int32:depth) never fails {
+    bool:saved = x.quiet;
+    x.quiet = true;
+    int32:i = count;
+    while (i > 0i32) decreases i {
+        i = i - 1i32;
+        StmtNode:n = raw ast_stmt(x.ast, StmtId{ index: raw ast_id_at(x.ast, start, i) });
+        if (n.kind == StmtKind.StmtDeferStmt) {
+            drop assign_stmt(x, st, StmtId{ index: n.a }, depth - 1i32);
+            // A road that gave ran this body too, and a dead `pass` after its `give` would
+            // drop what the body did at the `if`'s merge (DEF-526): what it forbids and what
+            // it un-permits, a rewrite or a re-seal, alike (DEF-535). Only once this arm has
+            // given: before that the road is the enclosing arm's, which didn't run this body.
+            if (x.give_seen) { drop state_merge(x.give_road, x.give_road, false, st, false); }
+            // And a road that fell (DEF-437): a `fall` runs the `defer`s of the blocks it leaves, so what
+            // a body forbids it forbids in the target, and what a body rewrote isn't checked there.
+            if (x.fall_seen) { drop state_merge(x.fall_road, x.fall_road, false, st, false); }
+        }
+    }
+    x.quiet = saved;
     pass NIL;
 };
 
@@ -1131,6 +1198,12 @@ func:assign_stmt_window = NIL(Assign->:x, AssignState:st, int32:start,
 // quadratic in the depth, and a nest at the parser's bound compiles in a blink.
 // The real pass still walks every loop it meets twice -- its own silent pre-pass
 // and then the reporting walk -- so no report moves.
+//
+// A BODY'S REWRITE CLEARS WHAT A PERMISSION SAID (DEF-522). What's still true after
+// the loop is what was true before it and is still true at the end of a trip. It
+// has to hold at the top of a later trip too, so the reporting walk starts from
+// that: a read of `.value` above the `r = ...` that a trip ends on sees the next
+// trip's `r`.
 func:assign_loop_body = NIL(Assign->:x, AssignState:st, StmtId:body, int32:depth) never fails {
     if (raw stmt_is_none(body)) { pass NIL; }
 
@@ -1138,6 +1211,7 @@ func:assign_loop_body = NIL(Assign->:x, AssignState:st, StmtId:body, int32:depth
         AssignState:once = raw state_copy(st);
         drop assign_stmt(x, once, body, depth);
         drop state_absorb_may(st, once);
+        drop state_intersect_must(st, once);
         pass NIL;
     }
 
@@ -1146,11 +1220,13 @@ func:assign_loop_body = NIL(Assign->:x, AssignState:st, StmtId:body, int32:depth
     AssignState:pre = raw state_copy(st);
     drop assign_stmt(x, pre, body, depth);
     drop state_absorb_may(st, pre);
+    drop state_intersect_must(st, pre);
     x.quiet = saved;
 
     AssignState:inner = raw state_copy(st);
     drop assign_stmt(x, inner, body, depth);
     drop state_absorb_may(st, inner);
+    drop state_intersect_must(st, inner);
     pass NIL;
 };
 
@@ -1188,7 +1264,7 @@ func:state_intersect_must = NIL(AssignState:dst, AssignState:other) never fails 
 // arms (`state_intersect_must` intersects `checked` too), and both are sound to
 // take for one reason: every path out of a TOTAL pick ran some arm that falls
 // through, so a fact true at the end of every such arm is true after the pick.
-// `moved`/`freed` are may-facts and are absorbed arm by arm (`state_absorb_may`).
+// The four that forbid are absorbed arm by arm (`state_absorb_may`).
 func:state_take_definite = NIL(AssignState:dst, AssignState:src) never fails {
     int64:i = 0i64;
     while (i < (dst.count => int64)) decreases (dst.count => int64) - i {
@@ -1198,6 +1274,9 @@ func:state_take_definite = NIL(AssignState:dst, AssignState:src) never fails {
         // error road and one not, so this intersects to false in practice -- taken
         // for symmetry, so no site treats the two permissions differently.
         dst.errchecked[i] = src.errchecked[i];
+        // `sealed_firm` is the fourth (DEF-520): a page an arm re-assigned stayed firmly
+        // sealed after the pick, and the call went to writable bytes unsealed.
+        dst.sealed_firm[i] = src.sealed_firm[i];
         i = i + 1i64;
     }
     pass NIL;
@@ -1223,6 +1302,21 @@ func:pick_is_total = bool(Assign->:x, ExprId:selector, int32:start, int32:count)
     pass (raw pick_covers_all(x.ast, x.types, x.etypes, selector, start, count));
 };
 
+// A `give` LEAVES ITS ARM WHERE IT STANDS (DEF-526), so the pick's end inherits the state at each
+// one, never what the arm did after it. `stmt_exits` doesn't list `give`: an `if`'s merge keeps what
+// a road that gave forbids, and the walk reads on in the same state. The note is the merge a road's
+// leaving owes: forbids as the union, permits as the intersection.
+func:give_road_note = NIL(Assign->:x, AssignState:st) never fails {
+    if (x.give_seen) {
+        drop state_absorb_may(x.give_road, st);
+        drop state_intersect_must(x.give_road, st);
+    } else {
+        x.give_road = raw state_copy(st);
+        x.give_seen = true;
+    }
+    pass NIL;
+};
+
 func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) never fails {
     drop assign_expr(x, st, raw pick_selector(s), depth);
     ErrTest:et = raw err_test_of(x, raw pick_selector(s));
@@ -1243,6 +1337,11 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) neve
     // once, after the loop.
     AssignState:pristine = raw state_copy(st);
     AssignState:mayacc = raw state_copy(st);
+    AssignState:outer_road = x.give_road;   // a pick in an arm has its own `give`s
+    bool:outer_seen = x.give_seen;
+    AssignState:outer_fall = x.fall_road;   // and its own `fall`s (DEF-437)
+    bool:outer_fell = x.fall_seen;
+    x.fall_seen = false;
 
     for (int32:i in 0i32...count) {
         StmtId:aid = raw pick_arm_at(x.ast, start, i);
@@ -1289,10 +1388,35 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) neve
             }
         }
         drop assign_expr(x, one, raw arm_guard(arm), depth);
+        // A GUARD RUNS WHETHER ITS ARM IS TAKEN OR NOT (DEF-520), and a failed one
+        // hands the selector to the later arms, so they start from what it did.
+        // Arms are exclusive, F-6 says; a guard's evaluation isn't. A write in it
+        // clears `checked`, `errchecked` and `sealed_firm` as much as a move sets
+        // `moved`, so this is a merge and not only the union: the later arm may
+        // or may not have seen the write. Its body's effects stay in `one`.
+        if (!(raw expr_is_none(raw arm_guard(arm)))) {
+            drop state_absorb_may(pristine, one);
+            drop state_intersect_must(pristine, one);
+        }
+        // A `fall` ENTERS ITS TARGET'S BODY (DEF-437, DEF-536), past the pattern, the refinement and the guard, so
+        // a labelled arm's body starts from its own road merged with what every `fall` before it carried: what
+        // one forbids is forbidden here, and what the arm's test or guard granted holds only if they hold it
+        // too. Forward only (DEF-487): the arms are walked in order, so every `fall` into this one has been
+        // noted. After the guard's merge into `pristine`: a later arm's start is no `fall`'s road.
+        if (x.fall_seen && ((raw arm_label(arm)) != 0i32)) { drop state_merge(one, one, false, x.fall_road, false); }
+        x.give_seen = false;
         drop assign_stmt(x, one, raw arm_body(arm), depth);
         drop state_absorb_may(mayacc, one);
 
-        if (!(raw stmt_exits(x, raw arm_body(arm), raw ASSIGN_DEPTH()))) {
+        bool:falls = !(raw stmt_exits(x, raw arm_body(arm), raw ASSIGN_DEPTH()));
+        // A value arm gives on every road that doesn't leave the function, so its `give`s are
+        // what reaches the pick's end, and its own end is dead code or a road that left.
+        if (x.give_seen) {
+            drop state_absorb_may(mayacc, x.give_road);
+            one = x.give_road;
+            falls = true;
+        }
+        if (falls) {
             if (seen) {
                 drop state_intersect_must(acc, one);
             } else {
@@ -1313,6 +1437,10 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) neve
     // The gathered may/moved/freed land ONCE (F-6): after every exclusive arm
     // ran from the same pristine state.
     drop state_absorb_may(st, mayacc);
+    x.give_road = outer_road;
+    x.give_seen = outer_seen;
+    x.fall_road = outer_fall;
+    x.fall_seen = outer_fell;
     pass NIL;
 };
 
@@ -1694,6 +1822,8 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) never
         pass NIL;
     }
 
+    if (raw assign_lazy_operands(x, st, n, d)) { pass NIL; }
+
     int32:shape = raw expr_shape(n.kind);
     if (shape == (raw EXPR_SHAPE_LEAF())) { pass NIL; }
     if (shape == (raw EXPR_SHAPE_LIST())) {
@@ -1725,6 +1855,31 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) never
     if (shape == (raw EXPR_SHAPE_TWO())) { pass NIL; }
     drop assign_expr(x, st, raw expr_third(n), d);
     pass NIL;
+};
+
+// AN OPERAND THAT MAY NOT RUN (DEF-527): the emitter branches around the right of `&&`, `||`, `??`
+// and `?|` and around each arm of `is`, and every other kind evaluates its operands before it branches
+// (`?!`'s and `??!`'s code, an `await`'s and a lock's deadline). A value `pick` puts statements in an
+// operand, and a `$$m` claim or a seal stands in one bare, so what it established holds only if it ran.
+func:expr_rhs_may_not_run = bool(ExprNode:n) never fails {
+    if (n.kind == ExprKind.ExprNullCoalesceExpr) { pass true; }
+    if (n.kind == ExprKind.ExprSafeUnwrapExpr)   { pass true; }
+    if (n.kind != ExprKind.ExprBinaryExpr)       { pass false; }
+    TokenKind:op = raw expr_op(n);
+    pass ((op == TokenKind.OpAndAnd) || (op == TokenKind.OpOrOr));
+};
+
+// Merged as an `if`'s arms are, so a binding assigned on both arms of an `is` is assigned. The other
+// arm walks on `st`, and an operand with no twin merges with the state before it, `st` too.
+func:assign_lazy_operands = bool(Assign->:x, AssignState:st, ExprNode:n, int32:d) never fails {
+    bool:two_arms = (n.kind == ExprKind.ExprTernaryExpr);
+    if ((!two_arms) && (!(raw expr_rhs_may_not_run(n)))) { pass false; }
+    drop assign_expr(x, st, raw expr_lhs(n), d);
+    AssignState:a = raw state_copy(st);
+    drop assign_expr(x, a, raw expr_rhs(n), d);
+    if (two_arms) { drop assign_expr(x, st, raw expr_third(n), d); }
+    drop state_merge(st, a, false, st, false);
+    pass true;
 };
 
 func:assign_expr_window = NIL(Assign->:x, AssignState:st, int32:start,

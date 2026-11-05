@@ -1,0 +1,42 @@
+// expect-error: NITPICK-TYPE-111
+// expect-error-at: 21:131
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 21:131
+// expect-error: NITPICK-TYPE-111
+// expect-error-at: 22:150
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 22:150
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 23:109
+mod:fall_back_in_defer;
+error:E9;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:fs = int64(string:v, int64:k) never fails { pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:eat = int64(move string:v) never fails { pass 0i64; };
+
+// A `fall` IN A `defer` BODY IS CHECKED FOR ITS DIRECTION TOO (DEF-487's rule, landing 177d2b). `fall_targets_in` walks a `defer` body
+// with the arm's own position, so a `fall` there to the same or an earlier arm is TYPE-111 beside the `defer`'s own TYPE-040 (a `defer`
+// body leaves for nowhere). The program is refused either way; the second code is what says the walk carried the arm's position into
+// the body, and with that position dropped every other verdict in the suite stayed. `forward_in_a_defer` is TYPE-040 alone.
+func:back_in_a_defer = int64() never fails { int64:k = 2i64; int64:t = 0i64; pick (k) { a: (1i64) { t = 1i64; }, (2i64) { defer { fall a; } t = 7i64; }, (*) { t = 5i64; } } pass t; };   // sites NITPICK-TYPE-040 NITPICK-TYPE-111
+func:back_in_a_defer_if = int64() never fails { int64:k = 2i64; int64:t = 0i64; pick (k) { a: (1i64) { t = 1i64; }, (2i64) { defer { if (k > 1i64) { fall a; } } t = 7i64; }, (*) { t = 5i64; } } pass t; };   // sites NITPICK-TYPE-040 NITPICK-TYPE-111
+func:forward_in_a_defer = int64() never fails { int64:k = 1i64; int64:t = 0i64; pick (k) { (1i64) { defer { fall b; } t = 1i64; }, b: (2i64) { t = 7i64; }, (*) { t = 5i64; } } pass t; };   // site NITPICK-TYPE-040
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,206 @@
+// expect-exit: 0
+mod:struct_pick_guarded_not_exhaustive_ok;
+// A STRUCT `pick` WITH ONE ARM THAT HAS NO GUARD IS EXHAUSTIVE, WHEREVER THE ARM STANDS (DEF-545, landing 177d2b): the
+// controls of `tests/analysis/rejection/struct_pick_guarded_not_exhaustive.npk`, one module per cell, every `f` returning 7
+// on three roads (the guard false, true, true), each accepted before and after with the same text emitted. A guarded arm
+// and then a plain destructure, over a field (`yc1`); and then `(*)`, over a call's result (`yc2`); two guards and then the
+// plain one, in a value pick (`yc3`); the plain one first (`yc4`); in a plain arm of another struct pick (`yc5`); the
+// guarded arm rewriting a `Result` that's tested again after the pick (`yc6`); in a method (`yc7`). It can't fail without
+// the rule; a check that takes only a guarded destructure as covering refuses it.
+error:Bad;
+mod:yc1_guard_then_plain_over_a_field = {
+error:E5_yc1_guard_then_plain_over_a_field;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_yc1_guard_then_plain_over_a_field; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_yc1_guard_then_plain_over_a_field) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:fr = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; Wp:w = Wp{ inner: p1, k: 1i64 }; pick (w.inner) { (P1 { a1, b1 }) where (a1 > 1i64) { out = out + 0i64; }, (P1 { a1, b1 }) { out = out + 0i64; } } out = r.value; pass out;
+};
+pub func:f = int64() never fails { if ((raw fr(1i64)) != 7i64) { pass 1i64; } if ((raw fr(2i64)) != 7i64) { pass 2i64; } pass (raw fr(3i64)); };
+};
+mod:yc2_guard_then_wild_over_a_call = {
+error:E5_yc2_guard_then_wild_over_a_call;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_yc2_guard_then_wild_over_a_call; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_yc2_guard_then_wild_over_a_call) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:fr = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; pick (raw mkp(n)) { (P1 { a1, b1 }) where (a1 > 1i64) { out = out + 0i64; }, (*) { out = out + 0i64; } } out = r.value; pass out;
+};
+pub func:f = int64() never fails { if ((raw fr(1i64)) != 7i64) { pass 1i64; } if ((raw fr(2i64)) != 7i64) { pass 2i64; } pass (raw fr(3i64)); };
+};
+mod:yc3_two_guards_then_plain_value_pick = {
+error:E5_yc3_two_guards_then_plain_value_pick;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_yc3_two_guards_then_plain_value_pick; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_yc3_two_guards_then_plain_value_pick) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:fr = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; int64:q = pick (p1) { (P1 { a1, b1 }) where (a1 > 2i64) { give 1i64; }, (P1 { a1, b1 }) where (a1 > 1i64) { give 2i64; }, (P1 { a1, b1 }) { give 3i64; } }; out = out + q - q; out = r.value; pass out;
+};
+pub func:f = int64() never fails { if ((raw fr(1i64)) != 7i64) { pass 1i64; } if ((raw fr(2i64)) != 7i64) { pass 2i64; } pass (raw fr(3i64)); };
+};
+mod:yc4_plain_first_then_guard = {
+error:E5_yc4_plain_first_then_guard;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_yc4_plain_first_then_guard; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_yc4_plain_first_then_guard) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:fr = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; pick (p1) { (P1 { a1, b1 }) { out = out + 0i64; }, (P1 { a1, b1 }) where (a1 > 1i64) { out = out + 0i64; } } out = r.value; pass out;
+};
+pub func:f = int64() never fails { if ((raw fr(1i64)) != 7i64) { pass 1i64; } if ((raw fr(2i64)) != 7i64) { pass 2i64; } pass (raw fr(3i64)); };
+};
+mod:yc5_inner_guard_then_plain_in_a_plain_arm = {
+error:E5_yc5_inner_guard_then_plain_in_a_plain_arm;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_yc5_inner_guard_then_plain_in_a_plain_arm; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_yc5_inner_guard_then_plain_in_a_plain_arm) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:fr = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; pick (p1) { (P1 { a1, b1 }) { P2:p2 = P2{ a2: a1, b2: b1 }; pick (p2) { (P2 { a2, b2 }) where (a2 > 1i64) { out = out + 0i64; }, (P2 { a2, b2 }) { out = out + 0i64; } } } } out = r.value; pass out;
+};
+pub func:f = int64() never fails { if ((raw fr(1i64)) != 7i64) { pass 1i64; } if ((raw fr(2i64)) != 7i64) { pass 2i64; } pass (raw fr(3i64)); };
+};
+mod:yc6_guard_rewrites_then_plain_and_tested_again = {
+error:E5_yc6_guard_rewrites_then_plain_and_tested_again;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_yc6_guard_rewrites_then_plain_and_tested_again; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_yc6_guard_rewrites_then_plain_and_tested_again) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:fr = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; pick (p1) { (P1 { a1, b1 }) where (a1 > 1i64) { r = bad(); }, (P1 { a1, b1 }) { out = out + 0i64; } } if (r.is_error) { pass out; } out = r.value + 0i64; pass out;
+};
+pub func:f = int64() never fails { if ((raw fr(1i64)) != 7i64) { pass 1i64; } if ((raw fr(2i64)) != 7i64) { pass 2i64; } pass (raw fr(3i64)); };
+};
+mod:yc7_method_guard_then_plain = {
+error:E5_yc7_method_guard_then_plain;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_yc7_method_guard_then_plain; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_yc7_method_guard_then_plain) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+impl:P1 = {
+    func:gm = int64(Self->:self) never fails {
+        int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; }
+        pick (<-self) { (P1 { a1, b1 }) where (a1 > 1i64) { out = out + 0i64; }, (P1 { a1, b1 }) { out = out + 0i64; } }
+        out = r.value; pass out;
+    };
+};
+func:fr = int64(int64:n) never fails {
+P1:p1 = P1{ a1: n, b1: 2i64 }; pass (raw p1.gm());
+};
+pub func:f = int64() never fails { if ((raw fr(1i64)) != 7i64) { pass 1i64; } if ((raw fr(2i64)) != 7i64) { pass 2i64; } pass (raw fr(3i64)); };
+};
+async func:main = int32(cstring[]:_~argv) {
+    if ((raw yc1_guard_then_plain_over_a_field.f()) != 7i64) { exit 100i32; }
+    if ((raw yc2_guard_then_wild_over_a_call.f()) != 7i64) { exit 101i32; }
+    if ((raw yc3_two_guards_then_plain_value_pick.f()) != 7i64) { exit 102i32; }
+    if ((raw yc4_plain_first_then_guard.f()) != 7i64) { exit 103i32; }
+    if ((raw yc5_inner_guard_then_plain_in_a_plain_arm.f()) != 7i64) { exit 104i32; }
+    if ((raw yc6_guard_rewrites_then_plain_and_tested_again.f()) != 7i64) { exit 105i32; }
+    if ((raw yc7_method_guard_then_plain.f()) != 7i64) { exit 106i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (Bad)              { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (struct_pick_guarded_not_exhaustive_ok.E5_yc1_guard_then_plain_over_a_field) { exit 75i32; },
+        (struct_pick_guarded_not_exhaustive_ok.E5_yc2_guard_then_wild_over_a_call) { exit 75i32; },
+        (struct_pick_guarded_not_exhaustive_ok.E5_yc3_two_guards_then_plain_value_pick) { exit 75i32; },
+        (struct_pick_guarded_not_exhaustive_ok.E5_yc4_plain_first_then_guard) { exit 75i32; },
+        (struct_pick_guarded_not_exhaustive_ok.E5_yc5_inner_guard_then_plain_in_a_plain_arm) { exit 75i32; },
+        (struct_pick_guarded_not_exhaustive_ok.E5_yc6_guard_rewrites_then_plain_and_tested_again) { exit 75i32; },
+        (struct_pick_guarded_not_exhaustive_ok.E5_yc7_method_guard_then_plain) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

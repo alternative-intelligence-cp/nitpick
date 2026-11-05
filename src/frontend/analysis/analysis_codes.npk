@@ -64,15 +64,16 @@ pub func:BORROW_TOO_DEEP = string() never fails  { pass "NITPICK-BORROW-007"; };
 // analysis and there is nothing they can change in their source to fix it.
 pub func:BORROW_INTERNAL = string() never fails  { pass "NITPICK-BORROW-008"; };
 
-// ALSO NOT A RULE VIOLATION — a borrow reaches a binding this analysis does not
-// track, so it is refused rather than followed.
+// ALSO NOT A RULE VIOLATION — a borrow of this frame reaches a binding with no
+// verdict of its own, so it is refused rather than followed.
 //
-// Three kinds of binding exist and only one of them is tracked. A local
+// Three kinds of binding exist and only one of them has a verdict. A local
 // (`SYM_STMT`) records whether it holds a borrow; a `pick` pattern binding
 // (`SYM_PAT`) and a `for` loop binding do not, because both take their value from
 // a destructuring the analysis would have to model to say anything about. Silently
-// answering "not a borrow" for those two would be an escape hatch, so a borrow
-// reaching either is refused with a sentence that says which.
+// answering "not a borrow" for those two would be an escape hatch, so a borrow of
+// this frame reaching either is refused with a sentence that says which. A binding's
+// REFS are followed (DEF-517, `push_source_refs` in escape.npk).
 pub func:BORROW_UNTRACKED = string() never fails  { pass "NITPICK-BORROW-009"; };
 
 // THE MARKING FIXPOINT DID NOT SETTLE within its round bound, so the analysis does
@@ -242,10 +243,10 @@ pub func:PICK_NOT_EXHAUSTIVE = string() never fails  { pass "NITPICK-PICK-001"; 
 // "not exhaustive" would send the author to add the wildcard they already wrote.
 pub func:PICK_NO_ERR_ARM = string() never fails      { pass "NITPICK-PICK-002"; };
 
-// A selector whose values cannot be listed — an integer, a float, a `char`. ITS
-// OWN CODE because the fix differs: an enum with a variant missing needs an arm,
-// and this needs a wildcard. A reader told "not exhaustive" about an `int32` goes
-// looking for the variant they forgot.
+// A selector whose values cannot be listed — an integer, a float, a `char`, or a struct
+// whose every arm has a guard (DEF-545). ITS OWN CODE because the fix differs: an enum
+// with a variant missing needs an arm, and this needs an arm that takes every value. A
+// reader told "not exhaustive" about an `int32` goes looking for the variant they forgot.
 pub func:PICK_NEEDS_WILDCARD = string() never fails  { pass "NITPICK-PICK-003"; };
 
 // An arm nothing can reach: after an unguarded `(*)`, or naming a variant an

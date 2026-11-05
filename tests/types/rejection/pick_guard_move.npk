@@ -13,8 +13,8 @@
 // the heap's integrity trap, in safe code). Three sites: the binding itself,
 // an owning field of a struct payload, and a value-`pick` inside the guard
 // whose arm moves it. The controls stand: a guard that READS the binding, and
-// a guard that moves an OUTER local (a conditional move the move analysis
-// tracks; nothing reads it after).
+// a guard that moves an OUTER local, which nothing reads after (a later arm's
+// read of one is MOVE-001 since DEF-520: `analysis/rejection/pick_guard_later_arm.npk`).
 mod:pick_guard_move;
 error:E9;
 

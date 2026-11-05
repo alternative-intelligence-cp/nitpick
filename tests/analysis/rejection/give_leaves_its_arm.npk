@@ -1,0 +1,220 @@
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 146:190
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 147:211
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 148:197
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 149:218
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 150:211
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 151:246
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 152:244
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 153:201
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 154:195
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 155:284
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 156:274
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 157:273
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 158:171
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 159:204
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 160:210
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 161:198
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 162:200
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 163:249
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 164:264
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 165:230
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 166:263
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 167:255
+// expect-error: NITPICK-WILDX-002
+// expect-error-at: 168:352
+// expect-error: NITPICK-WILDX-002
+// expect-error-at: 169:367
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 170:200
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 171:239
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 172:237
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 173:257
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 174:177
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 174:254
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 175:239
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 176:210
+// expect-error: NITPICK-ASSIGN-002
+// expect-error-at: 177:160
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 178:277
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 179:289
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 180:229
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 181:200
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 182:193
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 183:246
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 184:217
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 185:103
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 185:199
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 186:255
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 187:296
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 188:218
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 189:275
+// expect-error: NITPICK-WILDX-002
+// expect-error-at: 190:375
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 191:241
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 192:287
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 193:257
+// expect-error: NITPICK-ASSIGN-002
+// expect-error-at: 194:265
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 195:282
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 196:289
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 197:279
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 198:240
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 199:267
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 200:285
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 201:356
+mod:give_leaves_its_arm;
+error:E9;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+struct:SP = { string:s; int64->:p; };
+struct:SN = { string:s; int64:n; };
+func:eatp = int64(move SP:v) never fails { pass 0i64; };
+func:eatn = int64(move SN:v) never fails { pass 0i64; };
+func:eatw = int64(move wild int8->:w) never fails { dalloc(w); pass 0i64; };
+enum:E = { A(string); Z; };
+
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E9; };
+struct:Box = { string:s; int64:n; };
+enum:Os = { V(string); W(string); Z; };
+macro:mv = (S) { (raw eats(move(S))) == 1i64; };
+macro:gv = (N) { if (N == 1i64) { give 3i64; } };
+macro:gv_bare = () { give 3i64; };
+macro:gv_after = (N, X) { if (N == 1i64) { X = 7i64; give 3i64; } };
+
+// A `give` LEAVES ITS ARM WHERE IT STANDS (DEF-526, HIGH by kind, landing 177d2b). The merge read the arm's end only, so what the arm
+// assigned, tested or sealed after an early `give` held for the road that gave too: a slot read unassigned, `.value` of a failed
+// `Result` a zero with no sign (60/60), a page called unsealed (97/97). `stmt_exits` still doesn't list `give`: an `if`'s merge keeps
+// what that road forbids. A cell per place a `give` leaves from: `if`, `else`, a block, each loop kind, a `when`'s three parts, a macro.
+// `w_inner_*` nest value picks, both orders. `w_moved_by_*`: what a road forbids, past a dead `pass`'s merge, a body's too.
+// Prices, each refusing a program that runs right, all as before this row: `s_arm_end_moved_road_leaves` and `s_read_in_the_arm_after_a_road_moved`
+// (DEF-524's and `stmt_exits`' price), `s_fixed_written_on_two_roads`. New here: `defer_effects_after_block.npk`'s `s_widen_give_*`.
+// NOT HERE, open: a `fall` road (DEF-437's `t8`).
+func:w_x_if = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_x_else = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 2i64) { n = 1i64; } else { give 3i64; } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_x_block = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { { if (n == 1i64) { give 3i64; } } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_x_if_in_an_if = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { if (n == 1i64) { give 3i64; } } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_x_for_range = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { for (int64:i in 0i64...1i64) { give 3i64; } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_x_for_array = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { int64[2]:a = [1i64, 2i64]; for (int64:e in a) { n = e - e + 1i64; give 3i64; } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_x_while = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { int64:k = 0i64; while (k < 1i64) decreases 1i64 - k { k = k + 1i64; give 3i64; } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_x_loop = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { loop (0i64, 1i64, 1i64) { give 3i64; } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_x_till = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { till (1i64, 1i64) { give 3i64; } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_x_when_body = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { int64:k = 0i64; when (k < 1i64) decreases 1i64 - k { k = k + 1i64; give 3i64; } then { k = 2i64; } end { k = 3i64; } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_x_when_then = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { int64:k = 0i64; when (k < 1i64) decreases 1i64 - k { k = k + 1i64; } then { give 3i64; } end { k = 3i64; } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_x_when_end = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { int64:k = 1i64; when (k < 1i64) decreases 1i64 - k { k = k + 1i64; } then { k = 2i64; } end { give 3i64; } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_x_macro = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { #gv(n); x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_x_arm_ends_in_pass = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } x = 7i64; pass 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_x_arm_ends_in_trap = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } x = 7i64; !!! Unreachable; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_x_second_arm = int64() never fails { int64:x; int64:n = 2i64; int64:q = pick (n) { (1i64) { x = 7i64; give 1i64; }, (*) { if (n == 2i64) { give 3i64; } x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_x_read_in_the_same_statement = int64() never fails { int64:x; int64:n = 1i64; pass (pick (n) { (1i64) { if (n == 1i64) { give 3i64; } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }) + x; };   // site NITPICK-ASSIGN-001
+func:w_r_if = int64() never fails { Result<int64>:r = bad(); int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } if (r.is_error) { pass 1i64; } give 1i64; }, (*) { if (r.is_error) { pass 1i64; } give 2i64; } }; n = q; pass r.value; };   // site NITPICK-TAINT-001
+func:w_r_for = int64() never fails { Result<int64>:r = bad(); int64:n = 1i64; int64:q = pick (n) { (1i64) { for (int64:i in 0i64...1i64) { give 3i64; } if (r.is_error) { pass 1i64; } give 1i64; }, (*) { if (r.is_error) { pass 1i64; } give 2i64; } }; n = q; pass r.value; };   // site NITPICK-TAINT-001
+func:w_r_macro = int64() never fails { Result<int64>:r = bad(); int64:n = 1i64; int64:q = pick (n) { (1i64) { #gv(n); if (r.is_error) { pass 1i64; } give 1i64; }, (*) { if (r.is_error) { pass 1i64; } give 2i64; } }; n = q; pass r.value; };   // site NITPICK-TAINT-001
+func:w_r_arm_ends_in_pass = int64() never fails { Result<int64>:r = bad(); int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } if (r.is_error) { pass 1i64; } pass 1i64; }, (*) { if (r.is_error) { pass 1i64; } give 2i64; } }; n = q; pass r.value; };   // site NITPICK-TAINT-001
+func:w_err_if = int64() never fails { Result<int64>:r = ok(); int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } if (!r.is_error) { pass 1i64; } give 1i64; }, (*) { if (!r.is_error) { pass 1i64; } give 2i64; } }; n = q; discard(r.err); pass 7i64; };   // site NITPICK-TAINT-001
+func:w_page_if = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } wildx_seal(page); give 1i64; }, (*) { wildx_seal(page); give 2i64; } }; n = q; discard(wildx_call(page, 5i64)); wildx_free(page); pass 7i64; };   // site NITPICK-WILDX-002
+func:w_page_for = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8; int64:n = 1i64; int64:q = pick (n) { (1i64) { for (int64:i in 0i64...1i64) { give 3i64; } wildx_seal(page); give 1i64; }, (*) { wildx_seal(page); give 2i64; } }; n = q; discard(wildx_call(page, 5i64)); wildx_free(page); pass 7i64; };   // site NITPICK-WILDX-002
+func:w_fixed_if = int64() never fails { fixed int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_moved_on_the_early_road = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { discard(raw eats(move(s))); give 3i64; }  give 1i64; }, (*) {  give 2i64; } }; n = q; pass raw rds(s); };   // site NITPICK-MOVE-001
+func:w_moved_on_the_late_road = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } discard(raw eats(move(s))); give 1i64; }, (*) {  give 2i64; } }; n = q; pass raw rds(s); };   // site NITPICK-MOVE-001
+func:w_moved_on_a_road_then_dead_pass = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { discard(raw eats(move(s))); give 3i64; pass 1i64; }  give 1i64; }, (*) {  give 2i64; } }; n = q; pass raw rds(s); };   // site NITPICK-MOVE-001
+func:w_moved_on_a_road_in_a_for = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:q = pick (n) { (1i64) { for (int64:i in 0i64...1i64) { discard(raw eats(move(s))); give 3i64; }  give 1i64; }, (*) {  give 2i64; } }; n = q; pass raw rds(s); };   // sites NITPICK-MOVE-001 NITPICK-MOVE-001
+func:s_arm_end_moved_road_leaves = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:q = pick (n) { (2i64) { if (n == 1i64) { give 3i64; } discard(raw eats(move(s))); pass 1i64; }, (*) { give 2i64; } }; n = q; pass raw rds(s); };   // site NITPICK-MOVE-001
+func:s_read_in_the_arm_after_a_road_moved = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:q = pick (n) { (2i64) { if (n == 1i64) { discard(raw eats(move(s))); give 3i64; } int64:t = raw rds(s); give t; }, (*) { give 7i64; } }; n = q; pass q; };   // site NITPICK-MOVE-001
+func:s_fixed_written_on_two_roads = int64() never fails { fixed int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { x = 7i64; give 3i64; } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-002
+func:w_moved_by_a_body_then_give_then_dead_pass = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { defer { discard(raw eats(move(s))); } give 3i64; pass 1i64; }  give 1i64; }, (*) {  give 2i64; } }; n = q; pass raw rds(s); };   // site NITPICK-MOVE-001
+func:w_moved_by_a_body_in_an_inner_block_then_dead_pass = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { { defer { discard(raw eats(move(s))); } give 3i64; } pass 1i64; }  give 1i64; }, (*) {  give 2i64; } }; n = q; pass raw rds(s); };   // site NITPICK-MOVE-001
+func:w_moved_by_a_value_on_the_road = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { give raw eats(move(s)); }  give 1i64; }, (*) {  give 2i64; } }; n = q; pass raw rds(s); };   // site NITPICK-MOVE-001
+func:w_moved_by_a_value_at_the_arm_end = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:q = pick (n) { (1i64) { give raw eats(move(s)); }, (*) { give 2i64; } }; n = q; pass raw rds(s); };   // site NITPICK-MOVE-001
+func:w_dead_code_after_the_last_give_assigns = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { give 1i64; x = 7i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_dead_code_after_a_give_in_an_if = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { give 1i64; x = 7i64; } else { x = 7i64; } x = 7i64; give 3i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_give_before_the_defer = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } defer { x = 7i64; } give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:k_arm_can_fall_off_its_end = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } x = 7i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // sites NITPICK-FLOW-001 NITPICK-ASSIGN-001
+func:w_moved_by_a_value_on_the_road_then_dead_pass = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { give raw eats(move(s)); pass 1i64; }  give 1i64; }, (*) {  give 2i64; } }; n = q; pass raw rds(s); };   // site NITPICK-MOVE-001
+func:w_moved_on_the_second_road_then_dead_pass = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 2i64) { give 3i64; } if (n == 1i64) { discard(raw eats(move(s))); give 3i64; pass 1i64; }  give 1i64; }, (*) {  give 2i64; } }; n = q; pass raw rds(s); };   // site NITPICK-MOVE-001
+func:w_first_road_assigned_the_last_not = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 2i64) { x = 7i64; give 3i64; } give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_first_road_tested_the_last_not = int64() never fails { Result<int64>:r = bad(); int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 2i64) { if (r.is_error) { pass 1i64; } give 3i64; } give 1i64; }, (*) { if (r.is_error) { pass 1i64; } give 2i64; } }; n = q; pass r.value; };   // site NITPICK-TAINT-001
+func:w_first_road_sealed_the_last_not = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 2i64) { wildx_seal(page); give 3i64; } give 1i64; }, (*) { wildx_seal(page); give 2i64; } }; n = q; discard(wildx_call(page, 5i64)); wildx_free(page); pass 7i64; };   // site NITPICK-WILDX-002
+func:w_statement_pick_after_a_road_tested = int64() never fails { Result<int64>:r = bad(); int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 2i64) { if (r.is_error) { pass 1i64; } give 3i64; } pick (n) { (*) { n = 1i64; } } int64:v = r.value; give v; }, (*) { give 2i64; } }; n = q; pass q; };   // site NITPICK-TAINT-001
+func:w_inner_pick_leaves_the_outer_flag_unset = int64() never fails { int64:x; int64:n = 1i64; int64:p = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } int64:q = pick (n) { (2i64) { pass 7i64; }, (*) { give 2i64; } }; x = 7i64; pass q; }, (*) { x = 7i64; give 2i64; } }; n = p; pass x; };   // site NITPICK-ASSIGN-001
+func:w_inner_pick_after_the_first_road = int64() never fails { int64:x; int64:n = 1i64; int64:p = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } int64:q = pick (n) { (*) { x = 7i64; give 2i64; } }; give q; }, (*) { x = 7i64; give 2i64; } }; n = p; pass x; };   // site NITPICK-ASSIGN-001
+func:w_fixed_written_on_the_second_road_then_dead_pass = int64() never fails { fixed int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 2i64) { give 3i64; } if (n == 1i64) { x = 7i64; give 3i64; pass 1i64; } give 1i64; }, (*) { give 2i64; } }; n = q; x = 9i64; pass x - 2i64; };   // site NITPICK-ASSIGN-002
+func:w_inner_road_leaves_early = int64() never fails { int64:x; int64:n = 1i64; int64:p = pick (n) { (1i64) { int64:q = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; give q; }, (*) { x = 7i64; give 2i64; } }; n = p; pass x; };   // site NITPICK-ASSIGN-001
+func:w_outer_road_early_inner_assigns = int64() never fails { int64:x; int64:n = 1i64; int64:p = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } int64:q = pick (n) { (1i64) { x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; give q; }, (*) { x = 7i64; give 2i64; } }; n = p; pass x; };   // site NITPICK-ASSIGN-001
+func:w_inner_assigns_outer_road_after = int64() never fails { int64:x; int64:n = 1i64; int64:p = pick (n) { (1i64) { int64:q = pick (n) { (1i64) { give 1i64; }, (*) { give 2i64; } }; if (q == 1i64) { give 3i64; } x = 7i64; give q; }, (*) { x = 7i64; give 2i64; } }; n = p; pass x; };   // site NITPICK-ASSIGN-001
+func:w_inner_one_arm_assigns = int64() never fails { int64:x; int64:n = 1i64; int64:p = pick (n) { (1i64) { int64:q = pick (n) { (1i64) { x = 7i64; give 1i64; }, (*) { give 2i64; } }; give q; }, (*) { x = 7i64; give 2i64; } }; n = p; pass x; };   // site NITPICK-ASSIGN-001
+func:w_inner_in_an_operand = int64() never fails { int64:x; int64:n = 1i64; int64:p = pick (n) { (1i64) { give (pick (n) { (1i64) { if (n == 1i64) { give 3i64; } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }); }, (*) { x = 7i64; give 2i64; } }; n = p; pass x; };   // site NITPICK-ASSIGN-001
+func:w_inner_in_a_guard = int64() never fails { int64:x; int64:n = 1i64; int64:p = pick (n) { (1i64) where ((pick (n) { (1i64) { if (n == 1i64) { give 1i64; } x = 7i64; give 2i64; }, (*) { x = 7i64; give 2i64; } }) == 1i64) { give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = p; pass x; };   // site NITPICK-ASSIGN-001
+func:w_inner_result_road = int64() never fails { Result<int64>:r = bad(); int64:n = 1i64; int64:p = pick (n) { (1i64) { int64:q = pick (n) { (1i64) { if (n == 1i64) { give 3i64; } if (r.is_error) { pass 1i64; } give 1i64; }, (*) { if (r.is_error) { pass 1i64; } give 2i64; } }; give q; }, (*) { if (r.is_error) { pass 1i64; } give 2i64; } }; n = p; pass r.value; };   // site NITPICK-TAINT-001
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

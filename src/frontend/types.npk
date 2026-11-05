@@ -249,10 +249,10 @@ pub struct:TypeTable = {
     // an arena -- what other tasks may hold a BORROW of across a spawn (D-180),
     // which a channel may therefore not move out from under them.
     List<int32>:hasshared;
-    // Guard containment (D-339, landing 127): a `Guard<T>` or an `RGuard<T>`
-    // inside -- the typed HOLD a value can carry out of a function, which is
-    // what tells the lock walk a binding of a call's result may raise the held
-    // level (DEF-181's over-restriction: a helper's `int32` holds nothing).
+    // No field for guard containment (D-339): since landing 177d2 it is a walk
+    // at the question, `type_contains_guard` -- the typed HOLD a value can carry
+    // out of a function, which tells the lock walk a binding of a call's result
+    // may raise the held level (DEF-181: a helper's `int32` holds nothing).
 
     // THE UNIT TABLE (D-196, 1.3.3): each `unit:` declaration's evaluated
     // exponent vector, keyed by DECL index — visibility stays the symbol

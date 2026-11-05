@@ -1,0 +1,77 @@
+// expect-exit: 0
+// A guard's effects reach the later arms, and nothing else does (DEF-520): a body's move stays in its arm (F-6), a guard's read moves nothing, a later arm may write the value again, and a `Result` checked before the `pick` stays checked while no guard writes it. Each returns 7.
+mod:pick_guard_later_arm_ok;
+error:E9;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+struct:SP = { string:s; int64->:p; };
+struct:SN = { string:s; int64:n; };
+func:eatp = int64(move SP:v) never fails { pass 0i64; };
+func:eatn = int64(move SN:v) never fails { pass 0i64; };
+func:eatw = int64(move wild int8->:w) never fails { dalloc(w); pass 0i64; };
+enum:E = { A(string); Z; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E9; };
+struct:Box = { string:s; int64:n; };
+enum:Os = { V(string); W(string); Z; };
+macro:mv = (S) { (raw eats(move(S))) == 1i64; };
+func:n1_no_read_after = int64() never fails { string:s = raw mk(); int64:n = 1i64; pick (n) { (1i64) where ((raw eats(move(s))) == 1i64) { pass 5i64; }, (*) { pass 7i64; } } pass 2i64; };
+func:n2_reassign_in_later_arm = int64() never fails { string:s = raw mk(); int64:n = 1i64; pick (n) { (1i64) where ((raw eats(move(s))) == 1i64) { pass 5i64; }, (*) { s = raw mk(); pass raw rds(s); } } pass 2i64; };
+func:n3_body_moves_sibling_reads = int64() never fails { string:s = raw mk(); int64:n = 1i64; pick (n) { (2i64) { pass raw eats(move(s)); }, (*) { pass raw rds(s); } } pass 2i64; };
+func:n4_guard_reads_later_reads = int64() never fails { string:s = raw mk(); int64:n = 1i64; pick (n) { (1i64) where ((raw rds(s)) == 1i64) { pass 5i64; }, (*) { pass raw rds(s); } } pass 2i64; };
+func:n5_fixed_per_case_with_guard = int64() never fails { int64:n = 1i64; fixed int64:x; pick (n) { (1i64) where (n == 9i64) { x = 1i64; }, (1i64) { x = 7i64; }, (*) { x = 3i64; } } pass x; };
+func:n6_guard_moves_a_copy = int64() never fails { string:s = raw mk(); string:t = string_concat(s, ""); int64:n = 1i64; pick (n) { (1i64) where ((raw eats(move(t))) == 1i64) { pass 5i64; }, (*) { pass raw rds(s); } } pass 2i64; };
+func:n7_guard_moves_reassigned_after = int64() never fails { string:s = raw mk(); int64:n = 1i64; pick (n) { (1i64) where ((raw eats(move(s))) == 1i64) { pass 5i64; }, (*) { } } s = raw mk(); pass raw rds(s); };
+func:n8_earlier_arm_reads = int64() never fails { string:s = raw mk(); int64:n = 2i64; pick (n) { (1i64) { pass raw rds(s); }, (2i64) where ((raw eats(move(s))) == 1i64) { pass 5i64; }, (*) { pass 7i64; } } pass 2i64; };
+func:p1r_hoisted = int64() never fails { string:s = raw mk(); int64:n = 2i64; pick (n) { (1i64) { int64:r = raw eats(move(s)); pass 5i64 + r; }, (2i64) { pass raw rds(s); }, (*) { pass 3i64; } } pass 2i64; };
+func:n_sealed_on_every_arm = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8; int64:n = 1i64; pick (n) { (1i64) { wildx_seal(page); }, (*) { wildx_seal(page); } } discard(wildx_call(page, 5i64)); wildx_free(page); pass 7i64; };
+func:n_sealed_on_every_arm_that_falls_through = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8; int64:n = 1i64; pick (n) { (1i64) { wildx_seal(page); }, (*) { pass 7i64; } } discard(wildx_call(page, 5i64)); wildx_free(page); pass 7i64; };
+func:n_arm_rewrites_and_seals_again = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; wildx_seal(page); int64:n = 1i64; wildx_free(page); page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8; wildx_seal(page); pick (n) { (2i64) { wildx_free(page); page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8; wildx_seal(page); }, (*) { } } discard(wildx_call(page, 5i64)); wildx_free(page); pass 7i64; };
+func:n_sealed_before_no_arm_touches_it = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8; wildx_seal(page); int64:n = 1i64; pick (n) { (1i64) { n = 2i64; }, (*) { } } discard(wildx_call(page, 5i64)); wildx_free(page); pass 7i64; };
+func:n_checked_before_guard_reads_stays_checked = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; pick (n) { (1i64) where (r.value == 9i64) { pass 5i64; }, (*) { pass r.value; } } pass 2i64; };
+func:n_guard_assigns_later_arm_assigns_then_reads = int64() never fails { int64:n = 1i64; int64:y = 0i64; pick (n) { (1i64) where (pick (n) { (1i64) { y = 1i64; give false; }, (*) { give false; } }) { pass 5i64; }, (*) { y = 7i64; pass y; } } pass 2i64; };
+func:n_guard_writes_plain_later_arm_reads = int64() never fails { int64:n = 1i64; int64:y = 7i64; pick (n) { (1i64) where (pick (n) { (1i64) { y = 7i64; give false; }, (*) { give false; } }) { pass 5i64; }, (*) { pass y; } } pass 2i64; };
+func:n_no_guard_arm_moves_later_reads = int64() never fails { string:s = raw mk(); int64:n = 1i64; pick (n) { (2i64) { pass raw eats(move(s)); }, (*) { pass raw rds(s); } } pass 2i64; };
+func:n_guarded_arm_body_moves_later_arm_reads = int64() never fails { string:s = raw mk(); int64:n = 1i64; pick (n) { (2i64) where (n == 2i64) { pass raw eats(move(s)); }, (*) { pass raw rds(s); } } pass 2i64; };
+func:n_guard_moves_the_arm_after_reassigns = int64() never fails { string:s = raw mk(); int64:n = 1i64; pick (n) { (1i64) where ((raw eats(move(s))) == 1i64) { pass 5i64; }, (2i64) { pass 3i64; }, (*) { s = raw mk(); pass raw rds(s); } } pass 2i64; };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw n1_no_read_after()) != 7i64) { exit 1i32; }
+    if ((raw n2_reassign_in_later_arm()) != 7i64) { exit 1i32; }
+    if ((raw n3_body_moves_sibling_reads()) != 7i64) { exit 1i32; }
+    if ((raw n4_guard_reads_later_reads()) != 7i64) { exit 1i32; }
+    if ((raw n5_fixed_per_case_with_guard()) != 7i64) { exit 1i32; }
+    if ((raw n6_guard_moves_a_copy()) != 7i64) { exit 1i32; }
+    if ((raw n7_guard_moves_reassigned_after()) != 7i64) { exit 1i32; }
+    if ((raw n8_earlier_arm_reads()) != 7i64) { exit 1i32; }
+    if ((raw p1r_hoisted()) != 7i64) { exit 1i32; }
+    if ((raw n_sealed_on_every_arm()) != 7i64) { exit 1i32; }
+    if ((raw n_sealed_on_every_arm_that_falls_through()) != 7i64) { exit 1i32; }
+    if ((raw n_arm_rewrites_and_seals_again()) != 7i64) { exit 1i32; }
+    if ((raw n_sealed_before_no_arm_touches_it()) != 7i64) { exit 1i32; }
+    if ((raw n_checked_before_guard_reads_stays_checked()) != 7i64) { exit 1i32; }
+    if ((raw n_guard_assigns_later_arm_assigns_then_reads()) != 7i64) { exit 1i32; }
+    if ((raw n_guard_writes_plain_later_arm_reads()) != 7i64) { exit 1i32; }
+    if ((raw n_no_guard_arm_moves_later_reads()) != 7i64) { exit 1i32; }
+    if ((raw n_guarded_arm_body_moves_later_arm_reads()) != 7i64) { exit 1i32; }
+    if ((raw n_guard_moves_the_arm_after_reassigns()) != 7i64) { exit 1i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

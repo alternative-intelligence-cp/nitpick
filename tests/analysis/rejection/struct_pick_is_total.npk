@@ -1,0 +1,916 @@
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 118:132
+// expect-error: NITPICK-WILDX-002
+// expect-error-at: 132:280
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 151:151
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 169:133
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 192:165
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 211:142
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 230:186
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 251:194
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 272:164
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 293:173
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 314:188
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 335:199
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 356:185
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 377:195
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 398:149
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 419:194
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 440:156
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 465:124
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 484:199
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 505:159
+// expect-error: NITPICK-WILDX-002
+// expect-error-at: 529:324
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 550:234
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 571:220
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 592:152
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 616:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 642:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 668:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 690:12
+// expect-error: NITPICK-WILDX-002
+// expect-error-at: 711:22
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 734:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 759:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 781:228
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 802:195
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 816:110
+// expect-error: NITPICK-PICK-003
+// expect-error-at: 825:5
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 826:10
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 847:165
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 868:183
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 889:165
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 913:12
+mod:struct_pick_is_total;
+// A `pick` WITH AN UNGUARDED STRUCT DESTRUCTURE IS TOTAL, AND WHAT ITS ARMS DID COUNTS AFTER IT (DEF-537, HIGH, pre-existing,
+// landing 177d2b). `(P { a, b })` binds the struct's fields and always matches. The exhaustiveness check took it as covering
+// the selector, and the question definite assignment asks of the same pick (`pick_covers_all`) had no struct case, so the
+// pick was partial there: the state before it was kept, and what an arm UN-PERMITS was lost. A `Result` the arm rewrote stayed
+// checked and a page it re-made stayed sealed. One module per cell, each accepted before this landing and each wrong when
+// run (60: `.value` of an error; 74: `.err` of a value; 97: an unsealed page called).
+//   The three facts an arm can take back: `checked` (most cells), `errchecked` (`c4`, `h14`), `sealed_firm` (`c2`, `h15`,
+//   `e1pc`).
+//   The selector's forms: a local, a field (`h1`), a call's result (`h2`), a pointee (`h3`), a consumed owner (`c6`, `x11c`),
+//   a generic struct (`x12c`).
+//   The pick's places: a statement, a declaration's value (`c3`, `e1vc`), a call's argument (`h6`), an `if`'s and a
+//   `while`'s condition (`h10`, `h18`), a loop's body (`c5`), an `if`'s block (`c7`), a `defer`'s body (`h4`), a value arm
+//   (`h5`), another struct pick's arm (`h19`), a generic function (`h11`), a macro's expansion (`h12`), an `async`
+//   function (`h13`).
+//   The arms: one, two (`h7`: the second can't run), a guarded one before the plain one (`x2`: the rewrite is the plain
+//   arm's), one binding of two (`h20`), and an empty binding list (`h8`). `(P1 { })` is taken by the parser today, binds
+//   nothing and always matches, and no reference shows it; it's judged here as the emitter runs it. RULED 2026-11-04
+//   (management_21, 21:53 EST): DEF-554's fix refuses the form, and `h8` changes there.
+//   REFUSED BEFORE THIS LANDING TOO, pinned here: a `(*)` arm that rewrites (`c1k`, `x3`); a guard-only pick that assigns
+//   (`g2`: no arm may run, and the pick itself is PICK-003 since DEF-545); one arm of two that doesn't assign (`k6`); a
+//   `(*)` after a plain destructure that rewrites (`k7`: the `(*)` made the pick total already); an arm after a plain
+//   destructure that doesn't assign (`k8`).
+//   THE PRICES, right on every road and refused: an arm AFTER an unguarded destructure can't run, and its end is merged
+//   as any arm's is, so what it rewrites is counted (`x2w`, `pw1`, `pw2`). After `(*)` such an arm is PICK-004; after a
+//   destructure nothing says it's dead. The remedy is to delete the arm.
+mod:c1_struct_pick_rewrites_result = {
+error:E5_c1_struct_pick_rewrites_result;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_c1_struct_pick_rewrites_result; };
+struct:P = { int64:a; int64:b; };
+enum:Os = { V(string); W(string); Z; };
+
+func:f = int64() never fails {
+Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } P:p = P{ a: 1i64, b: 2i64 }; pick (p) { (P { a, b }) { r = bad(); } } pass r.value;
+};
+};
+mod:c2_struct_pick_reseals_page = {
+error:E5_c2_struct_pick_reseals_page;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_c2_struct_pick_reseals_page; };
+struct:P = { int64:a; int64:b; };
+enum:Os = { V(string); W(string); Z; };
+
+func:f = int64() never fails {
+wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8; wildx_seal(page); P:p = P{ a: 1i64, b: 2i64 }; pick (p) { (P { a, b }) { page = wildx_alloc(64i64) =>! wildx uint8->; } } discard(wildx_call(page, 5i64)); pass 7i64;
+};
+};
+mod:c3_struct_value_pick = {
+error:E5_c3_struct_value_pick;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_c3_struct_value_pick; };
+struct:P = { int64:a; int64:b; };
+enum:Os = { V(string); W(string); Z; };
+struct:H = { string:s; int64:k; };
+struct:Q = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+
+func:f = int64() never fails {
+Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } P:p = P{ a: 1i64, b: 2i64 }; int64:v = pick (p) { (P { a, b }) { r = bad(); give a; } }; pass r.value + v - v;
+};
+};
+mod:c4_struct_pick_errchecked = {
+error:E5_c4_struct_pick_errchecked;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_c4_struct_pick_errchecked; };
+struct:P = { int64:a; int64:b; };
+enum:Os = { V(string); W(string); Z; };
+struct:H = { string:s; int64:k; };
+struct:Q = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:g = int64() {
+Result<int64>:r = bad(); if (!r.is_error) { pass 1i64; } P:p = P{ a: 1i64, b: 2i64 }; pick (p) { (P { a, b }) { r = ok(); } } fail r.err;
+};
+
+func:f = int64() never fails {
+Result<int64>:q = g(); if (q.is_error) { pass 7i64; } pass q.value;
+};
+};
+mod:c5_struct_pick_in_loop_body = {
+error:E5_c5_struct_pick_in_loop_body;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_c5_struct_pick_in_loop_body; };
+struct:P = { int64:a; int64:b; };
+enum:Os = { V(string); W(string); Z; };
+struct:H = { string:s; int64:k; };
+struct:Q = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+
+func:f = int64() never fails {
+Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } P:p = P{ a: 1i64, b: 2i64 }; for (int64:i in 0i64...1i64) { pick (p) { (P { a, b }) { r = bad(); } } } pass r.value;
+};
+};
+mod:c6_struct_consuming_pick = {
+error:E5_c6_struct_consuming_pick;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_c6_struct_consuming_pick; };
+struct:P = { int64:a; int64:b; };
+enum:Os = { V(string); W(string); Z; };
+struct:H = { string:s; int64:k; };
+struct:Q = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+
+func:f = int64() never fails {
+Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } Q:p = Q{ s: raw mk(), k: 2i64 }; pick (move(p)) { (Q { s, k }) { r = bad(); } } pass r.value;
+};
+};
+mod:c7_struct_pick_nested_in_if = {
+error:E5_c7_struct_pick_nested_in_if;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_c7_struct_pick_nested_in_if; };
+struct:P = { int64:a; int64:b; };
+enum:Os = { V(string); W(string); Z; };
+struct:H = { string:s; int64:k; };
+struct:Q = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+
+func:f = int64() never fails {
+Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } P:p = P{ a: 1i64, b: 2i64 }; int64:n = 1i64; if (n == 1i64) { pick (p) { (P { a, b }) { if (a == 1i64) { r = bad(); } } } } pass r.value;
+};
+};
+mod:h1_selector_is_a_field = {
+error:E5_h1_selector_is_a_field;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_h1_selector_is_a_field; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_h1_selector_is_a_field) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:f = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; Wp:w = Wp{ inner: p1, k: 1i64 }; pick (w.inner) { (P1 { a1, b1 }) { r = bad(); } } out = r.value; pass out;
+};
+};
+mod:h2_selector_is_a_call = {
+error:E5_h2_selector_is_a_call;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_h2_selector_is_a_call; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_h2_selector_is_a_call) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:f = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; pick (raw mkp(n)) { (P1 { a1, b1 }) { r = bad(); } } out = r.value; pass out;
+};
+};
+mod:h3_selector_through_a_pointer = {
+error:E5_h3_selector_through_a_pointer;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_h3_selector_through_a_pointer; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_h3_selector_through_a_pointer) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:f = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; P1->:pp = @p1; pick (<-pp) { (P1 { a1, b1 }) { r = bad(); } } out = r.value; pass out;
+};
+};
+mod:h4_pick_in_a_defer_body = {
+error:E5_h4_pick_in_a_defer_body;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_h4_pick_in_a_defer_body; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_h4_pick_in_a_defer_body) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:f = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; { defer { pick (p1) { (P1 { a1, b1 }) { r = bad(); } } } out = out + 0i64; } out = r.value; pass out;
+};
+};
+mod:h5_pick_in_a_value_arm = {
+error:E5_h5_pick_in_a_value_arm;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_h5_pick_in_a_value_arm; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_h5_pick_in_a_value_arm) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:f = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; int64:q = pick (n) { (*) { pick (p1) { (P1 { a1, b1 }) { r = bad(); } } give 1i64; } }; out = r.value; pass out;
+};
+};
+mod:h6_value_pick_as_a_call_argument = {
+error:E5_h6_value_pick_as_a_call_argument;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_h6_value_pick_as_a_call_argument; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_h6_value_pick_as_a_call_argument) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:f = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; int64:q = raw idf(pick (p1) { (P1 { a1, b1 }) { r = bad(); give a1; } }); out = r.value; pass out;
+};
+};
+mod:h7_two_plain_arms = {
+error:E5_h7_two_plain_arms;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_h7_two_plain_arms; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_h7_two_plain_arms) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:f = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; pick (p1) { (P1 { a1, b1 }) { r = bad(); }, (P1 { a1, b1 }) { out = out + 0i64; } } out = r.value; pass out;
+};
+};
+mod:h8_empty_bindings = {
+error:E5_h8_empty_bindings;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_h8_empty_bindings; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_h8_empty_bindings) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:f = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; pick (p1) { (P1 { }) { r = bad(); } } out = r.value; pass out;
+};
+};
+mod:h10_value_pick_in_an_if_condition = {
+error:E5_h10_value_pick_in_an_if_condition;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_h10_value_pick_in_an_if_condition; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_h10_value_pick_in_an_if_condition) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:f = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; if (pick (p1) { (P1 { a1, b1 }) { r = bad(); give true; } }) { out = out + 0i64; } out = r.value; pass out;
+};
+};
+mod:h11_in_a_generic_function = {
+error:E5_h11_in_a_generic_function;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_h11_in_a_generic_function; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_h11_in_a_generic_function) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:gq5<T> = int64(T:t, int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; pick (p1) { (P1 { a1, b1 }) { r = bad(); } } out = r.value; pass out;
+};
+func:f = int64(int64:n) never fails {
+pass (raw gq5::<int64>(5i64, n));
+};
+};
+mod:h12_in_a_macro = {
+error:E5_h12_in_a_macro;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_h12_in_a_macro; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_h12_in_a_macro) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+macro:mp1 = (M_r, M_p) { { pick (M_p) { (P1 { a1, b1 }) { M_r = bad(); } } } };
+func:f = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; #mp1(r, p1); out = r.value; pass out;
+};
+};
+mod:h13_in_an_async_function = {
+error:E5_h13_in_an_async_function;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_h13_in_an_async_function; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_h13_in_an_async_function) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+async func:f = int64(int64:n) {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; await sleep(raw duration_ms(1i64)) ?| NIL; pick (p1) { (P1 { a1, b1 }) { r = bad(); } } out = r.value; pass out;
+};
+};
+mod:h14_errchecked_value_pick = {
+error:E5_h14_errchecked_value_pick;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_h14_errchecked_value_pick; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_h14_errchecked_value_pick) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:g2 = int64(int64:n) {
+Result<int64>:r = bad(); if (!r.is_error) { pass 1i64; } P1:p1 = P1{ a1: n, b1: 2i64 }; int64:q = pick (p1) { (P1 { a1, b1 }) { r = ok(); give a1; } }; fail r.err;
+};
+func:f = int64(int64:n) never fails {
+Result<int64>:q = g2(n); if (q.is_error) { pass 7i64; } pass q.value;
+};
+};
+mod:h15_page_value_pick = {
+error:E5_h15_page_value_pick;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_h15_page_value_pick; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_h15_page_value_pick) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:f = int64(int64:n) never fails {
+int64:out = 7i64; P1:p1 = P1{ a1: n, b1: 2i64 }; wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8; wildx_seal(page); int64:q = pick (p1) { (P1 { a1, b1 }) { page = wildx_alloc(64i64) =>! wildx uint8->; give a1; } }; discard(wildx_call(page, 5i64)); pass out;
+};
+};
+mod:h18_value_pick_in_a_while_condition = {
+error:E5_h18_value_pick_in_a_while_condition;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_h18_value_pick_in_a_while_condition; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_h18_value_pick_in_a_while_condition) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:f = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; int64:i = 0i64; while ((pick (p1) { (P1 { a1, b1 }) { r = bad(); give i < 1i64; } })) decreases 1i64 - i { i = i + 1i64; } out = r.value; pass out;
+};
+};
+mod:h19_struct_pick_in_a_struct_arm = {
+error:E5_h19_struct_pick_in_a_struct_arm;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_h19_struct_pick_in_a_struct_arm; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_h19_struct_pick_in_a_struct_arm) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:f = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; pick (p1) { (P1 { a1, b1 }) { P2:p2 = P2{ a2: a1, b2: b1 }; pick (p2) { (P2 { a2, b2 }) { r = bad(); } } } } out = r.value; pass out;
+};
+};
+mod:h20_one_binding = {
+error:E5_h20_one_binding;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_h20_one_binding; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_h20_one_binding) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:f = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; pick (p1) { (P1 { b1 }) { r = bad(); } } out = r.value; pass out;
+};
+};
+mod:x2_guard_then_plain_rw = {
+error:E5_x2_guard_then_plain_rw;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_x2_guard_then_plain_rw; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_x2_guard_then_plain_rw) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    P1:p1 = P1{ a1: n, b1: 2i64 };
+    pick (p1) { (P1 { a1, b1 }) where (a1 > 1i64) { r = bad(); }, (P1 { a1, b1 }) { out = out + 0i64; } }
+    out = r.value;
+    pass out;
+};
+};
+mod:x11c_plain_consuming = {
+error:E5_x11c_plain_consuming;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_x11c_plain_consuming; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_x11c_plain_consuming) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    P1:p1 = P1{ a1: n, b1: 2i64 };
+    H:hh = H{ s: string_concat("ab", "cde"), k: n };
+    pick (move(hh)) { (H { s, k }) { r = bad(); } }
+    out = r.value;
+    pass out;
+};
+};
+mod:x12c_plain_generic_struct = {
+error:E5_x12c_plain_generic_struct;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_x12c_plain_generic_struct; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_x12c_plain_generic_struct) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    P1:p1 = P1{ a1: n, b1: 2i64 };
+    B<int64>:bx = B{ v: n, k: 2i64 };
+    pick (bx) { (B { v, k }) { r = bad(); } }
+    out = r.value;
+    pass out;
+};
+};
+mod:e1c_spick_rw = {
+error:E5_e1c_spick_rw;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_e1c_spick_rw; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_e1c_spick_rw) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    P1:p1 = P1{ a1: n, b1: 2i64 };
+    pick (p1) { (P1 { a1, b1 }) { r = bad(); } }
+    out = r.value;
+    pass out;
+};
+};
+mod:e1pc_spick_page = {
+error:E5_e1pc_spick_page;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_e1pc_spick_page; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_e1pc_spick_page) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8; wildx_seal(page);
+    P1:p1 = P1{ a1: n, b1: 2i64 };
+    pick (p1) { (P1 { a1, b1 }) { page = wildx_alloc(64i64) =>! wildx uint8->; } }
+    out = wildx_call(page, 7i64);
+    pass out;
+};
+};
+mod:e1vc_vpick_rw = {
+error:E5_e1vc_vpick_rw;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_e1vc_vpick_rw; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_e1vc_vpick_rw) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    P1:p1 = P1{ a1: n, b1: 2i64 };
+    int64:t1 = pick (p1) { (P1 { a1, b1 }) { r = bad(); give 1i64; } };
+    discard(t1);
+    out = r.value;
+    pass out;
+};
+};
+mod:x2w_plain_then_guard_rw = {
+error:E5_x2w_plain_then_guard_rw;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_x2w_plain_then_guard_rw; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_x2w_plain_then_guard_rw) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    P1:p1 = P1{ a1: n, b1: 2i64 };
+    pick (p1) { (P1 { a1, b1 }) { out = out + 0i64; }, (P1 { a1, b1 }) where (a1 > 1i64) { r = bad(); } }
+    out = r.value;
+    pass out;
+};
+};
+mod:pw1_dead_guarded_arm_after_plain_value_pick = {
+error:E5_pw1_dead_guarded_arm_after_plain_value_pick;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_pw1_dead_guarded_arm_after_plain_value_pick; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_pw1_dead_guarded_arm_after_plain_value_pick) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:f = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; int64:q = pick (p1) { (P1 { a1, b1 }) { give 1i64; }, (P1 { a1, b1 }) where (a1 > 1i64) { r = bad(); give 2i64; } }; out = r.value; pass out;
+};
+};
+mod:pw2_dead_plain_arm_after_plain = {
+error:E5_pw2_dead_plain_arm_after_plain;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_pw2_dead_plain_arm_after_plain; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_pw2_dead_plain_arm_after_plain) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:f = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; pick (p1) { (P1 { a1, b1 }) { out = out + 0i64; }, (P1 { a1, b1 }) { r = bad(); } } out = r.value; pass out;
+};
+};
+mod:c1k_wild_pick_rewrites_result = {
+error:E5_c1k_wild_pick_rewrites_result;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_c1k_wild_pick_rewrites_result; };
+struct:P = { int64:a; int64:b; };
+enum:Os = { V(string); W(string); Z; };
+
+func:f = int64() never fails {
+Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; pick (n) { (*) { r = bad(); } } pass r.value;
+};
+};
+mod:g2_guarded_struct_stmt_pick_assign = {
+error:E5_g2_guarded_struct_stmt_pick_assign;
+struct:P = { int64:a; int64:b; };
+func:f = int64() never fails {
+    P:p = P{ a: 1i64, b: 2i64 };
+    int64:v;
+    pick (p) { (P { a, b }) where (a > 5i64) { v = 7i64; } }
+    pass v;
+};
+};
+mod:k6_one_arm_does_not_assign = {
+error:E5_k6_one_arm_does_not_assign;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_k6_one_arm_does_not_assign; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_k6_one_arm_does_not_assign) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:f = int64(int64:n) never fails {
+int64:out = 7i64; P1:p1 = P1{ a1: n, b1: 2i64 }; int64:v; pick (p1) { (P1 { a1, b1 }) where (a1 > 1i64) { out = out + 0i64; }, (P1 { a1, b1 }) { v = 7i64; } } pass v;
+};
+};
+mod:k7_dead_wild_after_plain_rewrites = {
+error:E5_k7_dead_wild_after_plain_rewrites;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_k7_dead_wild_after_plain_rewrites; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_k7_dead_wild_after_plain_rewrites) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:f = int64(int64:n) never fails {
+int64:out = 7i64; Result<int64>:r = ok(); if (r.is_error) { pass out; } P1:p1 = P1{ a1: n, b1: 2i64 }; pick (p1) { (P1 { a1, b1 }) { out = out + 0i64; }, (*) { r = bad(); } } out = r.value; pass out;
+};
+};
+mod:k8_dead_arm_does_not_assign = {
+error:E5_k8_dead_arm_does_not_assign;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_k8_dead_arm_does_not_assign; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_k8_dead_arm_does_not_assign) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+struct:Wp = { P1:inner; int64:k; };
+func:mkp = P1(int64:n) never fails { pass P1{ a1: n, b1: 2i64 }; };
+func:f = int64(int64:n) never fails {
+int64:out = 7i64; P1:p1 = P1{ a1: n, b1: 2i64 }; int64:v; pick (p1) { (P1 { a1, b1 }) { v = 7i64; }, (P1 { a1, b1 }) where (a1 > 1i64) { out = out + 0i64; } } pass v;
+};
+};
+mod:x3_guard_then_wild_rw = {
+error:E5_x3_guard_then_wild_rw;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:B<T> = { T:v; int64:k; };
+enum:En = { EA; EB; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_x3_guard_then_wild_rw; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_x3_guard_then_wild_rw) { pass 7i64; }, (*) { pass 0i64; } } };
+func:idf = int64(int64:v) never fails { pass v; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    P1:p1 = P1{ a1: n, b1: 2i64 };
+    pick (p1) { (P1 { a1, b1 }) where (a1 > 1i64) { r = bad(); }, (*) { out = out + 0i64; } }
+    out = r.value;
+    pass out;
+};
+};

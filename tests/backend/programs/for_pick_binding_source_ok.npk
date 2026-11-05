@@ -1,0 +1,927 @@
+// expect-exit: 0
+mod:for_pick_binding_source_ok;
+// THE RIGHT TWINS OF `for_pick_binding_source.npk` (DEF-517): the same binding read through the same helper, its result read while the storage lives. Each cell's
+// `f` answers 7, and main asks them by number, so an exit of 100 and up names a cell. A rule that froze or refused any of them went too wide. `m_*` are management's.
+error:Bad;
+mod:v_i1_slice_param_ok = {
+error:E5_v_i1_slice_param_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](int32[][]:ps) never fails { for (int32[]:q in ps) { pass q; } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; int32[]:r = raw g(arr[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:v_i2_range_of_param_ok = {
+error:E5_v_i2_range_of_param_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](int32[][]:ps) never fails { for (int32[]:q in ps[0i64...1i64]) { pass q; } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; int32[]:r = raw g(arr[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:v_i3_array_param_ok = {
+error:E5_v_i3_array_param_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](int32[][1]:ps) never fails { for (int32[]:q in ps) { pass q; } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; int32[]:r = raw g(arr); int32:got = r[0i64]; pass got; };
+};
+mod:v_i4_field_by_value_ok = {
+error:E5_v_i4_field_by_value_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](HS:h) never fails { for (int32[]:q in h.ps) { pass q; } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; HS:h = HS{ ps: arr[0i64...1i64] }; int32[]:r = raw g(h); int32:got = r[0i64]; pass got; };
+};
+mod:v_i5_deref_field_ok = {
+error:E5_v_i5_deref_field_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](HS->:p) never fails { for (int32[]:q in (<-p).ps) { pass q; } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; HS:h = HS{ ps: arr[0i64...1i64] }; int32[]:r = raw g(@h); int32:got = r[0i64]; pass got; };
+};
+mod:v_i6_auto_field_ok = {
+error:E5_v_i6_auto_field_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](HS->:p) never fails { for (int32[]:q in p.ps) { pass q; } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; HS:h = HS{ ps: arr[0i64...1i64] }; int32[]:r = raw g(@h); int32:got = r[0i64]; pass got; };
+};
+mod:v_i7_call_result_ok = {
+error:E5_v_i7_call_result_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](int32[][]:ps) never fails { for (int32[]:q in raw idss(ps)) { pass q; } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; int32[]:r = raw g(arr[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:v_i8_nested_for_ok = {
+error:E5_v_i8_nested_for_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](HS[]:hs) never fails { for (HS:h in hs) { for (int32[]:q in h.ps) { pass q; } } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; HS[1]:ha = [HS{ ps: arr[0i64...1i64] }]; int32[]:r = raw g(ha[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:v_i8b_binding_is_iterable_ok = {
+error:E5_v_i8b_binding_is_iterable_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](int32[][][]:pss) never fails { for (int32[][]:qs in pss) { for (int32[]:q in qs) { pass q; } } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; int32[][][1]:aa = [arr[0i64...1i64]]; int32[]:r = raw g(aa[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:v_i9_binding_of_binding_ok = {
+error:E5_v_i9_binding_of_binding_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](int32[][]:ps) never fails { for (int32[]:q in ps) { int32[]:c = q; pass c; } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; int32[]:r = raw g(arr[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:v_i10_for_then_pick_ok = {
+error:E5_v_i10_for_then_pick_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](EV[]:es) never fails { for (EV:e in es) { pick (e) { (EV.A(s)) { pass s; }, (EV.Z) { continue; } } } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); EV:e = EV.A(l[0i64...1i64]); EV[1]:ea = [e]; int32[]:r = raw g(ea[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:v_i11_struct_element_field_ok = {
+error:E5_v_i11_struct_element_field_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](SV[]:ss) never fails { for (SV:h in ss) { pass h.s; } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); SV[1]:sa = [SV{ s: l[0i64...1i64] }]; int32[]:r = raw g(sa[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+struct:IV = { int32[]:v; int64:k; };
+impl:IV:Iterator = {
+    assoc:Item = int32[];
+    func:next = int32[]?(IV->:self) never fails {
+        if (self.k >= 1i64) { pass NIL; }
+        self.k = self.k + 1i64;
+        pass self.v;
+    };
+};
+func:g = int32[](IV:it) never fails { for (int32[]:q in it) { pass q; } #unreachable(); };
+func:f = int32() never fails { List<int32>:l = raw mkl(); IV:it = IV{ v: l[0i64...1i64], k: 0i64 }; int32[]:r = raw g(it); int32:got = r[0i64]; pass got; };
+mod:v_i13_ternary_ok = {
+error:E5_v_i13_ternary_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](int32[][]:ps, int32[][]:qs, bool:c) never fails { for (int32[]:q in (is (c) : ps : qs)) { pass q; } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; int32[]:r = raw g(arr[0i64...1i64], arr[0i64...1i64], true); int32:got = r[0i64]; pass got; };
+};
+mod:v_i14_unwrap_ok = {
+error:E5_v_i14_unwrap_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:mp = int32[][](int32[][]:a) { pass a; };
+func:g = int32[](int32[][]:ps) { for (int32[]:q in mp(ps) ?! E5_v_i14_unwrap_ok) { pass q; } #unreachable(); };
+pub func:f = int32() { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; int32[]:r = g(arr[0i64...1i64]) ?! E5_v_i14_unwrap_ok; int32:got = r[0i64]; pass got; };
+pub func:cell_main = int32() { int32:v = f() ?! E5_v_i14_unwrap_ok; pass v; };
+};
+mod:v_i15_range_of_range_ok = {
+error:E5_v_i15_range_of_range_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](int32[][]:ps) never fails { for (int32[]:q in ps[0i64...1i64][0i64...1i64]) { pass q; } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; int32[]:r = raw g(arr[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:v_s1_by_value_ok = {
+error:E5_v_s1_by_value_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](EV:e) never fails { pick (e) { (EV.A(s)) { pass s; }, (EV.Z) { #unreachable(); } } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); EV:e = EV.A(l[0i64...1i64]); int32[]:r = raw g(e); int32:got = r[0i64]; pass got; };
+};
+mod:v_s2_deref_ok = {
+error:E5_v_s2_deref_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](EV->:e) never fails { pick (<-e) { (EV.A(s)) { pass s; }, (EV.Z) { #unreachable(); } } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); EV:e = EV.A(l[0i64...1i64]); int32[]:r = raw g(@e); int32:got = r[0i64]; pass got; };
+};
+mod:v_s3_field_by_value_ok = {
+error:E5_v_s3_field_by_value_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](HE:h) never fails { pick (h.e) { (EV.A(s)) { pass s; }, (EV.Z) { #unreachable(); } } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); EV:e = EV.A(l[0i64...1i64]); HE:h = HE{ e: e }; int32[]:r = raw g(h); int32:got = r[0i64]; pass got; };
+};
+mod:v_s4_deref_field_ok = {
+error:E5_v_s4_deref_field_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](HE->:p) never fails { pick ((<-p).e) { (EV.A(s)) { pass s; }, (EV.Z) { #unreachable(); } } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); EV:e = EV.A(l[0i64...1i64]); HE:h = HE{ e: e }; int32[]:r = raw g(@h); int32:got = r[0i64]; pass got; };
+};
+mod:v_s4b_auto_field_ok = {
+error:E5_v_s4b_auto_field_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](HE->:p) never fails { pick (p.e) { (EV.A(s)) { pass s; }, (EV.Z) { #unreachable(); } } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); EV:e = EV.A(l[0i64...1i64]); HE:h = HE{ e: e }; int32[]:r = raw g(@h); int32:got = r[0i64]; pass got; };
+};
+mod:v_s5_call_result_ok = {
+error:E5_v_s5_call_result_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](EV:e) never fails { pick (raw ide(e)) { (EV.A(s)) { pass s; }, (EV.Z) { #unreachable(); } } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); EV:e = EV.A(l[0i64...1i64]); int32[]:r = raw g(e); int32:got = r[0i64]; pass got; };
+};
+mod:v_s6_index_ok = {
+error:E5_v_s6_index_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](EV[]:es) never fails { pick (es[0i64]) { (EV.A(s)) { pass s; }, (EV.Z) { #unreachable(); } } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); EV:e = EV.A(l[0i64...1i64]); EV[1]:ea = [e]; int32[]:r = raw g(ea[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:v_s7_move_selector_ok = {
+error:E5_v_s7_move_selector_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](move EO:e) never fails { pick (move(e)) { (EO.A(t, s)) { pass s; }, (EO.Z) { #unreachable(); } } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); EO:e = EO.A("t", l[0i64...1i64]); int32[]:r = raw g(move(e)); int32:got = r[0i64]; pass got; };
+};
+mod:v_s8_nested_pick_ok = {
+error:E5_v_s8_nested_pick_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](EE:e) never fails { pick (e) { (EE.W(iv)) { pick (iv) { (EV.A(s)) { pass s; }, (EV.Z) { #unreachable(); } } }, (EE.Z) { #unreachable(); } } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); EV:e = EV.A(l[0i64...1i64]); EE:ee = EE.W(e); int32[]:r = raw g(ee); int32:got = r[0i64]; pass got; };
+};
+mod:v_s10_struct_pattern_ok = {
+error:E5_v_s10_struct_pattern_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](SV:e) never fails { pick (e) { (SV { s }) { pass s; }, (*) { #unreachable(); } } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); SV:e = SV{ s: l[0i64...1i64] }; int32[]:r = raw g(e); int32:got = r[0i64]; pass got; };
+};
+mod:v_s11_value_pick_ok = {
+error:E5_v_s11_value_pick_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](EV:e) never fails { int32[]:q = pick (e) { (EV.A(s)) { give s; }, (EV.Z) { give raw nov(); } }; pass q; };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); EV:e = EV.A(l[0i64...1i64]); int32[]:r = raw g(e); int32:got = r[0i64]; pass got; };
+};
+mod:v_s11b_value_pick_direct_ok = {
+error:E5_v_s11b_value_pick_direct_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](EV:e) never fails { pass (pick (e) { (EV.A(s)) { give s; }, (EV.Z) { give raw nov(); } }); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); EV:e = EV.A(l[0i64...1i64]); int32[]:r = raw g(e); int32:got = r[0i64]; pass got; };
+};
+mod:v_s12_binding_of_binding_ok = {
+error:E5_v_s12_binding_of_binding_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](EV:e) never fails { pick (e) { (EV.A(s)) { int32[]:c = s; pass c; }, (EV.Z) { #unreachable(); } } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); EV:e = EV.A(l[0i64...1i64]); int32[]:r = raw g(e); int32:got = r[0i64]; pass got; };
+};
+mod:v_s13_where_guard_ok = {
+error:E5_v_s13_where_guard_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](EV:e) never fails { pick (e) { (EV.A(s)) where (s.len > 0i64) { pass s; }, (*) { #unreachable(); } } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); EV:e = EV.A(l[0i64...1i64]); int32[]:r = raw g(e); int32:got = r[0i64]; pass got; };
+};
+mod:v_o3_wrapped_in_struct_ok = {
+error:E5_v_o3_wrapped_in_struct_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = SV(int32[][]:ps) never fails { for (int32[]:q in ps) { pass SV{ s: q }; } #unreachable(); };
+func:h = int32[](int32[][]:ps) never fails { SV:w = raw g(ps); pass w.s; };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; int32[]:r = raw h(arr[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:v_o4_through_a_call_ok = {
+error:E5_v_o4_through_a_call_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](int32[][]:ps) never fails { for (int32[]:q in ps) { pass raw ids(q); } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; int32[]:r = raw g(arr[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:v_o5_range_of_binding_ok = {
+error:E5_v_o5_range_of_binding_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](int32[][]:ps) never fails { for (int32[]:q in ps) { pass q[0i64...1i64]; } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; int32[]:r = raw g(arr[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:v_o6_pick_range_of_binding_ok = {
+error:E5_v_o6_pick_range_of_binding_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](EV:e) never fails { pick (e) { (EV.A(s)) { pass s[0i64...1i64]; }, (EV.Z) { #unreachable(); } } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); EV:e = EV.A(l[0i64...1i64]); int32[]:r = raw g(e); int32:got = r[0i64]; pass got; };
+};
+mod:v_o7_result_literal_ok = {
+error:E5_v_o7_result_literal_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](int32[][]:ps) { for (int32[]:q in ps) { return Result{value: q}; } #unreachable(); };
+pub func:f = int32() { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; int32[]:r = g(arr[0i64...1i64]) ?! E5_v_o7_result_literal_ok; int32:got = r[0i64]; pass got; };
+pub func:cell_main = int32() { int32:v = f() ?! E5_v_o7_result_literal_ok; pass v; };
+};
+mod:v_o8_move_binding_written_ok = {
+error:E5_v_o8_move_binding_written_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](move EO:e, int32[]:o) never fails { pick (move(e)) { (EO.A(t, s)) { s = o; pass s; }, (EO.Z) { #unreachable(); } } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); EO:e = EO.A("t", l[0i64...1i64]); int32[]:r = raw g(move(e), l[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:v_n1_variadic_ok = {
+error:E5_v_n1_variadic_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](..*int32[][]:vs) never fails { pass vs[0i64]; };
+pub func:f = int32() never fails { List<int32>:l = raw mkl();  int32[]:r = raw g(l[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:v_n1b_variadic_for_ok = {
+error:E5_v_n1b_variadic_for_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](..*int32[][]:vs) never fails { for (int32[]:q in vs) { pass q; } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl();  int32[]:r = raw g(l[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:v_n1c_variadic_second_ok = {
+error:E5_v_n1c_variadic_second_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](int32:a, ..*int32[][]:vs) never fails { pass vs[1i64]; };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); List<int32>:l2 = raw mkl(); int32[]:r = raw g(1i32, l2[0i64...1i64], l[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:v_n1d_variadic_spread_ok = {
+error:E5_v_n1d_variadic_spread_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](..*int32[][]:vs) never fails { pass vs[0i64]; };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; int32[]:r = raw g(..^arr[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:v_n1f_variadic_two_level_ok = {
+error:E5_v_n1f_variadic_two_level_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:h = int32[](..*int32[][]:vs) never fails { pass vs[0i64]; };
+func:g = int32[](int32[]:a) never fails { pass raw h(a); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl();  int32[]:r = raw g(l[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:v_n1g_variadic_pointer_element_ok = {
+error:E5_v_n1g_variadic_pointer_element_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+struct:BY = { int32:v; };
+func:g = int32[](..*SV->[]:vs) never fails { pass vs[0i64].s; };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); SV:sw = SV{ s: l[0i64...1i64] }; int32[]:r = raw g(@sw); int32:got = r[0i64]; pass got; };
+};
+mod:v_n2_local_no_initialiser_ok = {
+error:E5_v_n2_local_no_initialiser_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](int32[][]:ps) never fails { int32[]:q; q = ps[0i64]; pass q; };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; int32[]:r = raw g(arr[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:v_n3_param_named_ok = {
+error:E5_v_n3_param_named_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+struct:SV = { int32[]:s; };
+struct:HS = { int32[][]:ps; };
+struct:HE = { EV:e; };
+enum:EE = { W(EV); Z; };
+enum:EO = { A(string, int32[]); Z; };
+func:idss = int32[][](int32[][]:a) never fails { pass a; };
+func:ide = EV(EV:a) never fails { pass a; };
+func:ids = int32[](int32[]:a) never fails { pass a; };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](int32[]:a) never fails { pass a; };
+pub func:f = int32() never fails { List<int32>:l = raw mkl();  int32[]:r = raw g(l[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:b_p1_for_ptr_ok = {
+error:E5_b_p1_for_ptr_ok;
+struct:BX_b_p1_for_ptr_ok = { int32:v; };
+func:mkb = List<BX_b_p1_for_ptr_ok>(int32:n) never fails { List<BX_b_p1_for_ptr_ok>:o = raw list_init::<BX_b_p1_for_ptr_ok>(4i64); drop list_push(@o, BX_b_p1_for_ptr_ok{ v: n }); pass move(o); };
+enum:EB = { A(BX_b_p1_for_ptr_ok->); Z; };
+func:g = BX_b_p1_for_ptr_ok->(BX_b_p1_for_ptr_ok->[]:ps) never fails { for (BX_b_p1_for_ptr_ok->:q in ps) { pass q; } #unreachable(); };
+pub func:f = int32() never fails { List<BX_b_p1_for_ptr_ok>:l = raw mkb(7i32); BX_b_p1_for_ptr_ok->[1]:arr = [@l[0i64]]; BX_b_p1_for_ptr_ok->:r = raw g(arr[0i64...1i64]); int32:got = r.v; pass got; };
+};
+mod:b_p2_for_ptr_array_ok = {
+error:E5_b_p2_for_ptr_array_ok;
+struct:BX_b_p2_for_ptr_array_ok = { int32:v; };
+func:mkb = List<BX_b_p2_for_ptr_array_ok>(int32:n) never fails { List<BX_b_p2_for_ptr_array_ok>:o = raw list_init::<BX_b_p2_for_ptr_array_ok>(4i64); drop list_push(@o, BX_b_p2_for_ptr_array_ok{ v: n }); pass move(o); };
+enum:EB = { A(BX_b_p2_for_ptr_array_ok->); Z; };
+func:g = BX_b_p2_for_ptr_array_ok->(BX_b_p2_for_ptr_array_ok->[1]:ps) never fails { for (BX_b_p2_for_ptr_array_ok->:q in ps) { pass q; } #unreachable(); };
+pub func:f = int32() never fails { List<BX_b_p2_for_ptr_array_ok>:l = raw mkb(7i32); BX_b_p2_for_ptr_array_ok->[1]:arr = [@l[0i64]]; BX_b_p2_for_ptr_array_ok->:r = raw g(arr); int32:got = r.v; pass got; };
+};
+mod:b_p4_pick_ptr_ok = {
+error:E5_b_p4_pick_ptr_ok;
+struct:BX_b_p4_pick_ptr_ok = { int32:v; };
+func:mkb = List<BX_b_p4_pick_ptr_ok>(int32:n) never fails { List<BX_b_p4_pick_ptr_ok>:o = raw list_init::<BX_b_p4_pick_ptr_ok>(4i64); drop list_push(@o, BX_b_p4_pick_ptr_ok{ v: n }); pass move(o); };
+enum:EB = { A(BX_b_p4_pick_ptr_ok->); Z; };
+func:g = BX_b_p4_pick_ptr_ok->(EB:e) never fails { pick (e) { (EB.A(q)) { pass q; }, (EB.Z) { #unreachable(); } } #unreachable(); };
+pub func:f = int32() never fails { List<BX_b_p4_pick_ptr_ok>:l = raw mkb(7i32); EB:e = EB.A(@l[0i64]); BX_b_p4_pick_ptr_ok->:r = raw g(e); int32:got = r.v; pass got; };
+};
+mod:b_p5_pick_ptr_copy_ok = {
+error:E5_b_p5_pick_ptr_copy_ok;
+struct:BX_b_p5_pick_ptr_copy_ok = { int32:v; };
+func:mkb = List<BX_b_p5_pick_ptr_copy_ok>(int32:n) never fails { List<BX_b_p5_pick_ptr_copy_ok>:o = raw list_init::<BX_b_p5_pick_ptr_copy_ok>(4i64); drop list_push(@o, BX_b_p5_pick_ptr_copy_ok{ v: n }); pass move(o); };
+enum:EB = { A(BX_b_p5_pick_ptr_copy_ok->); Z; };
+func:g = BX_b_p5_pick_ptr_copy_ok->(EB:e) never fails { pick (e) { (EB.A(q)) { BX_b_p5_pick_ptr_copy_ok->:c = q; pass c; }, (EB.Z) { #unreachable(); } } #unreachable(); };
+pub func:f = int32() never fails { List<BX_b_p5_pick_ptr_copy_ok>:l = raw mkb(7i32); EB:e = EB.A(@l[0i64]); BX_b_p5_pick_ptr_copy_ok->:r = raw g(e); int32:got = r.v; pass got; };
+};
+mod:g_p1_for_lock_ptr_ok = {
+error:E5_g_p1_for_lock_ptr_ok;
+struct:GO = { Guard<int32>?:g; };
+struct:HM_g_p1_for_lock_ptr_ok = { Mutex<int32, 2i32>:m; int32:v; };
+struct:HL = { Mutex<int32, 2i32>->:lp; };
+enum:EL = { A(Mutex<int32, 2i32>->); Z; };
+func:mkm = List<HM_g_p1_for_lock_ptr_ok>() { List<HM_g_p1_for_lock_ptr_ok>:o = raw list_init::<HM_g_p1_for_lock_ptr_ok>(2i64); HM_g_p1_for_lock_ptr_ok:h = HM_g_p1_for_lock_ptr_ok{ m: mutex(7i32) ?! E5_g_p1_for_lock_ptr_ok, v: 1i32 }; drop list_push(@o, move(h)); pass move(o); };
+async func:g = Guard<int32>(Mutex<int32, 2i32>->[]:ps) acquires <= 2 { for (Mutex<int32, 2i32>->:q in ps) { pass await q.acquire(raw duration_ms(500i64)) ?! E5_g_p1_for_lock_ptr_ok; } #unreachable(); };
+pub async func:f = int32() { List<HM_g_p1_for_lock_ptr_ok>:l = mkm() ?! E5_g_p1_for_lock_ptr_ok; Mutex<int32, 2i32>->[1]:arr = [@l[0i64].m]; Guard<int32>:t = await g(arr[0i64...1i64]) ?! E5_g_p1_for_lock_ptr_ok; pass t.value; };
+
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_g_p1_for_lock_ptr_ok; pass v; };
+};
+mod:g_p2_for_lock_ptr_copy_ok = {
+error:E5_g_p2_for_lock_ptr_copy_ok;
+struct:GO = { Guard<int32>?:g; };
+struct:HM_g_p2_for_lock_ptr_copy_ok = { Mutex<int32, 2i32>:m; int32:v; };
+struct:HL = { Mutex<int32, 2i32>->:lp; };
+enum:EL = { A(Mutex<int32, 2i32>->); Z; };
+func:mkm = List<HM_g_p2_for_lock_ptr_copy_ok>() { List<HM_g_p2_for_lock_ptr_copy_ok>:o = raw list_init::<HM_g_p2_for_lock_ptr_copy_ok>(2i64); HM_g_p2_for_lock_ptr_copy_ok:h = HM_g_p2_for_lock_ptr_copy_ok{ m: mutex(7i32) ?! E5_g_p2_for_lock_ptr_copy_ok, v: 1i32 }; drop list_push(@o, move(h)); pass move(o); };
+async func:g = Guard<int32>(Mutex<int32, 2i32>->[]:ps) acquires <= 2 { for (Mutex<int32, 2i32>->:q in ps) { Mutex<int32, 2i32>->:c = q; pass await c.acquire(raw duration_ms(500i64)) ?! E5_g_p2_for_lock_ptr_copy_ok; } #unreachable(); };
+pub async func:f = int32() { List<HM_g_p2_for_lock_ptr_copy_ok>:l = mkm() ?! E5_g_p2_for_lock_ptr_copy_ok; Mutex<int32, 2i32>->[1]:arr = [@l[0i64].m]; Guard<int32>:t = await g(arr[0i64...1i64]) ?! E5_g_p2_for_lock_ptr_copy_ok; pass t.value; };
+
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_g_p2_for_lock_ptr_copy_ok; pass v; };
+};
+mod:g_p3_pick_lock_ptr_copy_ok = {
+error:E5_g_p3_pick_lock_ptr_copy_ok;
+struct:GO = { Guard<int32>?:g; };
+struct:HM_g_p3_pick_lock_ptr_copy_ok = { Mutex<int32, 2i32>:m; int32:v; };
+struct:HL = { Mutex<int32, 2i32>->:lp; };
+enum:EL = { A(Mutex<int32, 2i32>->); Z; };
+func:mkm = List<HM_g_p3_pick_lock_ptr_copy_ok>() { List<HM_g_p3_pick_lock_ptr_copy_ok>:o = raw list_init::<HM_g_p3_pick_lock_ptr_copy_ok>(2i64); HM_g_p3_pick_lock_ptr_copy_ok:h = HM_g_p3_pick_lock_ptr_copy_ok{ m: mutex(7i32) ?! E5_g_p3_pick_lock_ptr_copy_ok, v: 1i32 }; drop list_push(@o, move(h)); pass move(o); };
+async func:g = Guard<int32>(EL:e) acquires <= 2 { pick (e) { (EL.A(q)) { Mutex<int32, 2i32>->:c = q; pass await c.acquire(raw duration_ms(500i64)) ?! E5_g_p3_pick_lock_ptr_copy_ok; }, (EL.Z) { #unreachable(); } } #unreachable(); };
+pub async func:f = int32() { List<HM_g_p3_pick_lock_ptr_copy_ok>:l = mkm() ?! E5_g_p3_pick_lock_ptr_copy_ok; EL:e = EL.A(@l[0i64].m); Guard<int32>:t = await g(e) ?! E5_g_p3_pick_lock_ptr_copy_ok; pass t.value; };
+
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_g_p3_pick_lock_ptr_copy_ok; pass v; };
+};
+mod:x_e6_ok = {
+error:E5_x_e6_ok;
+struct:GO = { Guard<int32>?:g; };
+struct:HM_x_e6_ok = { Mutex<int32, 2i32>:m; int32:v; };
+struct:HP = { HM_x_e6_ok->:ph; };
+enum:EP = { A(HM_x_e6_ok->); Z; };
+async func:mk = Guard<int32>(HM_x_e6_ok->:p) acquires <= 2 { EP:e = EP.A(p); pick (e) { (EP.A(q)) { HM_x_e6_ok->:c = q; pass await c.m.acquire(raw duration_ms(500i64)) ?! E5_x_e6_ok; }, (EP.Z) { #unreachable(); } } #unreachable(); };
+pub async func:f = int32() { HM_x_e6_ok:a = HM_x_e6_ok{ m: mutex(7i32) ?! E5_x_e6_ok, v: 1i32 }; Guard<int32>:t = await mk(@a) ?! E5_x_e6_ok; pass t.value; };
+
+pub async func:cell_main = int32() { int32:v = await f() ?! E5_x_e6_ok; pass v; };
+};
+mod:t7_pick_through_call_read_ok = {
+error:E5_t7_pick_through_call_read_ok;
+enum:EB = { A(fixed uint8[]); Z; };
+func:mks = string() never fails { pass string_concat("ab", "cd"); };
+func:wrap = EB(fixed uint8[]:b) never fails { pass EB.A(b); };
+func:wraps = fixed uint8[][](fixed uint8[][]:b) never fails { pass b; };
+func:clob = int32() never fails { string:z = string_concat("zz", "zz"); pass 7i32; };
+func:vb = fixed uint8[](fixed string:s) never fails { pass string_bytes(s); };
+struct:WB = { fixed uint8[]:b; };
+func:wb = WB[1](fixed uint8[]:b) never fails { WB[1]:o = [WB{ b: b }]; pass o; };
+pub func:f = int32() never fails { pick (raw wrap(raw vb(raw mks()))) { (EB.A(s)) { fixed uint8[]:c = s; pass ((c[0i64] => int32) - 90i32); }, (EB.Z) { #unreachable(); } } #unreachable(); };
+};
+mod:t15_local_then_pick_right_ok = {
+error:E5_t15_local_then_pick_right_ok;
+enum:EB = { A(fixed uint8[]); Z; };
+func:mks = string() never fails { pass string_concat("ab", "cd"); };
+func:wrap = EB(fixed uint8[]:b) never fails { pass EB.A(b); };
+func:wraps = fixed uint8[][](fixed uint8[][]:b) never fails { pass b; };
+func:clob = int32() never fails { string:z = string_concat("zz", "zz"); pass 7i32; };
+func:vb = fixed uint8[](fixed string:s) never fails { pass string_bytes(s); };
+struct:WB = { fixed uint8[]:b; };
+func:wb = WB[1](fixed uint8[]:b) never fails { WB[1]:o = [WB{ b: b }]; pass o; };
+pub func:f = int32() never fails { string:t = string_concat("ab", "cd"); pick (raw wrap(raw vb(t))) { (EB.A(s)) { fixed uint8[]:c = s; pass ((c[0i64] => int32) - 90i32); }, (EB.Z) { #unreachable(); } } #unreachable(); };
+};
+mod:m_p2_ok = {
+error:E5_m_p2_ok;
+func:g = int32[](int32[][]:ps) never fails { for (int32[]:q in ps) { pass q; } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw list_init::<int32>(4i64); drop list_push(@l, 7i32); int32[][1]:arr = [l[0i64...1i64]]; int32[]:r = raw g(arr[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:m_p3_ok = {
+error:E5_m_p3_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+func:g = int32[](EV:e) never fails { pick (e) { (EV.A(s)) { pass s; }, (EV.Z) { #unreachable(); } } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); EV:e = EV.A(l[0i64...1i64]); int32[]:r = raw g(e); int32:got = r[0i64]; pass got; };
+};
+mod:m_p4_ok = {
+error:E5_m_p4_ok;
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+enum:EV = { A(int32[]); Z; };
+func:g = int32[](EV->:e) never fails { pick (<-e) { (EV.A(s)) { pass s; }, (EV.Z) { #unreachable(); } } #unreachable(); };
+pub func:f = int32() never fails { List<int32>:l = raw mkl(); EV:e = EV.A(l[0i64...1i64]); int32[]:r = raw g(@e); int32:got = r[0i64]; pass got; };
+};
+async func:main = int32(cstring[]:_~argv) {
+    if ((raw v_i1_slice_param_ok.f()) != 7i32) { exit 100i32; }
+    if ((raw v_i2_range_of_param_ok.f()) != 7i32) { exit 101i32; }
+    if ((raw v_i3_array_param_ok.f()) != 7i32) { exit 102i32; }
+    if ((raw v_i4_field_by_value_ok.f()) != 7i32) { exit 103i32; }
+    if ((raw v_i5_deref_field_ok.f()) != 7i32) { exit 104i32; }
+    if ((raw v_i6_auto_field_ok.f()) != 7i32) { exit 105i32; }
+    if ((raw v_i7_call_result_ok.f()) != 7i32) { exit 106i32; }
+    if ((raw v_i8_nested_for_ok.f()) != 7i32) { exit 107i32; }
+    if ((raw v_i8b_binding_is_iterable_ok.f()) != 7i32) { exit 108i32; }
+    if ((raw v_i9_binding_of_binding_ok.f()) != 7i32) { exit 109i32; }
+    if ((raw v_i10_for_then_pick_ok.f()) != 7i32) { exit 110i32; }
+    if ((raw v_i11_struct_element_field_ok.f()) != 7i32) { exit 111i32; }
+    if ((raw f()) != 7i32) { exit 112i32; }
+    if ((raw v_i13_ternary_ok.f()) != 7i32) { exit 113i32; }
+    { int32:v = v_i14_unwrap_ok.cell_main() ?! Bad; if (v != 7i32) { exit 114i32; } }
+    if ((raw v_i15_range_of_range_ok.f()) != 7i32) { exit 115i32; }
+    if ((raw v_s1_by_value_ok.f()) != 7i32) { exit 116i32; }
+    if ((raw v_s2_deref_ok.f()) != 7i32) { exit 117i32; }
+    if ((raw v_s3_field_by_value_ok.f()) != 7i32) { exit 118i32; }
+    if ((raw v_s4_deref_field_ok.f()) != 7i32) { exit 119i32; }
+    if ((raw v_s4b_auto_field_ok.f()) != 7i32) { exit 120i32; }
+    if ((raw v_s5_call_result_ok.f()) != 7i32) { exit 121i32; }
+    if ((raw v_s6_index_ok.f()) != 7i32) { exit 122i32; }
+    if ((raw v_s7_move_selector_ok.f()) != 7i32) { exit 123i32; }
+    if ((raw v_s8_nested_pick_ok.f()) != 7i32) { exit 124i32; }
+    if ((raw v_s10_struct_pattern_ok.f()) != 7i32) { exit 125i32; }
+    if ((raw v_s11_value_pick_ok.f()) != 7i32) { exit 126i32; }
+    if ((raw v_s11b_value_pick_direct_ok.f()) != 7i32) { exit 127i32; }
+    if ((raw v_s12_binding_of_binding_ok.f()) != 7i32) { exit 128i32; }
+    if ((raw v_s13_where_guard_ok.f()) != 7i32) { exit 129i32; }
+    if ((raw v_o3_wrapped_in_struct_ok.f()) != 7i32) { exit 130i32; }
+    if ((raw v_o4_through_a_call_ok.f()) != 7i32) { exit 131i32; }
+    if ((raw v_o5_range_of_binding_ok.f()) != 7i32) { exit 132i32; }
+    if ((raw v_o6_pick_range_of_binding_ok.f()) != 7i32) { exit 133i32; }
+    { int32:v = v_o7_result_literal_ok.cell_main() ?! Bad; if (v != 7i32) { exit 134i32; } }
+    if ((raw v_o8_move_binding_written_ok.f()) != 7i32) { exit 135i32; }
+    if ((raw v_n1_variadic_ok.f()) != 7i32) { exit 136i32; }
+    if ((raw v_n1b_variadic_for_ok.f()) != 7i32) { exit 137i32; }
+    if ((raw v_n1c_variadic_second_ok.f()) != 7i32) { exit 138i32; }
+    if ((raw v_n1d_variadic_spread_ok.f()) != 7i32) { exit 139i32; }
+    if ((raw v_n1f_variadic_two_level_ok.f()) != 7i32) { exit 140i32; }
+    if ((raw v_n1g_variadic_pointer_element_ok.f()) != 7i32) { exit 141i32; }
+    if ((raw v_n2_local_no_initialiser_ok.f()) != 7i32) { exit 142i32; }
+    if ((raw v_n3_param_named_ok.f()) != 7i32) { exit 143i32; }
+    if ((raw b_p1_for_ptr_ok.f()) != 7i32) { exit 144i32; }
+    if ((raw b_p2_for_ptr_array_ok.f()) != 7i32) { exit 145i32; }
+    if ((raw b_p4_pick_ptr_ok.f()) != 7i32) { exit 146i32; }
+    if ((raw b_p5_pick_ptr_copy_ok.f()) != 7i32) { exit 147i32; }
+    { int32:v = await g_p1_for_lock_ptr_ok.cell_main() ?! Bad; if (v != 7i32) { exit 148i32; } }
+    { int32:v = await g_p2_for_lock_ptr_copy_ok.cell_main() ?! Bad; if (v != 7i32) { exit 149i32; } }
+    { int32:v = await g_p3_pick_lock_ptr_copy_ok.cell_main() ?! Bad; if (v != 7i32) { exit 150i32; } }
+    { int32:v = await x_e6_ok.cell_main() ?! Bad; if (v != 7i32) { exit 151i32; } }
+    if ((raw t7_pick_through_call_read_ok.f()) != 7i32) { exit 152i32; }
+    if ((raw t15_local_then_pick_right_ok.f()) != 7i32) { exit 153i32; }
+    if ((raw m_p2_ok.f()) != 7i32) { exit 154i32; }
+    if ((raw m_p3_ok.f()) != 7i32) { exit 155i32; }
+    if ((raw m_p4_ok.f()) != 7i32) { exit 156i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (Bad)              { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (for_pick_binding_source_ok.E5_v_i14_unwrap_ok) { exit 75i32; },
+        (for_pick_binding_source_ok.E5_v_o7_result_literal_ok) { exit 75i32; },
+        (for_pick_binding_source_ok.E5_g_p1_for_lock_ptr_ok) { exit 75i32; },
+        (for_pick_binding_source_ok.E5_g_p2_for_lock_ptr_copy_ok) { exit 75i32; },
+        (for_pick_binding_source_ok.E5_g_p3_pick_lock_ptr_copy_ok) { exit 75i32; },
+        (for_pick_binding_source_ok.E5_x_e6_ok) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

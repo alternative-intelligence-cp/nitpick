@@ -1,0 +1,123 @@
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 79:171
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 80:171
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 81:168
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 82:167
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 83:157
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 84:168
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 85:158
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 86:173
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 87:209
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 88:207
+// expect-error: NITPICK-WILDX-002
+// expect-error-at: 89:322
+// expect-error: NITPICK-WILDX-002
+// expect-error-at: 90:320
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 91:282
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 92:237
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 93:246
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 94:174
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 95:162
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 96:215
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 97:217
+// expect-error: NITPICK-ASSIGN-002
+// expect-error-at: 98:170
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 99:237
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 100:235
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 101:161
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 102:176
+// expect-error: NITPICK-WILDX-002
+// expect-error-at: 103:277
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 104:240
+mod:operand_that_may_not_run;
+error:E9;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+struct:SP = { string:s; int64->:p; };
+struct:SN = { string:s; int64:n; };
+func:eatp = int64(move SP:v) never fails { pass 0i64; };
+func:eatn = int64(move SN:v) never fails { pass 0i64; };
+func:eatw = int64(move wild int8->:w) never fails { dalloc(w); pass 0i64; };
+enum:E = { A(string); Z; };
+
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E9; };
+struct:Box = { string:s; int64:n; };
+enum:Os = { V(string); W(string); Z; };
+macro:mv = (S) { (raw eats(move(S))) == 1i64; };
+func:clm = int64(string->:p) never fails { pass 0i64; };
+func:okn = NIL() { pass NIL; };
+
+// AN OPERAND THAT MAY NOT RUN GRANTS NOTHING (DEF-527, HIGH by kind, landing 177d2b). The emitter branches around the right of `&&`, `||`,
+// `??` and `?|` and each arm of `is`, and every other kind evaluates its operands first. The walk took those operands flat, so what one
+// established held though it hadn't run: a slot read unassigned, `.value` of a failed `Result` a zero with no sign (60/60), a page called
+// unsealed (97/97), a vacant `string` read (98/98). The road in is a value `pick`, a `$$m` claim of a dropping slot, or a bare `wildx_seal`.
+// Each operand now walks on a copy: forbids and what it cleared stay, what it granted drops. `is` merges its arms as an `if` does.
+// `k_` stayed refused. `s_the_branch_taken_assigns` runs right and refuses, as the `if` with no `else` does: the walk reads no value.
+func:c_ternary_then_not_taken = int64() never fails { int64:x; int64:n = 1i64; int64:y = is (n == 2i64) : (pick (n) { (*) { x = 7i64; give 1i64; } }) : 2i64; n = y; pass x; };   // site NITPICK-ASSIGN-001
+func:c_ternary_else_not_taken = int64() never fails { int64:x; int64:n = 1i64; int64:y = is (n == 1i64) : 2i64 : (pick (n) { (*) { x = 7i64; give 1i64; } }); n = y; pass x; };   // site NITPICK-ASSIGN-001
+func:c_and_rhs_not_run = int64() never fails { int64:x; int64:n = 1i64; bool:b = (n == 2i64) && (pick (n) { (*) { x = 7i64; give true; } }); if (b) { n = 3i64; } pass x; };   // site NITPICK-ASSIGN-001
+func:c_or_rhs_not_run = int64() never fails { int64:x; int64:n = 1i64; bool:b = (n == 1i64) || (pick (n) { (*) { x = 7i64; give true; } }); if (b) { n = 3i64; } pass x; };   // site NITPICK-ASSIGN-001
+func:c_if_condition_and = int64() never fails { int64:x; int64:n = 1i64; if ((n == 2i64) && (pick (n) { (*) { x = 7i64; give true; } })) { n = 3i64; } pass x; };   // site NITPICK-ASSIGN-001
+func:c_or_default_rhs = int64() never fails { int64:x; int64:n = 1i64; Result<int64>:r = ok(); int64:y = r ?| (pick (n) { (*) { x = 7i64; give 1i64; } }); n = y; pass x; };   // site NITPICK-ASSIGN-001
+func:c_default_rhs = int64() never fails { int64:x; int64:n = 1i64; int64?:o = 5i64; int64:y = o ?? (pick (n) { (*) { x = 7i64; give 1i64; } }); n = y; pass x; };   // site NITPICK-ASSIGN-001
+func:s_the_branch_taken_assigns = int64() never fails { int64:x; int64:n = 1i64; int64:y = is (n == 1i64) : (pick (n) { (*) { x = 7i64; give 1i64; } }) : 2i64; n = y; pass x; };   // site NITPICK-ASSIGN-001
+func:r_ternary_test_not_taken = int64() never fails { Result<int64>:r = bad(); int64:n = 1i64; int64:y = is (n == 2i64) : (pick (n) { (*) { if (r.is_error) { pass 1i64; } give 1i64; } }) : 2i64; n = y; pass r.value; };   // site NITPICK-TAINT-001
+func:r_and_test_not_run = int64() never fails { Result<int64>:r = bad(); int64:n = 1i64; bool:b = (n == 2i64) && (pick (n) { (*) { if (r.is_error) { pass 1i64; } give true; } }); if (b) { n = 3i64; } pass r.value; };   // site NITPICK-TAINT-001
+func:p_ternary_seal_not_taken = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8; int64:n = 1i64; int64:y = is (n == 2i64) : (pick (n) { (*) { wildx_seal(page); give 1i64; } }) : 2i64; n = y; discard(wildx_call(page, 5i64)); wildx_free(page); pass 7i64; };   // site NITPICK-WILDX-002
+func:p_and_seal_not_run = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8; int64:n = 1i64; bool:b = (n == 2i64) && (pick (n) { (*) { wildx_seal(page); give true; } }); if (b) { n = 3i64; } discard(wildx_call(page, 5i64)); wildx_free(page); pass 7i64; };   // site NITPICK-WILDX-002
+func:w_is_in_and_in_an_arm = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { bool:b = (n == 2i64) && (is (n == 3i64) : (pick (n) { (*) { x = 7i64; give true; } }) : false); if (b) { n = 3i64; } give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };   // site NITPICK-ASSIGN-001
+func:w_is_both_arms_in_and = int64() never fails { int64:x; int64:n = 1i64; bool:b = (n == 2i64) && (is (n == 3i64) : (pick (n) { (*) { x = 7i64; give true; } }) : (pick (n) { (*) { x = 7i64; give true; } })); if (b) { n = 3i64; } pass x; };   // site NITPICK-ASSIGN-001
+func:w_and_in_is_taken_branch = int64() never fails { int64:x; int64:n = 1i64; int64:y = is (n == 1i64) : (is ((n == 2i64) && (pick (n) { (*) { x = 7i64; give true; } })) : 1i64 : 2i64) : (pick (n) { (*) { x = 7i64; give 1i64; } }); n = y; pass x; };   // site NITPICK-ASSIGN-001
+func:k_move_in_and_rhs = int64() never fails { string:s = raw mk(); int64:n = 1i64; bool:b = (n == 2i64) && ((raw eats(move(s))) == 0i64); if (b) { n = 3i64; } pass raw rds(s); };   // site NITPICK-MOVE-001
+func:k_move_in_is_branch = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:y = is (n == 2i64) : (raw eats(move(s))) : 2i64; n = y; pass raw rds(s); };   // site NITPICK-MOVE-001
+func:k_clear_in_is_branch = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64:y = is (n == 2i64) : (pick (n) { (*) { r = bad(); give 1i64; } }) : 2i64; n = y; pass r.value; };   // site NITPICK-TAINT-001
+func:k_clear_in_and_rhs = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; bool:b = (n == 2i64) && (pick (n) { (*) { r = bad(); give true; } }); if (b) { n = 3i64; } pass r.value; };   // site NITPICK-TAINT-001
+func:k_fixed_second_write_after_is = int64() never fails { fixed int64:x; int64:n = 1i64; int64:y = is (n == 2i64) : (pick (n) { (*) { x = 7i64; give 1i64; } }) : 2i64; x = 7i64; n = y; pass x; };   // site NITPICK-ASSIGN-002
+func:w_moved_then_reassigned_in_and_rhs = int64() never fails { string:s = raw mk(); int64:n = 1i64; discard(raw eats(move(s))); bool:b = (n == 2i64) && (pick (n) { (*) { s = raw mk(); give true; } }); if (b) { n = 3i64; } pass raw rds(s); };   // site NITPICK-MOVE-001
+func:w_moved_then_reassigned_in_is_branch = int64() never fails { string:s = raw mk(); int64:n = 1i64; discard(raw eats(move(s))); int64:y = is (n == 2i64) : (pick (n) { (*) { s = raw mk(); give 1i64; } }) : 2i64; n = y; pass raw rds(s); };   // site NITPICK-MOVE-001
+func:w_claim_of_a_dropping_slot_in_is = int64() never fails { string:s; int64:n = 1i64; int64:y = is (n == 2i64) : (raw clm($$m s)) : 2i64; n = y; pass raw rds(s); };   // site NITPICK-ASSIGN-001
+func:w_claim_of_a_dropping_slot_in_and = int64() never fails { string:s; int64:n = 1i64; bool:b = (n == 2i64) && ((raw clm($$m s)) == 0i64); if (b) { n = 3i64; } pass raw rds(s); };   // site NITPICK-ASSIGN-001
+func:w_seal_call_in_or_default = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8; int64:n = 1i64; Result<NIL>:rn = okn(); rn ?| wildx_seal(page); discard(wildx_call(page, 5i64)); wildx_free(page); pass 7i64; };   // site NITPICK-WILDX-002
+func:w_give_road_in_is_branch = int64() never fails { int64:x; int64:n = 1i64; int64:y = is (n == 1i64) : (pick (n) { (*) { if (n == 1i64) { give 3i64; } x = 7i64; give 1i64; } }) : (pick (n) { (*) { x = 7i64; give 1i64; } }); n = y; pass x; };   // site NITPICK-ASSIGN-001
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

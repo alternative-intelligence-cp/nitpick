@@ -1,0 +1,37 @@
+// expect-error: NITPICK-RESOLVE-002
+// expect-error-at: 15:115
+// expect-error: NITPICK-RESOLVE-002
+// expect-error-at: 16:120
+// expect-error: NITPICK-RESOLVE-002
+// expect-error-at: 17:110
+// expect-error: NITPICK-RESOLVE-002
+// expect-error-at: 18:121
+mod:fall_names_its_own_pick;
+error:E9;
+// A `fall` NAMES AN ARM OF ITS OWN `pick`, IN EVERY NESTING (DEF-140's rule; pinned here for DEF-437, landing 177d2b). The move
+// walk keeps one road per pick and notes a `fall` on the innermost one, so a `fall` in an inner pick that reached an outer arm
+// would carry its road to the wrong pick. Each of the four nestings names a LATER arm of the outer pick, so the direction isn't
+// the reason (TYPE-111), and each is the identifier's RESOLVE-002.
+func:stmt_in_stmt = int64() never fails { int64:k = 1i64; int64:t = 0i64; pick (k) { (1i64) { pick (k) { (1i64) { fall g; }, (*) { } } }, g: (2i64) { t = 7i64; }, (*) { t = 5i64; } } pass t; };   // site NITPICK-RESOLVE-002
+func:value_in_stmt = int64() never fails { int64:k = 1i64; int64:t = 0i64; pick (k) { (1i64) { t = pick (k) { (1i64) { fall g; }, (*) { give 5i64; } }; }, g: (2i64) { t = 7i64; }, (*) { t = 5i64; } } pass t; };   // site NITPICK-RESOLVE-002
+func:stmt_in_value = int64() never fails { int64:k = 1i64; int64:v = pick (k) { (1i64) { pick (k) { (1i64) { fall g; }, (*) { } } give 1i64; }, g: (2i64) { give 7i64; }, (*) { give 9i64; } }; pass v; };   // site NITPICK-RESOLVE-002
+func:value_in_value = int64() never fails { int64:k = 1i64; int64:v = pick (k) { (1i64) { int64:u = pick (k) { (1i64) { fall g; }, (*) { give 2i64; } }; give u; }, g: (2i64) { give 7i64; }, (*) { give 9i64; } }; pass v; };   // site NITPICK-RESOLVE-002
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

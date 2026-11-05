@@ -130,6 +130,8 @@ lowers to building one.
 > element. It was called `elem_type`, which reads as the `T` and is what a caller
 > would use it as (D-100).
 
+> *[2026-11-04, 1.6.1e landing 177d2b, DEF-519:]* **The tail is storage built for the call, so the slot itself is a borrow of its function's frame.** `pass vs`, a range of it, a local copy or holder that leaves, a helper handed it, a forwarding spread and a store through a parameter are `NITPICK-BORROW-001` or `NITPICK-BORROW-002`, as `@vs[0i64]` always was, where the view read whatever the stack held next once the caller had returned. An element read out of it is the argument, on the summary's variadic bit: `pass vs[0i64]` and a `for` over its elements (DEF-517, CONTROL_REFERENCE §2.3). The callee can't tell a caller that keeps the view in its own frame from one that returns it, so a right program of that shape is refused too, a spread's included: copy what you need out of the tail.
+
 The format-directed form — a bare `..*` following a `fmt` parameter — was
 **removed by D-053** along with the `fmt` type itself. Formatting is ordinary
 functions returning `string`, spliced by `&{ }` interpolation, so no signature

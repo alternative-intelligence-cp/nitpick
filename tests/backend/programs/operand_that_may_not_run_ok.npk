@@ -1,0 +1,60 @@
+// expect-exit: 0
+// What an operand that always runs did holds after it, and so does what both arms of an `is` did, a `fixed` written once on each among them (DEF-527).
+mod:operand_that_may_not_run_ok;
+error:E9;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+struct:SP = { string:s; int64->:p; };
+struct:SN = { string:s; int64:n; };
+func:eatp = int64(move SP:v) never fails { pass 0i64; };
+func:eatn = int64(move SN:v) never fails { pass 0i64; };
+func:eatw = int64(move wild int8->:w) never fails { dalloc(w); pass 0i64; };
+enum:E = { A(string); Z; };
+
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E9; };
+struct:Box = { string:s; int64:n; };
+enum:Os = { V(string); W(string); Z; };
+macro:mv = (S) { (raw eats(move(S))) == 1i64; };
+func:clm = int64(string->:p) never fails { pass 0i64; };
+func:okn = NIL() { pass NIL; };
+func:c_while_condition_control = int64() never fails { int64:x; int64:n = 1i64; while ((pick (n) { (*) { x = 7i64; give true; } }) && (n == 2i64)) decreases 2i64 - n { n = n + 1i64; } pass x; };
+func:c_ternary_both_arms_assign_right = int64() never fails { int64:x; int64:n = 1i64; int64:y = is (n == 1i64) : (pick (n) { (*) { x = 7i64; give 1i64; } }) : (pick (n) { (*) { x = 7i64; give 1i64; } }); n = y; pass x; };
+func:n_is_both_arms_in_is_both_arms = int64() never fails { int64:x; int64:n = 1i64; int64:y = is (n == 1i64) : (is (n == 1i64) : (pick (n) { (*) { x = 7i64; give 1i64; } }) : (pick (n) { (*) { x = 7i64; give 1i64; } })) : (pick (n) { (*) { x = 7i64; give 1i64; } }); n = y; pass x; };
+func:n_and_lhs_assigns = int64() never fails { int64:x; int64:n = 1i64; bool:b = (pick (n) { (*) { x = 7i64; give true; } }) && (n == 1i64); if (b) { n = 3i64; } pass x; };
+func:n_or_lhs_assigns = int64() never fails { int64:x; int64:n = 1i64; bool:b = (pick (n) { (*) { x = 7i64; give true; } }) || (n == 1i64); if (b) { n = 3i64; } pass x; };
+func:n_is_condition_assigns = int64() never fails { int64:x; int64:n = 1i64; bool:b = is ((pick (n) { (*) { x = 7i64; give true; } }) && true) : true : false; if (b) { n = 3i64; } pass x; };
+func:n_fixed_on_each_is_arm = int64() never fails { fixed int64:x; int64:n = 1i64; int64:y = is (n == 1i64) : (pick (n) { (*) { x = 7i64; give 1i64; } }) : (pick (n) { (*) { x = 7i64; give 1i64; } }); n = y; pass x; };
+func:n_assigned_after_the_is = int64() never fails { int64:x; int64:n = 1i64; int64:y = is (n == 2i64) : (pick (n) { (*) { x = 7i64; give 1i64; } }) : 2i64; x = 7i64; n = y; pass x; };
+func:n_read_in_the_operand_of_a_tested_result = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64:y = is (n == 1i64) : r.value : 2i64; n = y; pass r.value; };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c_while_condition_control()) != 7i64) { exit 1i32; }
+    if ((raw c_ternary_both_arms_assign_right()) != 7i64) { exit 1i32; }
+    if ((raw n_is_both_arms_in_is_both_arms()) != 7i64) { exit 1i32; }
+    if ((raw n_and_lhs_assigns()) != 7i64) { exit 1i32; }
+    if ((raw n_or_lhs_assigns()) != 7i64) { exit 1i32; }
+    if ((raw n_is_condition_assigns()) != 7i64) { exit 1i32; }
+    if ((raw n_fixed_on_each_is_arm()) != 7i64) { exit 1i32; }
+    if ((raw n_assigned_after_the_is()) != 7i64) { exit 1i32; }
+    if ((raw n_read_in_the_operand_of_a_tested_result()) != 7i64) { exit 1i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

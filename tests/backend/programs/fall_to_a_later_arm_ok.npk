@@ -1,0 +1,44 @@
+// expect-exit: 0
+// A `fall` to a later arm runs as it did, and a cycle's road is a loop around the `pick` (DEF-487).
+mod:fall_to_a_later_arm_ok;
+error:E9;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:fs = int64(string:v, int64:k) never fails { pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:eat = int64(move string:v) never fails { pass 0i64; };
+func:forward = int64() never fails { int64:k = 1i64; int64:t = 0i64; pick (k) { (1i64) { t = 3i64; fall b; }, b: (2i64) { t = t + 4i64; }, (*) { t = 5i64; } } pass t; };
+func:forward_from_for = int64() never fails { int64:k = 1i64; int64:t = 0i64; pick (k) { (1i64) { for (int64:i in 0i64...1i64) { fall b; } }, b: (2i64) { t = t + 7i64; }, (*) { t = 5i64; } } pass t; };
+func:forward_to_star = int64() never fails { int64:k = 1i64; int64:t = 0i64; pick (k) { (1i64) { t = 2i64; fall z; }, z: (*) { t = t + 5i64; } } pass t; };
+func:forward_chain = int64() never fails { int64:k = 1i64; int64:t = 0i64; pick (k) { (1i64) { t = 1i64; fall b; }, b: (2i64) { t = t + 2i64; fall c; }, c: (3i64) { t = t + 4i64; }, (*) { t = 5i64; } } pass t; };
+func:forward_over_an_arm = int64() never fails { int64:k = 1i64; int64:t = 0i64; pick (k) { (1i64) { t = 7i64; fall c; }, (2i64) { t = 1i64; }, c: (3i64) { t = t + 0i64; }, (*) { t = 5i64; } } pass t; };
+func:forward_from_if = int64() never fails { int64:k = 1i64; int64:t = 0i64; pick (k) { (1i64) { t = 7i64; if (k == 1i64) { fall b; } t = 1i64; }, b: (2i64) { t = t + 0i64; }, (*) { t = 5i64; } } pass t; };
+func:forward_in_a_value_pick = int64() never fails { int64:k = 1i64; int64:t = 0i64; int64:q = pick (k) { (1i64) { fall b; }, b: (2i64) { give 7i64; }, (*) { give 5i64; } }; pass q + t; };
+func:the_road_a_loop_around = int64() never fails { int64:k = 1i64; int64:t = 0i64; int64:g = 8i64; while (g > 0i64) decreases g { g = g - 1i64; pick (k) { a: (1i64) { t = t + 1i64; if (t == 7i64) { pass t; } fall b; }, b: (2i64) { k = 1i64; }, (*) { pass 5i64; } } } pass t; };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw forward()) != 7i64) { exit 1i32; }
+    if ((raw forward_from_for()) != 7i64) { exit 2i32; }
+    if ((raw forward_to_star()) != 7i64) { exit 3i32; }
+    if ((raw forward_chain()) != 7i64) { exit 4i32; }
+    if ((raw forward_over_an_arm()) != 7i64) { exit 5i32; }
+    if ((raw forward_from_if()) != 7i64) { exit 6i32; }
+    if ((raw forward_in_a_value_pick()) != 7i64) { exit 7i32; }
+    if ((raw the_road_a_loop_around()) != 7i64) { exit 8i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

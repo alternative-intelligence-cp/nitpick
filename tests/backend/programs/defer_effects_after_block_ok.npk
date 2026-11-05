@@ -1,0 +1,93 @@
+// expect-exit: 0
+// What a body did reaches the code after its block and no earlier, last body first (DEF-525). A binding a body assigned is assigned after the block (`n_widen_*`). `n_nest_at_the_depth_limit`, 124 bodies (125 is refused), holds the walk to one silent pass per body: two would be 2^124, a compiler that never ends.
+mod:defer_effects_after_block_ok;
+error:E9;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E9; };
+func:g = int64(int64:v) never fails { string:s = raw mk(); if (v == 2i64) { defer { discard(raw eats(move(s))); } pass 1i64; } pass raw rds(s); };
+func:h = int64(int64:v) { string:s = raw mk(); if (v == 2i64) { defer { discard(raw eats(move(s))); } fail E9; } pass raw rds(s); };
+func:i = int64() { string:s = raw mk(); int64:v = 1i64; if (v == 1i64) { defer { discard(raw eats(move(s))); } fail E9; } pass raw rds(s); };
+macro:dm = (S) { defer { discard(raw eats(move(S))); } };
+macro:dm_blk = (S) { { defer { discard(raw eats(move(S))); } } };
+macro:dm_own = () { string:mine = raw mk(); defer { discard(raw eats(move(mine))); } };
+macro:dx = (X) { defer { X = 7i64; } };
+func:n_pass_in_the_arm_nothing_after_on_that_road = int64() never fails { string:s = raw mk(); int64:n = 1i64; if (n == 2i64) { defer { discard(raw eats(move(s))); } pass 1i64; } pass raw rds(s); };
+func:n_pass_in_the_block = int64() never fails { string:s = raw mk(); int64:n = 1i64; { defer { discard(raw eats(move(s))); } pass 7i64; } };
+func:n_fail_in_the_arm = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:t = raw g(n); pass raw rds(s); };
+func:n_fail_road_really_fails = int64() never fails { int64:t = i() ?| 7i64; pass t; };
+func:n_trap_in_the_arm = int64() never fails { string:s = raw mk(); int64:n = 1i64; if (n == 2i64) { defer { discard(raw eats(move(s))); } #unreachable(); } pass raw rds(s); };
+func:n_order_later_moves_earlier_reassigns = int64() never fails { string:s = raw mk(); int64:n = 1i64; { defer { s = raw mk(); } defer { discard(raw eats(move(s))); } } pass raw rds(s); };
+func:n_order_later_reads_earlier_moves = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:t = 0i64; { defer { discard(raw eats(move(s))); } defer { t = raw rds(s); } } pass t; };
+func:n_order_result_rewritten_then_tested_after = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; { defer { r = ok(); } defer { r = bad(); } } if (r.is_error) { pass 1i64; } pass r.value; };
+func:n_405_body_moves_what_it_reads = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:t = 0i64; { defer { t = raw rds(s); discard(raw eats(move(s))); } } pass t; };
+func:n_macro_own_local = int64() never fails { #dm_own(); pass 7i64; };
+func:n_macro_nothing_read_after = int64() never fails { string:s = raw mk(); int64:n = 1i64; #dm(s); pass 7i64; };
+func:n_widen_macro_assigns_read_after = int64() never fails { int64:x; #dx(x); pass x; };
+func:n_widen_block_assigns = int64() never fails { int64:x; { defer { x = 7i64; } } pass x; };
+func:n_widen_fixed_block_assigns = int64() never fails { fixed int64:x; { defer { x = 7i64; } } pass x; };
+func:n_widen_both_arms_assign = int64() never fails { int64:x; int64:n = 1i64; if (n == 1i64) { defer { x = 7i64; } } else { defer { x = 7i64; } } pass x; };
+func:n_widen_every_pick_arm_assigns = int64() never fails { int64:x; int64:n = 1i64; pick (n) { (1i64) { defer { x = 7i64; } }, (*) { defer { x = 7i64; } } } pass x; };
+func:n_widen_block_seals_then_calls = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8; { defer { wildx_seal(page); } } discard(wildx_call(page, 5i64)); wildx_free(page); pass 7i64; };
+func:n_widen_read_after_a_break_road = int64() never fails { int64:t = 7i64; for (int64:i in 1i64...2i64) { int64:x; { if (i == 0i64) { break; } defer { x = 7i64; } } t = x; } pass t; };
+func:n_widen_read_after_a_continue_road = int64() never fails { int64:t = 7i64; for (int64:i in 1i64...2i64) { int64:x; { if (i == 0i64) { continue; } defer { x = 7i64; } } t = x; } pass t; };
+func:n_widen_fall_every_arm_assigns = int64() never fails { int64:x; int64:n = 1i64; pick (n) { (1i64) { defer { x = 7i64; } fall two; }, two: (2i64) { x = 7i64; }, (*) { x = 7i64; } } pass x; };
+func:n_body_of_a_block_frees_nothing_read_after = int64() never fails { wild int8->:p = alloc(8i64); { defer { dalloc(p); } } pass 7i64; };
+func:n_block_reassigned_after = int64() never fails { string:s = raw mk(); int64:n = 1i64; { defer { discard(raw eats(move(s))); } } s = raw mk(); pass raw rds(s); };
+func:n_loop_local_freed_each_trip = int64() never fails { int64:t = 0i64; for (int64:i in 0i64...2i64) { string:s = raw mk(); defer { discard(raw eats(move(s))); } t = raw rds(s); } pass t; };
+func:n_outer_slot_assigned_each_trip = int64() never fails { wild int8->:p = alloc(8i64); dalloc(p); for (int64:i in 0i64...2i64) { p = alloc(8i64); defer { dalloc(p); } } pass 7i64; };
+func:n_block_body_keeps_result_tested = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64:t = 0i64; { defer { t = 1i64; } } pass r.value; };
+func:n_function_level_body = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:t = raw rds(s); defer { discard(raw eats(move(s))); } pass t; };
+func:n_body_tests_for_itself = int64() never fails { Result<int64>:r = ok(); int64:t = 0i64; { defer { if (!r.is_error) { t = r.value; } } } pass 7i64; };
+func:n_nest_at_the_depth_limit = int64() never fails { string:s = raw mk(); int64:n = 1i64; { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { discard(raw eats(move(s))); } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } pass 7i64; };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw n_pass_in_the_arm_nothing_after_on_that_road()) != 7i64) { exit 1i32; }
+    if ((raw n_pass_in_the_block()) != 7i64) { exit 1i32; }
+    if ((raw n_fail_in_the_arm()) != 7i64) { exit 1i32; }
+    if ((raw n_fail_road_really_fails()) != 7i64) { exit 1i32; }
+    if ((raw n_trap_in_the_arm()) != 7i64) { exit 1i32; }
+    if ((raw n_order_later_moves_earlier_reassigns()) != 7i64) { exit 1i32; }
+    if ((raw n_order_later_reads_earlier_moves()) != 7i64) { exit 1i32; }
+    if ((raw n_order_result_rewritten_then_tested_after()) != 7i64) { exit 1i32; }
+    if ((raw n_405_body_moves_what_it_reads()) != 7i64) { exit 1i32; }
+    if ((raw n_macro_own_local()) != 7i64) { exit 1i32; }
+    if ((raw n_macro_nothing_read_after()) != 7i64) { exit 1i32; }
+    if ((raw n_widen_macro_assigns_read_after()) != 7i64) { exit 1i32; }
+    if ((raw n_widen_block_assigns()) != 7i64) { exit 1i32; }
+    if ((raw n_widen_fixed_block_assigns()) != 7i64) { exit 1i32; }
+    if ((raw n_widen_both_arms_assign()) != 7i64) { exit 1i32; }
+    if ((raw n_widen_every_pick_arm_assigns()) != 7i64) { exit 1i32; }
+    if ((raw n_widen_block_seals_then_calls()) != 7i64) { exit 1i32; }
+    if ((raw n_widen_read_after_a_break_road()) != 7i64) { exit 1i32; }
+    if ((raw n_widen_read_after_a_continue_road()) != 7i64) { exit 1i32; }
+    if ((raw n_widen_fall_every_arm_assigns()) != 7i64) { exit 1i32; }
+    if ((raw n_body_of_a_block_frees_nothing_read_after()) != 7i64) { exit 1i32; }
+    if ((raw n_block_reassigned_after()) != 7i64) { exit 1i32; }
+    if ((raw n_loop_local_freed_each_trip()) != 7i64) { exit 1i32; }
+    if ((raw n_outer_slot_assigned_each_trip()) != 7i64) { exit 1i32; }
+    if ((raw n_block_body_keeps_result_tested()) != 7i64) { exit 1i32; }
+    if ((raw n_function_level_body()) != 7i64) { exit 1i32; }
+    if ((raw n_body_tests_for_itself()) != 7i64) { exit 1i32; }
+    if ((raw n_nest_at_the_depth_limit()) != 7i64) { exit 1i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

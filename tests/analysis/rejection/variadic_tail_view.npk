@@ -1,0 +1,404 @@
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 77:52
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 90:49
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 90:52
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 104:58
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 106:88
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 117:56
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 130:58
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 132:88
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 143:56
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 156:80
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 169:52
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 182:54
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 195:68
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 208:69
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 221:81
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 234:47
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 247:67
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 260:73
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 273:90
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 286:52
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 299:77
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 312:53
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 313:52
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 326:43
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 340:53
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 353:134
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 366:52
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 378:52
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 390:52
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 402:73
+mod:variadic_tail_view;
+// A VARIADIC TAIL IS STORAGE BUILT FOR THE CALL, SO THE SLOT ITSELF IS A BORROW OF THIS FRAME (DEF-519, HIGH by kind, landing 177d2b). `pass vs` handed the caller a view it couldn't
+// have a chain for, the tail's arguments carrying nothing, and once the caller had returned the view read what the stack held next (`u1_whole`, 83 at -O0 and 60 at -O2 on main, no `=>!`, no lock).
+// So whatever hands the tail itself on is BORROW-001, as `@vs[0i64]` always was: `u*` is each road, whole, ranged, a local copy, a holder, a helper, a forwarding spread, a store through a parameter.
+// An element read out of it is the argument and stays on the summary's PASS bit, in `variadic_tail_view_ok.npk` and `for_pick_binding_source_ok.npk`.
+// THE PRICE, `c*`, RIGHT PROGRAMS NOW REFUSED, none in the tree or the libraries: the callee can't tell a caller that keeps the view in its own frame from one that returns it, so `g` itself is
+// refused whoever calls it. The road is to copy what you need out of the tail.
+mod:u10_addr_of_elem = {
+error:E5_u10_addr_of_elem;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32->(..*int32[]:vs) never fails { pass @vs[0i64]; };
+func:h = int32->() never fails { pass raw g(7i32); };
+func:f = int32() never fails { int32->:r = raw h(); int32:c = raw clob(); int32:got = <-r; pass got; };
+};
+mod:u11_enum = {
+error:E5_u11_enum;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = EV(..*int32[]:vs) never fails { pass EV.A(vs); };
+func:rd = int32(EV:e) never fails { pick (e) { (EV.A(s)) { pass s[0i64]; }, (EV.Z) { pass 7i32; } } #unreachable(); };
+func:h = EV() never fails { pass raw g(7i32); };
+func:f = int32() never fails { EV:r = raw h(); int32:c = raw clob(); int32:got = raw rd(r); pass got; };
+};
+mod:u12_store_through_param = {
+error:E5_u12_store_through_param;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = NIL(int32[]->:out, ..*int32[]:vs) never fails { <-out = vs; pass NIL; };
+func:h = NIL(int32[]->:out) never fails { drop g(out, 7i32); pass NIL; };
+func:f = int32() never fails { int32[1]:o = [7i32]; int32[]:r = o[0i64...1i64]; drop h(@r); int32:c = raw clob(); int32:got = r[0i64]; pass got; };
+};
+mod:u13_store_field_through_param = {
+error:E5_u13_store_field_through_param;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = NIL(SV->:out, ..*int32[]:vs) never fails { out.s = vs; pass NIL; };
+func:h = NIL(SV->:out) never fails { drop g(out, 7i32); pass NIL; };
+func:f = int32() never fails { int32[1]:o = [7i32]; SV:r = SV{ s: o[0i64...1i64] }; drop h(@r); int32:c = raw clob(); int32:got = r.s[0i64]; pass got; };
+};
+mod:u14_store_range_through_param = {
+error:E5_u14_store_range_through_param;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = NIL(int32[]->:out, ..*int32[]:vs) never fails { <-out = vs[0i64...1i64]; pass NIL; };
+func:h = NIL(int32[]->:out) never fails { drop g(out, 7i32); pass NIL; };
+func:f = int32() never fails { int32[1]:o = [7i32]; int32[]:r = o[0i64...1i64]; drop h(@r); int32:c = raw clob(); int32:got = r[0i64]; pass got; };
+};
+mod:u15_slice_elements_whole = {
+error:E5_u15_slice_elements_whole;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[][](..*int32[][]:vs) never fails { pass vs; };
+func:h = int32[][]() never fails { pass raw g(raw nov()); };
+func:f = int32() never fails { int32[][]:r = raw h(); int32:c = raw clob(); int32:got = r[0i64][0i64]; pass got; };
+};
+mod:u16_fixed_view = {
+error:E5_u16_fixed_view;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = fixed int32[](..*int32[]:vs) never fails { fixed int32[]:c = vs; pass c; };
+func:h = fixed int32[]() never fails { pass raw g(7i32); };
+func:f = int32() never fails { fixed int32[]:r = raw h(); int32:c = raw clob(); int32:got = r[0i64]; pass got; };
+};
+mod:u1_whole = {
+error:E5_u1_whole;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](..*int32[]:vs) never fails { pass vs; };
+func:h = int32[]() never fails { pass raw g(7i32); };
+func:f = int32() never fails { int32[]:r = raw h(); int32:c = raw clob(); int32:got = r[0i64]; pass got; };
+};
+mod:u2_range = {
+error:E5_u2_range;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](..*int32[]:vs) never fails { pass vs[0i64...1i64]; };
+func:h = int32[]() never fails { pass raw g(7i32); };
+func:f = int32() never fails { int32[]:r = raw h(); int32:c = raw clob(); int32:got = r[0i64]; pass got; };
+};
+mod:u3_local_copy = {
+error:E5_u3_local_copy;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](..*int32[]:vs) never fails { int32[]:c = vs; pass c; };
+func:h = int32[]() never fails { pass raw g(7i32); };
+func:f = int32() never fails { int32[]:r = raw h(); int32:c = raw clob(); int32:got = r[0i64]; pass got; };
+};
+mod:u3b_local_copy_range = {
+error:E5_u3b_local_copy_range;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](..*int32[]:vs) never fails { int32[]:c = vs; pass c[0i64...1i64]; };
+func:h = int32[]() never fails { pass raw g(7i32); };
+func:f = int32() never fails { int32[]:r = raw h(); int32:c = raw clob(); int32:got = r[0i64]; pass got; };
+};
+mod:u3c_range_local = {
+error:E5_u3c_range_local;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](..*int32[]:vs) never fails { int32[]:c = vs[0i64...1i64]; pass c; };
+func:h = int32[]() never fails { pass raw g(7i32); };
+func:f = int32() never fails { int32[]:r = raw h(); int32:c = raw clob(); int32:got = r[0i64]; pass got; };
+};
+mod:u4_struct_holder = {
+error:E5_u4_struct_holder;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = SV(..*int32[]:vs) never fails { pass SV{ s: vs }; };
+func:h = SV() never fails { pass raw g(7i32); };
+func:f = int32() never fails { SV:r = raw h(); int32:c = raw clob(); int32:got = r.s[0i64]; pass got; };
+};
+mod:u4b_local_holder = {
+error:E5_u4b_local_holder;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = SV(..*int32[]:vs) never fails { SV:w = SV{ s: vs }; pass w; };
+func:h = SV() never fails { pass raw g(7i32); };
+func:f = int32() never fails { SV:r = raw h(); int32:c = raw clob(); int32:got = r.s[0i64]; pass got; };
+};
+mod:u4c_holder_field = {
+error:E5_u4c_holder_field;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](..*int32[]:vs) never fails { SV:w = SV{ s: vs }; pass w.s; };
+func:h = int32[]() never fails { pass raw g(7i32); };
+func:f = int32() never fails { int32[]:r = raw h(); int32:c = raw clob(); int32:got = r[0i64]; pass got; };
+};
+mod:u4d_holder_written = {
+error:E5_u4d_holder_written;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](..*int32[]:vs) never fails { SV:w = SV{ s: raw nov() }; w.s = vs; pass w.s; };
+func:h = int32[]() never fails { pass raw g(7i32); };
+func:f = int32() never fails { int32[]:r = raw h(); int32:c = raw clob(); int32:got = r[0i64]; pass got; };
+};
+mod:u5_helper = {
+error:E5_u5_helper;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](..*int32[]:vs) never fails { pass raw ida(vs); };
+func:h = int32[]() never fails { pass raw g(7i32); };
+func:f = int32() never fails { int32[]:r = raw h(); int32:c = raw clob(); int32:got = r[0i64]; pass got; };
+};
+mod:u5b_helper_then_local = {
+error:E5_u5b_helper_then_local;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](..*int32[]:vs) never fails { int32[]:c = raw ida(vs); pass c; };
+func:h = int32[]() never fails { pass raw g(7i32); };
+func:f = int32() never fails { int32[]:r = raw h(); int32:c = raw clob(); int32:got = r[0i64]; pass got; };
+};
+mod:u6_spread_forward = {
+error:E5_u6_spread_forward;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g2 = int32[](..*int32[]:ws) never fails { pass ws; };
+func:g = int32[](..*int32[]:vs) never fails { pass raw g2(..^vs); };
+func:h = int32[]() never fails { pass raw g(7i32); };
+func:f = int32() never fails { int32[]:r = raw h(); int32:c = raw clob(); int32:got = r[0i64]; pass got; };
+};
+mod:u7_result_literal = {
+error:E5_u7_result_literal;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g0 = int32[](..*int32[]:vs) { return Result{value: vs}; };
+func:g = int32[](..*int32[]:vs) never fails { pass raw nov(); };
+func:h = int32[]() never fails { pass raw g(7i32); };
+func:f = int32() never fails { int32[]:r = raw h(); int32:c = raw clob(); int32:got = r[0i64]; pass got; };
+};
+mod:u8_ternary = {
+error:E5_u8_ternary;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](..*int32[]:vs) never fails { pass (is (vs.len > 0i64) : vs : raw nov()); };
+func:h = int32[]() never fails { pass raw g(7i32); };
+func:f = int32() never fails { int32[]:r = raw h(); int32:c = raw clob(); int32:got = r[0i64]; pass got; };
+};
+mod:u9_value_pick = {
+error:E5_u9_value_pick;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](..*int32[]:vs) never fails { EV:e = EV.Z; int32[]:c = pick (e) { (EV.A(s)) { give s; }, (EV.Z) { give vs; } }; pass c; };
+func:h = int32[]() never fails { pass raw g(7i32); };
+func:f = int32() never fails { int32[]:r = raw h(); int32:c = raw clob(); int32:got = r[0i64]; pass got; };
+};
+mod:c1_kept_in_the_frame = {
+error:E5_c1_kept_in_the_frame;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](..*int32[]:vs) never fails { pass vs; };
+func:f = int32() never fails { int32[]:r = raw g(7i32); int32:got = r[0i64]; pass got; };
+};
+mod:c2_kept_past_a_block = {
+error:E5_c2_kept_past_a_block;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](..*int32[]:vs) never fails { pass vs; };
+func:f = int32() never fails { int32[1]:o = [7i32]; int32[]:r = o[0i64...1i64]; { r = raw g(23i32); } int32:c = raw clob(); int32:got = r[0i64]; pass got - 16i32; };
+};
+mod:c3_spread_of_a_live_view = {
+error:E5_c3_spread_of_a_live_view;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](..*int32[]:vs) never fails { pass vs; };
+func:f = int32() never fails { int32[1]:o = [7i32]; int32[]:r = raw g(..^o[0i64...1i64]); int32:got = r[0i64]; pass got; };
+};
+mod:c4_element_of_a_copy = {
+error:E5_c4_element_of_a_copy;
+struct:SV = { int32[]:s; };
+struct:SS = { int32[][]:s; };
+enum:EV = { A(int32[]); Z; };
+func:ida = int32[](int32[]:a) never fails { pass a; };
+func:clob = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
+func:nov = int32[]() never fails { #unreachable(); };
+func:g = int32[](..*int32[][]:vs) never fails { int32[][]:c = vs; pass c[0i64]; };
+func:f = int32() never fails { List<int32>:l = raw mkl(); int32[]:r = raw g(l[0i64...1i64]); pass r[0i64]; };
+};

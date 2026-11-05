@@ -1,0 +1,29 @@
+// expect-exit: 84
+// A FALSE CLAUSE OVER A PARK TRAPS AT EVERY LEVEL (DEF-494's face C): `n` is 3 and the invariant asks for 0 after the first trip. Only the clause names `n`, so with the walk's clause step off its slot is a dead resume alloca, and `-O2` read the invariant as true: a false invariant missed, exit 9 from `main`. The failsafe's 84 is the trap this test wants.
+mod:async_loop_false_clause_traps;
+error:E9;
+func:stomp = int64(int64:k) never fails { int64[8]:a = [113i64,113i64,113i64,113i64,113i64,113i64,113i64,113i64]; int64:t = 0i64; for (int64:i in 0i64...8i64) { a[i] = 113i64 + k; t = t + a[i]; } pass t; };
+async func:par = int64(int64:v) { int64:n = v - 4i64; int64:k = 0i64; while (k < 2i64) decreases 2i64 - k invariant (k == 0i64) || (n == 0i64) { k = k + 1i64; await sleep(raw duration_ms(1i64)) ?| NIL; int64:z = raw stomp(3i64); } pass 7i64; };
+async func:main = int32(cstring[]:_~argv) {
+    int64:r = await par(7i64) ?! E9;
+    exit 9i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 90i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (InvariantViolated) { exit 84i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

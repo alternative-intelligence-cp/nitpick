@@ -249,8 +249,8 @@ func:struct_layout_bound = int32(TypeResolver->:r, int32:struct_type, int32:scop
             if (raw type_contains_channel_recorded(r.types, ft, 64i32)) { haschan = true; }
             if (raw type_contains_borrow_recorded(r.types, ft, 64i32)) { hasborrow = true; }
             if (raw type_contains_shared_recorded(r.types, ft, 64i32)) { hasshared = true; }
-            // AND GUARD CONTAINMENT (D-339, landing 127), same walk, same
-            // reason: a struct carries a hold exactly when a field does.
+            // NOT GUARD CONTAINMENT (D-339): since landing 177d2 that is a walk at the
+            // question, `type_contains_guard`, since a field here may not be laid out yet.
         }
         i = i + 1i32;
     }

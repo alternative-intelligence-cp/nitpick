@@ -2454,8 +2454,9 @@ func:fold_stmt = FoldFlow(TypeResolver->:r, StmtId:id, int32:scope, int32:fuel) 
 // `fall label;` ENTERS THE LABELLED ARM'S BODY WITH NO TEST -- its pattern is
 // never matched and its guard never asked (`emit_fall`; the checker holds the
 // target to binding nothing, NITPICK-TYPE-090) -- and each entry spends one
-// unit of the pick's own share of the fuel, so two arms that fall to each
-// other end as every loop that does not: NITPICK-TYPE-025.
+// unit of the pick's own share of the fuel. A `fall` goes forward (TYPE-111,
+// DEF-487), so this ends with the arms; a cycle is a loop around the `pick`,
+// and that's what ends in NITPICK-TYPE-025.
 func:fold_pick = FoldFlow(TypeResolver->:r, ExprId:sel, int32:start, int32:count,
                           Span:at, int32:scope, int32:fuel) never fails {
     ConstVal:sv = raw fold_expr(r, sel, scope, fuel);

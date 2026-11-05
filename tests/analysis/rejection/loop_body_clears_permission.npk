@@ -1,0 +1,118 @@
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 71:218
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 72:179
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 73:175
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 74:170
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 75:214
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 76:253
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 77:243
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 78:243
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 79:206
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 80:172
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 81:210
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 82:218
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 83:225
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 84:240
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 85:255
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 86:212
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 87:197
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 88:200
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 89:287
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 90:222
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 91:197
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 92:240
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 93:179
+// expect-error: NITPICK-WILDX-002
+// expect-error-at: 94:285
+// expect-error: NITPICK-WILDX-002
+// expect-error-at: 95:246
+// expect-error: NITPICK-WILDX-002
+// expect-error-at: 96:320
+// expect-error: NITPICK-WILDX-002
+// expect-error-at: 97:242
+// expect-error: NITPICK-WILDX-002
+// expect-error-at: 98:236
+// expect-error: NITPICK-WILDX-002
+// expect-error-at: 99:219
+mod:loop_body_clears_permission;
+error:E9;
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E9; };
+func:rewrite = int64(Result<int64>->:p) never fails { <-p = bad(); pass 0i64; };
+macro:rw = (R) { R = bad(); };
+
+// A LOOP BODY'S REWRITE CLEARS WHAT A PERMISSION SAID (DEF-522, HIGH by kind, landing 177d2b). A `Result` tested above a loop whose
+// body re-assigned it stayed tested after the loop and on the body's later trips, so `.value` read a zero with no sign (60/60), and
+// a page a body re-assigned stayed sealed, so the call went to writable bytes (97/97). `x10` and `x23` are `.err`'s road, `x14` a
+// rewrite in `end`. `x17` needs a nested loop's quiet walk, `x12` the walk that starts from what a trip left. `x24` was refused before.
+// NOT HERE: a rewrite on a road that leaves by `break` or `continue` is DEF-429's: `state_merge` drops that arm.
+func:x4_while_body_rewrites_result = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64:k = 0i64; while (k < 1i64) decreases 1i64 - k { r = bad(); k = k + 1i64; } pass r.value; };   // site NITPICK-TAINT-001
+func:x5_for_body_rewrites_result = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; for (int64:i in 0i64...1i64) { r = bad(); } pass r.value; };   // site NITPICK-TAINT-001
+func:x6_loop_body_rewrites_result = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; loop (0i64, 1i64, 1i64) { r = bad(); } pass r.value; };   // site NITPICK-TAINT-001
+func:x15_till_body_rewrites_result = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; till (1i64, 1i64) { r = bad(); } pass r.value; };   // site NITPICK-TAINT-001
+func:x16_for_over_array_rewrites_result = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64[2]:a = [1i64, 2i64]; for (int64:e in a) { r = bad(); n = n + e; } pass r.value; };   // site NITPICK-TAINT-001
+func:x7_when_body_rewrites_result = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64:k = 0i64; when (k < 1i64) decreases 1i64 - k { r = bad(); k = k + 1i64; } then { k = 2i64; } end { k = 3i64; } pass r.value; };   // site NITPICK-TAINT-001
+func:x8_when_then_rewrites_result = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64:k = 0i64; when (k < 1i64) decreases 1i64 - k { k = k + 1i64; } then { r = bad(); } end { k = 3i64; } pass r.value; };   // site NITPICK-TAINT-001
+func:x14_when_end_rewrites_result = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64:k = 0i64; when (k < 1i64) decreases 1i64 - k { k = k + 1i64; } then { k = 2i64; } end { r = bad(); } pass r.value; };   // site NITPICK-TAINT-001
+func:x10_while_rewrites_result_err = int64() never fails { Result<int64>:r = bad(); if (!r.is_error) { pass 1i64; } int64:k = 0i64; while (k < 1i64) decreases 1i64 - k { r = ok(); k = k + 1i64; } discard(r.err); pass 7i64; };   // site NITPICK-TAINT-001
+func:x23_err_read_after_body_rewrites = int64() never fails { Result<int64>:r = bad(); if (!r.is_error) { pass 1i64; } for (int64:i in 0i64...1i64) { r = ok(); } discard(r.err); pass 7i64; };   // site NITPICK-TAINT-001
+func:x12_body_reads_before_it_rewrites = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64:k = 0i64; int64:t = 0i64; while (k < 2i64) decreases 2i64 - k { t = r.value; r = bad(); k = k + 1i64; } pass t; };   // site NITPICK-TAINT-001
+func:x17_inner_loop_rewrites_outer_reads_above = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64:k = 0i64; int64:t = 0i64; while (k < 2i64) decreases 2i64 - k { t = r.value; for (int64:i in 0i64...1i64) { r = bad(); } k = k + 1i64; } pass t; };   // site NITPICK-TAINT-001
+func:x18_inner_loop_rewrites_read_after_outer = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; for (int64:j in 0i64...1i64) { for (int64:i in 0i64...1i64) { r = bad(); } } pass r.value; };   // site NITPICK-TAINT-001
+func:x19_rewrite_in_an_if_in_the_body = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64:k = 0i64; while (k < 1i64) decreases 1i64 - k { if (k == 0i64) { r = bad(); } k = k + 1i64; } pass r.value; };   // site NITPICK-TAINT-001
+func:x20_rewrite_in_a_pick_in_the_body = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64:k = 0i64; while (k < 1i64) decreases 1i64 - k { pick (k) { (0i64) { r = bad(); }, (*) { } } k = k + 1i64; } pass r.value; };   // site NITPICK-TAINT-001
+func:x21_loop_in_an_arm_rewrites = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; pick (n) { (1i64) { for (int64:i in 0i64...1i64) { r = bad(); } }, (*) { } } pass r.value; };   // site NITPICK-TAINT-001
+func:x22_loop_in_an_if_rewrites = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; if (n == 1i64) { for (int64:i in 0i64...1i64) { r = bad(); } } pass r.value; };   // site NITPICK-TAINT-001
+func:x24_claim_in_the_body_rewrites = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; for (int64:i in 0i64...1i64) { discard(raw rewrite($$m r)); } pass r.value; };   // site NITPICK-TAINT-001
+func:x25_loop_in_a_guard_value_pick = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; pick (n) { (1i64) where (pick (n) { (1i64) { for (int64:i in 0i64...1i64) { r = bad(); } give false; }, (*) { give false; } }) { pass 5i64; }, (*) { pass r.value; } } pass 2i64; };   // site NITPICK-TAINT-001
+func:x26_read_in_a_later_loop = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; for (int64:i in 0i64...1i64) { r = bad(); } int64:t = 0i64; for (int64:j in 0i64...1i64) { t = r.value; } pass t; };   // site NITPICK-TAINT-001
+func:x27_move_then_rebind = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; Result<int64>:s = move(r); r = bad(); if (s.is_error) { pass 1i64; } pass r.value; };   // site NITPICK-TAINT-001
+func:x28_move_then_rebind_in_a_loop = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; for (int64:i in 0i64...1i64) { Result<int64>:s = move(r); r = bad(); if (s.is_error) { pass 1i64; } } pass r.value; };   // site NITPICK-TAINT-001
+func:x29_macro_in_the_body_rewrites = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; for (int64:i in 0i64...1i64) { #rw(r); } pass r.value; };   // site NITPICK-TAINT-001
+func:y4_while_body_rewrites_page = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; wildx_seal(page); int64:n = 1i64; int64:k = 0i64; while (k < 1i64) decreases 1i64 - k { page = wildx_alloc(64i64) =>! wildx uint8->; k = k + 1i64; } discard(wildx_call(page, 5i64)); wildx_free(page); pass 7i64; };   // site NITPICK-WILDX-002
+func:y5_for_body_rewrites_page = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; wildx_seal(page); int64:n = 1i64; for (int64:i in 0i64...1i64) { page = wildx_alloc(64i64) =>! wildx uint8->; } discard(wildx_call(page, 5i64)); wildx_free(page); pass 7i64; };   // site NITPICK-WILDX-002
+func:y6_when_body_rewrites_page = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; wildx_seal(page); int64:n = 1i64; int64:k = 0i64; when (k < 1i64) decreases 1i64 - k { page = wildx_alloc(64i64) =>! wildx uint8->; k = k + 1i64; } then { k = 2i64; } end { k = 3i64; } discard(wildx_call(page, 5i64)); wildx_free(page); pass 7i64; };   // site NITPICK-WILDX-002
+func:y7_loop_body_rewrites_page = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; wildx_seal(page); int64:n = 1i64; loop (0i64, 1i64, 1i64) { page = wildx_alloc(64i64) =>! wildx uint8->; } discard(wildx_call(page, 5i64)); wildx_free(page); pass 7i64; };   // site NITPICK-WILDX-002
+func:y8_till_body_rewrites_page = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; wildx_seal(page); int64:n = 1i64; till (1i64, 1i64) { page = wildx_alloc(64i64) =>! wildx uint8->; } discard(wildx_call(page, 5i64)); wildx_free(page); pass 7i64; };   // site NITPICK-WILDX-002
+func:y9_inner_loop_rewrites_page_outer_calls_above = int64() never fails { wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; wildx_seal(page); int64:n = 1i64; for (int64:j in 0i64...2i64) { discard(wildx_call(page, 5i64)); for (int64:i in 0i64...1i64) { page = wildx_alloc(64i64) =>! wildx uint8->; } } wildx_free(page); pass 7i64; };   // site NITPICK-WILDX-002
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

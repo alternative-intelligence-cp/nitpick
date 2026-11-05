@@ -1,17 +1,17 @@
 // expect-error: NITPICK-TYPE-035
 // expect-error-at: 60:1
 // expect-error: NITPICK-TYPE-025
-// expect-error-at: 85:27
+// expect-error-at: 86:31
 // expect-error: NITPICK-TYPE-004
-// expect-error-at: 104:23
+// expect-error-at: 106:23
 // expect-error: NITPICK-TYPE-004
-// expect-error-at: 105:16
+// expect-error-at: 107:16
 // expect-error: NITPICK-TYPE-004
-// expect-error-at: 106:16
+// expect-error-at: 108:16
 // expect-error: NITPICK-TYPE-004
-// expect-error-at: 107:15
+// expect-error-at: 109:15
 // expect-error: NITPICK-TYPE-004
-// expect-error-at: 108:15
+// expect-error-at: 110:15
 //
 // WHERE THE COMPILE-TIME EVALUATOR'S NEW VALUE STOPS (D-338, 1.6.1e step 3b). It
 // holds a payload-less enum variant, compares two with `==`/`!=`, and runs a
@@ -41,8 +41,8 @@
 //   enum's variant is not a value here -- its instance is not in the
 //   expression (`generic_variant`).
 //
-//   TWO ARMS THAT FALL TO EACH OTHER END AS EVERY LOOP THAT DOES NOT
-//   (`fall_cycle`): NITPICK-TYPE-025, the budget, never a hung build.
+//   A LOOP AROUND A `pick` ENDS AS EVERY LOOP THAT DOES NOT (`fall_cycle`, its
+//   arms falling forward, DEF-487): NITPICK-TYPE-025, the budget, never a hung build.
 //
 // The controls at the end fold: the same shapes one step back.
 mod:comptime_enum_value;
@@ -80,10 +80,12 @@ comptime func:generic_variant = bool() never fails {
 
 comptime func:fall_cycle = int32(int32:k) never fails {
     int32:n = 0i32;
-    pick (k) {
-        one: (1i32) { n = n + 1i32; fall two; },
-        two: (2i32) { n = n + 1i32; fall one; },
-        (*)         { n = 9i32; }
+    while (true) unbounded {
+        pick (k) {
+            one: (1i32) { n = n + 1i32; fall two; },
+            two: (2i32) { n = n + 1i32; },
+            (*)         { pass 9i32; }
+        }
     }
     pass n;
 };

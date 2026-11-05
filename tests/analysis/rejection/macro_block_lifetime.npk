@@ -1,0 +1,116 @@
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 56:55
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 58:55
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 60:57
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 62:44
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 64:124
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 66:124
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 68:55
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 70:124
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 72:65
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 74:66
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 76:56
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 78:56
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 80:56
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 82:92
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 84:60
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 86:169
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 87:55
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 88:82
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 91:121
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 95:136
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 96:99
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 97:165
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 98:157
+mod:macro_block_lifetime;
+error:E9;
+struct:PH = { string->:p; };
+struct:GH = { Guard<int32>:g; };
+func:setp = NIL(PH->:h, string->:v) never fails { h.p = v; pass NIL; };
+func:setq = NIL(string->->:h, string->:v) never fails { <-h = v; pass NIL; };
+func:mkl = List<int32>() never fails { List<int32>:l = raw list_init::<int32>(4i64); drop list_push(@l, 42i32); pass l; };
+
+// A MACRO'S BLOCK DIES INSIDE ITS INVOCATION'S BLOCK (DEF-509, HIGH by kind, landing 177d2b). Its scope's `parent` is the macro's home, for hygiene (`resolve.npk`), so the lifetime walk reached the module and answered "not inside", and `#caller` stored what the block was about to free: 83 at both legs, a release over a freed cell 124. Rule 3 (D-004) says this already.
+macro:k1 = () { string:s = string_concat("ab", "cd"); #caller(p) = @s; };   // site NITPICK-BORROW-002
+func:caller_view = int32() never fails { string:o = string_concat("ab", "cd"); string->:p = @o; #k1(); fixed uint8[]:b = string_bytes(<-p); pass b[0i64] => int32; };
+macro:k2 = () { string:s = string_concat("ab", "cd"); #caller(h).p = @s; };   // site NITPICK-BORROW-002
+func:caller_field = int32() never fails { string:o = string_concat("ab", "cd"); PH:h = PH{ p: @o }; #k2(); fixed uint8[]:b = string_bytes(<-h.p); pass b[0i64] => int32; };
+macro:k3 = () { { string:s = string_concat("ab", "cd"); #caller(p) = @s; } };   // site NITPICK-BORROW-002
+func:nested_block_in_macro = int32() never fails { string:o = string_concat("ab", "cd"); string->:p = @o; #k3(); fixed uint8[]:b = string_bytes(<-p); pass b[0i64] => int32; };
+macro:k4 = () { List<int32>:l = raw mkl(); #caller(v) = l[0i64...1i64]; };   // site NITPICK-BORROW-002
+func:caller_slice = int32() never fails { int32[1]:a = [1i32]; int32[]:v = a[0i64...1i64]; #k4(); pass v[0i64]; };
+macro:k5 = () { Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; Guard<int32>:t = await a.acquire(raw duration_ms(500i64)) ?! E9; #caller(h) = GH{ g: move(t) }; };   // site NITPICK-BORROW-002
+async func:caller_guard = int32() { Mutex<int32, 1i32>:z = mutex(1i32) ?! E9; Guard<int32>:g0 = await z.acquire(raw duration_ms(500i64)) ?! E9; GH:h = GH{ g: move(g0) }; #k5(); pass 7i32; };
+macro:k6 = () { Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; Guard<int32>:t = await a.acquire(raw duration_ms(500i64)) ?! E9; #caller(h) = move(t); };   // site NITPICK-BORROW-002
+async func:caller_guard_local = int32() { Mutex<int32, 1i32>:z = mutex(1i32) ?! E9; Guard<int32>:h = await z.acquire(raw duration_ms(500i64)) ?! E9; #k6(); pass 7i32; };
+macro:k7 = () { string:s = string_concat("ab", "cd"); #caller(h).p = @s; };   // site NITPICK-BORROW-002
+func:value_param_holder = int32(PH:h) never fails { #k7(); fixed uint8[]:b = string_bytes(<-h.p); pass b[0i64] => int32; };
+macro:k8 = () { Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; Guard<int32>:t = await a.acquire(raw duration_ms(500i64)) ?! E9; #caller(h).g = move(t); };   // site NITPICK-BORROW-002
+async func:move_param_guard = int32(move GH:h) { #k8(); pass 7i32; };
+macro:k9 = () { string:s = string_concat("ab", "cd"); drop setp(@#caller(h), @s); };   // site NITPICK-BORROW-002
+func:callee_store = int32() never fails { string:o = string_concat("ab", "cd"); PH:h = PH{ p: @o }; #k9(); fixed uint8[]:b = string_bytes(<-h.p); pass b[0i64] => int32; };
+macro:k10 = () { string:s = string_concat("ab", "cd"); drop setq(@#caller(p), @s); };   // site NITPICK-BORROW-002
+func:callee_store_ptr = int32() never fails { string:o = string_concat("ab", "cd"); string->:p = @o; #k10(); fixed uint8[]:b = string_bytes(<-p); pass b[0i64] => int32; };
+macro:k11 = () { string:s = string_concat("ab", "cd"); #caller(p) = @s; };   // site NITPICK-BORROW-002
+func:macro_in_loop = int32() never fails { string:o = string_concat("ab", "cd"); string->:p = @o; for (int32:i in 0i32...1i32) { #k11(); } fixed uint8[]:b = string_bytes(<-p); pass b[0i64] => int32; };
+macro:k12 = () { string:s = string_concat("ab", "cd"); #caller(p) = @s; };   // site NITPICK-BORROW-002
+func:macro_in_if = int32() never fails { string:o = string_concat("ab", "cd"); string->:p = @o; if (true) { #k12(); } fixed uint8[]:b = string_bytes(<-p); pass b[0i64] => int32; };
+macro:k13 = () { string:s = string_concat("ab", "cd"); #caller(p) = @s; };   // site NITPICK-BORROW-002
+func:macro_in_block = int32() never fails { string:o = string_concat("ab", "cd"); string->:p = @o; { #k13(); } fixed uint8[]:b = string_bytes(<-p); pass b[0i64] => int32; };
+macro:k14 = () { int32:c = 0i32; pick (c) { (0i32) { string:s = string_concat("ab", "cd"); #caller(p) = @s; }, (*) { } } };   // site NITPICK-BORROW-002
+func:pick_arm_in_macro = int32() never fails { string:o = string_concat("ab", "cd"); string->:p = @o; #k14(); fixed uint8[]:b = string_bytes(<-p); pass b[0i64] => int32; };
+macro:klk = () { Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; #caller(p) = @a; };   // site NITPICK-BORROW-002
+async func:lock_in_a_macro_block = int32() { Mutex<int32, 2i32>:z = mutex(1i32) ?! E9; Mutex<int32, 2i32>->:p = @z; #klk(); Guard<int32>:g = await p.acquire(raw duration_ms(500i64)) ?! E9; int32:x = g.value; if (x == 7i32) { pass 7i32; } pass 23i32; };
+async func:lock_in_an_if_block = int32() { Mutex<int32, 2i32>:z = mutex(1i32) ?! E9; Mutex<int32, 2i32>->:p = @z; if (true) { Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; p = @a; } Guard<int32>:g = await p.acquire(raw duration_ms(500i64)) ?! E9; int32:x = g.value; if (x == 7i32) { pass 7i32; } pass 23i32; };   // site NITPICK-BORROW-002
+macro:n1 = () { string:s = string_concat("ab", "cd"); #caller(q) = @s; };   // site NITPICK-BORROW-002
+macro:n1o = () { string:o2 = string_concat("ab", "cd"); string->:q = @o2; #n1(); #caller(p) = q; };   // site NITPICK-BORROW-002
+func:nested_macro_direct = int32() never fails { string:o = string_concat("ab", "cd"); string->:p = @o; #n1o(); fixed uint8[]:b = string_bytes(<-p); pass b[0i64] => int32; };
+macro:n2 = () { #caller(q) = @#caller(s2); };
+macro:n2o = () { string:s2 = string_concat("ab", "cd"); string:o2 = string_concat("ab", "cd"); string->:q = @o2; #n2(); #caller(p) = q; };   // site NITPICK-BORROW-002
+func:nested_macro_outer = int32() never fails { string:o = string_concat("ab", "cd"); string->:p = @o; #n2o(); fixed uint8[]:b = string_bytes(<-p); pass b[0i64] => int32; };
+
+// THE SAME SHAPES IN A PLAIN BLOCK, the reports this rule always made: the macro's block now reads as this block does.
+func:plain_view = int32() never fails { string:o = string_concat("ab", "cd"); string->:p = @o; { string:s = string_concat("ab", "cd"); p = @s; } fixed uint8[]:b = string_bytes(<-p); pass b[0i64] => int32; };   // site NITPICK-BORROW-002
+func:plain_value_param_holder = int32(PH:h) never fails { { string:s = string_concat("ab", "cd"); h.p = @s; } fixed uint8[]:b = string_bytes(<-h.p); pass b[0i64] => int32; };   // site NITPICK-BORROW-002
+async func:plain_move_param_guard = int32(move GH:h) { { Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; Guard<int32>:t = await a.acquire(raw duration_ms(500i64)) ?! E9; h.g = move(t); } pass 7i32; };   // site NITPICK-BORROW-002
+func:plain_callee_store = int32() never fails { string:o = string_concat("ab", "cd"); PH:h = PH{ p: @o }; { string:s = string_concat("ab", "cd"); drop setp(@h, @s); } fixed uint8[]:b = string_bytes(<-h.p); pass b[0i64] => int32; };   // site NITPICK-BORROW-002
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

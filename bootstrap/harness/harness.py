@@ -5572,6 +5572,9 @@ def main(argv):
         # Run as subprocesses so each stays independently runnable; output
         # surfaces only on failure.
         for script, what in (("spec_coverage.py", "spec-coverage"),
+                             ("suspend_walk.py", "suspend-walk"),
+                             ("suspend_emission.py", "suspend-emission"),
+                             ("assign_fields.py", "assign-fields"),
                              ("selfcheck.py", "harness-selfcheck")):
             env = dict(os.environ)
             if COMPILER:

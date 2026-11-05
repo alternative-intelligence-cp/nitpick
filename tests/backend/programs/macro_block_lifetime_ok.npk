@@ -1,0 +1,55 @@
+// expect-exit: 0
+// THE ROADS BESIDE `tests/analysis/rejection/macro_block_lifetime.npk` (DEF-509): a macro's block may hold and view its own locals and the caller's, and a store that dies with the block is no store past it. Each returns 97, the first byte or the length plus 93, and `main` compares.
+mod:macro_block_lifetime_ok;
+error:E9;
+struct:PH = { string->:p; };
+struct:GH = { Guard<int32>:g; };
+func:setp = NIL(PH->:h, string->:v) never fails { h.p = v; pass NIL; };
+func:setq = NIL(string->->:h, string->:v) never fails { <-h = v; pass NIL; };
+func:mkl = List<int32>() never fails { List<int32>:l = raw list_init::<int32>(4i64); drop list_push(@l, 42i32); pass l; };
+macro:a1 = () { #caller(p) = @#caller(s); };
+func:view_of_callers_own = int32() never fails { string:o = string_concat("ab", "cd"); string:s = string_concat("ab", "cd"); string->:p = @o; #a1(); fixed uint8[]:b = string_bytes(<-p); pass b[0i64] => int32; };
+macro:a2 = () { string:s = string_concat("ab", "cd"); string->:q = @s; #caller(out) = (<-q).len =>! int32; };
+func:macro_local_holder = int32() never fails { int32:out = 0i32; #a2(); pass out + 93i32; };
+macro:a3 = () { string->:q = @#caller(s); #caller(out) = (<-q).len =>! int32; };
+func:macro_local_holder_of_caller = int32() never fails { string:s = string_concat("ab", "cd"); int32:out = 0i32; #a3(); pass out + 93i32; };
+macro:a4 = () { string:s2 = string_concat("ab", "cd"); { string->:q = @s2; #caller(out) = (<-q).len =>! int32; } };
+func:inner_holder_of_macro_local = int32() never fails { int32:out = 0i32; #a4(); pass out + 93i32; };
+macro:a5 = () { string:s2 = string_concat("ab", "cd"); string:s3 = string_concat("ab", "cd"); string->:q = @s2; { q = @s3; } #caller(out) = (<-q).len =>! int32; };
+func:store_in_a_nested_block_of_a_macro_local = int32() never fails { int32:out = 0i32; #a5(); pass out + 93i32; };
+macro:a6 = (v) { string:s = string_concat("ab", "cd"); int64:l = s.len; #caller(p) = v; discard(l); };
+func:macro_argument_is_the_callers = int32() never fails { string:o = string_concat("ab", "cd"); string:w = string_concat("ab", "cd"); string->:p = @o; #a6(@w); fixed uint8[]:b = string_bytes(<-p); pass b[0i64] => int32; };
+macro:a7 = () { #caller(q) = @#caller(s2); };
+macro:a7o = () { string:s2 = string_concat("ab", "cd"); string:o2 = string_concat("ab", "cd"); string->:q = @o2; #a7(); #caller(out) = (<-q).len =>! int32; };
+func:nested_macro_within_its_outer = int32() never fails { int32:out = 0i32; #a7o(); pass out + 93i32; };
+macro:a8 = () { string->:r = #caller(p); #caller(out) = (<-r).len =>! int32; };
+func:caller_name_still_reaches = int32() never fails { string:o = string_concat("ab", "cd"); string->:p = @o; int32:out = 0i32; #a8(); pass out + 93i32; };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw view_of_callers_own()) != 97i32) { exit 1i32; }
+    if ((raw macro_local_holder()) != 97i32) { exit 2i32; }
+    if ((raw macro_local_holder_of_caller()) != 97i32) { exit 3i32; }
+    if ((raw inner_holder_of_macro_local()) != 97i32) { exit 4i32; }
+    if ((raw store_in_a_nested_block_of_a_macro_local()) != 97i32) { exit 5i32; }
+    if ((raw macro_argument_is_the_callers()) != 97i32) { exit 6i32; }
+    if ((raw nested_macro_within_its_outer()) != 97i32) { exit 7i32; }
+    if ((raw caller_name_still_reaches()) != 97i32) { exit 8i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

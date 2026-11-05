@@ -707,7 +707,7 @@ func:check_arm_control = NIL(ExprTyper->:e, ExprId:selid, int32:start, int32:cou
     for (int32:i in 0i32...count) {
         StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, i));
         drop guard_move_of_binding(e, raw arm_guard(arm), selid, 64i32);
-        drop fall_targets_in(e, raw arm_body(arm), start, count, 64i32);
+        drop fall_targets_in(e, raw arm_body(arm), start, count, i, raw AST_DEPTH_MAX());
     }
     pass NIL;
 };
@@ -847,15 +847,23 @@ func:stmt_moves_binding = NIL(ExprTyper->:e, StmtId:sid, ExprId:selid, int32:fue
 
 // Every `fall` reachable in an arm's body without entering a nested `pick`:
 // its label names an arm of THIS pick, and that arm binds nothing.
-func:fall_targets_in = NIL(ExprTyper->:e, StmtId:sid, int32:start, int32:count, int32:fuel) never fails {
+func:fall_targets_in = NIL(ExprTyper->:e, StmtId:sid, int32:start, int32:count, int32:from, int32:fuel) never fails {
     if (raw stmt_is_none(sid)) { pass NIL; }
-    if (fuel <= 0i32) { pass NIL; }
     StmtNode:s = raw ast_stmt(e.ast, sid);
+    // PAST THE FUEL IS CLOSED (DEF-487): a `fall` the walk can't reach is checked for neither its direction nor its
+    // target, and the move walk's one pass in arm order (DEF-437) rests on both. The fuel is the tree's own bound,
+    // so no tree the parser or the expander builds gets here.
+    if (fuel <= 0i32) { drop diaglist_push(e.diags, raw diag_error(raw TYPE_FALL_BACK(), "this `pick` arm nests deeper than the `fall` check follows (DEF-487), so a `fall` in it can't be shown to go to a later arm that binds nothing", s.span)); pass NIL; }
     if (s.kind == StmtKind.StmtFallStmt) {
         int32:want = raw stmt_label(s);
         for (int32:i in 0i32...count) {
             StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, i));
             if ((raw arm_label(arm)) == want) {
+                if (i <= from) {
+                    drop diaglist_push(e.diags, raw diag_error(raw TYPE_FALL_BACK(),
+                        "`fall` goes to a later arm of its `pick` (DEF-487): one to the same or an earlier arm is a loop with no `decreases` or `unbounded` (D-304). Write the loop around the `pick`",
+                        s.span));
+                }
                 if (raw arm_binds_name(e, arm)) {
                     string:f1 = string_concat("`fall ", raw intern_get(e.interns, want));
                     drop diaglist_push(e.diags, raw diag_error(raw TYPE_FALL_INTO_BINDING(),
@@ -875,26 +883,26 @@ func:fall_targets_in = NIL(ExprTyper->:e, StmtId:sid, int32:start, int32:count, 
         int32:n = raw stmt_list_count(s);
         for (int32:i in 0i32...n) {
             drop fall_targets_in(e, StmtId{ index: raw ast_id_at(e.ast, raw stmt_list_start(s), i) },
-                                 start, count, fuel - 1i32);
+                                 start, count, from, fuel - 1i32);
         }
         pass NIL;
     }
     if (s.kind == StmtKind.StmtIfStmt) {
-        drop fall_targets_in(e, raw stmt_then(s), start, count, fuel - 1i32);
-        drop fall_targets_in(e, raw stmt_else(s), start, count, fuel - 1i32);
+        drop fall_targets_in(e, raw stmt_then(s), start, count, from, fuel - 1i32);
+        drop fall_targets_in(e, raw stmt_else(s), start, count, from, fuel - 1i32);
         pass NIL;
     }
-    if (s.kind == StmtKind.StmtWhileStmt) { drop fall_targets_in(e, raw stmt_body(e.ast, s), start, count, fuel - 1i32); pass NIL; }
+    if (s.kind == StmtKind.StmtWhileStmt) { drop fall_targets_in(e, raw stmt_body(e.ast, s), start, count, from, fuel - 1i32); pass NIL; }
     if (s.kind == StmtKind.StmtWhenStmt) {
-        drop fall_targets_in(e, raw stmt_when_body(e.ast, s), start, count, fuel - 1i32);
-        drop fall_targets_in(e, raw stmt_when_then(e.ast, s), start, count, fuel - 1i32);
-        drop fall_targets_in(e, raw stmt_when_end(e.ast, s), start, count, fuel - 1i32);
+        drop fall_targets_in(e, raw stmt_when_body(e.ast, s), start, count, from, fuel - 1i32);
+        drop fall_targets_in(e, raw stmt_when_then(e.ast, s), start, count, from, fuel - 1i32);
+        drop fall_targets_in(e, raw stmt_when_end(e.ast, s), start, count, from, fuel - 1i32);
         pass NIL;
     }
-    if (s.kind == StmtKind.StmtForStmt)   { drop fall_targets_in(e, raw stmt_for_body(e.ast, s), start, count, fuel - 1i32); pass NIL; }
-    if (s.kind == StmtKind.StmtLoopStmt)  { drop fall_targets_in(e, raw stmt_counted_body(s), start, count, fuel - 1i32); pass NIL; }
-    if (s.kind == StmtKind.StmtTillStmt)  { drop fall_targets_in(e, raw stmt_counted_body(s), start, count, fuel - 1i32); pass NIL; }
-    if (s.kind == StmtKind.StmtDeferStmt) { drop fall_targets_in(e, StmtId{ index: s.a }, start, count, fuel - 1i32); pass NIL; }
+    if (s.kind == StmtKind.StmtForStmt)   { drop fall_targets_in(e, raw stmt_for_body(e.ast, s), start, count, from, fuel - 1i32); pass NIL; }
+    if (s.kind == StmtKind.StmtLoopStmt)  { drop fall_targets_in(e, raw stmt_counted_body(s), start, count, from, fuel - 1i32); pass NIL; }
+    if (s.kind == StmtKind.StmtTillStmt)  { drop fall_targets_in(e, raw stmt_counted_body(s), start, count, from, fuel - 1i32); pass NIL; }
+    if (s.kind == StmtKind.StmtDeferStmt) { drop fall_targets_in(e, StmtId{ index: s.a }, start, count, from, fuel - 1i32); pass NIL; }
     pass NIL;
 };
 
@@ -1473,8 +1481,8 @@ func:check_for = NIL(ExprTyper->:e, StmtNode:s) never fails {
     if (raw type_is_invalid(e.types, it)) { pass NIL; }
     // ONE LEVEL OF AUTO-DEREFERENCE (D-098), as `.` and UFCS do: `for` over a
     // BORROW of a collection — `@arr`, an `int32[4]->` — reaches the element,
-    // and the borrow analysis is what refuses it (D-004: a for-binding over a
-    // borrowed collection is untracked). Preempting it here with a type error
+    // and the borrow analysis is what refuses it (D-004: a `for` binding has no
+    // borrow state of its own). Preempting it here with a type error
     // would move a safety refusal to the wrong stage and lose its diagnostic.
     int32:it1 = it;
     if ((raw type_kind(e.types, it)) == (raw TY_POINTER())) {
@@ -2702,8 +2710,11 @@ func:check_var_decl = NIL(ExprTyper->:e, StmtId:sid, StmtNode:s) never fails {
     // MENTION is earlier. The checker is where the declared type is resolved,
     // so the fact is recorded here and travels on `ExprTypes` like `cross`.
     // Before the init check: an uninitialised owning decl still drops.
+    // A TYPE THAT HOLDS A PARAMETER OWNS AT SOME INSTANCE (DEF-533): `type_drops` reads a bare `T` as owning nothing,
+    // this mark is made once for every instance, and at `string` the drop after an `await` read a slot of the resume
+    // function that nothing wrote. The treatment the spawn rule gives a `T` (DEF-365).
     if (want != 0i32) {
-        if (raw type_drops(@r, want, e.scope, 64i32)) {
+        if ((raw type_drops(@r, want, e.scope, 64i32)) || (raw type_holds_param(e.types, e.ast, want, 64i32))) {
             drop exprtypes_mark_owning_decl(e.expr_types, sid.index);
         }
     }
