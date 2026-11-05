@@ -1,5 +1,5 @@
 // expect-exit: 0
-// What a body did reaches the code after its block and no earlier, last body first (DEF-525). A binding a body assigned is assigned after the block (`n_widen_*`). `n_nest_at_the_depth_limit`, 124 bodies (125 is refused), holds the walk to one silent pass per body: two would be 2^124, a compiler that never ends.
+// What a body did reaches the code after its block and no earlier, last body first (DEF-525). A binding a body assigned is assigned after the block (`n_widen_*`), and after a value `pick` whose `give` left the block or the arm (`n_widen_give_*`, refused until landing 177d2b2). `n_nest_at_the_depth_limit`, 124 bodies (125 is refused), holds the walk to one silent pass per body: two would be 2^124, a compiler that never ends.
 mod:defer_effects_after_block_ok;
 error:E9;
 func:mk = string() never fails { pass string_concat("ab", "cde"); };
@@ -42,6 +42,8 @@ func:n_block_body_keeps_result_tested = int64() never fails { Result<int64>:r = 
 func:n_function_level_body = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:t = raw rds(s); defer { discard(raw eats(move(s))); } pass t; };
 func:n_body_tests_for_itself = int64() never fails { Result<int64>:r = ok(); int64:t = 0i64; { defer { if (!r.is_error) { t = r.value; } } } pass 7i64; };
 func:n_nest_at_the_depth_limit = int64() never fails { string:s = raw mk(); int64:n = 1i64; { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { defer { discard(raw eats(move(s))); } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } pass 7i64; };
+func:n_widen_give_leaves_a_block = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { { defer { x = 7i64; } give 1i64; } }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };
+func:n_widen_give_leaves_the_arm = int64() never fails { int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { defer { x = 7i64; } give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };
 func:main = int32(cstring[]:_~argv) {
     if ((raw n_pass_in_the_arm_nothing_after_on_that_road()) != 7i64) { exit 1i32; }
     if ((raw n_pass_in_the_block()) != 7i64) { exit 1i32; }
@@ -71,6 +73,8 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw n_function_level_body()) != 7i64) { exit 1i32; }
     if ((raw n_body_tests_for_itself()) != 7i64) { exit 1i32; }
     if ((raw n_nest_at_the_depth_limit()) != 7i64) { exit 1i32; }
+    if ((raw n_widen_give_leaves_a_block()) != 7i64) { exit 1i32; }
+    if ((raw n_widen_give_leaves_the_arm()) != 7i64) { exit 1i32; }
     exit 0i32;
 };
 func:failsafe = int32(Error:e) {

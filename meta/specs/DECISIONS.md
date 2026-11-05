@@ -9078,6 +9078,8 @@ C#-style `out` rules (the callee writes on every path before reading) come later
 
 *Note 2026-11-01 (1.6.1e landing 176; DEF-405, DEF-409, DEF-410 (a)):* the bindings analysis this decision specifies judges at the moment the code RUNS, three ways it did not before. (a) An indexed read's or claim's ROOT is asked AGAIN once its index has run (`index_invalidated`), so a root the index itself moved out is `NITPICK-MOVE-001` at the element, on every road -- a read, an assignment, a compound, `@`, `$$i`, `$$m`, a method receiver, an inline array, a `List`, a `buffer`, a nested index -- because the emitter forms the base before the index and loads the element after it (DEF-410 (a): until 176 `g[(raw count(move(g)))].len` read a fabricated 0 off the vacated `string[2]`). (b) What a registered `defer` body reads is PENDING until its block ends, and a `move`, a `pass` or a free of it before then is MOVE-001/MOVE-002 naming the `defer`, the body inheriting no `is_error` refinement (DEF-405; D-136's note). (c) A `move` or a free of a place 64 or more steps deep, past the place walk's fuel, REFUSES -- `NITPICK-ASSIGN-003` -- where `invalidate_place` marked nothing and returned (DEF-409; the typer's TYPE-024/TYPE-046 refuses every such place first, so the refusal is a backstop, closed rather than open).
 
+*Note 2026-11-05 (1.6.1e landing 177d2b2; DEF-571, DEF-572, DEF-429 and its row's kin):* `when`'s `then` and `end` contribute nothing to `must` as written above, which the walk hadn't kept until now. An assignment is judged in the order it runs: target, value, store, a compound loading the old value before its value (`OP_REFERENCE` §2), and while the value runs the names the target read stand still (`NITPICK-MOVE-001`, `NITPICK-MOVE-002`, `NITPICK-ASSIGN-005`). A jump's road is carried to the frame it lands in (`CONTROL_REFERENCE` §4.5), so a read after it asks that road.
+
 ---
 
 ## D-119 — A free is a move, and an operand that needs an address is one question
@@ -9381,6 +9383,8 @@ is evaluated before it (`tests/analysis/rejection/unreachable_edge.npk` holds th
 beside it and registered as DEF-226: the `pick (r.is_error)` form's refinement holds INSIDE its arms
 and is not carried out of the `pick` -- `pick (r.is_error) { (true) { exit 1i32; }, (false) { } }`
 followed by the read is TAINT-001 with every leaver, where the `if` form compiles.
+
+*[2026-11-05, 1.6.1e landing 177d2b2 — a dated note.]* `stmt_exits` is gone: an arm that leaves is one whose road is dead in the walk (D-323's dated note).
 
 
 ---
@@ -22273,6 +22277,8 @@ construct it had not been asked of, found by a probe of DEF-278's fix (`pick (x)
 on its own) and refuses an arm that may complete with `NITPICK-FLOW-001` and its own sentence; the
 conservatism is this decision's: a `give` inside a counted loop or a `when`, which complete as wholes,
 is refused, and the author gives after the loop or restructures.
+
+*[2026-11-05, 1.6.1e landing 177d2b2 — a dated note.]* **`stmt_exits`, `stmt_completes` and `stmt_has_break` are gone.** The move walk keeps a road per state (`AssignState.dead`, `road_out`, `leave_to`): FLOW-001 asks whether a road reaches the closing brace or a value arm's end, and an arm a merge drops is one whose road is dead, so a labelled `break` from an inner loop and a `break` held in an expression count (DEF-436, DEF-548). The rule above stands, and its conservatism with it: a counted loop and a `when` complete as wholes.
 
 ## D-324 — 1.6.1's process and stage: the NIKOS port on a `nitpick-port` branch the user merges, the second decider on by default, the stage over every plain emission on every run — **SETTLED (user decision, 2026-09-26: "both of your recommendations sound fine to me. lets ratify those."; S-103, S-104, S-105)**
 

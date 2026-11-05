@@ -1,0 +1,309 @@
+// expect-exit: 0
+mod:dead_value_pick_sends_no_road_ok;
+// Dead code's value `pick` sends no road out: a `break` out of it doesn't make the loop's end reachable (`ph1`: FLOW-001 at the
+// function's end otherwise), and a `continue` out of it carries nothing to a live loop's head (`ph2`; `pa5` through a `fall`;
+// `pa1` nested in a live value `pick`; `pa2` from a loop inside the dead arm; `pa3c` inside an inner loop's silent trip). `pa4`:
+// a `give` after the dead pick is dead too. `pb1k`: `pb1` with no live `continue`. `ph1c`, `ph2c`: the arms give. `ph3`: a statement `pick`, dead with its arms.
+// The refused twins are in `tests/analysis/rejection/dead_value_pick_sends_no_road.npk`.
+error:Bad;
+mod:ph1_dead_value_pick_breaks = {
+error:E5_ph1_dead_value_pick_breaks;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_ph1_dead_value_pick_breaks; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_ph1_dead_value_pick_breaks; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    pass out;
+    lp: while (true) unbounded {
+        int64:v = pick (n) { (1i64) { break lp; }, (*) { give 2i64; } };
+        out = out + v;
+    }
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ph1c_dead_value_pick_gives = {
+error:E5_ph1c_dead_value_pick_gives;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_ph1c_dead_value_pick_gives; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_ph1c_dead_value_pick_gives; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    pass out;
+    lp: while (true) unbounded {
+        int64:v = pick (n) { (1i64) { give 1i64; }, (*) { give 2i64; } };
+        out = out + v;
+    }
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ph2_dead_value_pick_continues_to_live_loop = {
+error:E5_ph2_dead_value_pick_continues_to_live_loop;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_ph2_dead_value_pick_continues_to_live_loop; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_ph2_dead_value_pick_continues_to_live_loop; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    while (i < 3i64) decreases 3i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        if (n > 5i64) {
+            pass out;
+            int64:v = pick (n) { (1i64) { r = bad(); continue; }, (*) { give 2i64; } };
+            out = out + v;
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ph2c_dead_value_pick_gives = {
+error:E5_ph2c_dead_value_pick_gives;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_ph2c_dead_value_pick_gives; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_ph2c_dead_value_pick_gives; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    while (i < 3i64) decreases 3i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        if (n > 5i64) {
+            pass out;
+            int64:v = pick (n) { (1i64) { r = bad(); give 1i64; }, (*) { give 2i64; } };
+            out = out + v;
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ph3_dead_statement_pick_continues = {
+error:E5_ph3_dead_statement_pick_continues;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_ph3_dead_statement_pick_continues; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_ph3_dead_statement_pick_continues; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    while (i < 3i64) decreases 3i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        if (n > 5i64) {
+            pass out;
+            pick (n) { (1i64) { r = bad(); continue; }, (*) { out = 2i64; } }
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:pa1_dead_value_pick_in_a_live_one = {
+error:E5_pa1_dead_value_pick_in_a_live_one;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_pa1_dead_value_pick_in_a_live_one; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_pa1_dead_value_pick_in_a_live_one; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    while (i < 3i64) decreases 3i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        int64:w = pick (n) {
+            (9i64) { pass out; int64:v = pick (n) { (1i64) { r = bad(); continue; }, (*) { give 2i64; } }; give v; },
+            (*) { give 1i64; }
+        };
+        out = out + w - w;
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:pa2_loop_inside_the_dead_arm = {
+error:E5_pa2_loop_inside_the_dead_arm;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_pa2_loop_inside_the_dead_arm; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_pa2_loop_inside_the_dead_arm; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    lo: while (i < 3i64) decreases 3i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        if (n > 5i64) { pass out;
+            int64:v = pick (n) {
+                (1i64) { int64:j = 0i64; li: while (j < 2i64) decreases 2i64 - j { j = j + 1i64; if (j == 1i64) { continue li; } r = bad(); continue lo; } give j; },
+                (*) { give 2i64; }
+            };
+            out = out + v;
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:pa3c_dead_pick_in_a_silent_trip_no_live_continue = {
+error:E5_pa3c_dead_pick_in_a_silent_trip_no_live_continue;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_pa3c_dead_pick_in_a_silent_trip_no_live_continue; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_pa3c_dead_pick_in_a_silent_trip_no_live_continue; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    lo: while (i < 3i64) decreases 3i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        int64:j = 0i64;
+        while (j < 2i64) decreases 2i64 - j {
+            j = j + 1i64;
+            if (n > 5i64) {
+                pass out;
+                int64:v = pick (n) { (1i64) { r = bad(); continue lo; }, (*) { give 2i64; } };
+                out = out + v;
+            }
+            if (n == 2i64) { out = 7i64; }
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:pa4_dead_pick_then_dead_give_to_outer = {
+error:E5_pa4_dead_pick_then_dead_give_to_outer;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_pa4_dead_pick_then_dead_give_to_outer; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_pa4_dead_pick_then_dead_give_to_outer; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:w = pick (n) {
+        (9i64) { pass out; r = bad(); int64:v = pick (n) { (1i64) { give 1i64; }, (*) { give 2i64; } }; give v; },
+        (*) { give 1i64; }
+    };
+    out = r.value + w - w;
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:pa5_dead_pick_fall_inside = {
+error:E5_pa5_dead_pick_fall_inside;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_pa5_dead_pick_fall_inside; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_pa5_dead_pick_fall_inside; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        if (n > 5i64) {
+            pass out;
+            int64:v = pick (n) { (1i64) { r = bad(); fall two; }, two: (2i64) { continue; }, (*) { give 2i64; } };
+            out = out + v;
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:pb1k_dead_value_pick_no_live_continue = {
+error:E5_pb1k_dead_value_pick_no_live_continue;
+func:ok = int64() { pass 7i64; };
+func:okk = int64(int64:k) { if (k == 2i64) { fail E5_pb1k_dead_value_pick_no_live_continue; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:k = 0i64;
+    o: while (k < 3i64) decreases 3i64 - k {
+        k = k + 1i64;
+        out = r.value;
+        if (n == 99i64) { pass 1i64; int64:v = pick (n) { (*) { continue o; } }; out = v; }
+        r = okk(k);
+        r = ok(); if (r.is_error) { pass 1i64; }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+func:main = int32(cstring[]:argv) {
+    if ((raw ph1_dead_value_pick_breaks.cell_main(argv.len)) != 67i32) { exit 100i32; }
+    if ((raw ph1c_dead_value_pick_gives.cell_main(argv.len)) != 67i32) { exit 101i32; }
+    if ((raw ph2_dead_value_pick_continues_to_live_loop.cell_main(argv.len)) != 67i32) { exit 102i32; }
+    if ((raw ph2c_dead_value_pick_gives.cell_main(argv.len)) != 67i32) { exit 103i32; }
+    if ((raw ph3_dead_statement_pick_continues.cell_main(argv.len)) != 67i32) { exit 104i32; }
+    if ((raw pa1_dead_value_pick_in_a_live_one.cell_main(argv.len)) != 67i32) { exit 105i32; }
+    if ((raw pa2_loop_inside_the_dead_arm.cell_main(argv.len)) != 67i32) { exit 106i32; }
+    if ((raw pa3c_dead_pick_in_a_silent_trip_no_live_continue.cell_main(argv.len)) != 67i32) { exit 107i32; }
+    if ((raw pa4_dead_pick_then_dead_give_to_outer.cell_main(argv.len)) != 67i32) { exit 108i32; }
+    if ((raw pa5_dead_pick_fall_inside.cell_main(argv.len)) != 67i32) { exit 109i32; }
+    if ((raw pb1k_dead_value_pick_no_live_continue.cell_main(argv.len)) != 67i32) { exit 110i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (Bad)              { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (dead_value_pick_sends_no_road_ok.E5_ph1_dead_value_pick_breaks) { exit 75i32; },
+        (dead_value_pick_sends_no_road_ok.E5_ph1c_dead_value_pick_gives) { exit 75i32; },
+        (dead_value_pick_sends_no_road_ok.E5_ph2_dead_value_pick_continues_to_live_loop) { exit 75i32; },
+        (dead_value_pick_sends_no_road_ok.E5_ph2c_dead_value_pick_gives) { exit 75i32; },
+        (dead_value_pick_sends_no_road_ok.E5_ph3_dead_statement_pick_continues) { exit 75i32; },
+        (dead_value_pick_sends_no_road_ok.E5_pa1_dead_value_pick_in_a_live_one) { exit 75i32; },
+        (dead_value_pick_sends_no_road_ok.E5_pa2_loop_inside_the_dead_arm) { exit 75i32; },
+        (dead_value_pick_sends_no_road_ok.E5_pa3c_dead_pick_in_a_silent_trip_no_live_continue) { exit 75i32; },
+        (dead_value_pick_sends_no_road_ok.E5_pa4_dead_pick_then_dead_give_to_outer) { exit 75i32; },
+        (dead_value_pick_sends_no_road_ok.E5_pa5_dead_pick_fall_inside) { exit 75i32; },
+        (dead_value_pick_sends_no_road_ok.E5_pb1k_dead_value_pick_no_live_continue) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

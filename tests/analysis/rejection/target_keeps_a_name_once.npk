@@ -1,0 +1,41 @@
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 22:20
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 39:20
+mod:target_keeps_a_name_once;
+// A NAME IS KEPT ONCE PER WALK OF A TARGET (`tgt_keep`, DEF-571, landing 177d2b2): the walk re-walks a loop's body and a `defer`'s, and every event in the value scans what stands. `oi29` costs what F1's nest costs twice; with a copy
+// per walk it costs the product of the two nests' walks and doesn't finish. `oi27r` is the same nest in the target alone. The nests are here so they're checked and never emitted: each file's one site is `z`.
+mod:oi27r_14_a_name_kept_once_through_a_walked_nest = {
+error:E5_oi27r_14_a_name_kept_once_through_a_walked_nest;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi27r_14_a_name_kept_once_through_a_walked_nest; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi27r_14_a_name_kept_once_through_a_walked_nest; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    int64[4]:b = [0i64, 0i64, 0i64, 0i64];
+    int64:y = 0i64;
+    int64:z;
+    a[pick (n) { (*) { int64:j1 = 0i64; while (j1 < 2i64) decreases 2i64 - j1 { j1 = j1 + 1i64; { defer { int64:j2 = 0i64; while (j2 < 2i64) decreases 2i64 - j2 { j2 = j2 + 1i64; { defer { int64:j3 = 0i64; while (j3 < 2i64) decreases 2i64 - j3 { j3 = j3 + 1i64; { defer { int64:j4 = 0i64; while (j4 < 2i64) decreases 2i64 - j4 { j4 = j4 + 1i64; { defer { int64:j5 = 0i64; while (j5 < 2i64) decreases 2i64 - j5 { j5 = j5 + 1i64; { defer { int64:j6 = 0i64; while (j6 < 2i64) decreases 2i64 - j6 { j6 = j6 + 1i64; { defer { int64:j7 = 0i64; while (j7 < 2i64) decreases 2i64 - j7 { j7 = j7 + 1i64; { defer { int64:j8 = 0i64; while (j8 < 2i64) decreases 2i64 - j8 { j8 = j8 + 1i64; { defer { int64:j9 = 0i64; while (j9 < 2i64) decreases 2i64 - j9 { j9 = j9 + 1i64; { defer { int64:j10 = 0i64; while (j10 < 2i64) decreases 2i64 - j10 { j10 = j10 + 1i64; { defer { int64:j11 = 0i64; while (j11 < 2i64) decreases 2i64 - j11 { j11 = j11 + 1i64; { defer { int64:j12 = 0i64; while (j12 < 2i64) decreases 2i64 - j12 { j12 = j12 + 1i64; { defer { int64:j13 = 0i64; while (j13 < 2i64) decreases 2i64 - j13 { j13 = j13 + 1i64; { defer { int64:j14 = 0i64; while (j14 < 2i64) decreases 2i64 - j14 { j14 = j14 + 1i64; { defer { int64:w = y; y = w; b[y] = 0i64; y = 0i64; } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } give 0i64; } }] = 7i64;
+    pass a[0i64] + z;
+};
+};
+mod:oi29_14_nest_in_the_target_and_the_value = {
+error:E5_oi29_14_nest_in_the_target_and_the_value;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi29_14_nest_in_the_target_and_the_value; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi29_14_nest_in_the_target_and_the_value; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    int64:y = 0i64;
+    int64:w0 = 0i64;
+    int64:z;
+    a[pick (n) { (*) { int64:j1 = 0i64; while (j1 < 2i64) decreases 2i64 - j1 { j1 = j1 + 1i64; { defer { int64:j2 = 0i64; while (j2 < 2i64) decreases 2i64 - j2 { j2 = j2 + 1i64; { defer { int64:j3 = 0i64; while (j3 < 2i64) decreases 2i64 - j3 { j3 = j3 + 1i64; { defer { int64:j4 = 0i64; while (j4 < 2i64) decreases 2i64 - j4 { j4 = j4 + 1i64; { defer { int64:j5 = 0i64; while (j5 < 2i64) decreases 2i64 - j5 { j5 = j5 + 1i64; { defer { int64:j6 = 0i64; while (j6 < 2i64) decreases 2i64 - j6 { j6 = j6 + 1i64; { defer { int64:j7 = 0i64; while (j7 < 2i64) decreases 2i64 - j7 { j7 = j7 + 1i64; { defer { int64:j8 = 0i64; while (j8 < 2i64) decreases 2i64 - j8 { j8 = j8 + 1i64; { defer { int64:j9 = 0i64; while (j9 < 2i64) decreases 2i64 - j9 { j9 = j9 + 1i64; { defer { int64:j10 = 0i64; while (j10 < 2i64) decreases 2i64 - j10 { j10 = j10 + 1i64; { defer { int64:j11 = 0i64; while (j11 < 2i64) decreases 2i64 - j11 { j11 = j11 + 1i64; { defer { int64:j12 = 0i64; while (j12 < 2i64) decreases 2i64 - j12 { j12 = j12 + 1i64; { defer { int64:j13 = 0i64; while (j13 < 2i64) decreases 2i64 - j13 { j13 = j13 + 1i64; { defer { int64:j14 = 0i64; while (j14 < 2i64) decreases 2i64 - j14 { j14 = j14 + 1i64; { defer { int64:w = y; w0 = w; } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } give 0i64; } }] = pick (n) { (*) { int64:j1 = 0i64; while (j1 < 2i64) decreases 2i64 - j1 { j1 = j1 + 1i64; { defer { int64:j2 = 0i64; while (j2 < 2i64) decreases 2i64 - j2 { j2 = j2 + 1i64; { defer { int64:j3 = 0i64; while (j3 < 2i64) decreases 2i64 - j3 { j3 = j3 + 1i64; { defer { int64:j4 = 0i64; while (j4 < 2i64) decreases 2i64 - j4 { j4 = j4 + 1i64; { defer { int64:j5 = 0i64; while (j5 < 2i64) decreases 2i64 - j5 { j5 = j5 + 1i64; { defer { int64:j6 = 0i64; while (j6 < 2i64) decreases 2i64 - j6 { j6 = j6 + 1i64; { defer { int64:j7 = 0i64; while (j7 < 2i64) decreases 2i64 - j7 { j7 = j7 + 1i64; { defer { int64:j8 = 0i64; while (j8 < 2i64) decreases 2i64 - j8 { j8 = j8 + 1i64; { defer { int64:j9 = 0i64; while (j9 < 2i64) decreases 2i64 - j9 { j9 = j9 + 1i64; { defer { int64:j10 = 0i64; while (j10 < 2i64) decreases 2i64 - j10 { j10 = j10 + 1i64; { defer { int64:j11 = 0i64; while (j11 < 2i64) decreases 2i64 - j11 { j11 = j11 + 1i64; { defer { int64:j12 = 0i64; while (j12 < 2i64) decreases 2i64 - j12 { j12 = j12 + 1i64; { defer { int64:j13 = 0i64; while (j13 < 2i64) decreases 2i64 - j13 { j13 = j13 + 1i64; { defer { int64:j14 = 0i64; while (j14 < 2i64) decreases 2i64 - j14 { j14 = j14 + 1i64; { defer { w0 = 1i64; } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } } if (n == 5i64) { break; } } } give 7i64; } };
+    pass a[0i64] + z + w0;
+};
+};

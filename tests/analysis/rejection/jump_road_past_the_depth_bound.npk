@@ -1,0 +1,137 @@
+// expect-error: NITPICK-ASSIGN-003
+// expect-error-at: 30:261
+// expect-error: NITPICK-ASSIGN-003
+// expect-error-at: 48:261
+// expect-error: NITPICK-ASSIGN-003
+// expect-error-at: 62:797
+// expect-error: NITPICK-ASSIGN-003
+// expect-error-at: 74:805
+// expect-error: NITPICK-ASSIGN-003
+// expect-error-at: 90:259
+// expect-error: NITPICK-ASSIGN-003
+// expect-error-at: 111:209
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 134:21
+mod:jump_road_past_the_depth_bound;
+// A JUMP'S ROAD THROUGH A `defer` BODY PAST THE DEPTH BOUND IS REFUSED AT THE JUMP (landing 177d2b2's row 2). The bodies a `break`,
+// `continue`, `give` or `fall` runs are walked at the JUMP's depth, so a deep body beside a deep jump was cut off in silence and its
+// re-assignment or `dalloc` never reached the jump's road: `.err` of a success (60), a freed byte (230; 97 on the detector). Each path
+// alone is far under the parser's 256 levels. `dq_nest` is cut only inside another jump's road (the flag is sticky).
+mod:dp_brk_i126_j125 = {
+error:E5_dp_brk_i126_j125;
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_dp_brk_i126_j125; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_dp_brk_i126_j125) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = bad(); if (!r.is_error) { pass out; }
+    while (true) unbounded {
+        defer { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { r = ok(); } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }
+        { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { break; } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }
+    }
+    out = raw errv(r.err);
+    pass out;
+};
+};
+mod:dp_cont_i126_j125 = {
+error:E5_dp_cont_i126_j125;
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_dp_cont_i126_j125; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_dp_cont_i126_j125) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = bad(); if (!r.is_error) { pass out; }
+    int64:k = 0i64;
+    while (k < 1i64) decreases 1i64 - k {
+        k = k + 1i64;
+        defer { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { r = ok(); } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }
+        { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { continue; } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }
+    }
+    out = raw errv(r.err);
+    pass out;
+};
+};
+mod:dp_fall_i126_j125 = {
+error:E5_dp_fall_i126_j125;
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_dp_fall_i126_j125; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_dp_fall_i126_j125) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = bad(); if (!r.is_error) { pass out; }
+    pick (n) { (1i64) { defer { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { r = ok(); } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { fall t; } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }, t: (*) { out = raw errv(r.err); } }
+    pass out;
+};
+};
+mod:dp_give_i125_j125 = {
+error:E5_dp_give_i125_j125;
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_dp_give_i125_j125; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_dp_give_i125_j125) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = bad(); if (!r.is_error) { pass out; }
+    int64:v = pick (n) { (1i64) { defer { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { r = ok(); } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { give 1i64; } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }, (*) { give 2i64; } };
+    out = raw errv(r.err);
+    if (v == 0i64) { out = 1i64; }
+    pass out;
+};
+};
+mod:dp_brkfree_i125_j125 = {
+error:E5_dp_brkfree_i125_j125;
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_dp_brkfree_i125_j125; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_dp_brkfree_i125_j125) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    wild int8->:w = alloc(8i64); <-w = 7i8;
+    while (true) unbounded {
+        defer { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { dalloc(w); } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }
+        { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { break; } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }
+    }
+    out = (<-w) => int64;
+    pass out;
+};
+};
+mod:dq_nest_i100_i75_j75 = {
+error:E5_dq_nest_i100_i75_j75;
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_dq_nest_i100_i75_j75; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_dq_nest_i100_i75_j75) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = bad(); if (!r.is_error) { pass out; }
+    while (true) unbounded {
+        defer {
+            while (true) unbounded {
+                defer { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { r = ok(); } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }
+                { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { break; } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }
+            }
+        }
+        { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { break; } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }
+    }
+    out = raw errv(r.err);
+    pass out;
+};
+};
+mod:dq_nest_i80_i75_j75 = {
+error:E5_dq_nest_i80_i75_j75;
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_dq_nest_i80_i75_j75; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_dq_nest_i80_i75_j75) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = bad(); if (!r.is_error) { pass out; }
+    while (true) unbounded {
+        defer {
+            while (true) unbounded {
+                defer { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { r = ok(); } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }
+                { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { break; } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }
+            }
+        }
+        { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { { break; } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }
+    }
+    out = raw errv(r.err);
+    pass out;
+};
+};

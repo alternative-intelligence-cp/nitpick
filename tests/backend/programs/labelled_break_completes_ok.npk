@@ -1,0 +1,97 @@
+// expect-exit: 0
+mod:labelled_break_completes_ok;
+// A loop a `break` leaves completes, and a `pass` after it ends the function (DEF-436). A bare `break` in a nested `for`, `loop` or
+// `when` body, and a `break` naming another loop, leave only their own loop: the `while (true)` around them is endless.
+error:Bad;
+mod:y3b_ctl_pass_after = {
+error:E5_y3b_ctl_pass_after;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:g = int64->(int64->:q) never fails { outer: while (true) unbounded { while (true) unbounded { break outer; } } pass q; };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = raw g(@x); pass <-p; };
+pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
+};
+mod:m1c_when_then_bare_break_pass_after = {
+error:E5_m1c_when_then_bare_break_pass_after;
+func:g = int64->(int64->:q) never fails { int64:i = 0i64; while (true) unbounded { when (i < 1i64) decreases 1i64 - i { i = i + 1i64; } then { break; } end { break; } } pass q; };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = raw g(@x); pass (<-p) + 60i64; };
+pub func:cell_main = int32() never fails { pass ((raw f()) =>! int32); };
+};
+mod:p1_inner_bare_break_outer_passes_ok = {
+error:E5_p1_inner_bare_break_outer_passes_ok;
+func:g = int64->(int64->:q) never fails { int64:i = 0i64; while (true) unbounded { while (true) unbounded { break; } pass q; } };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = raw g(@x); pass (<-p) + 60i64; };
+pub func:cell_main = int32() never fails { pass ((raw f()) =>! int32); };
+};
+mod:p2_inner_label_break_own_ok = {
+error:E5_p2_inner_label_break_own_ok;
+func:g = int64->(int64->:q) never fails { int64:i = 0i64; while (true) unbounded { inner: while (true) unbounded { break inner; } pass q; } };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = raw g(@x); pass (<-p) + 60i64; };
+pub func:cell_main = int32() never fails { pass ((raw f()) =>! int32); };
+};
+mod:q436_other_label_ok = {
+error:E5_q436_other_label_ok;
+func:g = int64->(int64->:q) never fails { int64:i = 0i64; a: while (true) unbounded { b: while (true) unbounded { break b; } i = i + 1i64; if (i == 3i64) { pass q; } } };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = raw g(@x); pass (<-p) + 60i64; };
+pub func:cell_main = int32() never fails { pass ((raw f()) =>! int32); };
+};
+mod:q436_bare_in_for_ok = {
+error:E5_q436_bare_in_for_ok;
+func:g = int64->(int64->:q) never fails { int64:i = 0i64; while (true) unbounded { for (int64:k in 0i64...2i64) { break; } pass q; } };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = raw g(@x); pass (<-p) + 60i64; };
+pub func:cell_main = int32() never fails { pass ((raw f()) =>! int32); };
+};
+mod:q436_bare_in_loop_ok = {
+error:E5_q436_bare_in_loop_ok;
+func:g = int64->(int64->:q) never fails { int64:i = 0i64; while (true) unbounded { loop (0i64, 2i64, 1i64) { break; } pass q; } };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = raw g(@x); pass (<-p) + 60i64; };
+pub func:cell_main = int32() never fails { pass ((raw f()) =>! int32); };
+};
+mod:q436_bare_in_when_body_ok = {
+error:E5_q436_bare_in_when_body_ok;
+func:g = int64->(int64->:q) never fails { int64:i = 0i64; while (true) unbounded { when (i < 1i64) decreases 1i64 - i { i = i + 1i64; break; } then { } end { } pass q; } };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = raw g(@x); pass (<-p) + 60i64; };
+pub func:cell_main = int32() never fails { pass ((raw f()) =>! int32); };
+};
+func:main = int32(cstring[]:_~argv) {
+    if ((raw y3b_ctl_pass_after.cell_main()) != 67i32) { exit 100i32; }
+    if ((raw m1c_when_then_bare_break_pass_after.cell_main()) != 67i32) { exit 101i32; }
+    if ((raw p1_inner_bare_break_outer_passes_ok.cell_main()) != 67i32) { exit 102i32; }
+    if ((raw p2_inner_label_break_own_ok.cell_main()) != 67i32) { exit 103i32; }
+    if ((raw q436_other_label_ok.cell_main()) != 67i32) { exit 104i32; }
+    if ((raw q436_bare_in_for_ok.cell_main()) != 67i32) { exit 105i32; }
+    if ((raw q436_bare_in_loop_ok.cell_main()) != 67i32) { exit 106i32; }
+    if ((raw q436_bare_in_when_body_ok.cell_main()) != 67i32) { exit 107i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (Bad)              { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (labelled_break_completes_ok.E5_y3b_ctl_pass_after) { exit 75i32; },
+        (labelled_break_completes_ok.E5_m1c_when_then_bare_break_pass_after) { exit 75i32; },
+        (labelled_break_completes_ok.E5_p1_inner_bare_break_outer_passes_ok) { exit 75i32; },
+        (labelled_break_completes_ok.E5_p2_inner_label_break_own_ok) { exit 75i32; },
+        (labelled_break_completes_ok.E5_q436_other_label_ok) { exit 75i32; },
+        (labelled_break_completes_ok.E5_q436_bare_in_for_ok) { exit 75i32; },
+        (labelled_break_completes_ok.E5_q436_bare_in_loop_ok) { exit 75i32; },
+        (labelled_break_completes_ok.E5_q436_bare_in_when_body_ok) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

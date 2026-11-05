@@ -1,0 +1,147 @@
+// expect-exit: 0
+mod:when_clauses_grant_nothing_ok;
+// A permit that stands before the `when` stands after it (`wn1c`), and a fact made after the clauses is right: a refill, a seal and a
+// re-allocation there (`wc1c`, `wc2c`, `wc3c`). What the loop's exit doesn't forbid, both clauses may do (`wc1d`).
+error:Bad;
+mod:wn1c_check_before_when = {
+error:E5_wn1c_check_before_when;
+func:mk = int64(int64:n) { if (n > 5i64) { fail E5_wn1c_check_before_when; } pass 7i64; };
+func:bad = int64() { fail E5_wn1c_check_before_when; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_wn1c_check_before_when) { pass 7i64; }, (*) { pass 0i64; } } };
+func:sink = int64(move string:q) never fails { pass 1i64; };
+func:f = int64(int64:n) never fails {
+    Result<int64>:r = mk(n);
+    if (r.is_error) { pass 1i64; }
+    int64:j = 0i64;
+    when (j < n - 1i64) decreases n - j { j = j + 1i64; } then { j = 5i64; } end { j = 6i64; }
+    pass r.value;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:wc1c_refill_after_the_clauses = {
+error:E5_wc1c_refill_after_the_clauses;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wc1c_refill_after_the_clauses; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wc1c_refill_after_the_clauses; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    wild uint8->:b = alloc(8i64) =>! wild uint8->;
+    b[0i64] = 7u8;
+    int64:j = 0i64;
+    when (j < n - 1i64) decreases n - j { j = j + 1i64; dalloc(b); break; } then { } end { dalloc(b); }
+    b = alloc(8i64) =>! wild uint8->; b[0i64] = 7u8;
+    out = b[0i64] => int64;
+    dalloc(b);
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:wc1d_body_frees_nothing_both_clauses_refill = {
+error:E5_wc1d_body_frees_nothing_both_clauses_refill;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wc1d_body_frees_nothing_both_clauses_refill; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wc1d_body_frees_nothing_both_clauses_refill; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    wild uint8->:b = alloc(8i64) =>! wild uint8->;
+    b[0i64] = 7u8;
+    int64:j = 0i64;
+    when (j < n - 1i64) decreases n - j { j = j + 1i64; } then { dalloc(b); b = alloc(8i64) =>! wild uint8->; b[0i64] = 7u8; } end { dalloc(b); b = alloc(8i64) =>! wild uint8->; b[0i64] = 7u8; }
+    out = b[0i64] => int64;
+    dalloc(b);
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:wc2c_seal_after_the_clauses = {
+error:E5_wc2c_seal_after_the_clauses;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wc2c_seal_after_the_clauses; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wc2c_seal_after_the_clauses; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8;
+    int64:j = 0i64;
+    when (j < n - 1i64) decreases n - j { j = j + 1i64; } then { } end { }
+    wildx_seal(page);
+    out = wildx_call(page, 7i64);
+    wildx_free(page);
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:wc3c_realloc_after_the_clauses = {
+error:E5_wc3c_realloc_after_the_clauses;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wc3c_realloc_after_the_clauses; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wc3c_realloc_after_the_clauses; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8;
+    int64:j = 0i64;
+    when (j < n - 1i64) decreases n - j { j = j + 1i64; wildx_seal(page); break; } then { } end { }
+    wildx_free(page);
+    page = wildx_alloc(64i64) =>! wildx uint8->;
+    page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8;
+    wildx_seal(page);
+    out = wildx_call(page, 7i64);
+    wildx_free(page);
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:wt2k_then_breaks_and_a_pass_after_the_loop = {
+error:E5_wt2k_then_breaks_and_a_pass_after_the_loop;
+func:f = int64(int64:n) never fails {
+    while (true) unbounded { int64:i = 0i64; when (i < n) decreases n - i { i = i + 1i64; } then { break; } end { pass 7i64; } }
+    pass 7i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+func:main = int32(cstring[]:argv) {
+    if ((raw wn1c_check_before_when.cell_main(argv.len)) != 67i32) { exit 100i32; }
+    if ((raw wc1c_refill_after_the_clauses.cell_main(argv.len)) != 67i32) { exit 101i32; }
+    if ((raw wc1d_body_frees_nothing_both_clauses_refill.cell_main(argv.len)) != 67i32) { exit 102i32; }
+    if ((raw wc2c_seal_after_the_clauses.cell_main(argv.len)) != 67i32) { exit 103i32; }
+    if ((raw wc3c_realloc_after_the_clauses.cell_main(argv.len)) != 67i32) { exit 104i32; }
+    if ((raw wt2k_then_breaks_and_a_pass_after_the_loop.cell_main(argv.len)) != 67i32) { exit 105i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (Bad)              { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (when_clauses_grant_nothing_ok.E5_wn1c_check_before_when) { exit 75i32; },
+        (when_clauses_grant_nothing_ok.E5_wc1c_refill_after_the_clauses) { exit 75i32; },
+        (when_clauses_grant_nothing_ok.E5_wc1d_body_frees_nothing_both_clauses_refill) { exit 75i32; },
+        (when_clauses_grant_nothing_ok.E5_wc2c_seal_after_the_clauses) { exit 75i32; },
+        (when_clauses_grant_nothing_ok.E5_wc3c_realloc_after_the_clauses) { exit 75i32; },
+        (when_clauses_grant_nothing_ok.E5_wt2k_then_breaks_and_a_pass_after_the_loop) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

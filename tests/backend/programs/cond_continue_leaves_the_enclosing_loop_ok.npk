@@ -1,0 +1,57 @@
+// expect-exit: 0
+mod:cond_continue_leaves_the_enclosing_loop_ok;
+// A condition's `continue` that rewrites nothing runs as it did (DEF-547).
+error:Bad;
+mod:a1k_cond_continue_norw = {
+error:E5_a1k_cond_continue_norw;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_a1k_cond_continue_norw; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_a1k_cond_continue_norw) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i1 = 0i64;
+    while (i1 < 2i64) decreases 2i64 - i1 {
+        out = r.value;
+        i1 = i1 + 1i64;
+        int64:j1 = 0i64;
+        while (pick (n) { (1i64) { j1 = j1 + 0i64; continue; }, (*) { give j1 < 0i64; } }) unbounded { j1 = j1 + 1i64; }
+        r = ok(); if (r.is_error) { pass out; }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+func:main = int32(cstring[]:argv) {
+    if ((raw a1k_cond_continue_norw.cell_main(argv.len)) != 67i32) { exit 100i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (Bad)              { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (cond_continue_leaves_the_enclosing_loop_ok.E5_a1k_cond_continue_norw) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

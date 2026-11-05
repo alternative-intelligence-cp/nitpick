@@ -1,0 +1,83 @@
+// expect-exit: 0
+mod:jump_runs_its_defers_ok;
+// The same jumps with no `defer` run, and `dr1k`, a labelled `break` whose `defer` rewrites a tested `Result`, tested again after the loop. (A `defer` in the arm a `fall` doesn't come from: `p4`, in `fall_carries_its_road_ok.npk`.)
+error:Bad;
+mod:bd1c_break_no_defer = {
+error:E5_bd1c_break_no_defer;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_bd1c_break_no_defer; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_bd1c_break_no_defer) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = bad(); if (!r.is_error) { pass out; }
+    while (true) unbounded { { if (n > 0i64) { break; } } }
+    out = raw errv(r.err);
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:fd1c_fall_no_defer = {
+error:E5_fd1c_fall_no_defer;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_fd1c_fall_no_defer; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_fd1c_fall_no_defer) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = bad(); if (!r.is_error) { pass out; }
+    pick (n) { (1i64) { { fall t; } }, t: (*) { out = raw errv(r.err); } }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:dr1k_labelled_break_defer_then_test_again = {
+error:E5_dr1k_labelled_break_defer_then_test_again;
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_dr1k_labelled_break_defer_then_test_again; };
+func:f = int64(int64:n) never fails {
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:k = 0i64;
+    o: while (k < 2i64) decreases 2i64 - k {
+        k = k + 1i64;
+        { defer { r = bad(); } if (k == 1i64) { break o; } }
+        r = ok(); if (r.is_error) { pass 1i64; }
+    }
+    if (r.is_error) { pass 7i64; }
+    pass r.value;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+func:main = int32(cstring[]:argv) {
+    if ((raw bd1c_break_no_defer.cell_main(argv.len)) != 67i32) { exit 100i32; }
+    if ((raw fd1c_fall_no_defer.cell_main(argv.len)) != 67i32) { exit 101i32; }
+    if ((raw dr1k_labelled_break_defer_then_test_again.cell_main(argv.len)) != 67i32) { exit 102i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (Bad)              { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (jump_runs_its_defers_ok.E5_bd1c_break_no_defer) { exit 75i32; },
+        (jump_runs_its_defers_ok.E5_fd1c_fall_no_defer) { exit 75i32; },
+        (jump_runs_its_defers_ok.E5_dr1k_labelled_break_defer_then_test_again) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

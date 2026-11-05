@@ -595,9 +595,9 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
         ya = ya + 1i32;
     }
 
-    // DEFINITE ASSIGNMENT (D-010, 0.5.2). No fixpoint: this is a MUST analysis
-    // with an intersection merge, and a loop body that may run zero times is both
-    // the sound answer and a fixed point on the first pass.
+    // DEFINITE ASSIGNMENT (D-010, 0.5.2). No iteration: every transfer is per
+    // bit a constant or the identity, so a loop's head is its entry met with the
+    // road back from it, and one silent trip finds that (`assign_loop`).
     Assign:asg = raw assign_init(@f.g.ast, @f.g.tab, @f.it, @f.types, @f.ets, @f.diags, @tr);
     int32:y2 = 0i32;
     while (y2 < nmods) decreases nmods - y2 {

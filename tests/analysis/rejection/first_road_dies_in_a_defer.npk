@@ -1,0 +1,280 @@
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 53:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 77:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 101:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 125:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 149:12
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 170:10
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 190:10
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 210:30
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 233:30
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 254:29
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 275:29
+mod:first_road_dies_in_a_defer;
+// A `give` OR A `fall` WHOSE FIRST ROAD DIES IN A `defer` HIDES NOTHING THAT FOLLOWS (landing 177d2b2; found on the walk before it
+// landed, never on main). A `give` runs the `defer`s of the blocks it leaves, and a body that never completes (a loop with no way
+// out, a trap on every road) ends that road. The arm's first road was kept whole and each later one folded into it by a writer
+// that doesn't read the road's flag, so the dead first road stayed dead whatever live `give` followed: the arm read as one that
+// left, and what the live `give` un-permitted never reached the pick's end (`gd1`, `gd5`: `.value` of an error, 60; `gd2`: `.err`
+// of a success, 60; `gd4`: a read of an unassigned local). One function takes both jumps' roads and joins them by `state_merge`,
+// the writer that knows a dead road. `gf1`, `gf2`: the `fall` twins, refused before and after.
+//   The controls, refused at the same place: the `defer` out (`gd1c`, `gd2c`, `gd4c`, `gf1c`, `gf2c`). A right program of each
+//   shape is in the program beside this file (`gd3`, `gf3`).
+mod:gd1_give_first_road_dies_loop = {
+error:E5_gd1_give_first_road_dies_loop;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gd1_give_first_road_dies_loop; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gd1_give_first_road_dies_loop; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:t = pick (n) {
+        (1i64) {
+            if (n == 9i64) { { defer { while (true) unbounded { } } give 1i64; } }
+            r = bad();
+            give 2i64;
+        },
+        (*) { give 3i64; }
+    };
+    out = out + (t - t);
+    out = r.value;
+    pass out;
+};
+};
+mod:gd1c_give_first_road_lives = {
+error:E5_gd1c_give_first_road_lives;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gd1c_give_first_road_lives; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gd1c_give_first_road_lives; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:t = pick (n) {
+        (1i64) {
+            if (n == 9i64) { { give 1i64; } }
+            r = bad();
+            give 2i64;
+        },
+        (*) { give 3i64; }
+    };
+    out = out + (t - t);
+    out = r.value;
+    pass out;
+};
+};
+mod:gd5_give_first_road_dies_trap = {
+error:E5_gd5_give_first_road_dies_trap;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gd5_give_first_road_dies_trap; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gd5_give_first_road_dies_trap; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:t = pick (n) {
+        (1i64) {
+            if (n == 9i64) { { defer { if (n > 0i64) { !!! E5_gd5_give_first_road_dies_trap; } else { !!! E5_gd5_give_first_road_dies_trap; } } give 1i64; } }
+            r = bad();
+            give 2i64;
+        },
+        (*) { give 3i64; }
+    };
+    out = out + (t - t);
+    out = r.value;
+    pass out;
+};
+};
+mod:gd2_give_first_road_dies_err = {
+error:E5_gd2_give_first_road_dies_err;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gd2_give_first_road_dies_err; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gd2_give_first_road_dies_err; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = bad(); if (!r.is_error) { pass out; }
+    int64:t = pick (n) {
+        (1i64) {
+            if (n == 9i64) { { defer { while (true) unbounded { } } give 1i64; } }
+            r = ok();
+            give 2i64;
+        },
+        (*) { give 3i64; }
+    };
+    out = out + (t - t);
+    pick (r.err) { (E5_gd2_give_first_road_dies_err) { }, (*) { out = 0i64; } }
+    pass out;
+};
+};
+mod:gd2c_give_first_road_lives_err = {
+error:E5_gd2c_give_first_road_lives_err;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gd2c_give_first_road_lives_err; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gd2c_give_first_road_lives_err; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = bad(); if (!r.is_error) { pass out; }
+    int64:t = pick (n) {
+        (1i64) {
+            if (n == 9i64) { { give 1i64; } }
+            r = ok();
+            give 2i64;
+        },
+        (*) { give 3i64; }
+    };
+    out = out + (t - t);
+    pick (r.err) { (E5_gd2c_give_first_road_lives_err) { }, (*) { out = 0i64; } }
+    pass out;
+};
+};
+mod:gd4_give_first_road_dies_unassigned = {
+error:E5_gd4_give_first_road_dies_unassigned;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gd4_give_first_road_dies_unassigned; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gd4_give_first_road_dies_unassigned; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out;
+    int64:t = pick (n) {
+        (1i64) {
+            if (n == 9i64) { { defer { while (true) unbounded { } } give 1i64; } }
+            give 2i64;
+        },
+        (*) { out = 7i64; give 3i64; }
+    };
+    pass out + (t - t);
+};
+};
+mod:gd4c_give_first_road_lives_unassigned = {
+error:E5_gd4c_give_first_road_lives_unassigned;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gd4c_give_first_road_lives_unassigned; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gd4c_give_first_road_lives_unassigned; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out;
+    int64:t = pick (n) {
+        (1i64) {
+            if (n == 9i64) { { give 1i64; } }
+            give 2i64;
+        },
+        (*) { out = 7i64; give 3i64; }
+    };
+    pass out + (t - t);
+};
+};
+mod:gf1_fall_first_road_dies_loop = {
+error:E5_gf1_fall_first_road_dies_loop;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gf1_fall_first_road_dies_loop; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gf1_fall_first_road_dies_loop; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    pick (n) {
+        (1i64) {
+            if (n == 9i64) { { defer { while (true) unbounded { } } fall two; } }
+            r = bad();
+            fall two;
+        },
+        two: (2i64) { out = r.value; },
+        (*) { }
+    }
+    pass out;
+};
+};
+mod:gf1c_fall_first_road_lives = {
+error:E5_gf1c_fall_first_road_lives;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gf1c_fall_first_road_lives; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gf1c_fall_first_road_lives; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    pick (n) {
+        (1i64) {
+            if (n == 9i64) { { fall two; } }
+            r = bad();
+            fall two;
+        },
+        two: (2i64) { out = r.value; },
+        (*) { }
+    }
+    pass out;
+};
+};
+mod:gf2_fall_first_road_dies_trap = {
+error:E5_gf2_fall_first_road_dies_trap;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gf2_fall_first_road_dies_trap; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gf2_fall_first_road_dies_trap; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out;
+    pick (n) {
+        (1i64) {
+            if (n == 9i64) { { defer { !!! E5_gf2_fall_first_road_dies_trap; } fall two; } }
+            fall two;
+        },
+        two: (2i64) { out = out + 0i64; },
+        (*) { out = 7i64; }
+    }
+    pass 7i64;
+};
+};
+mod:gf2c_fall_first_road_lives_unassigned = {
+error:E5_gf2c_fall_first_road_lives_unassigned;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gf2c_fall_first_road_lives_unassigned; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gf2c_fall_first_road_lives_unassigned; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out;
+    pick (n) {
+        (1i64) {
+            if (n == 9i64) { { fall two; } }
+            fall two;
+        },
+        two: (2i64) { out = out + 0i64; },
+        (*) { out = 7i64; }
+    }
+    pass 7i64;
+};
+};

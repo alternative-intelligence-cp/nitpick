@@ -242,7 +242,7 @@ stack int32:counter = 0i32;
 ```
 
 ### 1.3 `wild` (Unmanaged / Manual Memory)
-Declares the memory as completely unmanaged. `wild` pointers **must** be manually freed. They explicitly bypass RAII tracking. If you fail to free a `wild` pointer, the compiler will abort with a memory leak error on `exit`. A `wild` value stays in the manual regime until the author crosses it out by `v =>! T->` (D-361, 1.6.1e landing 121): into a plain pointer binding, parameter, field or return it is `NITPICK-TYPE-097` otherwise.
+Declares the memory as completely unmanaged. `wild` pointers **must** be manually freed. They explicitly bypass RAII tracking. If you fail to free a `wild` pointer, the compiler will abort with a memory leak error on `exit`. A `wild` value stays in the manual regime until the author crosses it out by `v =>! T->` (D-361, 1.6.1e landing 121): into a plain pointer binding, parameter, field or return it is `NITPICK-TYPE-097` otherwise. **A `wild` name's freed state is tracked by the name alone** (DEF-579, 1.6.1e landing 177d2b2): `NITPICK-MOVE-002` is a help and no proof. A free through an alias or a pointer goes unseen, and so does a callee handed `@s` or `$$m s` that frees what a `wild` pointer in `s` points at; `wild` is the opt-out, and keeping track past the name is the author's.
 ```nitpick
 wild int8->:buffer = alloc(1024i64);
 ```

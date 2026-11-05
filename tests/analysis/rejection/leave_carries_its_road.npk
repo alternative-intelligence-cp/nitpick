@@ -1,0 +1,688 @@
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 135:211
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 147:72
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 147:93
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 165:123
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 183:84
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 183:111
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 201:55
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 201:76
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 211:222
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 220:118
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 220:197
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 229:261
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 238:167
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 247:99
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 247:187
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 269:179
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 291:189
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 313:147
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 313:182
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 333:217
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 353:182
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 363:111
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 363:159
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 373:162
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 384:114
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 384:163
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 394:168
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 394:221
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 405:144
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 405:193
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 415:148
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 415:196
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 425:142
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 425:190
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 443:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 463:12
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 482:55
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 482:140
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 493:111
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 493:159
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 503:111
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 503:162
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 519:15
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 520:107
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 539:15
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 540:115
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 553:206
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 562:246
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 571:237
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 584:10
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 595:48
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 598:10
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 610:21
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 612:48
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 626:21
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 628:48
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 640:13
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 642:31
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 655:13
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 657:31
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 669:28
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 683:29
+mod:leave_carries_its_road;
+// A `break` OR `continue` CARRIES WHAT ITS ROAD DID, AND A `while` TEST RUNS AT EVERY TRIP (DEF-429 with DEF-538, landing 177d2b2). A `continue`
+// reaches the back edge and past the loop, a `break` past it, `break L` and `continue L` L's own; a block's `defer` bodies land on both;
+// a `when`'s `then` and `end` run once. Before: 98, 97, 60, and `r1`, `r2`, `r4` read a vacated string masked to 62 or 67. `x3j` is
+// refused as its twin `x3c` always was (its move runs on trip 0 only): a price, new here, on main it ran 67, right by what `i` holds. The remedy, a refill before the `continue`, is `x3jr` beside this file.
+mod:a9_when_break_then = {
+error:E5_a9_when_break_then;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:fs = int64(string:v, int64:k) never fails { pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:eat = int64(move string:v) never fails { pass 0i64; };
+func:f = int64() never fails { string:s = raw mk(); int64:i = 0i64; int64:t = 7i64; when (i < 2i64) decreases 2i64 - i { i = i + 1i64; if (i == 1i64) { t = 7i64 + raw eat(move(s)); break; } } then { t = raw fs(s, 0i64); } end { t = 7i64; } pass t; };
+};
+mod:d1_while_cond_moves = {
+error:E5_d1_while_cond_moves;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_d1_while_cond_moves; };
+struct:P = { int64:a; int64:b; };
+enum:Os = { V(string); W(string); Z; };
+func:f = int64() never fails {
+string:s = raw mk(); int64:i = 0i64; int64:t = 0i64; while ((((raw rds(s)) + (raw eats(move(s)))) == 7i64) && (i < 2i64)) decreases 2i64 - i { i = i + 1i64; } pass 7i64;
+};
+};
+mod:d2_while_cond_reads_value_body_rewrites = {
+error:E5_d2_while_cond_reads_value_body_rewrites;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_d2_while_cond_reads_value_body_rewrites; };
+struct:P = { int64:a; int64:b; };
+enum:Os = { V(string); W(string); Z; };
+struct:H = { string:s; int64:k; };
+struct:Q = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:f = int64() never fails {
+Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:i = 0i64; int64:last = 0i64; while (pick (i) { (*) { last = r.value; give i < 1i64; } }) decreases 1i64 - i { i = i + 1i64; r = bad(); } pass last;
+};
+};
+mod:d3_while_cond_moves_h = {
+error:E5_d3_while_cond_moves_h;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_d3_while_cond_moves_h; };
+struct:P = { int64:a; int64:b; };
+enum:Os = { V(string); W(string); Z; };
+struct:H = { string:s; int64:k; };
+struct:Q = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:f = int64() never fails {
+H:h = raw mkh(); int64:i = 0i64; int64:last = 0i64; while (pick (i) { (*) { last = h.k; discard(raw eath(move(h))); give i < 1i64; } }) decreases 1i64 - i { i = i + 1i64; } pass last;
+};
+};
+mod:d4_when_cond_moves = {
+error:E5_d4_when_cond_moves;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_d4_when_cond_moves; };
+struct:P = { int64:a; int64:b; };
+enum:Os = { V(string); W(string); Z; };
+struct:H = { string:s; int64:k; };
+struct:Q = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:f = int64() never fails {
+string:s = raw mk(); int64:i = 0i64; when ((((raw rds(s)) + (raw eats(move(s)))) == 7i64) && (i < 2i64)) decreases 2i64 - i { i = i + 1i64; } then { } end { } pass 7i64;
+};
+};
+mod:m1_break_label_skips_revalidate = {
+error:E5_m1_break_label_skips_revalidate;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:eat = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_m1_break_label_skips_revalidate; };
+func:f = int64() never fails { string:s = raw mk(); int64:t = 0i64; outer: for (int64:i in 0i64...2i64) { for (int64:j in 0i64...2i64) { if (j == 0i64) { t = raw eat(move(s)); break outer; } } s = raw mk(); } pass raw fs(s, 0i64); };
+};
+mod:m2_continue_label_skips_revalidate = {
+error:E5_m2_continue_label_skips_revalidate;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:eat = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_m2_continue_label_skips_revalidate; };
+func:f = int64() never fails { string:s = raw mk(); int64:t = 0i64; outer: for (int64:i in 0i64...2i64) { t = raw fs(s, 0i64); for (int64:j in 0i64...2i64) { if (i == 0i64) { t = t + raw eat(move(s)); continue outer; } } s = raw mk(); } pass t; };
+};
+mod:m3_break_label_two_out = {
+error:E5_m3_break_label_two_out;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:eat = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_m3_break_label_two_out; };
+func:f = int64() never fails { string:s = raw mk(); int64:t = 0i64; o: for (int64:i in 0i64...2i64) { for (int64:j in 0i64...2i64) { for (int64:k in 0i64...2i64) { if (k == 0i64) { t = raw eat(move(s)); break o; } } s = raw mk(); } s = raw mk(); } pass raw fs(s, 0i64); };
+};
+mod:m4_break_label_self = {
+error:E5_m4_break_label_self;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:eat = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_m4_break_label_self; };
+func:f = int64() never fails { string:s = raw mk(); int64:t = 0i64; w: for (int64:i in 0i64...2i64) { if (i == 0i64) { t = raw eat(move(s)); break w; } } pass raw fs(s, 0i64); };
+};
+mod:m5_when_continue_then_test = {
+error:E5_m5_when_continue_then_test;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:eat = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_m5_when_continue_then_test; };
+func:f = int64() never fails { string:s = raw mk(); int64:t = 0i64; int64:i = 0i64; when ((raw fs(s, 0i64)) == 7i64) decreases 3i64 - i { i = i + 1i64; if (i == 1i64) { t = raw eat(move(s)); continue; } if (i > 2i64) { break; } } then { t = 7i64; } end { t = 7i64; } pass t; };
+};
+mod:o_break_in_an_if_DEF429 = {
+error:E5_o_break_in_an_if_DEF429;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+struct:SP = { string:s; int64->:p; };
+struct:SN = { string:s; int64:n; };
+func:eatp = int64(move SP:v) never fails { pass 0i64; };
+func:eatn = int64(move SN:v) never fails { pass 0i64; };
+func:eatw = int64(move wild int8->:w) never fails { dalloc(w); pass 0i64; };
+enum:E = { A(string); Z; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_o_break_in_an_if_DEF429; };
+struct:Box = { string:s; int64:n; };
+enum:Os = { V(string); W(string); Z; };
+macro:mv = (S) { (raw eats(move(S))) == 1i64; };
+macro:dm = (S) { defer { discard(raw eats(move(S))); } };
+macro:dm_blk = (S) { { defer { discard(raw eats(move(S))); } } };
+macro:dm_own = () { string:mine = raw mk(); defer { discard(raw eats(move(mine))); } };
+macro:dx = (X) { defer { X = 7i64; } };
+func:f = int64() never fails { string:s = raw mk(); int64:n = 1i64; for (int64:i in 0i64...1i64) { if (i == 0i64) { defer { discard(raw eats(move(s))); } break; } } pass raw rds(s); };
+};
+mod:o_break_rewrites_result_DEF429 = {
+error:E5_o_break_rewrites_result_DEF429;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+struct:SP = { string:s; int64->:p; };
+struct:SN = { string:s; int64:n; };
+func:eatp = int64(move SP:v) never fails { pass 0i64; };
+func:eatn = int64(move SN:v) never fails { pass 0i64; };
+func:eatw = int64(move wild int8->:w) never fails { dalloc(w); pass 0i64; };
+enum:E = { A(string); Z; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_o_break_rewrites_result_DEF429; };
+struct:Box = { string:s; int64:n; };
+enum:Os = { V(string); W(string); Z; };
+macro:mv = (S) { (raw eats(move(S))) == 1i64; };
+macro:dm = (S) { defer { discard(raw eats(move(S))); } };
+macro:dm_blk = (S) { { defer { discard(raw eats(move(S))); } } };
+macro:dm_own = () { string:mine = raw mk(); defer { discard(raw eats(move(mine))); } };
+macro:dx = (X) { defer { X = 7i64; } };
+func:f = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; for (int64:i in 0i64...1i64) { if (i == 0i64) { defer { r = bad(); } break; } } pass r.value; };
+};
+mod:o_continue_in_an_if_DEF429 = {
+error:E5_o_continue_in_an_if_DEF429;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+struct:SP = { string:s; int64->:p; };
+struct:SN = { string:s; int64:n; };
+func:eatp = int64(move SP:v) never fails { pass 0i64; };
+func:eatn = int64(move SN:v) never fails { pass 0i64; };
+func:eatw = int64(move wild int8->:w) never fails { dalloc(w); pass 0i64; };
+enum:E = { A(string); Z; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_o_continue_in_an_if_DEF429; };
+struct:Box = { string:s; int64:n; };
+enum:Os = { V(string); W(string); Z; };
+macro:mv = (S) { (raw eats(move(S))) == 1i64; };
+macro:dm = (S) { defer { discard(raw eats(move(S))); } };
+macro:dm_blk = (S) { { defer { discard(raw eats(move(S))); } } };
+macro:dm_own = () { string:mine = raw mk(); defer { discard(raw eats(move(mine))); } };
+macro:dx = (X) { defer { X = 7i64; } };
+func:f = int64() never fails { string:s = raw mk(); int64:n = 1i64; for (int64:i in 0i64...1i64) { if (i == 0i64) { defer { discard(raw eats(move(s))); } continue; } } pass raw rds(s); };
+};
+mod:x11_break_path_rewrites_result = {
+error:E5_x11_break_path_rewrites_result;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+struct:SP = { string:s; int64->:p; };
+struct:SN = { string:s; int64:n; };
+func:eatp = int64(move SP:v) never fails { pass 0i64; };
+func:eatn = int64(move SN:v) never fails { pass 0i64; };
+func:eatw = int64(move wild int8->:w) never fails { dalloc(w); pass 0i64; };
+enum:E = { A(string); Z; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_x11_break_path_rewrites_result; };
+struct:Box = { string:s; int64:n; };
+enum:Os = { V(string); W(string); Z; };
+macro:mv = (S) { (raw eats(move(S))) == 1i64; };
+func:rewrite = int64(Result<int64>->:p) never fails { <-p = bad(); pass 0i64; };
+macro:rw = (R) { R = bad(); };
+func:f = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; int64:k = 0i64; while (k < 1i64) decreases 1i64 - k { r = bad(); if (r.is_error) { break; } k = k + 1i64; } pass r.value; };
+};
+mod:x13_continue_path_rewrites_result = {
+error:E5_x13_continue_path_rewrites_result;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+struct:SP = { string:s; int64->:p; };
+struct:SN = { string:s; int64:n; };
+func:eatp = int64(move SP:v) never fails { pass 0i64; };
+func:eatn = int64(move SN:v) never fails { pass 0i64; };
+func:eatw = int64(move wild int8->:w) never fails { dalloc(w); pass 0i64; };
+enum:E = { A(string); Z; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_x13_continue_path_rewrites_result; };
+struct:Box = { string:s; int64:n; };
+enum:Os = { V(string); W(string); Z; };
+macro:mv = (S) { (raw eats(move(S))) == 1i64; };
+func:rewrite = int64(Result<int64>->:p) never fails { <-p = bad(); pass 0i64; };
+macro:rw = (R) { R = bad(); };
+func:f = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 1i64; for (int64:i in 0i64...2i64) { if (i == 0i64) { r = bad(); continue; } } pass r.value; };
+};
+mod:x3a_continue = {
+error:E5_x3a_continue;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:eat = int64(move string:v) never fails { pass 0i64; };
+func:f = int64() never fails { string:s = raw mk(); int64:t = 0i64; for (int64:i in 0i64...2i64) { t = raw fs(s, 0i64); if (i == 0i64) { t = t + raw eat(move(s)); continue; } } pass t; };
+};
+mod:x3b_break = {
+error:E5_x3b_break;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:eat = int64(move string:v) never fails { pass 0i64; };
+func:f = int64() never fails { string:s = raw mk(); int64:t = 0i64; for (int64:i in 0i64...2i64) { if (i == 0i64) { t = raw eat(move(s)); break; } } pass raw fs(s, 0i64); };
+};
+mod:x3e_struct_pointer_moved = {
+error:E5_x3e_struct_pointer_moved;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+struct:B = { string:s; };
+func:ee = int64(move B:v) never fails { pass 0i64; };
+func:f = int64() never fails { B:b = B{ s: raw mk() }; int64:t = 0i64; for (int64:i in 0i64...2i64) { t = raw fs(b.s, 0i64); if (i == 0i64) { t = t + raw ee(move(b)); continue; } } pass t; };
+};
+mod:x3f_list_moved = {
+error:E5_x3f_list_moved;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:el = int64(move List<string>:v) never fails { pass 0i64; };
+func:f = int64() never fails { List<string>:l = raw list_init::<string>(2i64); drop list_push(@l, raw mk()); int64:t = 0i64; for (int64:i in 0i64...2i64) { t = raw fs(l[0i64], 0i64); if (i == 0i64) { t = t + raw el(move(l)); continue; } } pass t; };
+};
+mod:x3h_pointer_field_after_move = {
+error:E5_x3h_pointer_field_after_move;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+struct:H = { string:s; string->:q; };
+func:eh = int64(move H:v) never fails { pass 0i64; };
+func:f = int64() never fails { string:o = raw mk(); H:h = H{ s: raw mk(), q: @o }; int64:t = 0i64; for (int64:i in 0i64...2i64) { t = raw fs(<-h.q, 0i64); if (i == 0i64) { t = t + raw eh(move(h)); continue; } } pass t; };
+};
+mod:x3l_while_continue = {
+error:E5_x3l_while_continue;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:eat = int64(move string:v) never fails { pass 0i64; };
+func:f = int64() never fails { string:s = raw mk(); int64:i = 0i64; int64:t = 0i64; while (i < 2i64) decreases 2i64 - i { i = i + 1i64; t = raw fs(s, 0i64); if (i == 1i64) { t = t + raw eat(move(s)); continue; } } pass t; };
+};
+mod:x3m_labelled_or_nested_break = {
+error:E5_x3m_labelled_or_nested_break;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:eat = int64(move string:v) never fails { pass 0i64; };
+func:f = int64() never fails { string:s = raw mk(); int64:t = 0i64; for (int64:i in 0i64...2i64) { for (int64:j in 0i64...2i64) { t = raw fs(s, 0i64); if (j == 0i64) { t = t + raw eat(move(s)); break; } } } pass t; };
+};
+mod:w2_when_then_break_rewrite = {
+error:E5_w2_when_then_break_rewrite;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_w2_when_then_break_rewrite; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 7i64; }
+    int64:i = 0i64;
+    int64:j = 0i64;
+    while (i < 3i64) decreases 3i64 - i {
+        i = i + 1i64;
+        if (i > 0i64) { when (j < 1i64) decreases 1i64 - j { j = j + 1i64; } then { r = bad(); break; } end { } pass 7i64; }
+    }
+    out = r.value;
+    pass out;
+};
+};
+mod:w4_when_end_break_rewrite = {
+error:E5_w4_when_end_break_rewrite;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_w4_when_end_break_rewrite; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 7i64; }
+    int64:i = 0i64;
+    int64:j = 0i64;
+    while (i < 3i64) decreases 3i64 - i {
+        i = i + 1i64;
+        if (i > 0i64) { when (j < 0i64) decreases 0i64 - j { j = j + 1i64; } then { } end { r = bad(); break; } pass 7i64; }
+    }
+    out = r.value;
+    pass out;
+};
+};
+mod:d5_while_cond_body_moves_cond_reads = {
+error:E5_d5_while_cond_body_moves_cond_reads;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_d5_while_cond_body_moves_cond_reads; };
+struct:P = { int64:a; int64:b; };
+enum:Os = { V(string); W(string); Z; };
+struct:H = { string:s; int64:k; };
+struct:Q = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:f = int64() never fails {
+string:s = raw mk(); int64:i = 0i64; while (((raw rds(s)) == 7i64) && (i < 2i64)) decreases 2i64 - i { i = i + 1i64; discard(raw eats(move(s))); } pass 7i64;
+};
+};
+mod:x3c_ctl_no_continue = {
+error:E5_x3c_ctl_no_continue;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:eat = int64(move string:v) never fails { pass 0i64; };
+func:f = int64() never fails { string:s = raw mk(); int64:t = 0i64; for (int64:i in 0i64...2i64) { t = raw fs(s, 0i64); if (i == 0i64) { t = t + raw eat(move(s)); } } pass t; };
+};
+mod:x3i_pick_arm_continue = {
+error:E5_x3i_pick_arm_continue;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:eat = int64(move string:v) never fails { pass 0i64; };
+func:f = int64() never fails { string:s = raw mk(); int64:t = 0i64; for (int64:i in 0i64...2i64) { t = raw fs(s, 0i64); pick (i) { (0i64) { t = t + raw eat(move(s)); continue; }, (*) { } } } pass t; };
+};
+mod:w1_when_then_continue_move = {
+error:E5_w1_when_then_continue_move;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_w1_when_then_continue_move; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    H:x = raw mkh();
+    int64:i = 0i64;
+    int64:j = 0i64;
+    while (i < 3i64) decreases 3i64 - i {
+        i = i + 1i64;
+        out = x.k;
+        if (i > 0i64) { when (j < 1i64) decreases 1i64 - j { j = j + 1i64; } then { discard(raw eath(move(x))); continue; } end { } pass out; }
+    }
+    pass out;
+};
+};
+mod:w3_when_end_continue_move = {
+error:E5_w3_when_end_continue_move;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_w3_when_end_continue_move; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    H:x = raw mkh();
+    int64:i = 0i64;
+    int64:j = 0i64;
+    while (i < 3i64) decreases 3i64 - i {
+        i = i + 1i64;
+        out = x.k;
+        if (i > 0i64) { when (j < 0i64) decreases 0i64 - j { j = j + 1i64; } then { } end { discard(raw eath(move(x))); continue; } pass out; }
+    }
+    pass out;
+};
+};
+mod:x3j_write_after_move = {
+error:E5_x3j_write_after_move;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:eat = int64(move string:v) never fails { pass 0i64; };
+func:f = int64() never fails { string:s = raw mk(); int64:t = 0i64; for (int64:i in 0i64...2i64) { if (i == 1i64) { s = string_concat("ab", "cde"); t = raw fs(s, 0i64); } if (i == 0i64) { t = raw eat(move(s)); continue; } } pass t; };
+};
+mod:q429_inner_defer_break_road = {
+error:E5_q429_inner_defer_break_road;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:eat = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_q429_inner_defer_break_road; };
+func:f = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 0i64; } int64:n = 0i64; while (n < 3i64) unbounded { n = n + 1i64; { defer { r = bad(); } if (n == 2i64) { break; } } r = ok(); if (r.is_error) { pass 0i64; } } pass r.value; };
+};
+mod:q429_test_rewrites_each_trip = {
+error:E5_q429_test_rewrites_each_trip;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:eat = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_q429_test_rewrites_each_trip; };
+func:f = int64() never fails { Result<int64>:r = ok(); if (r.is_error) { pass 0i64; } int64:n = 0i64; while ((pick (n) { (*) { r = bad(); give (n < 2i64); } })) unbounded { r = ok(); if (r.is_error) { pass 0i64; } n = n + 1i64; } pass r.value; };
+};
+mod:r1_break_move = {
+error:E5_r1_break_move;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:take = int64(move string:s) never fails { pass s.len; };
+func:f = int64() never fails {
+    string:s = raw mk();
+    int64:i = 0i64;
+    while (i < 3i64) decreases 3i64 - i {
+        if (i == 1i64) { discard(raw take(move(s))); break; }
+        i = i + 1i64;
+    }
+    pass s.len + 62i64;
+};
+};
+mod:r1c_fallthrough_move = {
+error:E5_r1c_fallthrough_move;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:take = int64(move string:s) never fails { pass s.len; };
+func:f = int64() never fails {
+    string:s = raw mk();
+    int64:i = 0i64;
+    while (i < 3i64) decreases 3i64 - i {
+        if (i == 1i64) { discard(raw take(move(s))); }
+        i = i + 1i64;
+    }
+    pass s.len + 62i64;
+};
+};
+mod:r2_continue_move = {
+error:E5_r2_continue_move;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:take = int64(move string:s) never fails { pass s.len; };
+func:f = int64() never fails {
+    string:s = raw mk();
+    int64:i = 0i64;
+    int64:acc = 0i64;
+    while (i < 3i64) decreases 3i64 - i {
+        acc = acc + s.len;
+        i = i + 1i64;
+        if (i == 1i64) { discard(raw take(move(s))); continue; }
+    }
+    pass acc + 57i64;
+};
+};
+mod:r2c_end_move = {
+error:E5_r2c_end_move;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:take = int64(move string:s) never fails { pass s.len; };
+func:f = int64() never fails {
+    string:s = raw mk();
+    int64:i = 0i64;
+    int64:acc = 0i64;
+    while (i < 3i64) decreases 3i64 - i {
+        acc = acc + s.len;
+        i = i + 1i64;
+        if (i == 1i64) { discard(raw take(move(s))); }
+    }
+    pass acc + 57i64;
+};
+};
+mod:r3_cond_after_body_move = {
+error:E5_r3_cond_after_body_move;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:take = int64(move string:s) never fails { pass s.len; };
+func:f = int64() never fails {
+    string:s = raw mk();
+    int64:n = 0i64;
+    while ((s.len > 3i64) && (n < 2i64)) decreases 2i64 - n {
+        n = n + 1i64;
+        discard(raw take(move(s)));
+    }
+    pass n + 66i64;
+};
+};
+mod:r3c_body_read_after_move = {
+error:E5_r3c_body_read_after_move;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:take = int64(move string:s) never fails { pass s.len; };
+func:f = int64() never fails {
+    string:s = raw mk();
+    int64:n = 0i64;
+    while (n < 2i64) decreases 2i64 - n {
+        if (s.len > 3i64) { n = n + 0i64; }
+        n = n + 1i64;
+        discard(raw take(move(s)));
+    }
+    pass n + 66i64;
+};
+};
+mod:r4_cond_moves = {
+error:E5_r4_cond_moves;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:take = int64(move string:s) never fails { pass s.len; };
+func:f = int64() never fails {
+    string:s = raw mk();
+    int64:n = 0i64;
+    while (((raw take(move(s))) > 3i64) && (n < 2i64)) decreases 2i64 - n {
+        n = n + 1i64;
+    }
+    pass n + 66i64;
+};
+};
+mod:r4c_body_moves = {
+error:E5_r4c_body_moves;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:take = int64(move string:s) never fails { pass s.len; };
+func:f = int64() never fails {
+    string:s = raw mk();
+    int64:n = 0i64;
+    while (n < 2i64) decreases 2i64 - n {
+        if (((raw take(move(s))) > 3i64) && (n < 2i64)) { n = n + 0i64; }
+        n = n + 1i64;
+    }
+    pass n + 66i64;
+};
+};

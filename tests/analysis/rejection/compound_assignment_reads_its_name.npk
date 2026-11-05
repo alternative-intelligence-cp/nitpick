@@ -1,0 +1,147 @@
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 34:5
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 48:5
+// expect-error: NITPICK-ASSIGN-005
+// expect-error-at: 48:27
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 63:5
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 80:9
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 98:31
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 114:17
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 130:5
+// expect-error: NITPICK-ASSIGN-005
+// expect-error-at: 144:27
+mod:compound_assignment_reads_its_name;
+// A COMPOUND LOADS ITS NAME BEFORE ITS VALUE (`emit_assign`'s `cur`; DEF-572, landing 177d2b2), so `y += 1i64;` reads `y`: an unassigned name is ASSIGN-001, whether nothing
+// assigned it (`oi9a`), the value assigns it after the load (`oi9b`) or a loop's first trip reads it (`oi9f`), and a moved name stays moved (`oi9c`). In a `defer` body that
+// read is pending until the block ends: a move of the name before then is MOVE-001 (`oi9g`), and the body itself is judged (`oi9i`). A field's root was read already (`oi9j`).
+// And what it loaded stands still while the value runs: `oi9b` and `oi9e` assign the name there, ASSIGN-005. `oi9e` is a right program, a price of DEF-571's rule, and the remedy is to bind the value first.
+mod:oi9a_compound_name_unassigned = {
+error:E5_oi9a_compound_name_unassigned;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi9a_compound_name_unassigned; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi9a_compound_name_unassigned; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:y;
+    y += 7i64;
+    pass y;
+};
+};
+mod:oi9b_compound_name_value_assigns = {
+error:E5_oi9b_compound_name_value_assigns;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi9b_compound_name_value_assigns; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi9b_compound_name_value_assigns; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:y;
+    y += pick (n) { (*) { y = 7i64; give 0i64; } };
+    pass y;
+};
+};
+mod:oi9c_compound_name_moved = {
+error:E5_oi9c_compound_name_moved;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi9c_compound_name_moved; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi9c_compound_name_moved; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:y = 7i64;
+    discard(move(y));
+    y += 0i64;
+    pass y;
+};
+};
+mod:oi9f_compound_after_a_jump_road = {
+error:E5_oi9f_compound_after_a_jump_road;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi9f_compound_after_a_jump_road; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi9f_compound_after_a_jump_road; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:y;
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        y += 1i64;
+    }
+    pass 7i64;
+};
+};
+mod:oi9g_compound_in_defer_then_a_move = {
+error:E5_oi9g_compound_in_defer_then_a_move;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi9g_compound_in_defer_then_a_move; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi9g_compound_in_defer_then_a_move; } pass 7i64; };
+func:eatk = int64(move int64:v) never fails { pass v; };
+func:f = int64(int64:n) never fails {
+    int64:y = 6i64;
+    {
+        defer { y += 1i64; }
+        discard(raw eatk(move(y)));
+    }
+    pass 7i64;
+};
+};
+mod:oi9i_compound_in_defer_unassigned = {
+error:E5_oi9i_compound_in_defer_unassigned;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi9i_compound_in_defer_unassigned; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi9i_compound_in_defer_unassigned; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:y;
+    {
+        defer { y += 1i64; }
+    }
+    pass 7i64;
+};
+};
+mod:oi9j_compound_on_a_field_unassigned_root = {
+error:E5_oi9j_compound_on_a_field_unassigned_root;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi9j_compound_on_a_field_unassigned_root; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi9j_compound_on_a_field_unassigned_root; } pass 7i64; };
+struct:N2 = { int64:k; };
+func:f = int64(int64:n) never fails {
+    N2:h;
+    h.k += 7i64;
+    pass 7i64;
+};
+};
+mod:oi9e_compound_name_assigned_in_value = {
+error:E5_oi9e_compound_name_assigned_in_value;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi9e_compound_name_assigned_in_value; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi9e_compound_name_assigned_in_value; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:y = 0i64;
+    y += pick (n) { (*) { y = 6i64; give 7i64; } };
+    pass y;
+};
+};

@@ -1,0 +1,389 @@
+// expect-exit: 0
+mod:silent_trip_road_meets_the_back_road_ok;
+// What the silent trip's meet keeps (DEF-570's other side; the refused pair is in
+// `tests/analysis/rejection/silent_trip_road_meets_the_back_road.npk`): the jump straight in the inner loop's body, no `if`
+// around it (`wl1d`); one loop only (`wl5`); a `break` to the outer loop with the local assigned on both roads (`wl3`, refused
+// before this landing; `wl2`). The remedies for the refused pair: test again at the read (`wl1r`), assign at the declaration
+// (`wl4r`).
+// A channel whose roads a `defer` body all ended stays dead through a silent trip (`wr1`, `wr2`): the meet skips a channel dead after the merge, as the loop asks its own exit's. The jump still stamps the channel,
+// so beside a live road sent earlier the meet lowers that one (P-1, the refused `pw1_price`, `pw2_price`). Its controls: no dead jump (`pw1k`), no earlier road (`pw1e`); its remedy: test again at the read (`pw1r`, `pw2r`).
+error:Bad;
+mod:wl1d_no_inner_loop_if = {
+error:E5_wl1d_no_inner_loop_if;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wl1d_no_inner_loop_if; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wl1d_no_inner_loop_if; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    outer: while (i < 3i64) decreases 3i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        r = okn(n);
+        int64:k = 0i64;
+        while (k < 2i64) decreases 2i64 - k {
+            k = k + 1i64;
+            r = ok(); if (r.is_error) { pass 1i64; } continue outer;
+        }
+        r = ok(); if (r.is_error) { pass 1i64; }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:wl1r_test_again_at_the_read = {
+error:E5_wl1r_test_again_at_the_read;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wl1r_test_again_at_the_read; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wl1r_test_again_at_the_read; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    outer: while (i < 3i64) decreases 3i64 - i {
+        i = i + 1i64;
+        if (r.is_error) { pass 1i64; }
+        out = r.value;
+        r = okn(n);
+        int64:k = 0i64;
+        while (k < 2i64) decreases 2i64 - k {
+            k = k + 1i64;
+            if (n > 1i64) { r = ok(); if (r.is_error) { pass 1i64; } continue outer; }
+        }
+        r = ok(); if (r.is_error) { pass 1i64; }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:wl5_give_from_one_loop_assigns = {
+error:E5_wl5_give_from_one_loop_assigns;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wl5_give_from_one_loop_assigns; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wl5_give_from_one_loop_assigns; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:x;
+    int64:v = pick (n) {
+        (*) {
+            int64:i = 0i64;
+            while (i < 3i64) decreases 3i64 - i {
+                i = i + 1i64;
+                if (n > 1i64) { x = 7i64; give 0i64; }
+            }
+            x = 7i64;
+            give 0i64;
+        }
+    };
+    pass x + v;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:wl4r_assign_at_the_declaration = {
+error:E5_wl4r_assign_at_the_declaration;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wl4r_assign_at_the_declaration; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wl4r_assign_at_the_declaration; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:x = 0i64;
+    int64:v = pick (n) {
+        (*) {
+            int64:i = 0i64;
+            while (i < 3i64) decreases 3i64 - i {
+                i = i + 1i64;
+                int64:k = 0i64;
+                while (k < 2i64) decreases 2i64 - k {
+                    k = k + 1i64;
+                    if (n > 1i64) { x = 7i64; give 0i64; }
+                }
+            }
+            x = 7i64;
+            give 0i64;
+        }
+    };
+    pass x + v;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:wl3_break_outer_assigns_read = {
+error:E5_wl3_break_outer_assigns_read;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wl3_break_outer_assigns_read; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wl3_break_outer_assigns_read; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:x;
+    outer: while (true) unbounded {
+        int64:k = 0i64;
+        while (k < 2i64) decreases 2i64 - k {
+            k = k + 1i64;
+            if (n > 1i64) { x = 7i64; break outer; }
+        }
+        x = 7i64;
+        break;
+    }
+    pass x;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:wl2_break_outer_assigns = {
+error:E5_wl2_break_outer_assigns;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wl2_break_outer_assigns; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wl2_break_outer_assigns; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:x;
+    int64:i = 0i64;
+    outer: while (i < 3i64) decreases 3i64 - i {
+        i = i + 1i64;
+        int64:k = 0i64;
+        while (k < 2i64) decreases 2i64 - k {
+            k = k + 1i64;
+            if (n > 1i64) { x = 7i64; break outer; }
+        }
+        x = 7i64;
+        break;
+    }
+    if (i == 0i64) { pass 0i64; }
+    pass 7i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:wr1_dead_break_road_is_not_revived = {
+error:E5_wr1_dead_break_road_is_not_revived;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wr1_dead_break_road_is_not_revived; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wr1_dead_break_road_is_not_revived; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    lz: while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        lo: while (true) unbounded {
+            int64:k = 0i64;
+            while (k < 2i64) decreases 2i64 - k {
+                k = k + 1i64;
+                r = okn(n);
+                if (n == 9i64) { { defer { while (true) unbounded { } } break lo; } }
+            }
+            r = ok(); if (r.is_error) { pass 1i64; }
+            break;
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:wr2_dead_give_road_is_not_revived = {
+error:E5_wr2_dead_give_road_is_not_revived;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wr2_dead_give_road_is_not_revived; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wr2_dead_give_road_is_not_revived; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        int64:v = pick (n) {
+            (*) {
+                int64:k = 0i64;
+                while (k < 2i64) decreases 2i64 - k {
+                    k = k + 1i64;
+                    r = okn(n);
+                    if (n == 9i64) { { defer { while (true) unbounded { } } give 1i64; } }
+                }
+                r = ok(); if (r.is_error) { pass 1i64; }
+                give 2i64;
+            }
+        };
+        out = out + v - v;
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:pw1k_no_dead_break = {
+error:E5_pw1k_no_dead_break;
+func:ok = int64() { pass 7i64; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_pw1k_no_dead_break; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    lz: while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        lo: while (true) unbounded {
+            if (n == 7i64) { break lo; }
+            int64:k = 0i64;
+            while (k < 2i64) decreases 2i64 - k {
+                k = k + 1i64;
+                r = okn(n);
+            }
+            r = ok(); if (r.is_error) { pass 1i64; }
+            break;
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:pw1e_dead_break_no_earlier_road = {
+error:E5_pw1e_dead_break_no_earlier_road;
+func:ok = int64() { pass 7i64; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_pw1e_dead_break_no_earlier_road; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    lz: while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        lo: while (true) unbounded {
+            int64:k = 0i64;
+            while (k < 2i64) decreases 2i64 - k {
+                k = k + 1i64;
+                r = okn(n);
+                if (n == 9i64) { { defer { while (true) unbounded { } } break lo; } }
+            }
+            r = ok(); if (r.is_error) { pass 1i64; }
+            break;
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:pw1r_test_again_at_the_read = {
+error:E5_pw1r_test_again_at_the_read;
+func:ok = int64() { pass 7i64; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_pw1r_test_again_at_the_read; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    lz: while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        if (r.is_error) { pass 1i64; }
+        out = r.value;
+        lo: while (true) unbounded {
+            if (n == 7i64) { break lo; }
+            int64:k = 0i64;
+            while (k < 2i64) decreases 2i64 - k {
+                k = k + 1i64;
+                r = okn(n);
+                if (n == 9i64) { { defer { while (true) unbounded { } } break lo; } }
+            }
+            r = ok(); if (r.is_error) { pass 1i64; }
+            break;
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:pw2r_test_again_at_the_read = {
+error:E5_pw2r_test_again_at_the_read;
+func:ok = int64() { pass 7i64; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_pw2r_test_again_at_the_read; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    lz: while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        if (r.is_error) { pass 1i64; }
+        out = r.value;
+        int64:j = 0i64;
+        lo: while (j < 2i64) decreases 2i64 - j {
+            j = j + 1i64;
+            if (r.is_error) { pass 1i64; }
+            out = out + r.value - 7i64;
+            if (n == 7i64) { continue lo; }
+            int64:k = 0i64;
+            while (k < 2i64) decreases 2i64 - k {
+                k = k + 1i64;
+                r = okn(n);
+                if (n == 9i64) { { defer { while (true) unbounded { } } continue lo; } }
+            }
+            r = ok(); if (r.is_error) { pass 1i64; }
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+func:main = int32(cstring[]:argv) {
+    if ((raw wl1d_no_inner_loop_if.cell_main(argv.len)) != 67i32) { exit 100i32; }
+    if ((raw wl1r_test_again_at_the_read.cell_main(argv.len)) != 67i32) { exit 101i32; }
+    if ((raw wl5_give_from_one_loop_assigns.cell_main(argv.len)) != 67i32) { exit 102i32; }
+    if ((raw wl4r_assign_at_the_declaration.cell_main(argv.len)) != 67i32) { exit 103i32; }
+    if ((raw wl3_break_outer_assigns_read.cell_main(argv.len)) != 67i32) { exit 104i32; }
+    if ((raw wl2_break_outer_assigns.cell_main(argv.len)) != 67i32) { exit 105i32; }
+    if ((raw wr1_dead_break_road_is_not_revived.cell_main(argv.len)) != 67i32) { exit 106i32; }
+    if ((raw wr2_dead_give_road_is_not_revived.cell_main(argv.len)) != 67i32) { exit 107i32; }
+    if ((raw pw1k_no_dead_break.cell_main(argv.len)) != 67i32) { exit 108i32; }
+    if ((raw pw1e_dead_break_no_earlier_road.cell_main(argv.len)) != 67i32) { exit 109i32; }
+    if ((raw pw1r_test_again_at_the_read.cell_main(argv.len)) != 67i32) { exit 110i32; }
+    if ((raw pw2r_test_again_at_the_read.cell_main(argv.len)) != 67i32) { exit 111i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (Bad)              { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (silent_trip_road_meets_the_back_road_ok.E5_wl1d_no_inner_loop_if) { exit 75i32; },
+        (silent_trip_road_meets_the_back_road_ok.E5_wl1r_test_again_at_the_read) { exit 75i32; },
+        (silent_trip_road_meets_the_back_road_ok.E5_wl5_give_from_one_loop_assigns) { exit 75i32; },
+        (silent_trip_road_meets_the_back_road_ok.E5_wl4r_assign_at_the_declaration) { exit 75i32; },
+        (silent_trip_road_meets_the_back_road_ok.E5_wl3_break_outer_assigns_read) { exit 75i32; },
+        (silent_trip_road_meets_the_back_road_ok.E5_wl2_break_outer_assigns) { exit 75i32; },
+        (silent_trip_road_meets_the_back_road_ok.E5_wr1_dead_break_road_is_not_revived) { exit 75i32; },
+        (silent_trip_road_meets_the_back_road_ok.E5_wr2_dead_give_road_is_not_revived) { exit 75i32; },
+        (silent_trip_road_meets_the_back_road_ok.E5_pw1k_no_dead_break) { exit 75i32; },
+        (silent_trip_road_meets_the_back_road_ok.E5_pw1e_dead_break_no_earlier_road) { exit 75i32; },
+        (silent_trip_road_meets_the_back_road_ok.E5_pw1r_test_again_at_the_read) { exit 75i32; },
+        (silent_trip_road_meets_the_back_road_ok.E5_pw2r_test_again_at_the_read) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

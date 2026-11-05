@@ -1,0 +1,79 @@
+// expect-exit: 0
+mod:first_road_dies_in_a_defer_ok;
+// A first `give` or `fall` road that dies in a `defer` is no road, and the live ones after it are read as they stand: `gd3`
+// assigns before the pick, `gf3` tests again on the road that falls. Their refused twins are in
+// `tests/analysis/rejection/first_road_dies_in_a_defer.npk`.
+error:Bad;
+mod:gd3_give_first_road_dies_assign = {
+error:E5_gd3_give_first_road_dies_assign;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gd3_give_first_road_dies_assign; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gd3_give_first_road_dies_assign; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out;
+    out = 7i64;
+    int64:t = pick (n) {
+        (1i64) {
+            if (n == 9i64) { { defer { while (true) unbounded { } } give 1i64; } }
+            give 2i64;
+        },
+        (*) { give 3i64; }
+    };
+    pass out + (t - t);
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:gf3_fall_first_road_dies_checked = {
+error:E5_gf3_fall_first_road_dies_checked;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gf3_fall_first_road_dies_checked; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gf3_fall_first_road_dies_checked; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    pick (n) {
+        (1i64) {
+            if (n == 9i64) { { defer { while (true) unbounded { } } fall two; } }
+            r = ok(); if (r.is_error) { pass out; }
+            fall two;
+        },
+        two: (2i64) { out = r.value; },
+        (*) { }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+func:main = int32(cstring[]:argv) {
+    if ((raw gd3_give_first_road_dies_assign.cell_main(argv.len)) != 67i32) { exit 100i32; }
+    if ((raw gf3_fall_first_road_dies_checked.cell_main(argv.len)) != 67i32) { exit 101i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (Bad)              { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (first_road_dies_in_a_defer_ok.E5_gd3_give_first_road_dies_assign) { exit 75i32; },
+        (first_road_dies_in_a_defer_ok.E5_gf3_fall_first_road_dies_checked) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

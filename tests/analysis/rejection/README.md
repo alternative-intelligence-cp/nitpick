@@ -49,7 +49,8 @@ Silence has no stage.
 | `BORROW-001` | D-223's counterweight, read both ways since D-325: an UNKNOWN callee (a function value) by the shape rule, where the plain slot decides; a KNOWN callee by its body, which launders a borrow of one parameter's pointee into the other's through a returned pointer | `borrow_pair_plain.npk` |
 | `ASSIGN-001` | D-010 — read before written | `definite_assignment.npk`, ten forms |
 | `ASSIGN-002` | `fixed` / `const` assigned twice | `definite_assignment.npk`; `spliced_fixed_field.npk` (a `fixed` field a macro spliced is `fixed`: the qualifier travels, 1.6.1e step 3) |
-| `ASSIGN-003` | the walk ran out of depth | none since 1.6.1e step 2: an internal belt behind the tree bound (`AST_DEPTH_MAX`); `too_deep.npk` retired: its shape is a PARSER refusal now (PARSE-012), tested in `tests/frontend/parse_decls.npk`, because a file the parser refuses cannot sit in the tree (D-085) |
+| `ASSIGN-003` | the walk ran out of depth | `jump_road_past_the_depth_bound.npk`: a jump and the `defer` bodies it runs, each under the parser's bound and together past the walk's (landing 177d2b2); a single path stays an internal belt behind the tree bound (`AST_DEPTH_MAX`): `too_deep.npk` retired, its shape a PARSER refusal since 1.6.1e step 2 (PARSE-012), tested in `tests/frontend/parse_decls.npk`, because a file the parser refuses cannot sit in the tree (D-085) |
+| `ASSIGN-005` | an assignment's value assigns or `$$m`-claims a name its target read, unless an inline array or struct that can't drop (DEF-571, landing 177d2b2) | `assignment_target_runs_before_its_value.npk`, `compound_assignment_reads_its_name.npk`, `target_generic_may_drop.npk`, `assign_target_window.npk` |
 | `MOVE-001` | D-065 — use after move | `moves.npk`, `path_shapes.npk` |
 | `MOVE-002` | use after free, and double free | `moves.npk`, `path_shapes.npk` |
 | `MOVE-003` | `nodrop` with no drop to suppress | `moves.npk` |

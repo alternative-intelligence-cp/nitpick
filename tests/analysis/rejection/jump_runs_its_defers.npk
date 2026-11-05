@@ -1,0 +1,77 @@
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 27:21
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 42:85
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 58:11
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 71:16
+mod:jump_runs_its_defers;
+// A `break` OR A `fall` RUNS THE `defer` BODIES IT LEAVES, AND ITS ROAD CARRIES WHAT THEY DID (`road_out`; DEF-429 and DEF-437 with
+// DEF-525, landing 177d2b2). `.err` of a success was read here (60) until landing 177d2b, which refused both by merging the block's
+// end into the road. The walk refuses them by running the bodies on the jump's own road, and one whose jumps skip their `defer`s
+// accepts both. A labelled jump is the same road, and a body that rewrites a tested `Result` takes the permit off it: `dr1` (`break o`, `.value` after the loop) and `dr2`
+// (`continue o`, `.value` at the head) read an error's value, 60, before this landing. `dr1k`, testing again, is beside this file.
+mod:bd1_break_through_defer = {
+error:E5_bd1_break_through_defer;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_bd1_break_through_defer; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_bd1_break_through_defer) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = bad(); if (!r.is_error) { pass out; }
+    while (true) unbounded { { defer { r = ok(); } if (n > 0i64) { break; } } }
+    out = raw errv(r.err);
+    pass out;
+};
+};
+mod:fd1_fall_through_defer = {
+error:E5_fd1_fall_through_defer;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_fd1_fall_through_defer; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_fd1_fall_through_defer) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = bad(); if (!r.is_error) { pass out; }
+    pick (n) { (1i64) { { defer { r = ok(); } fall t; } }, t: (*) { out = raw errv(r.err); } }
+    pass out;
+};
+};
+mod:dr1_labelled_break_defer_unchecks = {
+error:E5_dr1_labelled_break_defer_unchecks;
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_dr1_labelled_break_defer_unchecks; };
+func:f = int64(int64:n) never fails {
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:k = 0i64;
+    o: while (k < 2i64) decreases 2i64 - k {
+        k = k + 1i64;
+        { defer { r = bad(); } if (k == 1i64) { break o; } }
+        r = ok(); if (r.is_error) { pass 1i64; }
+    }
+    pass r.value;
+};
+};
+mod:dr2_labelled_continue_defer_unchecks = {
+error:E5_dr2_labelled_continue_defer_unchecks;
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_dr2_labelled_continue_defer_unchecks; };
+func:f = int64(int64:n) never fails {
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:k = 0i64;
+    int64:out = 0i64;
+    o: while (k < 2i64) decreases 2i64 - k {
+        k = k + 1i64;
+        out = r.value;
+        { defer { r = bad(); } if (k == 1i64) { continue o; } }
+        r = ok(); if (r.is_error) { pass 1i64; }
+    }
+    pass out;
+};
+};

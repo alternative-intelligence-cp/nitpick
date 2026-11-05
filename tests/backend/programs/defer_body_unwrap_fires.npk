@@ -1,0 +1,26 @@
+// expect-exit: 75
+mod:defer_body_unwrap_fires;
+// `?!` in a `defer` body fires through `failsafe` with no re-entry, a road the `pass` of `defer_body_may_not_pass.npk` doesn't have.
+error:E5;
+func:g2 = int64(int64:n) { if (n > 5i64) { fail E5; } pass 7i64; };
+func:f = int64(int64:n) never fails { defer { int64:v = g2(n + 10i64) ?! E5; } pass 7i64; };
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

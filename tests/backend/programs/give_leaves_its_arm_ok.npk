@@ -1,5 +1,5 @@
 // expect-exit: 0
-// An arm that gives on every road reads what every road did (DEF-526): assigned, tested or sealed on each, or before the pick; nested value picks; a road that also leaves by `pass`.
+// An arm that gives on every road reads what every road did (DEF-526): assigned, tested or sealed on each, or before the pick; nested value picks; a road that also leaves by `pass`; and, since landing 177d2b2, what one road moved or wrote once isn't held against the code the `give` left behind (`n_read_in_the_arm_after_a_road_moved`, `n_fixed_written_on_two_roads`).
 mod:give_leaves_its_arm_ok;
 error:E9;
 func:mk = string() never fails { pass string_concat("ab", "cde"); };
@@ -45,6 +45,8 @@ func:n_plain_arm_form = int64() never fails { int64:x; int64:n = 1i64; int64:q =
 func:n_every_arm_leaves_nothing_gives = int64() never fails { int64:n = 1i64; int64:q = pick (n) { (2i64) { pass 1i64; }, (*) { give 7i64; } }; pass q; };
 func:n_value_pick_of_a_consuming_arm = int64() never fails { int64:x; Os:o = Os.V(raw mk()); int64:q = pick (move(o)) { (Os.V(a)) { x = 7i64; give raw rds(a); }, (*) { x = 7i64; give 2i64; } }; pass x + q - q; };
 func:n_lending_road = int64() never fails { int64:x; Os:o = Os.V(raw mk()); int64:q = pick (o) { (Os.V(a)) { x = 7i64; if ((raw rds(a)) == 7i64) { give 3i64; } give 1i64; }, (*) { x = 7i64; give 2i64; } }; pass x + q - q; };
+func:n_read_in_the_arm_after_a_road_moved = int64() never fails { string:s = raw mk(); int64:n = 1i64; int64:q = pick (n) { (2i64) { if (n == 1i64) { discard(raw eats(move(s))); give 3i64; } int64:t = raw rds(s); give t; }, (*) { give 7i64; } }; n = q; pass q; };
+func:n_fixed_written_on_two_roads = int64() never fails { fixed int64:x; int64:n = 1i64; int64:q = pick (n) { (1i64) { if (n == 1i64) { x = 7i64; give 3i64; } x = 7i64; give 1i64; }, (*) { x = 7i64; give 2i64; } }; n = q; pass x; };
 func:main = int32(cstring[]:_~argv) {
     if ((raw n_defer_in_a_block_that_ends_before_the_give()) != 7i64) { exit 1i32; }
     if ((raw n_give_value_assigns()) != 7i64) { exit 1i32; }
@@ -71,6 +73,8 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw n_every_arm_leaves_nothing_gives()) != 7i64) { exit 1i32; }
     if ((raw n_value_pick_of_a_consuming_arm()) != 7i64) { exit 1i32; }
     if ((raw n_lending_road()) != 7i64) { exit 1i32; }
+    if ((raw n_read_in_the_arm_after_a_road_moved()) != 7i64) { exit 1i32; }
+    if ((raw n_fixed_written_on_two_roads()) != 7i64) { exit 1i32; }
     exit 0i32;
 };
 func:failsafe = int32(Error:e) {

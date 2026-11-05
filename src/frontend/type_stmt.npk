@@ -3042,6 +3042,16 @@ func:require_place = bool(ExprTyper->:e, ExprId:id, Span:at) never fails {
 // (Written `return Result{err: 0tbb32, value: v};` until landing 171: the both form DEF-373 retired, with a
 // pre-D-179 error.)
 func:check_pass = NIL(ExprTyper->:e, StmtNode:s) never fails {
+    // A `pass` IN A `defer` BODY (DEF-417's open half): the body runs at every exit of its
+    // block, the function's own `pass` among them, so its `pass` re-entered it in the emitter (`emit_pass` ->
+    // `run_all_defers` -> the body's `pass`) until npkc's stack net fired: exit 3, no message. D-163 rule 7's family,
+    // asked FIRST, as `exit`'s is.
+    if (e.in_defer) {
+        discard(raw te_error(e, raw TYPE_DEFER_EXIT(),
+            "a `defer` body may not `pass` (D-163 rule 7, DEF-417): a cleanup runs while its scope unwinds, at every exit of its block, the function's own `pass` among them, and decides nothing about the function's outcome; pass the value from the body the `defer` belongs to",
+            s.span));
+        pass NIL;
+    }
     ExprId:v = raw stmt_operand(s);
     int32:want = e.fn_success;
 
@@ -3193,6 +3203,13 @@ func:check_trap = NIL(ExprTyper->:e, StmtNode:s) never fails {
 // `return v;` accepting a bare value would give the language two spellings for
 // the success path, one of which silently supplies an error field nobody wrote.
 func:check_return = NIL(ExprTyper->:e, StmtNode:s) never fails {
+    // `return` is `pass`'s long form, and refused in a `defer` body for the same reason (DEF-417).
+    if (e.in_defer) {
+        discard(raw te_error(e, raw TYPE_DEFER_EXIT(),
+            "a `defer` body may not `return` (D-163 rule 7, DEF-417): a cleanup runs while its scope unwinds, at every exit of its block, and decides nothing about the function's outcome; return from the body the `defer` belongs to",
+            s.span));
+        pass NIL;
+    }
     ExprId:v = raw stmt_operand(s);
     if (e.fn_never_fails) {
         discard(raw te_error(e, raw TYPE_NEVER_FAILS_CAN_FAIL(),

@@ -1,0 +1,106 @@
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 31:63
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 36:65
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 41:61
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 47:77
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 47:97
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 52:71
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 57:131
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 62:88
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 67:51
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 78:17
+// expect-error: NITPICK-TYPE-040
+// expect-error-at: 103:290
+mod:defer_body_may_not_pass;
+// A `pass` OR A `return` IN A `defer` BODY IS REFUSED BY NAME (TYPE-040, D-163 rule 7, DEF-417's open half). The body runs at every
+// exit of its block, the function's own `pass` among them, so its `pass` re-entered it in the emitter until npkc's stack net fired:
+// exit 3, no message, on every landing before this one. `dp_pass_total_in_defer` and `m2_mov_dloop_wendb_L2` reach that road only under
+// the pending-exit walk: before it TAINT-001 and MOVE-001 stopped them for another reason. TYPE-040 comes first now.
+mod:dl_pass = {
+error:E5_dl_pass;
+func:g2 = int64(int64:n) { if (n > 5i64) { fail E5_dl_pass; } pass 7i64; };
+func:f = int64(int64:n) never fails { defer { if (n > 5i64) { pass 1i64; } } pass 7i64; };
+};
+mod:dl_pass_total = {
+error:E5_dl_pass_total;
+func:g2 = int64(int64:n) { if (n > 5i64) { fail E5_dl_pass_total; } pass 7i64; };
+func:f = int64(int64:n) never fails { int64:t = 0i64; { defer { pass 1i64; } t = 1i64; } pass 7i64; };
+};
+mod:dl_pass_nil = {
+error:E5_dl_pass_nil;
+func:g2 = int64(int64:n) { if (n > 5i64) { fail E5_dl_pass_nil; } pass 7i64; };
+func:h = NIL(int64:n) never fails { defer { if (n > 5i64) { pass NIL; } } pass NIL; };
+func:f = int64(int64:n) never fails { drop h(n); pass 7i64; };
+};
+mod:dl_pass_vpick2 = {
+error:E5_dl_pass_vpick2;
+func:g2 = int64(int64:n) { if (n > 5i64) { fail E5_dl_pass_vpick2; } pass 7i64; };
+func:f = int64(int64:n) never fails { defer { int64:v = pick (n) { (9i64) { pass 1i64; }, (*) { pass 2i64; } }; } pass 7i64; };
+};
+mod:dl_pass_nested = {
+error:E5_dl_pass_nested;
+func:g2 = int64(int64:n) { if (n > 5i64) { fail E5_dl_pass_nested; } pass 7i64; };
+func:f = int64(int64:n) never fails { defer { defer { if (n > 5i64) { pass 1i64; } } } pass 7i64; };
+};
+mod:dl_pass_loop = {
+error:E5_dl_pass_loop;
+func:g2 = int64(int64:n) { if (n > 5i64) { fail E5_dl_pass_loop; } pass 7i64; };
+func:f = int64(int64:n) never fails { defer { int64:k = 0i64; while (k < 2i64) decreases 2i64 - k { k = k + 1i64; if (n > 5i64) { pass 1i64; } } } pass 7i64; };
+};
+mod:dl_pass_brk = {
+error:E5_dl_pass_brk;
+func:g2 = int64(int64:n) { if (n > 5i64) { fail E5_dl_pass_brk; } pass 7i64; };
+func:f = int64(int64:n) never fails { while (true) unbounded { defer { if (n > 5i64) { pass 1i64; } } break; } pass 7i64; };
+};
+mod:dl_return = {
+error:E5_dl_return;
+func:g2 = int64(int64:n) { if (n > 5i64) { fail E5_dl_return; } pass 7i64; };
+func:f = int64(int64:n) { defer { if (n > 5i64) { return Result{value: 1i64}; } } pass 7i64; };
+};
+mod:dp_pass_total_in_defer = {
+error:E5_dp_pass_total_in_defer;
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_dp_pass_total_in_defer; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_dp_pass_total_in_defer) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    while (true) unbounded {
+        defer { pass out; }
+        if (n > 1i64) { r = bad(); }
+        break;
+    }
+    out = r.value;
+    pass out;
+};
+};
+mod:m2_mov_dloop_wendb_L2 = {
+error:E5_m2_mov_dloop_wendb_L2;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+struct:P3 = { int64:a3; int64:b3; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_m2_mov_dloop_wendb_L2; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_m2_mov_dloop_wendb_L2) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    H:x = raw mkh();
+    int64:s1 = (((n - 1i64) / 1i64) % 3i64) + 1i64; int64:s2 = (((n - 1i64) / 3i64) % 3i64) + 1i64; int64:i1 = 0i64; int64:i2 = 0i64;
+    while (i1 < 3i64) decreases 3i64 - i1 { i1 = i1 + 1i64; if ((s1 > 1i64)) { defer { while (i2 < 3i64) decreases 3i64 - i2 { i2 = i2 + 1i64; int64:j2 = 0i64; if (s2 > 1i64) { when (j2 < s2 - 2i64) decreases s2 - j2 { j2 = j2 + 1i64; } then { } end { discard(raw eath(move(x))); break; } pass out; } } } } x = raw mkh(); } out = x.k;
+    pass out;
+};
+};

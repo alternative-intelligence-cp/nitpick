@@ -1,0 +1,474 @@
+// expect-exit: 0
+mod:road_kept_by_the_walk_ok;
+// WHAT A ROAD DOESN'T CARRY: right programs each a mutant of the walk refuses (landing 177d2b2). The silent trip's widening touches only
+// the roads that trip sent (`gen_b`, `gen_c`, `gen_g`, `gen_f`; `ggr`, `fgr`: an inner pick's stamp isn't its outer's). A jump in dead
+// code sends no road (`ld_b`, `ld_c`, `ld_g`, `ld_f`). A `continue` or `fall` road a `defer` body ended isn't revived (`wr3`, `wr4`). A
+// later `defer` runs first (`ro1c`). `gm2c` and `msbc` are the controls of `gm2` and `msb`.
+error:Bad;
+mod:fgr_inner_pick_fall_is_no_road_of_the_outer = {
+error:E5_fgr_inner_pick_fall_is_no_road_of_the_outer;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_fgr_inner_pick_fall_is_no_road_of_the_outer; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_fgr_inner_pick_fall_is_no_road_of_the_outer; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        pick (n) {
+            (1i64) {
+                if (n == 9i64) { fall t2; }
+                int64:j = 0i64;
+                while (j < 2i64) decreases 2i64 - j { j = j + 1i64; pick (n) { (1i64) { fall t3; }, t3: (*) { out = out + 0i64; } } r = bad(); }
+                r = ok(); if (r.is_error) { pass 7i64; }
+            },
+            t2: (*) { out = out + 0i64; }
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:gen_b_earlier_break_road_keeps_its_permit = {
+error:E5_gen_b_earlier_break_road_keeps_its_permit;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gen_b_earlier_break_road_keeps_its_permit; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gen_b_earlier_break_road_keeps_its_permit; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        int64:m = 0i64;
+        l1: while (m < 2i64) decreases 2i64 - m {
+            m = m + 1i64;
+            if (n == 9i64) { break l1; }
+            int64:j = 0i64;
+            while (j < 2i64) decreases 2i64 - j { j = j + 1i64; r = bad(); }
+            r = ok(); if (r.is_error) { pass 7i64; }
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:gen_c_earlier_continue_road_keeps_its_permit = {
+error:E5_gen_c_earlier_continue_road_keeps_its_permit;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gen_c_earlier_continue_road_keeps_its_permit; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gen_c_earlier_continue_road_keeps_its_permit; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        int64:m = 0i64;
+        l1: while (m < 2i64) decreases 2i64 - m {
+            m = m + 1i64;
+            if (n == 9i64) { continue l1; }
+            int64:j = 0i64;
+            while (j < 2i64) decreases 2i64 - j { j = j + 1i64; r = bad(); }
+            r = ok(); if (r.is_error) { pass 7i64; }
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:gen_f_earlier_fall_road_keeps_its_permit = {
+error:E5_gen_f_earlier_fall_road_keeps_its_permit;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gen_f_earlier_fall_road_keeps_its_permit; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gen_f_earlier_fall_road_keeps_its_permit; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        pick (n) {
+            (1i64) {
+                if (n == 9i64) { fall t2; }
+                int64:j = 0i64;
+                while (j < 2i64) decreases 2i64 - j { j = j + 1i64; r = bad(); }
+                r = ok(); if (r.is_error) { pass 7i64; }
+            },
+            t2: (*) { out = out + 0i64; }
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:gen_g_earlier_give_road_keeps_its_permit = {
+error:E5_gen_g_earlier_give_road_keeps_its_permit;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gen_g_earlier_give_road_keeps_its_permit; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gen_g_earlier_give_road_keeps_its_permit; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        int64:t = pick (n) {
+            (*) {
+                if (n == 9i64) { give 1i64; }
+                int64:j = 0i64;
+                while (j < 2i64) decreases 2i64 - j { j = j + 1i64; r = bad(); }
+                r = ok(); if (r.is_error) { pass 7i64; }
+                give 3i64;
+            }
+        };
+        discard(t);
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ggr_inner_pick_give_is_no_road_of_the_outer = {
+error:E5_ggr_inner_pick_give_is_no_road_of_the_outer;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_ggr_inner_pick_give_is_no_road_of_the_outer; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_ggr_inner_pick_give_is_no_road_of_the_outer; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        int64:t = pick (n) {
+            (*) {
+                if (n == 9i64) { give 1i64; }
+                int64:j = 0i64;
+                while (j < 2i64) decreases 2i64 - j { j = j + 1i64; int64:u = pick (n) { (*) { give 2i64; } }; discard(u); r = bad(); }
+                r = ok(); if (r.is_error) { pass 7i64; }
+                give 3i64;
+            }
+        };
+        discard(t);
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:gm2c_assigned_at_the_declaration = {
+error:E5_gm2c_assigned_at_the_declaration;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gm2c_assigned_at_the_declaration; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gm2c_assigned_at_the_declaration; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    int64:y = 7i64;
+    pick (n) {
+        (99i64) where (pick (n) { (*) { y = 7i64; give false; } }) { out = 1i64; },
+        (*) { out = y; }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ld_b_break_in_dead_code_is_no_road = {
+error:E5_ld_b_break_in_dead_code_is_no_road;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_ld_b_break_in_dead_code_is_no_road; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_ld_b_break_in_dead_code_is_no_road; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        int64:m = 0i64;
+        l1: while (m < 2i64) decreases 2i64 - m {
+            m = m + 1i64;
+            if (n == 9i64) { break l1; }
+            int64:j = 0i64;
+            while (j < 2i64) decreases 2i64 - j { j = j + 1i64; if (n == 5i64) { pass 7i64; break l1; } r = bad(); }
+            r = ok(); if (r.is_error) { pass 7i64; }
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ld_c_continue_in_dead_code_is_no_road = {
+error:E5_ld_c_continue_in_dead_code_is_no_road;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_ld_c_continue_in_dead_code_is_no_road; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_ld_c_continue_in_dead_code_is_no_road; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        int64:m = 0i64;
+        l1: while (m < 2i64) decreases 2i64 - m {
+            m = m + 1i64;
+            if (n == 9i64) { continue l1; }
+            int64:j = 0i64;
+            while (j < 2i64) decreases 2i64 - j { j = j + 1i64; if (n == 5i64) { pass 7i64; continue l1; } r = bad(); }
+            r = ok(); if (r.is_error) { pass 7i64; }
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ld_f_fall_in_dead_code_is_no_road = {
+error:E5_ld_f_fall_in_dead_code_is_no_road;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_ld_f_fall_in_dead_code_is_no_road; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_ld_f_fall_in_dead_code_is_no_road; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        pick (n) {
+            (1i64) {
+                if (n == 9i64) { fall t2; }
+                int64:j = 0i64;
+                while (j < 2i64) decreases 2i64 - j { j = j + 1i64; if (n == 5i64) { pass 7i64; fall t2; } r = bad(); }
+                r = ok(); if (r.is_error) { pass 7i64; }
+            },
+            t2: (*) { out = out + 0i64; }
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ld_g_give_in_dead_code_is_no_road = {
+error:E5_ld_g_give_in_dead_code_is_no_road;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_ld_g_give_in_dead_code_is_no_road; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_ld_g_give_in_dead_code_is_no_road; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        int64:t = pick (n) {
+            (*) {
+                if (n == 9i64) { give 1i64; }
+                int64:j = 0i64;
+                while (j < 2i64) decreases 2i64 - j { j = j + 1i64; if (n == 5i64) { pass 7i64; give 1i64; } r = bad(); }
+                r = ok(); if (r.is_error) { pass 7i64; }
+                give 3i64;
+            }
+        };
+        discard(t);
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:msbc_test_again = {
+error:E5_msbc_test_again;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_msbc_test_again; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_msbc_test_again; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        if (r.is_error) { pass 7i64; } out = r.value;
+        int64:j = 0i64;
+        while (true) unbounded { if (j == 1i64) { break; } r = bad(); j = j + 1i64; }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ro1c_later_defer_runs_first_refill_after_move = {
+error:E5_ro1c_later_defer_runs_first_refill_after_move;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_ro1c_later_defer_runs_first_refill_after_move; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_ro1c_later_defer_runs_first_refill_after_move; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    H:x = raw mkh();
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        if (n == 1i64) { defer { x = raw mkh(); } defer { discard(raw eath(move(x))); } break; }
+    }
+    out = x.k;
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:wr3_dead_continue_road_is_not_revived = {
+error:E5_wr3_dead_continue_road_is_not_revived;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wr3_dead_continue_road_is_not_revived; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wr3_dead_continue_road_is_not_revived; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        int64:m = 0i64;
+        lo: while (m < 1i64) decreases 1i64 - m {
+            m = m + 1i64;
+            int64:k = 0i64;
+            while (k < 2i64) decreases 2i64 - k {
+                k = k + 1i64;
+                r = okn(n);
+                if (n == 9i64) { { defer { while (true) unbounded { } } continue lo; } }
+            }
+            r = ok(); if (r.is_error) { pass 1i64; }
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:wr4_dead_fall_road_is_not_revived = {
+error:E5_wr4_dead_fall_road_is_not_revived;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wr4_dead_fall_road_is_not_revived; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wr4_dead_fall_road_is_not_revived; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        pick (n) {
+            (1i64) {
+                int64:k = 0i64;
+                while (k < 2i64) decreases 2i64 - k {
+                    k = k + 1i64;
+                    r = okn(n);
+                    if (n == 9i64) { { defer { while (true) unbounded { } } fall t2; } }
+                }
+                r = ok(); if (r.is_error) { pass 1i64; }
+            },
+            t2: (*) { out = out + 0i64; }
+        }
+    }
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+func:main = int32(cstring[]:argv) {
+    if ((raw fgr_inner_pick_fall_is_no_road_of_the_outer.cell_main(argv.len)) != 67i32) { exit 100i32; }
+    if ((raw gen_b_earlier_break_road_keeps_its_permit.cell_main(argv.len)) != 67i32) { exit 101i32; }
+    if ((raw gen_c_earlier_continue_road_keeps_its_permit.cell_main(argv.len)) != 67i32) { exit 102i32; }
+    if ((raw gen_f_earlier_fall_road_keeps_its_permit.cell_main(argv.len)) != 67i32) { exit 103i32; }
+    if ((raw gen_g_earlier_give_road_keeps_its_permit.cell_main(argv.len)) != 67i32) { exit 104i32; }
+    if ((raw ggr_inner_pick_give_is_no_road_of_the_outer.cell_main(argv.len)) != 67i32) { exit 105i32; }
+    if ((raw gm2c_assigned_at_the_declaration.cell_main(argv.len)) != 67i32) { exit 106i32; }
+    if ((raw ld_b_break_in_dead_code_is_no_road.cell_main(argv.len)) != 67i32) { exit 107i32; }
+    if ((raw ld_c_continue_in_dead_code_is_no_road.cell_main(argv.len)) != 67i32) { exit 108i32; }
+    if ((raw ld_f_fall_in_dead_code_is_no_road.cell_main(argv.len)) != 67i32) { exit 109i32; }
+    if ((raw ld_g_give_in_dead_code_is_no_road.cell_main(argv.len)) != 67i32) { exit 110i32; }
+    if ((raw msbc_test_again.cell_main(argv.len)) != 67i32) { exit 111i32; }
+    if ((raw ro1c_later_defer_runs_first_refill_after_move.cell_main(argv.len)) != 67i32) { exit 112i32; }
+    if ((raw wr3_dead_continue_road_is_not_revived.cell_main(argv.len)) != 67i32) { exit 113i32; }
+    if ((raw wr4_dead_fall_road_is_not_revived.cell_main(argv.len)) != 67i32) { exit 114i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (Bad)              { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (road_kept_by_the_walk_ok.E5_fgr_inner_pick_fall_is_no_road_of_the_outer) { exit 75i32; },
+        (road_kept_by_the_walk_ok.E5_gen_b_earlier_break_road_keeps_its_permit) { exit 75i32; },
+        (road_kept_by_the_walk_ok.E5_gen_c_earlier_continue_road_keeps_its_permit) { exit 75i32; },
+        (road_kept_by_the_walk_ok.E5_gen_f_earlier_fall_road_keeps_its_permit) { exit 75i32; },
+        (road_kept_by_the_walk_ok.E5_gen_g_earlier_give_road_keeps_its_permit) { exit 75i32; },
+        (road_kept_by_the_walk_ok.E5_ggr_inner_pick_give_is_no_road_of_the_outer) { exit 75i32; },
+        (road_kept_by_the_walk_ok.E5_gm2c_assigned_at_the_declaration) { exit 75i32; },
+        (road_kept_by_the_walk_ok.E5_ld_b_break_in_dead_code_is_no_road) { exit 75i32; },
+        (road_kept_by_the_walk_ok.E5_ld_c_continue_in_dead_code_is_no_road) { exit 75i32; },
+        (road_kept_by_the_walk_ok.E5_ld_f_fall_in_dead_code_is_no_road) { exit 75i32; },
+        (road_kept_by_the_walk_ok.E5_ld_g_give_in_dead_code_is_no_road) { exit 75i32; },
+        (road_kept_by_the_walk_ok.E5_msbc_test_again) { exit 75i32; },
+        (road_kept_by_the_walk_ok.E5_ro1c_later_defer_runs_first_refill_after_move) { exit 75i32; },
+        (road_kept_by_the_walk_ok.E5_wr3_dead_continue_road_is_not_revived) { exit 75i32; },
+        (road_kept_by_the_walk_ok.E5_wr4_dead_fall_road_is_not_revived) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

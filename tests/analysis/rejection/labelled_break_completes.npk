@@ -1,0 +1,132 @@
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 40:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 50:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 60:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 70:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 80:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 85:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 90:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 95:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 100:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 110:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 115:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 120:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 125:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 130:1
+mod:labelled_break_completes;
+// A LABELLED `break` FROM AN INNER LOOP, OR A BARE ONE IN A `when`'s `then` OR `end`, LEAVES THE LOOP IT NAMES (DEF-436, landing 177d2b2): the
+// `while (true)` read as endless, FLOW-001 was silent, and the function fell off its end and returned a zero (97: a null plain
+// pointer; `y3d`, `y3e` 67 as zero + 7). `y3c` was refused before.
+mod:y3a_labelled_break = {
+error:E5_y3a_labelled_break;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:g = int64->(int64->:q) never fails { outer: while (true) unbounded { while (true) unbounded { break outer; } } };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = raw g(@x); pass <-p; };
+};
+mod:y3d_value_return = {
+error:E5_y3d_value_return;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:g = int64(int64:q) never fails { outer: while (true) unbounded { while (true) unbounded { break outer; } } };
+func:f = int64() never fails { pass (raw g(7i64)) + 7i64; };
+};
+mod:y3e_string_return = {
+error:E5_y3e_string_return;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:g = string() never fails { outer: while (true) unbounded { while (true) unbounded { break outer; } } };
+func:f = int64() never fails { string:s = raw g(); pass s.len + 7i64; };
+};
+mod:y3f_for_inner = {
+error:E5_y3f_for_inner;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:g = int64->(int64->:q) never fails { outer: while (true) unbounded { for (int64:i in 0i64...2i64) { break outer; } } };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = raw g(@x); pass <-p; };
+};
+mod:y3g_fails_envelope = {
+error:E5_y3g_fails_envelope;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:g = int64->(int64->:q) { outer: while (true) unbounded { while (true) unbounded { break outer; } } };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = g(@x) ?! Unreachable; pass <-p; };
+};
+mod:m1_when_then_bare_break = {
+error:E5_m1_when_then_bare_break;
+func:g = int64->(int64->:q) never fails { int64:i = 0i64; while (true) unbounded { when (i < 1i64) decreases 1i64 - i { i = i + 1i64; } then { break; } end { break; } } };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = raw g(@x); pass (<-p) + 60i64; };
+};
+mod:m2_when_then_label_break = {
+error:E5_m2_when_then_label_break;
+func:g = int64->(int64->:q) never fails { int64:i = 0i64; outer: while (true) unbounded { when (i < 1i64) decreases 1i64 - i { i = i + 1i64; } then { break outer; } end { break outer; } } };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = raw g(@x); pass (<-p) + 60i64; };
+};
+mod:m3_label_break_pick_arm_in_for = {
+error:E5_m3_label_break_pick_arm_in_for;
+func:g = int64->(int64->:q) never fails { int64:i = 0i64; outer: while (true) unbounded { for (int64:k in 0i64...2i64) { pick (k) { (1i64) { break outer; }, (*) { } } } } };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = raw g(@x); pass (<-p) + 60i64; };
+};
+mod:m4_label_break_in_when_body = {
+error:E5_m4_label_break_in_when_body;
+func:g = int64->(int64->:q) never fails { int64:i = 0i64; outer: while (true) unbounded { when (i < 2i64) decreases 2i64 - i { i = i + 1i64; break outer; } then { } end { } } };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = raw g(@x); pass (<-p) + 60i64; };
+};
+mod:y3c_ctl_flow001 = {
+error:E5_y3c_ctl_flow001;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:setq = int64(string->:q) never fails { <-q = string_concat("wx", "yz"); pass 0i64; };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:gvv = int64(fixed uint8[]:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (v[0i64] => int64) - 90i64 + k; };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+func:g = int64->(int64->:q) never fails { outer: while (true) unbounded { break outer; } };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = raw g(@x); pass <-p; };
+};
+mod:q436_when_then_only_break = {
+error:E5_q436_when_then_only_break;
+func:g = int64->(int64->:q) never fails { int64:i = 0i64; while (true) unbounded { when (i < 1i64) decreases 1i64 - i { i = i + 1i64; } then { break; } end { } } };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = raw g(@x); pass (<-p) + 60i64; };
+};
+mod:q436_when_end_only_break = {
+error:E5_q436_when_end_only_break;
+func:g = int64->(int64->:q) never fails { int64:i = 0i64; while (true) unbounded { when (i < 1i64) decreases 1i64 - i { i = i + 1i64; } then { } end { break; } } };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = raw g(@x); pass (<-p) + 60i64; };
+};
+mod:q436_label_in_till = {
+error:E5_q436_label_in_till;
+func:g = int64->(int64->:q) never fails { int64:i = 0i64; outer: while (true) unbounded { till (2i64, 1i64) { break outer; } } };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = raw g(@x); pass (<-p) + 60i64; };
+};
+mod:q436_label_in_loop = {
+error:E5_q436_label_in_loop;
+func:g = int64->(int64->:q) never fails { int64:i = 0i64; outer: while (true) unbounded { loop (0i64, 2i64, 1i64) { break outer; } } };
+func:f = int64() never fails { int64:x = 7i64; int64->:p = raw g(@x); pass (<-p) + 60i64; };
+};

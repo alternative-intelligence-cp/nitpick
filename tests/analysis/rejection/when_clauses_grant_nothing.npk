@@ -1,0 +1,152 @@
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 45:11
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 59:11
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 72:20
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 86:29
+// expect-error: NITPICK-MOVE-002
+// expect-error-at: 104:11
+// expect-error: NITPICK-MOVE-002
+// expect-error-at: 105:12
+// expect-error: NITPICK-WILDX-002
+// expect-error-at: 122:22
+// expect-error: NITPICK-WILDX-001
+// expect-error-at: 140:9
+// expect-error: NITPICK-WILDX-001
+// expect-error-at: 140:28
+// expect-error: NITPICK-WILDX-001
+// expect-error-at: 140:48
+// expect-error: NITPICK-WILDX-001
+// expect-error-at: 140:68
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 149:1
+mod:when_clauses_grant_nothing;
+// `when`'s `then` AND `end` CONTRIBUTE NOTHING TO `must` (DECISIONS.md:9069). Exactly one of them runs (D-027), so each program here is
+// right, and each is refused by that decision, as it was before the pending-exit walk: a binding both assign (`q1`), a `Result` both test
+// (`wn1`, `wn2`), a moved string both re-assign (`wn3`). A walk with no cap at the `when`'s end grants all four.
+// Each of the cap's other facts has its site: a pointer the body frees and both clauses refill (`wc1`), a page both seal (`wc2`), a page
+// the body seals and both re-allocate (`wc3`).
+// `then`'s `break` IS AN EXIT, AND `end`'s `pass` DOESN'T TAKE IT AWAY: `wt2`, a `while (true)` left only through its `when`'s `then`, falls off the function's end, FLOW-001. The vacant zero was read here,
+// 60, before this landing. `wt2k`, with a `pass` after the loop, is beside this file.
+mod:q1_then_end_both_assign = {
+error:E5_q1_then_end_both_assign;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_q1_then_end_both_assign; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    int64:y;
+    int64:j = 0i64;
+    when (j < 1i64) decreases 1i64 - j { j = j + 1i64; } then { y = 7i64; } end { y = 7i64; }
+    out = y;
+    pass out;
+};
+};
+mod:wn1_then_end_both_check = {
+error:E5_wn1_then_end_both_check;
+func:mk = int64(int64:n) { if (n > 5i64) { fail E5_wn1_then_end_both_check; } pass 7i64; };
+func:bad = int64() { fail E5_wn1_then_end_both_check; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_wn1_then_end_both_check) { pass 7i64; }, (*) { pass 0i64; } } };
+func:sink = int64(move string:q) never fails { pass 1i64; };
+func:f = int64(int64:n) never fails {
+    Result<int64>:r = mk(n);
+    int64:j = 0i64;
+    when (j < n - 1i64) decreases n - j { j = j + 1i64; } then { if (r.is_error) { pass 1i64; } } end { if (r.is_error) { pass 2i64; } }
+    pass r.value;
+};
+};
+mod:wn2_then_end_both_errcheck = {
+error:E5_wn2_then_end_both_errcheck;
+func:mk = int64(int64:n) { if (n > 5i64) { fail E5_wn2_then_end_both_errcheck; } pass 7i64; };
+func:bad = int64() { fail E5_wn2_then_end_both_errcheck; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_wn2_then_end_both_errcheck) { pass 7i64; }, (*) { pass 0i64; } } };
+func:sink = int64(move string:q) never fails { pass 1i64; };
+func:f = int64(int64:n) never fails {
+    Result<int64>:r = bad();
+    int64:j = 0i64;
+    when (j < n - 1i64) decreases n - j { j = j + 1i64; } then { if (!r.is_error) { pass 1i64; } } end { if (!r.is_error) { pass 2i64; } }
+    pass raw errv(r.err);
+};
+};
+mod:wn3_then_end_both_revive = {
+error:E5_wn3_then_end_both_revive;
+func:mk = int64(int64:n) { if (n > 5i64) { fail E5_wn3_then_end_both_revive; } pass 7i64; };
+func:bad = int64() { fail E5_wn3_then_end_both_revive; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_wn3_then_end_both_revive) { pass 7i64; }, (*) { pass 0i64; } } };
+func:sink = int64(move string:q) never fails { pass 1i64; };
+func:f = int64(int64:n) never fails {
+    string:s = string_concat("a", "b");
+    int64:u = raw sink(move(s));
+    int64:j = 0i64;
+    when (j < n - 1i64) decreases n - j { j = j + 1i64; } then { s = string_concat("c", "d"); } end { s = string_concat("e", "f"); }
+    int64:w = raw sink(move(s));
+    pass w + u + 5i64;
+};
+};
+mod:wc1_freed_in_body_both_clauses_refill = {
+error:E5_wc1_freed_in_body_both_clauses_refill;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wc1_freed_in_body_both_clauses_refill; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wc1_freed_in_body_both_clauses_refill; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    wild uint8->:b = alloc(8i64) =>! wild uint8->;
+    b[0i64] = 7u8;
+    int64:j = 0i64;
+    when (j < n - 1i64) decreases n - j { j = j + 1i64; dalloc(b); break; } then { b = alloc(8i64) =>! wild uint8->; b[0i64] = 7u8; } end { dalloc(b); b = alloc(8i64) =>! wild uint8->; b[0i64] = 7u8; }
+    out = b[0i64] => int64;
+    dalloc(b);
+    pass out;
+};
+};
+mod:wc2_both_clauses_seal_then_a_call = {
+error:E5_wc2_both_clauses_seal_then_a_call;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wc2_both_clauses_seal_then_a_call; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wc2_both_clauses_seal_then_a_call; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8;
+    int64:j = 0i64;
+    when (j < n - 1i64) decreases n - j { j = j + 1i64; } then { wildx_seal(page); } end { wildx_seal(page); }
+    out = wildx_call(page, 7i64);
+    wildx_free(page);
+    pass out;
+};
+};
+mod:wc3_body_seals_both_clauses_realloc_then_a_write = {
+error:E5_wc3_body_seals_both_clauses_realloc_then_a_write;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wc3_body_seals_both_clauses_realloc_then_a_write; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wc3_body_seals_both_clauses_realloc_then_a_write; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    wildx uint8->:page = wildx_alloc(64i64) =>! wildx uint8->; page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8;
+    int64:j = 0i64;
+    when (j < n - 1i64) decreases n - j { j = j + 1i64; wildx_seal(page); break; } then { wildx_free(page); page = wildx_alloc(64i64) =>! wildx uint8->; } end { wildx_free(page); page = wildx_alloc(64i64) =>! wildx uint8->; }
+    page[0i64] = 72u8; page[1i64] = 137u8; page[2i64] = 248u8; page[3i64] = 195u8;
+    wildx_seal(page);
+    out = wildx_call(page, 7i64);
+    wildx_free(page);
+    pass out;
+};
+};
+mod:wt2_then_breaks_end_passes_and_the_function_falls_off = {
+error:E5_wt2_then_breaks_end_passes_and_the_function_falls_off;
+func:f = int64(int64:n) never fails {
+    while (true) unbounded { int64:i = 0i64; when (i < n) decreases n - i { i = i + 1i64; } then { break; } end { pass 7i64; } }
+};
+};

@@ -7,6 +7,8 @@ mod:give_defer_rewrites_ok;
 //   THE ROAD IS THE ARM'S OWN (`ng1c`, `ng2c`, `ng3c`): an inner pick's block lands its `defer` while the outer arm has given
 //   and the inner arm hasn't, and the outer arm's road must not take it. A landing that asks no `give_seen` refuses `ng1c`
 //   and `ng2c`, both right on every road.
+//   LANDING 177d2b's PRICES, right programs since 177d2b2 (`pd1`, `pd2`, `pd3`, `pg1`): a `give` runs the bodies of the blocks
+//   it leaves on its own road, so the road loses what a body it ran took back and nothing else.
 error:Bad;
 mod:a1c_give_no_defer = {
 error:E5_a1c_give_no_defer;
@@ -220,6 +222,74 @@ pub func:f = int64() never fails {
 Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 2i64; int64:k = 1i64; int64:x; int64:q = pick (k) { (1i64) { if (n == 2i64) { x = 7i64; give 1i64; } pass 7i64; }, (*) { x = 7i64; give 3i64; } }; pass x + q - q;
 };
 };
+mod:pd1_unrelated_defer_permit_from_a_branch = {
+error:E5_pd1_unrelated_defer_permit_from_a_branch;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_pd1_unrelated_defer_permit_from_a_branch; };
+struct:P = { int64:a; int64:b; };
+enum:Os = { V(string); W(string); Z; };
+
+func:idn = int64(int64:v) never fails { pass v; };
+pub func:f = int64() never fails {
+Result<int64>:r = ok(); int64:n = 2i64; int64:k = 1i64; int64:q = pick (k) { (1i64) { defer { n = 3i64; } if (!r.is_error) { give 1i64; } pass 7i64; }, (*) { if (r.is_error) { pass 7i64; } give 3i64; } }; pass r.value + q - q;
+};
+};
+mod:pd2_later_block_with_a_defer = {
+error:E5_pd2_later_block_with_a_defer;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_pd2_later_block_with_a_defer; };
+struct:P = { int64:a; int64:b; };
+enum:Os = { V(string); W(string); Z; };
+
+func:idn = int64(int64:v) never fails { pass v; };
+pub func:f = int64() never fails {
+Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 2i64; int64:k = 1i64; int64:q = pick (k) { (1i64) { if (n == 5i64) { give 1i64; } { defer { n = 3i64; } r = ok(); } if (r.is_error) { pass 7i64; } give 2i64; }, (*) { give 3i64; } }; pass r.value + q - q;
+};
+};
+mod:pd3_unrelated_defer_assigned_in_a_branch = {
+error:E5_pd3_unrelated_defer_assigned_in_a_branch;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
+func:eats = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_pd3_unrelated_defer_assigned_in_a_branch; };
+struct:P = { int64:a; int64:b; };
+enum:Os = { V(string); W(string); Z; };
+
+func:idn = int64(int64:v) never fails { pass v; };
+pub func:f = int64() never fails {
+Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 2i64; int64:k = 1i64; int64:x; int64:q = pick (k) { (1i64) { defer { n = 3i64; } if (n == 2i64) { x = 7i64; give 1i64; } pass 7i64; }, (*) { x = 7i64; give 3i64; } }; pass x + q - q;
+};
+};
+mod:pg1_give_before_defer_price = {
+error:E5_pg1_give_before_defer_price;
+struct:H = { string:s; int64:k; };
+struct:W = { H:h; int64:m; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:eats = int64(move string:v) never fails { pass v.len; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_pg1_give_before_defer_price; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_pg1_give_before_defer_price) { pass 7i64; }, (*) { pass 0i64; } } };
+func:keep = bool(int64:v, int64->:dst, bool:go) never fails { <-dst = v; pass go; };
+func:g = int64(int64:n) never fails {
+    Result<int64>:r = ok(); if (r.is_error) { pass 7i64; }
+    int64:q = pick (n) {
+        (1i64) { if (n == 1i64) { give 1i64; } defer { r = bad(); } pass 7i64; },
+        (*) { give 2i64; }
+    };
+    pass r.value + q - q;
+};
+pub func:f = int64() never fails { pass raw g(1i64); };
+};
 async func:main = int32(cstring[]:_~argv) {
     if ((raw a1c_give_no_defer.f()) != 7i64) { exit 100i32; }
     if ((raw a2c_give_no_defer_page.f()) != 7i64) { exit 101i32; }
@@ -235,6 +305,10 @@ async func:main = int32(cstring[]:_~argv) {
     if ((raw pd1c_no_defer.f()) != 7i64) { exit 111i32; }
     if ((raw pd2c_later_block_no_defer.f()) != 7i64) { exit 112i32; }
     if ((raw pd3c_no_defer.f()) != 7i64) { exit 113i32; }
+    if ((raw pd1_unrelated_defer_permit_from_a_branch.f()) != 7i64) { exit 114i32; }
+    if ((raw pd2_later_block_with_a_defer.f()) != 7i64) { exit 115i32; }
+    if ((raw pd3_unrelated_defer_assigned_in_a_branch.f()) != 7i64) { exit 116i32; }
+    if ((raw pg1_give_before_defer_price.f()) != 7i64) { exit 117i32; }
     exit 0i32;
 };
 func:failsafe = int32(Error:e) {
@@ -265,6 +339,10 @@ func:failsafe = int32(Error:e) {
         (give_defer_rewrites_ok.E5_pd1c_no_defer) { exit 75i32; },
         (give_defer_rewrites_ok.E5_pd2c_later_block_no_defer) { exit 75i32; },
         (give_defer_rewrites_ok.E5_pd3c_no_defer) { exit 75i32; },
+        (give_defer_rewrites_ok.E5_pd1_unrelated_defer_permit_from_a_branch) { exit 75i32; },
+        (give_defer_rewrites_ok.E5_pd2_later_block_with_a_defer) { exit 75i32; },
+        (give_defer_rewrites_ok.E5_pd3_unrelated_defer_assigned_in_a_branch) { exit 75i32; },
+        (give_defer_rewrites_ok.E5_pg1_give_before_defer_price) { exit 75i32; },
         (*)                { exit 99i32; }
     }
     exit 9i32;

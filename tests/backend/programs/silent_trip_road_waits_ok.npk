@@ -1,0 +1,65 @@
+// expect-exit: 0
+mod:silent_trip_road_waits_ok;
+// A REPORTING LOOP'S SILENT TRIP SENDS NO ROAD TO AN OUTER FRAME (the floor, landing 177d2b2): in that trip an inner loop's exit is met
+// with its own back edge, so a `break outer` after it carries less than the reporting trip's. `fl1` is right and needs the reporting
+// trip's road alone: a walk without the floor refuses it (ASSIGN-001). `fl1c` (no widening loss) is its control.
+error:Bad;
+mod:fl1_brk_outer_widened = {
+func:f = int64(int64:n) never fails {
+    int64:x;
+    outer: while (true) unbounded {
+        int64:k = 0i64;
+        while (k < 3i64) decreases 3i64 - k {
+            k = k + 1i64;
+            while (true) unbounded { if (n > 0i64) { x = 7i64; break; } }
+            break outer;
+        }
+        x = 7i64;
+        break;
+    }
+    pass x;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:fl1c_brk_outer_plain = {
+func:f = int64(int64:n) never fails {
+    int64:x;
+    outer: while (true) unbounded {
+        int64:k = 0i64;
+        while (k < 3i64) decreases 3i64 - k {
+            k = k + 1i64;
+            while (true) unbounded { x = 7i64; break; }
+            break outer;
+        }
+        x = 7i64;
+        break;
+    }
+    pass x;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+func:main = int32(cstring[]:argv) {
+    if ((raw fl1_brk_outer_widened.cell_main(argv.len)) != 67i32) { exit 100i32; }
+    if ((raw fl1c_brk_outer_plain.cell_main(argv.len)) != 67i32) { exit 101i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (Bad)              { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

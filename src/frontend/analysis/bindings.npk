@@ -151,6 +151,10 @@ pub struct:AssignState = {
     // seal state is neither safely writable nor safely executable.
     wild bool->:sealed_any;
     wild bool->:sealed_firm;
+    // THE ROAD LEFT (landing 177d2b2): set where the walk's road leaves, so a join takes the other side. One per
+    // road, not per binding, so it's not a fact and has no direction: `state_merge` decides it from both sides,
+    // and `assign_fields.py` holds every line that writes it.
+    wild bool->:dead;
     int32:count;
     // THE COLLECTING PRE-WALK SHARES ONE STATE (DEF-402, landing 175): `state_copy` hands this state
     // back as its own copy, so the silent walk that fills the address-taken set allocates nothing.
@@ -176,8 +180,9 @@ pub struct:Assign = {
     // constant is — which is how `is_error` and `error` came to disagree (D-069).
     TypeResolver->:tyres;
 
-    // A LOOP BODY IS WALKED TWICE AND REPORTED ONCE — see `assign_loop_body`. The
-    // first walk is silent, and this is what silences it.
+    // A LOOP BODY IS WALKED TWICE AND REPORTED ONCE — see `assign_loop`. The
+    // first walk is silent, and this is what silences it. A jump's road through the
+    // `defer` bodies it runs is silent too (`road_out`).
     bool:quiet;
 
     // THE BINDINGS A PATTERN DECLARES (DEF-118, 1.6.1d step 1): per pattern node,
@@ -215,6 +220,26 @@ pub struct:Assign = {
     bool:give_seen;            // that arm has had one
     AssignState:fall_road;     // what stood at the `fall`s of the pick being walked, merged (DEF-437)
     bool:fall_seen;            // that pick has had one
+    // THE OPEN LOOPS (landing 177d2b2), pushed where `fnem_loop_push` pushes a frame: around a loop's BODY, after its
+    // condition. Per loop its label, what its `break`s and `continue`s carried (merged as they arrive, dead until one
+    // does), the `defer` stack's height under its body, and when a road last arrived (for a silent walk's one trip).
+    List<int32>:lp_label;
+    List<AssignState>:lp_brk;
+    List<AssignState>:lp_cont;
+    List<int64>:lp_dh;
+    wild int64->:lp_bgen;
+    wild int64->:lp_cgen;
+    int64:lp_floor;            // no road goes to a frame below this: in a reporting loop's silent trip it waits for the
+                               // reporting trip, and out of a value `pick` on a dead road it isn't one
+    int64:road_gen;
+    int64:give_gen;
+    int64:fall_gen;
+    int64:pick_dh;             // the `defer` stack's height at the innermost `pick`
+    List<int32>:dstack;        // the bodies of the `defer`s registered in the open blocks, innermost last
+    List<int32>:tgt_slots;     // the names the open targets have read, each once, while `tgt_on`: `assign_assign`
+    int64:tgt_watch;           // `tgt_slots` below this: targets whose value is running, whose names stand still
+    bool:tgt_on;
+    bool:cut;                  // a walk met the depth bound since `road_out` last cleared it (ASSIGN-003 at the jump)
 };
 
 pub func:assign_init = Assign(Ast->:ast, SymbolTable->:tab,
@@ -244,6 +269,9 @@ pub func:assign_init = Assign(Ast->:ast, SymbolTable->:tab,
     wild int8->:a2 = alloc(#size_of<int32>());
     wild int8->:a3 = alloc(#size_of<int32>());
     wild int8->:a4 = alloc(1i64);
+    int64:gcap = ((raw ASSIGN_DEPTH()) => int64) * 2i64 + 4i64;   // frames nest no deeper than the walk's depth
+    wild int8->:a5 = alloc(gcap * #size_of<int64>());
+    wild int8->:a6 = alloc(gcap * #size_of<int64>());
     Assign:x = Assign{ ast: ast, tab: tab, interns: interns, types: types,
                        etypes: etypes, diags: diags, tyres: tyres,
                        quiet: false,
@@ -252,7 +280,13 @@ pub func:assign_init = Assign(Ast->:ast, SymbolTable->:tab,
                        defer_read: a2 =>! wild int32->, defer_stmt: a3 =>! wild int32->,
                        defer_now: a4 =>! wild bool->, defer_blk: 0i32, defer_cur: 0i32, scope: 0i32,
                        give_road: raw state_new(1i32), give_seen: false,
-                       fall_road: raw state_new(1i32), fall_seen: false };
+                       fall_road: raw state_new(1i32), fall_seen: false,
+                       lp_label: raw list_init::<int32>(8i64), lp_brk: raw list_init::<AssignState>(8i64),
+                       lp_cont: raw list_init::<AssignState>(8i64), lp_dh: raw list_init::<int64>(8i64),
+                       lp_bgen: a5 =>! wild int64->, lp_cgen: a6 =>! wild int64->, lp_floor: 0i64, road_gen: 0i64,
+                       give_gen: 0i64, fall_gen: 0i64, pick_dh: 0i64, dstack: raw list_init::<int32>(8i64),
+                       tgt_slots: raw list_init::<int32>(8i64), tgt_watch: 0i64, tgt_on: false,
+                       cut: false };
     pass x;
 };
 
@@ -267,6 +301,7 @@ pub func:state_new = AssignState(int32:n) never fails {
     wild int8->:m6 = alloc(size * #size_of<bool>());
     wild int8->:m7 = alloc(size * #size_of<bool>());
     wild int8->:m8 = alloc(size * #size_of<bool>());
+    wild int8->:m9 = alloc(#size_of<bool>());
     AssignState:s = AssignState{ must: m1 =>! wild bool->,
                                  may: m2 =>! wild bool->,
                                  moved: m3 =>! wild bool->,
@@ -275,6 +310,7 @@ pub func:state_new = AssignState(int32:n) never fails {
                                  errchecked: m8 =>! wild bool->,
                                  sealed_any: m6 =>! wild bool->,
                                  sealed_firm: m7 =>! wild bool->,
+                                 dead: m9 =>! wild bool->,
                                  count: size =>! int32, shared: false };
     for (int64:i in 0i64...size) {
         s.must[i] = false;
@@ -286,6 +322,7 @@ pub func:state_new = AssignState(int32:n) never fails {
         s.sealed_any[i] = false;
         s.sealed_firm[i] = false;
     }
+    s.dead[0i64] = false;
     pass s;
 };
 
@@ -304,6 +341,7 @@ func:state_copy = AssignState(AssignState:src) never fails {
         d.sealed_firm[i] = src.sealed_firm[i];
         i = i + 1i64;
     }
+    d.dead[0i64] = src.dead[0i64];
     pass d;
 };
 
@@ -320,6 +358,7 @@ func:state_overwrite = NIL(AssignState:dst, AssignState:src) never fails {
         dst.sealed_firm[i] = src.sealed_firm[i];
         i = i + 1i64;
     }
+    dst.dead[0i64] = src.dead[0i64];
     pass NIL;
 };
 
@@ -332,16 +371,21 @@ func:state_overwrite = NIL(AssignState:dst, AssignState:src) never fails {
 // difference between accepting correct code and refusing it.
 func:state_merge = NIL(AssignState:dst, AssignState:a, bool:a_exits,
                        AssignState:b, bool:b_exits) never fails {
-    if (a_exits) {
-        if (b_exits) {
+    // A ROAD THAT LEFT IS NO ARM: its own `dead` says so, wherever it was decided. The flags the callers pass are
+    // `false` everywhere now, and stay for a caller that knows what the road doesn't.
+    bool:ax = a_exits || a.dead[0i64];
+    bool:bx = b_exits || b.dead[0i64];
+    if (ax) {
+        if (bx) {
             // Nothing reaches here at all. `dst` keeps the state from before the
             // branch, which is sound for the unreachable code that follows.
+            dst.dead[0i64] = true;
             pass NIL;
         }
         drop state_overwrite(dst, b);
         pass NIL;
     }
-    if (b_exits) {
+    if (bx) {
         drop state_overwrite(dst, a);
         pass NIL;
     }
@@ -376,6 +420,7 @@ func:state_merge = NIL(AssignState:dst, AssignState:a, bool:a_exits,
         dst.sealed_firm[i] = a.sealed_firm[i] && b.sealed_firm[i];
         i = i + 1i64;
     }
+    dst.dead[0i64] = false;
     pass NIL;
 };
 
@@ -388,19 +433,17 @@ func:state_carry_may = NIL(AssignState:dst, AssignState:body) never fails {
     pass NIL;
 };
 
-// A LOOP BODY MAY RUN ZERO TIMES, so nothing it assigns is assigned after it — but
-// everything it assigns is still POSSIBLY assigned, which is what stops a `fixed`
-// binding being written once per iteration.
+// WHAT FORBIDS, FROM A ROAD THAT MAY NOT BE THE ONE TAKEN. A `pick`'s arms gather theirs
+// here (`mayacc`), the arms that leave too, and it lands on the walk once, after every
+// arm. It doesn't read `dead`: a road that left is taken as one that didn't, which
+// refuses more and never less, and no destination of it is a join.
 func:state_absorb_may = NIL(AssignState:dst, AssignState:body) never fails {
     int64:i = 0i64;
     while (i < (dst.count => int64)) decreases (dst.count => int64) - i {
         dst.may[i] = dst.may[i] || body.may[i];
-        // A LOOP BODY THAT MOVES SOMETHING MOVES IT ON THE SECOND ITERATION TOO,
-        // so what the body moved or freed survives the loop even though what it
-        // ASSIGNED does not. Of the eight facts, the four that forbid are carried here
-        // and union (`may`, `moved`, `freed`, `sealed_any`). The four that permit
-        // intersect (`must`, `checked`, `errchecked`, `sealed_firm`), and they're
-        // `state_intersect_must`'s.
+        // Of the eight facts, the four that forbid are carried here and union (`may`,
+        // `moved`, `freed`, `sealed_any`). The four that permit intersect (`must`,
+        // `checked`, `errchecked`, `sealed_firm`), and they're a join's: `state_merge`'s.
         dst.moved[i] = dst.moved[i] || body.moved[i];
         dst.freed[i] = dst.freed[i] || body.freed[i];
         // sealed UNIONS (a body that seals leaves the page possibly-sealed).
@@ -636,7 +679,7 @@ func:assign_decl = NIL(Assign->:x, DeclId:id, int32:scope) never fails {
         // -- a fallible function's SUCCESS carrying zero, a `main`'s exit 0 -- under
         // a comment that sources "always return explicitly". A `NIL` function passes
         // `NIL`; `main` and `failsafe` `exit`; an infinite loop or a trap ends a path.
-        if (raw stmt_completes(x, body, raw ASSIGN_DEPTH())) {
+        if (!(st.dead[0i64])) {   // a road reaches the closing brace
             drop assign_err(x, raw FLOW_FALLS_OFF(),
                 "this function can reach the end of its body without `pass`, `fail`, `exit` or a trap, and the value it would return is nothing the program computed (a zero; for a fallible function a SUCCESS carrying zero) -- end every path with `pass`/`fail` (`pass NIL;` in a `NIL` function), `exit` in `main` and `failsafe`",
                 d.span);
@@ -742,171 +785,50 @@ func:stmt_is_unreachable = bool(Assign->:x, StmtNode:s) never fails {
     pass (raw string_eq(name, "unreachable"));
 };
 
-// --- does this statement leave, rather than fall through? --------------------
-//
-// WRONG TOWARDS `false` COSTS PRECISION; WRONG TOWARDS `true` COSTS SOUNDNESS. A
-// statement wrongly called an exit removes its arm from the merge, and whatever it
-// failed to assign is then treated as assigned by the other arm alone. So the
-// answer is `false` for everything not listed, and each `true` is one this walk
-// has actually looked at.
-func:stmt_exits = bool(Assign->:x, StmtId:id, int32:depth) never fails {
-    if (depth <= 0i32)         { pass false; }
-    if (raw stmt_is_none(id))  { pass false; }
-    StmtNode:s = raw ast_stmt(x.ast, id);
-
-    if (s.kind == StmtKind.StmtPassStmt)     { pass true; }
-    if (s.kind == StmtKind.StmtFailStmt)     { pass true; }
-    if (s.kind == StmtKind.StmtReturnStmt)   { pass true; }
-    if (s.kind == StmtKind.StmtExitStmt)     { pass true; }
-    if (s.kind == StmtKind.StmtTrapStmt)     { pass true; }
-    if (raw stmt_is_unreachable(x, s))       { pass true; }
-
-    // `break` and `continue` do not leave the FUNCTION, and they do leave the
-    // straight-line flow this is asked about — control does not reach the
-    // statement after them, which is the only thing a merge cares about. What they
-    // assigned still reaches the code after the LOOP, and that is carried by the
-    // loop's `may` absorption rather than here.
-    if (s.kind == StmtKind.StmtBreakStmt)    { pass true; }
-    if (s.kind == StmtKind.StmtContinueStmt) { pass true; }
-    if (s.kind == StmtKind.StmtFallStmt)     { pass true; }
-
-    if (s.kind == StmtKind.StmtBlockStmt) {
-        int32:n = raw stmt_list_count(s);
-        for (int32:i in 0i32...n) {
-            StmtId:sub = StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) };
-            if (raw stmt_exits(x, sub, depth - 1i32)) { pass true; }
-        }
-        pass false;
-    }
-
-    // AN `if` LEAVES ONLY IF BOTH ARMS DO, and a missing `else` is an arm that
-    // falls through — which is the case a reader is likeliest to get wrong.
-    if (s.kind == StmtKind.StmtIfStmt) {
-        StmtId:e = raw stmt_else(s);
-        if (raw stmt_is_none(e)) { pass false; }
-        if (!(raw stmt_exits(x, raw stmt_then(s), depth - 1i32))) { pass false; }
-        pass (raw stmt_exits(x, e, depth - 1i32));
-    }
-
-    pass false;
-};
-
 // --- statements --------------------------------------------------------------
-
-// --- may this statement COMPLETE NORMALLY, reaching the statement after it? -----
 //
-// THE TWIN OF `stmt_exits` WITH THE OPPOSITE CONSERVATISM (DEF-108, 1.6.0 step 5c).
-// Wrong towards `false` here ACCEPTS a body that falls off its end, which the
-// emitter turns into a zero value (a fallible function's SUCCESS carrying zero);
-// wrong towards `true` costs the author one `pass`. So the answer is `true` for
-// everything not listed, and each `false` is a statement control provably never
-// steps past: the five leavers; a bare `#unreachable();` (DEF-225: a trap, as
-// `!!!` is); a block one of whose statements never completes;
-// an `if` with an `else` neither of whose arms completes; a `pick` none of whose
-// arms completes (the arms cover the selector -- the checker's exhaustiveness --
-// and an arm that ends in `fall` continues into the NEXT arm, which is read on
-// its own, so `fall` itself never completes); a `while (true)` with no `break` at
-// its own level. `break` and `continue` never complete either -- control goes to
-// the loop, and a loop with a condition completes as a whole. `when` and every
-// counted loop complete as a whole.
-func:stmt_completes = bool(Assign->:x, StmtId:id, int32:depth) never fails {
-    if (depth <= 0i32)        { pass true; }
-    if (raw stmt_is_none(id)) { pass true; }
-    StmtNode:s = raw ast_stmt(x.ast, id);
-    if (s.kind == StmtKind.StmtPassStmt)     { pass false; }
-    if (s.kind == StmtKind.StmtFailStmt)     { pass false; }
-    if (s.kind == StmtKind.StmtReturnStmt)   { pass false; }
-    if (s.kind == StmtKind.StmtExitStmt)     { pass false; }
-    if (s.kind == StmtKind.StmtTrapStmt)     { pass false; }
-    if (raw stmt_is_unreachable(x, s))       { pass false; }
-    if (s.kind == StmtKind.StmtBreakStmt)    { pass false; }
-    if (s.kind == StmtKind.StmtContinueStmt) { pass false; }
-    if (s.kind == StmtKind.StmtFallStmt)     { pass false; }
-    // A `give` LEAVES ITS ARM with the pick's value (DEF-284, landing 152): the
-    // arm never steps past it. It stands only in a pick EXPRESSION's arm (the
-    // checker's TYPE-094), which no function body reaches as a statement, so
-    // FLOW-001's question of a body is untouched; the question of an ARM asks it.
-    if (s.kind == StmtKind.StmtGiveStmt)     { pass false; }
-    if (s.kind == StmtKind.StmtBlockStmt) {
-        int32:n = raw stmt_list_count(s);
-        for (int32:i in 0i32...n) {
-            StmtId:sub = StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) };
-            if (!(raw stmt_completes(x, sub, depth - 1i32))) { pass false; }
-        }
-        pass true;
-    }
-    if (s.kind == StmtKind.StmtIfStmt) {
-        StmtId:else_id = raw stmt_else(s);
-        if (raw stmt_is_none(else_id)) { pass true; }
-        if (raw stmt_completes(x, raw stmt_then(s), depth - 1i32)) { pass true; }
-        pass (raw stmt_completes(x, else_id, depth - 1i32));
-    }
-    if (s.kind == StmtKind.StmtPickStmt) {
-        int32:start = raw pick_arm_start(s);
-        int32:cnt = raw pick_arm_count(s);
-        if (cnt == 0i32) { pass true; }
-        for (int32:i in 0i32...cnt) {
-            StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
-            if (raw stmt_completes(x, raw arm_body(arm), depth - 1i32)) { pass true; }
-        }
-        pass false;
-    }
-    if (s.kind == StmtKind.StmtWhileStmt) {
-        ExprId:c = raw stmt_cond(s);
-        if (!(raw expr_is_none(c))) {
-            ExprNode:cn = raw ast_expr(x.ast, c);
-            if (cn.kind == ExprKind.ExprBoolLiteral) {
-                if (cn.payload != 0i64) {
-                    if (!(raw stmt_has_break(x, raw stmt_body(x.ast, s), depth - 1i32))) { pass false; }
-                }
-            }
-        }
-        pass true;
-    }
-    pass true;
-};
-
-// DOES THIS STATEMENT HOLD A `break` AT ITS OWN LOOP LEVEL? Into blocks, `if`
-// arms and `pick` arms; never into a nested loop, whose `break` is its own.
-// Unknown means "yes" (the conservative answer for the caller above).
-func:stmt_has_break = bool(Assign->:x, StmtId:id, int32:depth) never fails {
-    if (depth <= 0i32)        { pass true; }
-    if (raw stmt_is_none(id)) { pass false; }
-    StmtNode:s = raw ast_stmt(x.ast, id);
-    if (s.kind == StmtKind.StmtBreakStmt) { pass true; }
-    if (s.kind == StmtKind.StmtBlockStmt) {
-        int32:n = raw stmt_list_count(s);
-        for (int32:i in 0i32...n) {
-            StmtId:sub = StmtId{ index: raw ast_id_at(x.ast, raw stmt_list_start(s), i) };
-            if (raw stmt_has_break(x, sub, depth - 1i32)) { pass true; }
-        }
-        pass false;
-    }
-    if (s.kind == StmtKind.StmtIfStmt) {
-        if (raw stmt_has_break(x, raw stmt_then(s), depth - 1i32)) { pass true; }
-        pass (raw stmt_has_break(x, raw stmt_else(s), depth - 1i32));
-    }
-    if (s.kind == StmtKind.StmtPickStmt) {
-        int32:start = raw pick_arm_start(s);
-        int32:cnt = raw pick_arm_count(s);
-        for (int32:i in 0i32...cnt) {
-            StmtNode:arm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, start, i));
-            if (raw stmt_has_break(x, raw arm_body(arm), depth - 1i32)) { pass true; }
-        }
-        pass false;
-    }
-    if (s.kind == StmtKind.StmtWhileStmt) { pass false; }
-    if (s.kind == StmtKind.StmtForStmt)   { pass false; }
-    if (s.kind == StmtKind.StmtLoopStmt)  { pass false; }
-    if (s.kind == StmtKind.StmtTillStmt)  { pass false; }
-    if (s.kind == StmtKind.StmtWhenStmt)  { pass false; }
-    if (s.kind == StmtKind.StmtDeferStmt) { pass false; }
-    pass false;
-};
+// WHETHER A STATEMENT LEAVES, COMPLETES OR HOLDS A `break` IS THE WALK'S OWN ANSWER (landing 177d2b2: DEF-429, DEF-436,
+// DEF-538, DEF-546, DEF-547, DEF-548), where three structural walks stood beside it and each read less than the walk
+// does. A road is `dead` after a leaver and at a join every road into which left, and a loop's exit is live only if
+// its condition can fail or a live `break` reached its frame: a labelled one from a nested loop, or one held in an
+// expression. A jump carries its road to where the emitter branches, through the `defer` bodies it runs on the way.
+//
+// WHAT THE WALK RESTS ON. Each of these is a premise and not a check, and a change that breaks one makes the walk
+// answer for a road it never walked. Read them before changing a writer, a jump, a join or the emitter's order.
+//
+//   1. PER BIT, EVERY TRANSFER IS A CONSTANT OR THE IDENTITY. A statement sets or clears a binding's fact whatever
+//      it was (`state_mark` and its kin) or leaves it. None copies a fact from another binding or from another
+//      fact, and a fact is READ only to report. So a loop's head, H = S met with back(H), is S met with back(S):
+//      one silent trip finds it (`assign_loop`), and a road that trip sent out from S is covered by meeting it with
+//      back(S) (`widen_roads`). Whether a road is `dead` follows from the text and from whether its start was,
+//      never from a fact. `assign_fields.py` holds every writer to the first sentence; a walk that reads a fact to
+//      decide a write or a jump breaks all of this.
+//   2. THE ROADS ARE THE EMITTER'S. A loop's frame is pushed where `fnem_loop_push` pushes one: around the BODY,
+//      after the condition (`emit_while`, `emit_when`), and for a counted loop after its arguments (`emit_counted`).
+//      `when`'s `then` and `end` stand outside it. A jump runs the `defer` bodies of the blocks it leaves, last
+//      first, before it branches (`run_defers_down_to`): `break` and `continue` down to their loop's frame, `give`
+//      (after its operand) and `fall` down to their `pick`. A `pick`'s arm is a scope of its own (DEF-121). A
+//      total `pick` runs an arm or traps. A change to any of these in the emitter is a change here.
+//   3. `dstack` MIRRORS REGISTRATION. A `defer` pushes its body where the walk meets it, silent or not. A block, a
+//      loop's body and a `pick`'s arm cut the stack back to its height at their start. So a `defer` the road hasn't
+//      reached isn't on it, and one whose block has ended is gone.
+//   4. THE FRAMES FIT. A frame is pushed under an `assign_stmt` that spent a level of `ASSIGN_DEPTH`, so no more
+//      are open than that, and `lp_bgen`/`lp_cgen` hold twice as many.
+//   5. EVERY ROAD INTO A JOIN GOES THROUGH `state_merge`, the one writer that reads `dead`, or is the first to
+//      arrive and taken whole. The carriers that don't read it (`state_absorb_may`, `state_take_definite`,
+//      `state_carry_may`, and `when`'s cap, `state_intersect_must`) stand only where the destination's own flag
+//      is already the answer and a road that left may be taken as one that didn't, which refuses more:
+//      `assign_fields.py`'s CALLS says why for each, and it refuses a carrier into a road kept on the walker. A
+//      pair of carriers stood at a `give` and kept the first road's flag (H-A, at `leave_arm`).
+//   6. THE WALK RUNS ONLY OVER WHAT THE TYPER ACCEPTED (`pipeline.npk`'s stage 3). A `break` or a `continue` has
+//      its loop (TYPE-109) and leaves no `defer` body (TYPE-040), so `road_out` never meets the jump it serves
+//      inside a body it runs. A `give` stands in a value `pick`'s arm (TYPE-094), a `fall` names a later arm
+//      (TYPE-111).
 
 func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never fails {
     if (raw stmt_is_none(id)) { pass NIL; }
     if (depth <= 0i32) {
+        x.cut = true;   // a quiet walk's cut is refused where it serves (`road_out`)
         StmtNode:deep = raw ast_stmt(x.ast, id);
         drop assign_err(x, raw ASSIGN_TOO_DEEP(),
             "this statement nests deeper than the definite-assignment analysis will follow, so its bindings cannot be shown assigned before use",
@@ -942,10 +864,12 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
     }
 
     if (s.kind == StmtKind.StmtBlockStmt) {
+        int64:dh = x.dstack.count;
         drop assign_stmt_window(x, st, raw stmt_list_start(s),
                                 raw stmt_list_count(s), d);
         drop defer_bodies_land(x, st, raw stmt_list_start(s), raw stmt_list_count(s), d);
         drop defer_reads_end(x, depth);   // the block's `defer`s have run (DEF-405)
+        drop list_truncate(@x.dstack, dh);   // and a jump from past here doesn't run them
         pass NIL;
     }
 
@@ -984,8 +908,7 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
         // is the untouched copy, so the intersection below is exactly "assigned
         // before the `if` as well" — which is why a one-armed `if` cannot make
         // anything definitely assigned.
-        drop state_merge(st, a, raw stmt_exits(x, then_id, raw ASSIGN_DEPTH()),
-                         b, raw stmt_exits(x, else_id, raw ASSIGN_DEPTH()));
+        drop state_merge(st, a, false, b, false);   // an arm that left is dead, and says so itself
         pass NIL;
     }
 
@@ -993,13 +916,12 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
     // top of the loop — which is what the first iteration actually sees — and what
     // it assigns does not survive the loop.
     if (s.kind == StmtKind.StmtWhileStmt) {
-        drop assign_expr(x, st, raw stmt_cond(s), d);
-        drop assign_loop_body(x, st, raw stmt_body(x.ast, s), d);
+        discard(raw assign_loop(x, st, s, raw stmt_body(x.ast, s), raw stmt_cond(s), d));
         pass NIL;
     }
     if (s.kind == StmtKind.StmtForStmt) {
         drop assign_expr(x, st, raw stmt_for_iter(x.ast, s), d);
-        drop assign_loop_body(x, st, raw stmt_for_body(x.ast, s), d);
+        discard(raw assign_loop(x, st, s, raw stmt_for_body(x.ast, s), raw expr_none(), d));
         pass NIL;
     }
     if (s.kind == StmtKind.StmtLoopStmt) {
@@ -1011,21 +933,26 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
         pass NIL;
     }
 
-    // `when` IS A `while` THAT TRACKS HOW IT TERMINATED (D-027), so its body is a
-    // loop body and its `then` / `end` blocks are two ways out. Which one runs is
-    // not decided here, so NEITHER contributes to `must` — conservative, and
-    // `when` is rare enough that buying precision here would be paying for
-    // something nobody has asked for.
+    // `when` IS A `while` THAT TRACKS HOW IT TERMINATED (D-027): `emit_when`'s junction runs `then` once the body has
+    // run (after a `break` too) and `end` only when the condition was false on the first visit, so `then` starts
+    // from the loop's exit and `end` from the condition's false road, and exactly one of them runs.
+    // Both stand outside the loop's frame, as the checker and the emitter have them.
+    // BUT `then` AND `end` CONTRIBUTE NOTHING TO `must` (DECISIONS.md:9069): which one runs is not decided here. So
+    // what stands after them is met with the loop's exit before either: a permit either clause grants is dropped, and
+    // what either forbids stays. Their roads -- a `break` or a `continue` to the loop around, `dead` where both
+    // leave -- are as above.
     if (s.kind == StmtKind.StmtWhenStmt) {
-        drop assign_expr(x, st, raw stmt_cond(s), d);
-        drop assign_loop_body(x, st, raw stmt_when_body(x.ast, s), d);
-        drop assign_loop_body(x, st, raw stmt_when_then(x.ast, s), d);
-        drop assign_loop_body(x, st, raw stmt_when_end(x.ast, s), d);
+        AssignState:nf = raw assign_loop(x, st, s, raw stmt_when_body(x.ast, s), raw stmt_cond(s), d);
+        AssignState:ex = raw state_copy(st);
+        drop assign_stmt(x, st, raw stmt_when_then(x.ast, s), d);
+        drop assign_stmt(x, nf, raw stmt_when_end(x.ast, s), d);
+        drop state_merge(st, st, false, nf, false);
+        drop state_intersect_must(st, ex);   // nothing either clause grants stands after it (DECISIONS.md:9069)
         pass NIL;
     }
 
     if (s.kind == StmtKind.StmtPickStmt) {
-        drop assign_pick(x, st, s, d);
+        drop assign_pick(x, st, s, d, false);
         pass NIL;
     }
 
@@ -1049,6 +976,7 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
     // a nest of n bodies isn't walked 2^n times. `may` alone comes back at once: a body's
     // write is still the first write of a `fixed`, wherever the next one stands.
     if (s.kind == StmtKind.StmtDeferStmt) {
+        drop list_push(@x.dstack, s.a);   // a jump out of its block runs it (`road_out`)
         if (x.quiet) { pass NIL; }
         StmtId:body = StmtId{ index: s.a };
         AssignState:dv = raw state_copy(st);
@@ -1083,37 +1011,34 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
         pass NIL;
     }
 
-    if (s.kind == StmtKind.StmtBreakStmt)    { pass NIL; }
-    if (s.kind == StmtKind.StmtContinueStmt) { pass NIL; }
-    // A `fall` LEAVES ITS ARM WHERE IT STANDS TOO (DEF-437), for the body of a later arm (DEF-487), and it owes
-    // `give_road_note`'s note. ONE ROAD FOR THE PICK, whichever label each `fall` names: a labelled arm takes
-    // them all, which refuses more and never less. Its storage is made at the pick's first `fall`, so a pick
-    // with none allocates nothing for it.
-    if (s.kind == StmtKind.StmtFallStmt) {
-        if (x.fall_seen) { drop state_merge(x.fall_road, x.fall_road, false, st, false); }
-        else             { x.fall_road = raw state_copy(st); x.fall_seen = true; }
-        pass NIL;
-    }
+    if (s.kind == StmtKind.StmtBreakStmt)    { drop leave_to(x, st, raw stmt_label(s), true, d, s.span); pass NIL; }
+    if (s.kind == StmtKind.StmtContinueStmt) { drop leave_to(x, st, raw stmt_label(s), false, d, s.span); pass NIL; }
+    // A `fall` LEAVES ITS ARM WHERE IT STANDS (DEF-437), for the body of a later arm (DEF-487). ONE ROAD FOR THE
+    // PICK, whichever label each `fall` names: a labelled arm takes them all, which refuses more and never less.
+    if (s.kind == StmtKind.StmtFallStmt) { drop leave_arm(x, st, false, d, s.span); pass NIL; }
 
     // `pass`, `fail`, `return`, `exit` and the six that carry one expression. Each
     // READS its operand, which is the whole of what this analysis owes them.
     if (s.kind == StmtKind.StmtPassStmt)   {
         drop assign_expr(x, st, raw stmt_operand(s), d);
         drop check_pass_defer_read(x, raw stmt_operand(s));   // `pass place;` MOVES an owning value (DEF-405 (c))
+        st.dead[0i64] = true;
         pass NIL;
     }
-    if (s.kind == StmtKind.StmtFailStmt)   { drop assign_expr(x, st, raw stmt_operand(s), d); pass NIL; }
-    if (s.kind == StmtKind.StmtReturnStmt) { drop assign_expr(x, st, raw stmt_operand(s), d); pass NIL; }
-    if (s.kind == StmtKind.StmtExitStmt)   { drop assign_expr(x, st, raw stmt_expr(s), d); pass NIL; }
+    if (s.kind == StmtKind.StmtFailStmt)   { drop assign_expr(x, st, raw stmt_operand(s), d); st.dead[0i64] = true; pass NIL; }
+    if (s.kind == StmtKind.StmtReturnStmt) { drop assign_expr(x, st, raw stmt_operand(s), d); st.dead[0i64] = true; pass NIL; }
+    if (s.kind == StmtKind.StmtExitStmt)   { drop assign_expr(x, st, raw stmt_expr(s), d); st.dead[0i64] = true; pass NIL; }
 
     if (s.kind == StmtKind.StmtGiveStmt) {
         drop assign_expr(x, st, raw stmt_expr(s), d);
-        drop give_road_note(x, st);
+        drop leave_arm(x, st, true, d, s.span);
         pass NIL;
     }
 
     if (raw stmt_carries_expr(s.kind)) {
         drop assign_expr(x, st, raw stmt_expr(s), d);
+        // A trap and a bare `#unreachable();` (DEF-225) leave: no road goes on.
+        if ((s.kind == StmtKind.StmtTrapStmt) || (raw stmt_is_unreachable(x, s))) { st.dead[0i64] = true; }
         pass NIL;
     }
 
@@ -1126,9 +1051,10 @@ func:assign_stmt = NIL(Assign->:x, AssignState:st, StmtId:id, int32:depth) never
 // WHAT A `defer` DID, THE CODE AFTER ITS BLOCK INHERITS (DEF-525). The bodies run here,
 // last first, and the walk goes on from what they left. Silent: each body reported where
 // it's written, one level below the block's statements, as it's walked there. Only a road
-// that falls through the block's end reads this state: an arm
-// that leaves by `pass` or `fail` has nothing after it, and one that leaves by `break` or
-// `continue` is dropped at `state_merge` (DEF-429).
+// that falls through the block's end reads this state. A road that left the block by a jump
+// (`break`, `continue`, `give`, `fall`) ran these bodies where it left (`road_out`), all of
+// each, a rewrite or a re-seal as much as a forbid (DEF-429, DEF-526, DEF-535), and one that
+// left by `pass`, `fail` or `exit` has nothing after it.
 func:defer_bodies_land = NIL(Assign->:x, AssignState:st, int32:start,
                              int32:count, int32:depth) never fails {
     bool:saved = x.quiet;
@@ -1139,14 +1065,6 @@ func:defer_bodies_land = NIL(Assign->:x, AssignState:st, int32:start,
         StmtNode:n = raw ast_stmt(x.ast, StmtId{ index: raw ast_id_at(x.ast, start, i) });
         if (n.kind == StmtKind.StmtDeferStmt) {
             drop assign_stmt(x, st, StmtId{ index: n.a }, depth - 1i32);
-            // A road that gave ran this body too, and a dead `pass` after its `give` would
-            // drop what the body did at the `if`'s merge (DEF-526): what it forbids and what
-            // it un-permits, a rewrite or a re-seal, alike (DEF-535). Only once this arm has
-            // given: before that the road is the enclosing arm's, which didn't run this body.
-            if (x.give_seen) { drop state_merge(x.give_road, x.give_road, false, st, false); }
-            // And a road that fell (DEF-437): a `fall` runs the `defer`s of the blocks it leaves, so what
-            // a body forbids it forbids in the target, and what a body rewrote isn't checked there.
-            if (x.fall_seen) { drop state_merge(x.fall_road, x.fall_road, false, st, false); }
         }
     }
     x.quiet = saved;
@@ -1162,71 +1080,145 @@ func:assign_stmt_window = NIL(Assign->:x, AssignState:st, int32:start,
     pass NIL;
 };
 
-// A BODY THAT MAY NOT RUN, AND MAY RUN AGAIN. Analysed from the current state, and
-// only its `may` survives — not enough to call anything definitely assigned
-// afterwards, and enough to refuse a second write to a `fixed` binding.
-//
-// WALKED TWICE, REPORTED ONCE, and the first walk is what makes the second one
-// see a second iteration:
-//
-//     fixed int32:k;
-//     while (c) { k = 1i32; }        // written once per iteration, which is once
-//                                    // too many
-//
-// On a single walk from the entry state, `k` is unassigned when `k = 1i32;` is
-// reached and nothing fires. The silent pre-pass grows `may` to everything the
-// body can assign; the real pass then sees `k` as possibly-already-assigned and
-// refuses it. That is D-116 generalising exactly as the decision said it would —
-// this is the third analysis in this cycle to need a body walked more than once,
-// and the second to have shipped the bug first.
-//
-// ONE PRE-PASS IS ENOUGH, unlike the borrow marking's open-ended fixpoint. `may`
-// is set by an assignment statement and by `$$m`, and neither chains: one walk
-// visits every assignment in the body whatever its order or nesting, so the second
-// walk starts from the answer.
-//
-// AND A PRE-PASS IS NOT REPEATED INSIDE A PRE-PASS (DEF-281, landing 152). A loop
-// met while an enclosing loop's silent walk runs is walked ONCE: what a silent
-// walk hands up is the four unions `state_absorb_may` takes (`may`, `moved`,
-// `freed`, `sealed_any`), each the start state's bits plus what the body sets,
-// and a second silent walk of the same body from a wider start adds nothing to
-// them -- it would only report, and a silent walk reports nothing. Until this
-// landing every level walked its body twice whatever the mode, so a nest of n
-// loops walked the innermost body 2^n times (x1.8 per level in time and memory:
-// twenty nested loops two seconds and 476 MB, twenty-four past 6 GB, sixty
-// never). Now a nest of n loops is n silent walks and n real ones per level,
-// quadratic in the depth, and a nest at the parser's bound compiles in a blink.
-// The real pass still walks every loop it meets twice -- its own silent pre-pass
-// and then the reporting walk -- so no report moves.
-//
-// A BODY'S REWRITE CLEARS WHAT A PERMISSION SAID (DEF-522). What's still true after
-// the loop is what was true before it and is still true at the end of a trip. It
-// has to hold at the top of a later trip too, so the reporting walk starts from
-// that: a read of `.value` above the `r = ...` that a trip ends on sees the next
-// trip's `r`.
-func:assign_loop_body = NIL(Assign->:x, AssignState:st, StmtId:body, int32:depth) never fails {
-    if (raw stmt_is_none(body)) { pass NIL; }
-
-    if (x.quiet) {
-        AssignState:once = raw state_copy(st);
-        drop assign_stmt(x, once, body, depth);
-        drop state_absorb_may(st, once);
-        drop state_intersect_must(st, once);
-        pass NIL;
-    }
-
+// A JUMP'S ROAD: a copy of the state where it stands, run through the bodies of the `defer`s registered
+// above `floor`, last first, as `run_defers_down_to` runs them before the branch. Silent: each body reports where it's
+// written.
+// THE BODIES ARE WALKED AT THE JUMP'S DEPTH, NOT THEIR OWN: a deep body beside a deep jump meets the bound here
+// though it didn't where it's written, and what that cuts off is missing from the road. So the cut refuses at the
+// jump (ASSIGN-003), closed rather than open. `cut` is sticky: a road walked inside another quiet walk leaves it set
+// for the `road_out` around it, and the reporting walk walks every other quiet walk's jump at the same depth.
+func:road_out = AssignState(Assign->:x, AssignState:st, int64:floor, int32:depth, Span:sp) never fails {
+    AssignState:road = raw state_copy(st);
     bool:saved = x.quiet;
+    bool:cut = x.cut;
     x.quiet = true;
-    AssignState:pre = raw state_copy(st);
-    drop assign_stmt(x, pre, body, depth);
-    drop state_absorb_may(st, pre);
-    drop state_intersect_must(st, pre);
+    x.cut = false;
+    int64:k = x.dstack.count;
+    while (k > floor) decreases k {
+        k = k - 1i64;
+        drop assign_stmt(x, road, StmtId{ index: x.dstack[k] }, depth);
+    }
     x.quiet = saved;
+    if (x.cut) {
+        drop assign_err(x, raw ASSIGN_TOO_DEEP(),
+            "a `defer` body this jump runs nests deeper, counted from the jump, than the definite-assignment analysis will follow, so what the body does on the jump's road cannot be shown (closed rather than open): nest the jump or the body less deeply",
+            sp);
+    }
+    x.cut = x.cut || cut;
+    pass road;
+};
 
-    AssignState:inner = raw state_copy(st);
-    drop assign_stmt(x, inner, body, depth);
-    drop state_absorb_may(st, inner);
-    drop state_intersect_must(st, inner);
+// A `break` OR A `continue` TAKES ITS ROAD TO ITS LOOP: the frame `fnem_loop_find` picks (label 0 the
+// innermost, else the nearest with the label; none is TYPE-109's), through the defers of the blocks it leaves, merged
+// with what else arrived there. In a reporting loop's silent trip a road to a frame below that loop waits for the
+// reporting trip (`lp_floor`). Nothing after the jump is a road.
+func:leave_to = NIL(Assign->:x, AssignState:st, int32:label, bool:brk, int32:depth, Span:sp) never fails {
+    int64:f = x.lp_label.count - 1i64;
+    if (label != 0i32) {
+        while ((f >= 0i64) && (x.lp_label[f] != label)) decreases f + 1i64 { f = f - 1i64; }
+    }
+    if ((f >= 0i64) && (f >= x.lp_floor) && !(st.dead[0i64])) {
+        AssignState:road = raw road_out(x, st, x.lp_dh[f], depth, sp);
+        x.road_gen = x.road_gen + 1i64;
+        if (brk) {
+            drop state_merge(x.lp_brk[f], x.lp_brk[f], false, road, false);
+            x.lp_bgen[f] = x.road_gen;
+        } else {
+            drop state_merge(x.lp_cont[f], x.lp_cont[f], false, road, false);
+            x.lp_cgen[f] = x.road_gen;
+        }
+    }
+    st.dead[0i64] = true;
+    pass NIL;
+};
+
+func:cond_is_true = bool(Assign->:x, ExprId:c) never fails {
+    if (raw expr_is_none(c)) { pass false; }
+    ExprNode:cn = raw ast_expr(x.ast, c);
+    if (cn.kind != ExprKind.ExprBoolLiteral) { pass false; }
+    pass (cn.payload != 0i64);
+};
+
+// ONE TRIP: the condition at the head `h`, whose false road stays in `h` (dead for a literal `true`), then the body
+// from its true road in a frame of its own, pushed where `fnem_loop_push` pushes it -- after the condition, so a leave
+// held in the condition belongs to the loop around this one. The body's end joins `back`, where every `continue`
+// arrives; every `break` arrives in `brk`.
+func:loop_trip = NIL(Assign->:x, AssignState:h, AssignState:back, AssignState:brk, StmtNode:s, StmtId:body,
+                     ExprId:cond, int32:depth) never fails {
+    drop assign_expr(x, h, cond, depth);
+    AssignState:b = raw state_copy(h);
+    if (raw cond_is_true(x, cond)) { h.dead[0i64] = true; }
+    int64:n = x.lp_label.count;
+    drop list_push(@x.lp_label, raw stmt_label(s));
+    drop list_push(@x.lp_brk, brk);
+    drop list_push(@x.lp_cont, back);
+    drop list_push(@x.lp_dh, x.dstack.count);
+    x.lp_bgen[n] = 0i64;
+    x.lp_cgen[n] = 0i64;
+    drop assign_stmt(x, b, body, depth);
+    drop list_truncate(@x.dstack, x.lp_dh[n]);
+    drop state_merge(back, back, false, b, false);
+    drop list_truncate(@x.lp_label, n);
+    drop list_truncate(@x.lp_brk, n);
+    drop list_truncate(@x.lp_cont, n);
+    drop list_truncate(@x.lp_dh, n);
+    pass NIL;
+};
+
+// A LOOP. S is the state on entry, and back(X) the merge of the body's end and every `continue`, walked
+// from X. Every writer is per binding and per fact, and per bit a constant or the identity, so the head's fixed point
+// H = S ⊓ back(H) is S ⊓ back(S): one silent trip from S finds it, and the reporting trip walks from it -- the condition
+// at the head too, where a `continue` arrives. The exit is the condition's false road merged with every `break`.
+//
+// A PRE-PASS IS NOT REPEATED INSIDE A PRE-PASS (DEF-281): in a silent walk the loop has its one trip from S. Its head is
+// exact; the roads it sent out began at S, not at the head. Per bit a road's value from the head is covered by its value
+// from S met with back(S) -- a constant stays, the identity gives S ⊓ back(S) -- so each one is met with back(S): the
+// condition's false road, the `break`s, and whatever reached an outer frame, a `give` or a `fall` (`widen_roads`).
+// The meet is whole, so it lowers a constant the road itself set where back(S) lacks it: a jump out of a loop nested
+// in a silent trip carries no more permits than that loop's own way round (`wl1`, `wl4`: refused, and right).
+// A nest of n loops walks its innermost body n + 1 times, as before: quadratic in the depth, never doubling per level.
+// Returns the condition's false road (`when`'s `end` starts there).
+func:assign_loop = AssignState(Assign->:x, AssignState:st, StmtNode:s, StmtId:body, ExprId:cond,
+                               int32:depth) never fails {
+    AssignState:back = raw state_new(st.count);
+    AssignState:brk = raw state_new(st.count);
+    back.dead[0i64] = true;
+    brk.dead[0i64] = true;
+    AssignState:h = raw state_copy(st);
+    int64:g0 = x.road_gen;
+    int64:floor = x.lp_floor;
+    bool:saved = x.quiet;
+    if (!saved) { x.lp_floor = x.lp_label.count; }
+    x.quiet = true;
+    drop loop_trip(x, h, back, brk, s, body, cond, depth);
+    x.quiet = saved;
+    x.lp_floor = floor;
+    drop state_merge(st, st, false, back, false);
+    if (saved) {
+        if (!(h.dead[0i64]))   { drop state_merge(h, h, false, back, false); }
+        if (!(brk.dead[0i64])) { drop state_merge(brk, brk, false, back, false); }
+        drop widen_roads(x, g0, back);
+    } else {
+        brk = raw state_new(st.count);
+        brk.dead[0i64] = true;
+        h = raw state_copy(st);
+        drop loop_trip(x, h, back, brk, s, body, cond, depth);
+    }
+    drop state_merge(st, h, false, brk, false);
+    pass h;
+};
+
+// EACH CHANNEL A JUMP STAMPED AFTER `g0`, met with back(S): an outer frame's `break`s and `continue`s, and the innermost pick's `give`s and `fall`s. The merge acts on the whole channel, so a road
+// sent before this silent trip is met too (`pw1l`; DEF-570), and a jump stamps whatever `road_out` answered, so a dead jump's stamp can lower a live road sent earlier (P-1, `pw1`, `pw2`).
+// A channel dead after the merge is skipped and stays dead: merged with a live one it would be that one, a road nothing takes (`wr1`).
+func:widen_roads = NIL(Assign->:x, int64:g0, AssignState:back) never fails {
+    int64:n = x.lp_label.count;
+    for (int64:f in 0i64...n) {
+        if ((x.lp_bgen[f] > g0) && !(x.lp_brk[f].dead[0i64])) { drop state_merge(x.lp_brk[f], x.lp_brk[f], false, back, false); }
+        if ((x.lp_cgen[f] > g0) && !(x.lp_cont[f].dead[0i64])) { drop state_merge(x.lp_cont[f], x.lp_cont[f], false, back, false); }
+    }
+    if ((x.give_gen > g0) && !(x.give_road.dead[0i64])) { drop state_merge(x.give_road, x.give_road, false, back, false); }
+    if ((x.fall_gen > g0) && !(x.fall_road.dead[0i64])) { drop state_merge(x.fall_road, x.fall_road, false, back, false); }
     pass NIL;
 };
 
@@ -1235,10 +1227,13 @@ func:assign_counted = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) n
     for (int32:i in 0i32...n) {
         drop assign_expr(x, st, raw stmt_counted_arg(x.ast, s, i), depth);
     }
-    drop assign_loop_body(x, st, raw stmt_counted_body(s), depth);
+    discard(raw assign_loop(x, st, s, raw stmt_counted_body(s), raw expr_none(), depth));
     pass NIL;
 };
 
+// A CAP, NOT A JOIN: what permits in `dst` holds only if it holds in `other` too, and what `other`
+// forbids is forbidden. `when`'s clauses are its one caller: neither grants anything past the
+// loop's exit. It doesn't read `dead`, and mustn't: a `dst` every road of which left stays so.
 func:state_intersect_must = NIL(AssignState:dst, AssignState:other) never fails {
     int64:i = 0i64;
     while (i < (dst.count => int64)) decreases (dst.count => int64) - i {
@@ -1261,7 +1256,7 @@ func:state_intersect_must = NIL(AssignState:dst, AssignState:other) never fails 
 // { exit …; }, (false) { } }` then `r.value` -- the `if` form's twin, which D-121
 // promised and which carried `must` alone, so the refinement held inside the safe
 // arm and ended with the pick). Both are PERMISSIONS that intersect across the
-// arms (`state_intersect_must` intersects `checked` too), and both are sound to
+// arms (`state_merge` intersects `checked` too), and both are sound to
 // take for one reason: every path out of a TOTAL pick ran some arm that falls
 // through, so a fact true at the end of every such arm is true after the pick.
 // The four that forbid are absorbed arm by arm (`state_absorb_may`).
@@ -1302,22 +1297,33 @@ func:pick_is_total = bool(Assign->:x, ExprId:selector, int32:start, int32:count)
     pass (raw pick_covers_all(x.ast, x.types, x.etypes, selector, start, count));
 };
 
-// A `give` LEAVES ITS ARM WHERE IT STANDS (DEF-526), so the pick's end inherits the state at each
-// one, never what the arm did after it. `stmt_exits` doesn't list `give`: an `if`'s merge keeps what
-// a road that gave forbids, and the walk reads on in the same state. The note is the merge a road's
-// leaving owes: forbids as the union, permits as the intersection.
-func:give_road_note = NIL(Assign->:x, AssignState:st) never fails {
-    if (x.give_seen) {
-        drop state_absorb_may(x.give_road, st);
-        drop state_intersect_must(x.give_road, st);
-    } else {
-        x.give_road = raw state_copy(st);
-        x.give_seen = true;
+// A `give` OR A `fall` TAKES ITS ROAD TO ITS `pick` (DEF-526, DEF-437), as a `break` takes one to its loop: through
+// the `defer`s of the blocks it leaves (`emit_give`'s and `emit_fall`'s `run_defers_down_to`), so the pick's end, or a
+// later labelled arm's body, inherits the state where each one stood and what those bodies did (DEF-535), never what
+// the arm did after it. The first road is taken whole and each later one MEETS it by `state_merge`: a road a `defer`
+// body ended (a trap, a loop with no way out) is dead, and `state_merge` is the one writer that knows it. A pair of
+// carriers that don't read the flag stood here and kept the first road's whatever arrived after it, so an arm whose
+// first `give` died read as an arm that left, and what a later `give` un-permitted never reached the pick's end
+// (H-A). The `fall` road's storage is made at the pick's first `fall`: a pick with none allocates nothing.
+func:leave_arm = NIL(Assign->:x, AssignState:st, bool:gave, int32:depth, Span:sp) never fails {
+    if (!(st.dead[0i64])) {
+        AssignState:road = raw road_out(x, st, x.pick_dh, depth, sp);
+        x.road_gen = x.road_gen + 1i64;
+        if (gave) {
+            if (x.give_seen) { drop state_merge(x.give_road, x.give_road, false, road, false); }
+            else             { x.give_road = road; x.give_seen = true; }
+            x.give_gen = x.road_gen;
+        } else {
+            if (x.fall_seen) { drop state_merge(x.fall_road, x.fall_road, false, road, false); }
+            else             { x.fall_road = road; x.fall_seen = true; }
+            x.fall_gen = x.road_gen;
+        }
     }
+    st.dead[0i64] = true;
     pass NIL;
 };
 
-func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) never fails {
+func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth, bool:valued) never fails {
     drop assign_expr(x, st, raw pick_selector(s), depth);
     ErrTest:et = raw err_test_of(x, raw pick_selector(s));
 
@@ -1325,8 +1331,8 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) neve
     int32:count = raw pick_arm_count(s);
     bool:total = raw pick_is_total(x, raw pick_selector(s), start, count);
 
-    AssignState:acc = raw state_new(st.count);
-    bool:seen = false;
+    AssignState:acc = raw state_new(st.count);   // the arms' ends, joined: dead until a road arrives
+    acc.dead[0i64] = true;
 
     // F-6's REPAIR (0.9.8): every arm starts from the PRISTINE pre-pick state
     // — arms are exclusive, and absorbing each into the walk state before the
@@ -1336,12 +1342,21 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) neve
     // may-effects gather in a side accumulator and land on the walk state
     // once, after the loop.
     AssignState:pristine = raw state_copy(st);
+    // A VALUE ARM GIVES IN DEAD CODE TOO: its arms start live, so FLOW-001 below asks what the arm's text can
+    // reach, not whether a road reaches the `pick`. Nothing such an arm sends out is a road: its jump to a loop
+    // around the `pick` stops at the floor, as in a silent trip, and the `pick`'s end keeps `st`'s own flag.
+    int64:outer_floor = x.lp_floor;
+    if (valued && st.dead[0i64]) { pristine.dead[0i64] = false; x.lp_floor = x.lp_label.count; }
     AssignState:mayacc = raw state_copy(st);
     AssignState:outer_road = x.give_road;   // a pick in an arm has its own `give`s
     bool:outer_seen = x.give_seen;
     AssignState:outer_fall = x.fall_road;   // and its own `fall`s (DEF-437)
     bool:outer_fell = x.fall_seen;
     x.fall_seen = false;
+    int64:outer_dh = x.pick_dh;   // and its own `defer` floor and road times
+    int64:outer_gg = x.give_gen;
+    int64:outer_fg = x.fall_gen;
+    x.pick_dh = x.dstack.count;
 
     for (int32:i in 0i32...count) {
         StmtId:aid = raw pick_arm_at(x.ast, start, i);
@@ -1393,10 +1408,11 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) neve
         // Arms are exclusive, F-6 says; a guard's evaluation isn't. A write in it
         // clears `checked`, `errchecked` and `sealed_firm` as much as a move sets
         // `moved`, so this is a merge and not only the union: the later arm may
-        // or may not have seen the write. Its body's effects stay in `one`.
+        // or may not have seen the write. Its body's effects stay in `one`. A
+        // guard that never yields (a value `pick` whose every arm leaves) is a
+        // dead road, and `state_merge` takes none of it.
         if (!(raw expr_is_none(raw arm_guard(arm)))) {
-            drop state_absorb_may(pristine, one);
-            drop state_intersect_must(pristine, one);
+            drop state_merge(pristine, pristine, false, one, false);
         }
         // A `fall` ENTERS ITS TARGET'S BODY (DEF-437, DEF-536), past the pattern, the refinement and the guard, so
         // a labelled arm's body starts from its own road merged with what every `fall` before it carried: what
@@ -1406,32 +1422,33 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) neve
         if (x.fall_seen && ((raw arm_label(arm)) != 0i32)) { drop state_merge(one, one, false, x.fall_road, false); }
         x.give_seen = false;
         drop assign_stmt(x, one, raw arm_body(arm), depth);
+        drop list_truncate(@x.dstack, x.pick_dh);   // the arm is a scope (DEF-121)
         drop state_absorb_may(mayacc, one);
-
-        bool:falls = !(raw stmt_exits(x, raw arm_body(arm), raw ASSIGN_DEPTH()));
+        // EVERY ARM OF A `pick` USED AS A VALUE ENDS IN `give` OR LEAVES (DEF-284, D-323), asked of the walk's own
+        // road: an arm whose end a road reaches hands the pick's slot nothing, and the value read is its vacant
+        // zero. A `break` held in an inner expression leaves the arm's loop too (DEF-548).
+        if (valued && !(one.dead[0i64])) {
+            drop assign_err(x, raw FLOW_FALLS_OFF(),
+                "this arm of a `pick` used as a value can reach its end without `give`, and the value the `pick` would then yield is nothing the program computed (the slot's zero): end every path of the arm in `give`, or leave it (`pass`, `fail`, `exit`, a trap, `fall`)",
+                arm.span);
+        }
         // A value arm gives on every road that doesn't leave the function, so its `give`s are
         // what reaches the pick's end, and its own end is dead code or a road that left.
         if (x.give_seen) {
             drop state_absorb_may(mayacc, x.give_road);
             one = x.give_road;
-            falls = true;
         }
-        if (falls) {
-            if (seen) {
-                drop state_intersect_must(acc, one);
-            } else {
-                drop state_overwrite(acc, one);
-                seen = true;
-            }
-        }
+        drop state_merge(acc, acc, false, one, false);
     }
 
     // Only an exhaustive `pick` with at least one arm that falls through can make
     // anything definitely assigned. `may` was absorbed arm by arm above and is
     // kept whatever the answer here.
     if (total) {
-        if (seen) {
+        if (!(acc.dead[0i64])) {
             drop state_take_definite(st, acc);
+        } else {
+            st.dead[0i64] = true;   // every arm left: nothing reaches the pick's end
         }
     }
     // The gathered may/moved/freed land ONCE (F-6): after every exclusive arm
@@ -1441,6 +1458,10 @@ func:assign_pick = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) neve
     x.give_seen = outer_seen;
     x.fall_road = outer_fall;
     x.fall_seen = outer_fell;
+    x.pick_dh = outer_dh;
+    x.give_gen = outer_gg;
+    x.fall_gen = outer_fg;
+    x.lp_floor = outer_floor;
     pass NIL;
 };
 
@@ -1466,13 +1487,82 @@ func:field_declares_fixed = bool(Assign->:x, int32:sty, int32:name) never fails 
     pass false;
 };
 
+// WHILE AN ASSIGNMENT'S VALUE RUNS, THE NAMES ITS TARGET READ STAND STILL (DEF-571). `emit_assign` runs `addr_of`, then the value,
+// then the store, so the store goes through what the target read before the value ran. A value that moves, frees or assigns one of
+// those names is refused where it does so: there's no road to reason about, and nothing a later assignment or a `defer` can hide. A
+// `defer` body in the value is reported at its registration, the walk that speaks. The remedy is a line: bind the value first.
+// A NAME IS KEPT ONCE: the walk re-walks a loop's body and a `defer`'s, and each event scans what stands.
+func:tgt_keep = NIL(Assign->:x, int32:slot) never fails {
+    int64:n = x.tgt_slots.count;
+    int64:i = 0i64;
+    while (i < n) decreases n - i {
+        if (x.tgt_slots[i] == slot) { pass NIL; }
+        i = i + 1i64;
+    }
+    drop list_push(@x.tgt_slots, slot);
+    pass NIL;
+};
+
+func:tgt_stands = bool(Assign->:x, int32:slot) never fails {
+    int64:n = x.tgt_watch;
+    int64:i = 0i64;
+    while (i < n) decreases n - i {
+        if (x.tgt_slots[i] == slot) { pass true; }
+        i = i + 1i64;
+    }
+    pass false;
+};
+
+func:tgt_stands_moved = NIL(Assign->:x, int32:slot, Span:sp, bool:freed) never fails {
+    if (!(raw tgt_stands(x, slot))) { pass NIL; }
+    if (freed) {
+        drop assign_err(x, raw MOVE_USE_AFTER_FREE(), "this value frees a binding its assignment's target has read, and the store runs after the value, through what the target read: bind the value first", sp);
+        pass NIL;
+    }
+    drop assign_err(x, raw MOVE_USE_AFTER(), "this value moves a binding its assignment's target has read, and the store runs after the value, through what the target read: bind the value first", sp);
+    pass NIL;
+};
+
+// ASSIGNING OR CLAIMING AN AGGREGATE THAT CAN'T DROP FREES NOTHING, so the address the target already formed stays good (`g[0] = raw reset($$m g)`, DEF-410 (d)), and a pointer or an index
+// it read out of the aggregate keeps the value it had, by the order `assign_assign` states (a pointee a `wild` pointer in it names, freed by a callee, is DEF-579's). One that may drop frees what
+// it holds, and the address can be in that: a `List` is `TY_STRUCT`, and BORROW-015 sees a local holder, never a call's temporary (`<-(raw first(@l)) = ...` with `l = raw mk();` in the value, `k3a`).
+// `type_may_drop`, not `type_drops`, which answers no at a `T` whose instance frees (`gk1`).
+func:tgt_stands_assigned = NIL(Assign->:x, int32:slot, ExprId:place, Span:sp) never fails {
+    if (!(raw tgt_stands(x, slot))) { pass NIL; }
+    int32:t = raw exprtypes_get(x.etypes, place);
+    int32:tk = raw type_kind(x.types, t);
+    if (((tk == (raw TY_ARRAY())) || (tk == (raw TY_STRUCT()))) && (!(raw type_may_drop(x.tyres, t, x.scope, 16i32)))) { pass NIL; }
+    drop assign_err(x, raw ASSIGN_TARGET_READ(), "this value assigns a binding its assignment's target has read, and the store runs after the value, through what the target read: bind the value first", sp);
+    pass NIL;
+};
+
 func:assign_assign = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) never fails {
     ExprId:tgt = raw stmt_target(s);
     ExprId:val = raw stmt_assigned(s);
 
-    // THE VALUE IS READ BEFORE THE TARGET IS WRITTEN, so `x = x + 1i32;` on an
+    // A TARGET THAT ISN'T A NAME RUNS BEFORE ITS VALUE, AND THE STORE AFTER BOTH (`emit_assign`: `addr_of`, then the value,
+    // then the store), and a compound loads its name before its value. So the value sees what they did and they see
+    // nothing it does, and what they read stands still while it runs.
+    int64:m0 = x.tgt_slots.count;
+    int64:w0 = x.tgt_watch;
+    if (!(raw expr_is_none(tgt))) {
+        ExprNode:tg = raw ast_expr(x.ast, tgt);
+        bool:outer = x.tgt_on;
+        x.tgt_on = true;
+        if (tg.kind != ExprKind.ExprIdentifierExpr) {
+            drop assign_expr(x, st, tgt, depth);
+        } else {
+            if ((raw stmt_op(s)) != TokenKind.OpAssign) { drop assign_read(x, st, tg); }
+        }
+        x.tgt_on = outer;
+    }
+
+    // THE VALUE IS READ BEFORE A NAME IS WRITTEN, so `x = x + 1i32;` on an
     // unassigned `x` is refused for the read rather than accepted for the write.
+    x.tgt_watch = x.tgt_slots.count;
     drop assign_expr(x, st, val, depth);
+    x.tgt_watch = w0;
+    if (!x.tgt_on) { drop list_truncate(@x.tgt_slots, m0); }   // an outer target's walk keeps them: they're its reads too
 
     if (raw expr_is_none(tgt)) { pass NIL; }
     ExprNode:tn = raw ast_expr(x.ast, tgt);
@@ -1533,12 +1623,12 @@ func:assign_assign = NIL(Assign->:x, AssignState:st, StmtNode:s, int32:depth) ne
                     tn.span);
             }
         }
-        drop assign_expr(x, st, tgt, depth);
         pass NIL;
     }
 
     if (tn.a == 0i32) { pass NIL; }
     Symbol:sym = raw symtab_get(x.tab, tn.a);
+    drop tgt_stands_assigned(x, raw symbol_slot(x, tn.a), tgt, tn.span);
 
     // A MODULE BINDING. Written once, where it is declared — the same rule
     // `fixed` states in a body, checked here because this is where an
@@ -1638,6 +1728,7 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) never
     ExprNode:n = raw ast_expr(x.ast, id);
 
     if (depth <= 0i32) {
+        x.cut = true;
         drop assign_err(x, raw ASSIGN_TOO_DEEP(),
             "this expression nests deeper than the definite-assignment analysis will follow, so its bindings cannot be shown assigned before use",
             n.span);
@@ -1799,26 +1890,8 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) never
     if (n.kind == ExprKind.ExprPickExpr) {
         StmtNode:as_stmt = StmtNode{ kind: StmtKind.StmtPickStmt, span: n.span,
                                      a: n.a, b: n.b, c: n.c, payload: 0i64 };
-        // EVERY ARM OF A `pick` USED AS A VALUE ENDS IN `give` OR LEAVES (DEF-284,
-        // landing 152; D-323's rule, asked of an arm): an arm that can reach its
-        // end without a `give` hands the pick's slot nothing, and the value the
-        // statement then reads is the slot's vacant zero -- a number the program
-        // never computed, at both legs, from an accepted program. `stmt_completes`
-        // is the one judge (a `give` never completes; `fall` goes to the next arm,
-        // which is judged on its own; `pass`, `fail`, `exit`, a trap, `break` and
-        // `continue` leave; an `if` without `else`, a counted loop and a `when`
-        // complete as wholes).
-        int32:pstart = raw pick_arm_start(as_stmt);
-        int32:pcount = raw pick_arm_count(as_stmt);
-        for (int32:pi in 0i32...pcount) {
-            StmtNode:parm = raw ast_stmt(x.ast, raw pick_arm_at(x.ast, pstart, pi));
-            if (raw stmt_completes(x, raw arm_body(parm), raw ASSIGN_DEPTH())) {
-                drop assign_err(x, raw FLOW_FALLS_OFF(),
-                    "this arm of a `pick` used as a value can reach its end without `give`, and the value the `pick` would then yield is nothing the program computed (the slot's zero): end every path of the arm in `give`, or leave it (`pass`, `fail`, `exit`, a trap, `fall`)",
-                    parm.span);
-            }
-        }
-        drop assign_pick(x, st, as_stmt, d);
+        // EVERY ARM ENDS IN `give` OR LEAVES (DEF-284): asked of each arm's road by `assign_pick`.
+        drop assign_pick(x, st, as_stmt, d, true);
         pass NIL;
     }
 
@@ -1899,6 +1972,7 @@ func:assign_read = NIL(Assign->:x, AssignState:st, ExprNode:n) never fails {
     int32:rs = raw symbol_slot(x, n.a);
     if (rs < 0i32) { pass NIL; }
     drop note_defer_read(x, rs);   // a read inside a `defer` body is a read at the block's exit (DEF-405)
+    if (x.tgt_on) { drop tgt_keep(x, rs); }   // `assign_assign`: it stands still while the value runs
 
     // MOVED OR FREED IS REPORTED FIRST, because it is the more specific answer to
     // the same question. A binding that was moved out of is not assigned either —
@@ -1977,6 +2051,7 @@ func:assign_mark_place = NIL(Assign->:x, AssignState:st, ExprId:place, int32:dep
             "`$$m` of a binding not assigned on every path that reaches here, whose type drops nothing: no vacant value was written at its declaration (D-225), the callee is not bound to write it, and the caller would read the frame's last bytes (DEF-345, D-366) -- initialise it first, or hand a dropping type",
             rn.span);
     }
+    drop tgt_stands_assigned(x, cslot, place, rn.span);
     drop state_mark(st, cslot);
     pass NIL;
 };
@@ -2185,6 +2260,7 @@ func:invalidate_place = NIL(Assign->:x, AssignState:st, ExprId:place, bool:freed
     if ((ms < x.fn_slots) && (x.defer_read[ms => int64] != 0i32)) {
         drop defer_pending_err(x, ms, place, freed);
     }
+    drop tgt_stands_moved(x, ms, (raw ast_expr(x.ast, place)).span, freed);
 
     if (freed) {
         drop state_mark_freed(st, ms);

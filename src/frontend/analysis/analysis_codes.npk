@@ -199,6 +199,10 @@ pub func:ASSIGN_TOO_DEEP = string() never fails   { pass "NITPICK-ASSIGN-003"; }
 // for, so it cannot promise it looked everywhere.
 pub func:ASSIGN_INTERNAL = string() never fails   { pass "NITPICK-ASSIGN-004"; };
 
+// AN ASSIGNMENT'S VALUE ASSIGNED A NAME ITS TARGET READ, by `=` or `$$m` (DEF-571, landing 177d2b2): the store runs after the
+// value, through what the target read before it. MOVE-001 and MOVE-002 say the same of a move and a free.
+pub func:ASSIGN_TARGET_READ = string() never fails { pass "NITPICK-ASSIGN-005"; };
+
 // --- D-065: `move`, and what a moved-from binding is (0.5.3) --------------------
 //
 // A moved-from binding is INVALID, not "valid but unspecified". D-065 is explicit
@@ -385,8 +389,9 @@ pub func:REACH_FAILSAFE_EXIT = string() never fails { pass "NITPICK-REACH-004"; 
 // error path became a SUCCESS carrying zero, and a `main` that forgot to `exit`
 // on some path reported success (found by the library listener's fuzzer, the
 // user's rule: "that situation should not even compile as even NIL functions
-// return NIL as the value"). The walk is `stmt_completes` in bindings.npk, the
-// twin of `stmt_exits` with the opposite conservatism: unknown means "may
-// complete", so a wrong answer is a refusal the author answers with a `pass`,
-// never an accepted fall-through.
+// return NIL as the value"). The answer is the assign walk's own road in
+// bindings.npk (`dead`, since landing 177d2b2: one walk says what the code after
+// a statement reads and whether a road reaches it). A road it can't show has
+// left is taken to arrive, so a wrong answer is a refusal the author answers
+// with a `pass`, never an accepted fall-through.
 pub func:FLOW_FALLS_OFF = string() never fails { pass "NITPICK-FLOW-001"; };

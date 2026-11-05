@@ -1,0 +1,90 @@
+// expect-exit: 0
+mod:defer_body_may_not_pass_ok;
+// `?!`, `??!` and `#unreachable();` in a `defer` body are legal and raise to `failsafe` with no re-entry, at a function's level and in a
+// statement `pick`'s arm: `defer_body_unwrap_fires`, `defer_body_optunwrap_fires`, `defer_body_unreach_fires` are the firing roads, and
+// a body that writes a local is the control. In a value `pick`'s arm `#unreachable();` is TYPE-039 wherever it stands: DEF-569's.
+error:Bad;
+mod:dl_unwrap = {
+error:E5_dl_unwrap;
+func:g2 = int64(int64:n) { if (n > 5i64) { fail E5_dl_unwrap; } pass 7i64; };
+func:f = int64(int64:n) never fails { defer { int64:v = g2(n) ?! E5_dl_unwrap; } pass 7i64; };
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:dl_optunwrap = {
+error:E5_dl_optunwrap;
+func:g2 = int64(int64:n) { if (n > 5i64) { fail E5_dl_optunwrap; } pass 7i64; };
+func:f = int64(int64:n) never fails { int64?:o = 7i64; defer { int64:v = o ??! E5_dl_optunwrap; } pass 7i64; };
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:dl_unreach = {
+error:E5_dl_unreach;
+func:g2 = int64(int64:n) { if (n > 5i64) { fail E5_dl_unreach; } pass 7i64; };
+func:f = int64(int64:n) never fails { defer { if (n > 5i64) { #unreachable(); } } pass 7i64; };
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:dl_c = {
+error:E5_dl_c;
+func:g2 = int64(int64:n) { if (n > 5i64) { fail E5_dl_c; } pass 7i64; };
+func:f = int64(int64:n) never fails { int64:t = 0i64; defer { if (n > 5i64) { t = 1i64; } } pass 7i64; };
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:dl_unwrap_arm = {
+error:E5_dl_unwrap_arm;
+func:g2 = int64(int64:n) { if (n > 5i64) { fail E5_dl_unwrap_arm; } pass 7i64; };
+func:f = int64(int64:n) never fails { pick (n) { (1i64) { defer { int64:v = g2(n) ?! E5_dl_unwrap_arm; } }, (*) { } } pass 7i64; };
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:dl_optunwrap_arm = {
+error:E5_dl_optunwrap_arm;
+func:f = int64(int64:n) never fails { int64?:o = 7i64; pick (n) { (1i64) { defer { int64:v = o ??! E5_dl_optunwrap_arm; } }, (*) { } } pass 7i64; };
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:dl_unreach_arm = {
+error:E5_dl_unreach_arm;
+func:f = int64(int64:n) never fails { pick (n) { (1i64) { defer { if (n > 5i64) { #unreachable(); } } }, (*) { } } pass 7i64; };
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:dl_unreach_arm_bare = {
+error:E5_dl_unreach_arm_bare;
+func:f = int64(int64:n) never fails { pick (n) { (9i64) { defer { #unreachable(); } }, (*) { } } pass 7i64; };
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+func:main = int32(cstring[]:argv) {
+    if ((raw dl_unwrap.cell_main(argv.len)) != 67i32) { exit 100i32; }
+    if ((raw dl_optunwrap.cell_main(argv.len)) != 67i32) { exit 101i32; }
+    if ((raw dl_unreach.cell_main(argv.len)) != 67i32) { exit 102i32; }
+    if ((raw dl_c.cell_main(argv.len)) != 67i32) { exit 103i32; }
+    if ((raw dl_unwrap_arm.cell_main(argv.len)) != 67i32) { exit 104i32; }
+    if ((raw dl_optunwrap_arm.cell_main(argv.len)) != 67i32) { exit 105i32; }
+    if ((raw dl_unreach_arm.cell_main(argv.len)) != 67i32) { exit 106i32; }
+    if ((raw dl_unreach_arm_bare.cell_main(argv.len)) != 67i32) { exit 107i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (Bad)              { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (defer_body_may_not_pass_ok.E5_dl_unwrap) { exit 75i32; },
+        (defer_body_may_not_pass_ok.E5_dl_optunwrap) { exit 75i32; },
+        (defer_body_may_not_pass_ok.E5_dl_unreach) { exit 75i32; },
+        (defer_body_may_not_pass_ok.E5_dl_c) { exit 75i32; },
+        (defer_body_may_not_pass_ok.E5_dl_unwrap_arm) { exit 75i32; },
+        (defer_body_may_not_pass_ok.E5_dl_optunwrap_arm) { exit 75i32; },
+        (defer_body_may_not_pass_ok.E5_dl_unreach_arm) { exit 75i32; },
+        (defer_body_may_not_pass_ok.E5_dl_unreach_arm_bare) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,53 @@
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 21:26
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 36:85
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 50:26
+mod:value_arm_gives_in_dead_code;
+// A VALUE `pick` ARM GIVES IN DEAD CODE TOO (landing 177d2b2: of the two readings, the one that refuses). A value `pick`
+// reached only after `pass` or `break` still has its arms judged live, so an arm that gives nothing is FLOW-001 as `dv1c`'s is.
+mod:dv1_dead_value_arm = {
+error:E5_dv1_dead_value_arm;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_dv1_dead_value_arm; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_dv1_dead_value_arm) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    pass out;
+    int64:t = pick (n) { (0i64) { out = 1i64; }, (*) { give 2i64; } };
+    pass t;
+};
+};
+mod:dv2_dead_value_arm_after_break = {
+error:E5_dv2_dead_value_arm_after_break;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_dv2_dead_value_arm_after_break; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_dv2_dead_value_arm_after_break) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i { i = i + 1i64; break; int64:t = pick (n) { (0i64) { out = 1i64; }, (*) { give 2i64; } }; out = t; }
+    pass out;
+};
+};
+mod:dv1c_live_value_arm = {
+error:E5_dv1c_live_value_arm;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_dv1c_live_value_arm; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_dv1c_live_value_arm) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    int64:t = pick (n) { (0i64) { out = 1i64; }, (*) { give 2i64; } };
+    pass t;
+};
+};

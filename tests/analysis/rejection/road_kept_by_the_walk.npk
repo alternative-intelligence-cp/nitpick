@@ -1,0 +1,135 @@
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 29:21
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 48:16
+// expect-error: NITPICK-MOVE-001
+// expect-error-at: 71:11
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 89:16
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 119:16
+mod:road_kept_by_the_walk;
+// WHAT A ROAD CARRIES AND WHERE IT WAITS: the walk's mutants, read by the harness's own comparator (landing 177d2b2). Each site here is a
+// wrong read or a wrong free a mutant of the walk accepts: a jump's later `defer` running first in the walk (`ro1`, 60 under it), a
+// guard's assignment taken as a later arm's start (`gm2`, 60), a silent trip's `break` not met with the loop's way round (`msb`, 60),
+// and the live twins of the dead `continue` and `fall` roads in the `_ok` file (`wr3k`, `wr4k`).
+mod:gm2_guard_assigns_later_arm_reads = {
+error:E5_gm2_guard_assigns_later_arm_reads;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gm2_guard_assigns_later_arm_reads; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gm2_guard_assigns_later_arm_reads; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    int64:y;
+    pick (n) {
+        (99i64) where (pick (n) { (*) { y = 7i64; give false; } }) { out = 1i64; },
+        (*) { out = y; }
+    }
+    pass out;
+};
+};
+mod:msb_silent_break_met_with_back = {
+error:E5_msb_silent_break_met_with_back;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_msb_silent_break_met_with_back; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_msb_silent_break_met_with_back; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        int64:j = 0i64;
+        while (true) unbounded { if (j == 1i64) { break; } r = bad(); j = j + 1i64; }
+    }
+    pass out;
+};
+};
+mod:ro1_later_defer_runs_first_move_after_refill = {
+error:E5_ro1_later_defer_runs_first_move_after_refill;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_ro1_later_defer_runs_first_move_after_refill; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_ro1_later_defer_runs_first_move_after_refill; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    H:x = raw mkh();
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        if (n == 1i64) { defer { discard(raw eath(move(x))); } defer { x = raw mkh(); } break; }
+    }
+    out = x.k;
+    pass out;
+};
+};
+mod:wr3k_live_continue_road_unchecked = {
+error:E5_wr3k_live_continue_road_unchecked;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wr3k_live_continue_road_unchecked; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wr3k_live_continue_road_unchecked; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        int64:m = 0i64;
+        lo: while (m < 1i64) decreases 1i64 - m {
+            m = m + 1i64;
+            int64:k = 0i64;
+            while (k < 2i64) decreases 2i64 - k {
+                k = k + 1i64;
+                r = okn(n);
+                if (n == 9i64) { { continue lo; } }
+            }
+            r = ok(); if (r.is_error) { pass 1i64; }
+        }
+    }
+    pass out;
+};
+};
+mod:wr4k_live_fall_road_unchecked = {
+error:E5_wr4k_live_fall_road_unchecked;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wr4k_live_fall_road_unchecked; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wr4k_live_fall_road_unchecked; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        pick (n) {
+            (1i64) {
+                int64:k = 0i64;
+                while (k < 2i64) decreases 2i64 - k {
+                    k = k + 1i64;
+                    r = okn(n);
+                    if (n == 9i64) { { fall t2; } }
+                }
+                r = ok(); if (r.is_error) { pass 1i64; }
+            },
+            t2: (*) { out = out + 0i64; }
+        }
+    }
+    pass out;
+};
+};

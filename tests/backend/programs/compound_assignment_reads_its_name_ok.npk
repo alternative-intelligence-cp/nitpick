@@ -1,0 +1,84 @@
+// expect-exit: 0
+mod:compound_assignment_reads_its_name_ok;
+// A COMPOUND LOADS ITS NAME BEFORE ITS VALUE (DEF-572, landing 177d2b2): an assigned name compounds as ever (`oi9d`, `oi9k`), and a `defer` body's compound with no later move stands (`oi9h`).
+error:Bad;
+mod:oi9d_compound_name_assigned = {
+error:E5_oi9d_compound_name_assigned;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi9d_compound_name_assigned; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi9d_compound_name_assigned; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:y = 6i64;
+    y += 1i64;
+    pass y;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:oi9h_compound_in_defer_no_move = {
+error:E5_oi9h_compound_in_defer_no_move;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi9h_compound_in_defer_no_move; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi9h_compound_in_defer_no_move; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:y = 6i64;
+    {
+        defer { y += 1i64; }
+        y = 6i64;
+    }
+    pass y;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:oi9k_compound_on_a_parameter = {
+error:E5_oi9k_compound_on_a_parameter;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi9k_compound_on_a_parameter; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi9k_compound_on_a_parameter; } pass 7i64; };
+func:g = int64(int64:v) never fails {
+    int64:w = v;
+    w += 1i64;
+    pass w;
+};
+func:f = int64(int64:n) never fails {
+    pass raw g(6i64);
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+func:main = int32(cstring[]:argv) {
+    if ((raw oi9d_compound_name_assigned.cell_main(argv.len)) != 67i32) { exit 100i32; }
+    if ((raw oi9h_compound_in_defer_no_move.cell_main(argv.len)) != 67i32) { exit 101i32; }
+    if ((raw oi9k_compound_on_a_parameter.cell_main(argv.len)) != 67i32) { exit 102i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (Bad)              { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (compound_assignment_reads_its_name_ok.E5_oi9d_compound_name_assigned) { exit 75i32; },
+        (compound_assignment_reads_its_name_ok.E5_oi9h_compound_in_defer_no_move) { exit 75i32; },
+        (compound_assignment_reads_its_name_ok.E5_oi9k_compound_on_a_parameter) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

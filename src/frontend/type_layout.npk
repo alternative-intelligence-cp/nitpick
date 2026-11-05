@@ -408,6 +408,23 @@ pub func:type_drops = bool(TypeResolver->:r, int32:id, int32:scope,
     pass (raw type_drops_recorded(r.types, id, fuel));
 };
 
+// WHAT MAY DROP, CLOSED (DEF-421, landing 177b; here since landing 177d2b2, so both analyses ask ONE predicate): what `type_drops` records, and YES
+// wherever the answer cannot be read -- a generic `T`, the `Copy` bound unread (DEF-421's closed choice), `Self` and an associated type, an unresolved
+// type, and the fuel's end. A kind holding its element by value answers by the element, a struct or an enum by its type arguments (`Bx<T>`); a
+// pointer, a slice and a function value drop nothing whatever they name, and so does every other kind that records no drop.
+pub func:type_may_drop = bool(TypeResolver->:r, int32:el, int32:scope, int32:fuel) decreases fuel never fails {
+    if ((fuel <= 0i32) || (raw type_drops(r, el, scope, 64i32))) { pass true; }
+    int32:k = raw type_kind(r.types, el);
+    if ((k == (raw TY_PARAM())) || (k == (raw TY_SELF())) || (k == (raw TY_ASSOC())) || (k == (raw TY_INVALID()))) { pass true; }
+    if ((k == (raw TY_ARRAY())) || (k == (raw TY_OPTIONAL())) || (k == (raw TY_RESULT())) || (k == (raw TY_ATOMIC()))) { pass (raw type_may_drop(r, raw type_elem(r.types, el), scope, fuel - 1i32)); }
+    if ((k == (raw TY_STRUCT())) || (k == (raw TY_ENUM()))) {
+        for (int32:i in 0i32...(raw type_args_count_of(r.types, el))) {
+            if (raw type_may_drop(r, raw ast_id_at(r.ast, raw type_args_start_of(r.types, el), i), scope, fuel - 1i32)) { pass true; }
+        }
+    }
+    pass false;
+};
+
 pub func:type_contains_channel = bool(TypeResolver->:r, int32:id, int32:scope,
                                       int32:fuel) never fails {
     drop ensure_layout(r, id, scope, raw LAYOUT_FUEL());

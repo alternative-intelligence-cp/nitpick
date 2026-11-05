@@ -1,0 +1,309 @@
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 52:16
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 78:16
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 115:10
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 143:10
+// expect-error: NITPICK-ASSIGN-001
+// expect-error-at: 165:10
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 182:16
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 211:16
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 239:16
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 265:16
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 269:26
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 294:16
+mod:silent_trip_road_meets_the_back_road;
+// THE PRICE OF THE SILENT TRIP (DEF-570, landing 177d2b2): TWO RIGHT PROGRAMS, REFUSED. A jump out of an inner loop to something
+// around the enclosing loop is first met on the enclosing loop's silent trip, where its road is held and then met with the inner
+// loop's back road whole. So a permit the road set itself is lowered where the back road lacks it: `wl1_price` (a `Result`
+// tested on the road that continues the outer loop and read at its head: TAINT-001) and `wl4_price` (a local assigned on the
+// road that gives from the inner loop: ASSIGN-001). Both compiled and ran right before this landing. The remedies are in the
+// program beside this file: test again at the read (`wl1r`), assign at the declaration (`wl4r`).
+//   The controls, wrong programs of the same shapes, refused at the same place: the road doesn't test (`wl1c`: `.value` of an
+//   error, 60, accepted before this landing) or doesn't assign (`wl4c`, `wl3c`).
+//   A channel whose roads a `defer` body all ended stays dead through the meet, which skips a channel dead after the merge (`wr1`, `wr2`, beside this file); the same
+//   jumps alive are refused (`wr1k`, `wr2k`).
+// THE SAME MEET'S OTHER PRICE (P-1, landing 177d2b2): A DEAD JUMP'S STAMP WIDENS AN EARLIER LIVE ROAD. A jump stamps its channel whenever its own state is live, whatever its `defer` bodies do to the road,
+// and the meet acts on the whole channel, so a live road sent before the inner loop is lowered too: `pw1_price`, `pw2_price`, right programs, 67 before this landing, TAINT-001 here. It needs a live `break` or
+// `continue` sent earlier, an inner silent loop and a `defer` body that never ends, on the same road. It isn't DEF-570's, whose road loses what it set itself: this road was sent before the trip. The controls and
+// the remedy are beside this file: no dead jump (`pw1k`), no earlier road (`pw1e`), test again at the read (`pw1r`, `pw2r`).
+mod:wl1_price_continue_outer_keeps_permit = {
+error:E5_wl1_price_continue_outer_keeps_permit;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wl1_price_continue_outer_keeps_permit; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wl1_price_continue_outer_keeps_permit; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    outer: while (i < 3i64) decreases 3i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        r = okn(n);
+        int64:k = 0i64;
+        while (k < 2i64) decreases 2i64 - k {
+            k = k + 1i64;
+            if (n > 1i64) { r = ok(); if (r.is_error) { pass 1i64; } continue outer; }
+        }
+        r = ok(); if (r.is_error) { pass 1i64; }
+    }
+    pass out;
+};
+};
+mod:wl1c_continue_outer_unchecked = {
+error:E5_wl1c_continue_outer_unchecked;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wl1c_continue_outer_unchecked; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wl1c_continue_outer_unchecked; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    outer: while (i < 3i64) decreases 3i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        r = okn(n);
+        int64:k = 0i64;
+        while (k < 2i64) decreases 2i64 - k {
+            k = k + 1i64;
+            if (n > 1i64) { r = bad(); continue outer; }
+        }
+        r = ok(); if (r.is_error) { pass 1i64; }
+    }
+    pass out;
+};
+};
+mod:wl4_price_give_from_inner_loop_assigns = {
+error:E5_wl4_price_give_from_inner_loop_assigns;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wl4_price_give_from_inner_loop_assigns; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wl4_price_give_from_inner_loop_assigns; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:x;
+    int64:v = pick (n) {
+        (*) {
+            int64:i = 0i64;
+            while (i < 3i64) decreases 3i64 - i {
+                i = i + 1i64;
+                int64:k = 0i64;
+                while (k < 2i64) decreases 2i64 - k {
+                    k = k + 1i64;
+                    if (n > 1i64) { x = 7i64; give 0i64; }
+                }
+            }
+            x = 7i64;
+            give 0i64;
+        }
+    };
+    pass x + v;
+};
+};
+mod:wl4c_give_from_inner_loop_unassigned = {
+error:E5_wl4c_give_from_inner_loop_unassigned;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wl4c_give_from_inner_loop_unassigned; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wl4c_give_from_inner_loop_unassigned; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:x;
+    int64:v = pick (n) {
+        (*) {
+            int64:i = 0i64;
+            while (i < 3i64) decreases 3i64 - i {
+                i = i + 1i64;
+                int64:k = 0i64;
+                while (k < 2i64) decreases 2i64 - k {
+                    k = k + 1i64;
+                    if (n > 1i64) { give 7i64; }
+                }
+            }
+            x = 7i64;
+            give 0i64;
+        }
+    };
+    pass x + v;
+};
+};
+mod:wl3c_break_outer_unassigned = {
+error:E5_wl3c_break_outer_unassigned;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wl3c_break_outer_unassigned; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wl3c_break_outer_unassigned; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:x;
+    outer: while (true) unbounded {
+        int64:k = 0i64;
+        while (k < 2i64) decreases 2i64 - k {
+            k = k + 1i64;
+            if (n > 1i64) { break outer; }
+        }
+        x = 7i64;
+        break;
+    }
+    pass x;
+};
+};
+mod:wr1k_live_break_road_unchecked = {
+error:E5_wr1k_live_break_road_unchecked;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wr1k_live_break_road_unchecked; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wr1k_live_break_road_unchecked; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    lz: while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        lo: while (true) unbounded {
+            int64:k = 0i64;
+            while (k < 2i64) decreases 2i64 - k {
+                k = k + 1i64;
+                r = okn(n);
+                if (n == 9i64) { { break lo; } }
+            }
+            r = ok(); if (r.is_error) { pass 1i64; }
+            break;
+        }
+    }
+    pass out;
+};
+};
+mod:wr2k_live_give_road_unchecked = {
+error:E5_wr2k_live_give_road_unchecked;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wr2k_live_give_road_unchecked; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wr2k_live_give_road_unchecked; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        int64:v = pick (n) {
+            (*) {
+                int64:k = 0i64;
+                while (k < 2i64) decreases 2i64 - k {
+                    k = k + 1i64;
+                    r = okn(n);
+                    if (n == 9i64) { { give 1i64; } }
+                }
+                r = ok(); if (r.is_error) { pass 1i64; }
+                give 2i64;
+            }
+        };
+        out = out + v - v;
+    }
+    pass out;
+};
+};
+mod:pw1_price_dead_break_stamps_an_earlier_live_road = {
+error:E5_pw1_price_dead_break_stamps_an_earlier_live_road;
+func:ok = int64() { pass 7i64; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_pw1_price_dead_break_stamps_an_earlier_live_road; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    lz: while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        lo: while (true) unbounded {
+            if (n == 7i64) { break lo; }
+            int64:k = 0i64;
+            while (k < 2i64) decreases 2i64 - k {
+                k = k + 1i64;
+                r = okn(n);
+                if (n == 9i64) { { defer { while (true) unbounded { } } break lo; } }
+            }
+            r = ok(); if (r.is_error) { pass 1i64; }
+            break;
+        }
+    }
+    pass out;
+};
+};
+mod:pw2_price_dead_continue_stamps_an_earlier_live_road = {
+error:E5_pw2_price_dead_continue_stamps_an_earlier_live_road;
+func:ok = int64() { pass 7i64; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_pw2_price_dead_continue_stamps_an_earlier_live_road; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    lz: while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        int64:j = 0i64;
+        lo: while (j < 2i64) decreases 2i64 - j {
+            j = j + 1i64;
+            out = out + r.value - 7i64;
+            if (n == 7i64) { continue lo; }
+            int64:k = 0i64;
+            while (k < 2i64) decreases 2i64 - k {
+                k = k + 1i64;
+                r = okn(n);
+                if (n == 9i64) { { defer { while (true) unbounded { } } continue lo; } }
+            }
+            r = ok(); if (r.is_error) { pass 1i64; }
+        }
+    }
+    pass out;
+};
+};
+// `pw1l`, the same road with the inner jump live and re-tested, a road sent before the silent trip and met with back(S) too: DEF-570's, a price, as `wl1`.
+mod:pw1l_price_live_break_sent_before_the_trip = {
+error:E5_pw1l_price_live_break_sent_before_the_trip;
+func:ok = int64() { pass 7i64; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_pw1l_price_live_break_sent_before_the_trip; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    lz: while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        lo: while (true) unbounded {
+            if (n == 7i64) { break lo; }
+            int64:k = 0i64;
+            while (k < 2i64) decreases 2i64 - k {
+                k = k + 1i64;
+                r = okn(n);
+                if (n == 9i64) { r = ok(); if (r.is_error) { pass 1i64; } break lo; }
+            }
+            r = ok(); if (r.is_error) { pass 1i64; }
+            break;
+        }
+    }
+    pass out;
+};
+};

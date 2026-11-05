@@ -1,0 +1,52 @@
+// expect-exit: 67
+mod:target_generic_may_drop_ok;
+// A generic's aggregate that may drop stands in a target if the value leaves its name alone (DEF-571, landing 177d2b2): the twins of `target_generic_may_drop`.
+error:E5;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5; } pass 7i64; };
+trait:Pt = { func:ptr = int64->(Self->:self) never fails; };
+struct:W = { List<int64>:l; };
+impl:W:Pt = { func:ptr = int64->(W->:self) never fails { pass @((<-self).l[0i64]); }; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkw = W() never fails { pass W{ l: raw mk() }; };
+struct:Bx<T> = { T:v; int64:k; };
+func:gk1c<T: Pt> = int64(move T:a0, move T:b0, int64:n) never fails {
+    T[1]:a = [move(a0)];
+    int64:c = 0i64;
+    <-(raw a[0i64].ptr()) = pick (n) { (*) { c = 1i64; give 7i64; } };
+    pass c + 6i64;
+};
+func:gk2c<T: Pt> = int64(move T:a0, move T:b0, int64:n) never fails {
+    Bx<T>:b = Bx{ v: move(a0), k: 1i64 };
+    int64:c = 0i64;
+    <-(raw b.v.ptr()) = pick (n) { (*) { c = 1i64; give 7i64; } };
+    pass c + 6i64;
+};
+func:f = int64(int64:n) never fails {
+    discard(raw gk1c::<W>(raw mkw(), raw mkw(), n));
+    pass raw gk2c::<W>(raw mkw(), raw mkw(), n);
+};
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

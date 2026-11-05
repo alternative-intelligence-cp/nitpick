@@ -1,0 +1,209 @@
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 37:16
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 64:16
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 91:25
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 118:16
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 145:16
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 178:12
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 201:16
+mod:cond_continue_leaves_the_enclosing_loop;
+// A `continue` OR `break L` IN A VALUE `pick` IN A LOOP'S CONDITION LEAVES TO THE ENCLOSING LOOP WITH ITS ROAD (DEF-547, landing
+// 177d2b2). The condition's walk sent its roads nowhere, so a rewrite before the leave was lost at the enclosing loop's top: `r.value`
+// read an error's zero (60). `a1i`, `a1v`, `a1b`, `a1sb`, `a1sl` were refused before and after.
+mod:a1_cond_continue = {
+error:E5_a1_cond_continue;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_a1_cond_continue; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_a1_cond_continue) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i1 = 0i64;
+    while (i1 < 2i64) decreases 2i64 - i1 {
+        out = r.value;
+        i1 = i1 + 1i64;
+        int64:j1 = 0i64;
+        while (pick (n) { (1i64) { r = bad(); continue; }, (*) { give j1 < 0i64; } }) unbounded { j1 = j1 + 1i64; }
+        r = ok(); if (r.is_error) { pass out; }
+    }
+    pass out;
+};
+};
+mod:a1c_cond_continue_lbl = {
+error:E5_a1c_cond_continue_lbl;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_a1c_cond_continue_lbl; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_a1c_cond_continue_lbl) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i1 = 0i64;
+    l1: while (i1 < 2i64) decreases 2i64 - i1 {
+        out = r.value;
+        i1 = i1 + 1i64;
+        int64:j1 = 0i64;
+        while (pick (n) { (1i64) { r = bad(); continue l1; }, (*) { give j1 < 0i64; } }) unbounded { j1 = j1 + 1i64; }
+        r = ok(); if (r.is_error) { pass out; }
+    }
+    pass out;
+};
+};
+mod:a1e_cond_continue_ew = {
+error:E5_a1e_cond_continue_ew;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_a1e_cond_continue_ew; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_a1e_cond_continue_ew) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    Result<int64>:r = bad(); if (!r.is_error) { pass out; }
+    int64:i1 = 0i64;
+    while (i1 < 2i64) decreases 2i64 - i1 {
+        out = raw errv(r.err);
+        i1 = i1 + 1i64;
+        int64:j1 = 0i64;
+        while (pick (n) { (1i64) { r = ok(); continue; }, (*) { give j1 < 0i64; } }) unbounded { j1 = j1 + 1i64; }
+        r = bad(); if (!r.is_error) { pass out; }
+    }
+    pass out;
+};
+};
+mod:a1w_when_cond_continue = {
+error:E5_a1w_when_cond_continue;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_a1w_when_cond_continue; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_a1w_when_cond_continue) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i1 = 0i64;
+    while (i1 < 2i64) decreases 2i64 - i1 {
+        out = r.value;
+        i1 = i1 + 1i64;
+        int64:j1 = 0i64;
+        when (pick (n) { (1i64) { r = bad(); continue; }, (*) { give j1 < 0i64; } }) decreases 1i64 - j1 { j1 = j1 + 1i64; } then { } end { }
+        r = ok(); if (r.is_error) { pass out; }
+    }
+    pass out;
+};
+};
+mod:a1as_async_cond_continue = {
+error:E5_a1as_async_cond_continue;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_a1as_async_cond_continue; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_a1as_async_cond_continue) { pass 7i64; }, (*) { pass 0i64; } } };
+async func:f = int64(int64:n) {
+    int64:out = 7i64;
+
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i1 = 0i64;
+    while (i1 < 2i64) decreases 2i64 - i1 {
+        out = r.value;
+        i1 = i1 + 1i64;
+        await sleep(raw duration_ms(1i64)) ?| NIL;
+        int64:j1 = 0i64;
+        while (pick (n) { (1i64) { r = bad(); continue; }, (*) { give j1 < 0i64; } }) unbounded { j1 = j1 + 1i64; }
+        r = ok(); if (r.is_error) { pass out; }
+    }
+    pass out;
+};
+};
+mod:a1lb_cond_break_lbl = {
+error:E5_a1lb_cond_break_lbl;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_a1lb_cond_break_lbl; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_a1lb_cond_break_lbl) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i1 = 0i64;
+    l1: while (i1 < 2i64) decreases 2i64 - i1 {
+        i1 = i1 + 1i64;
+        int64:j1 = 0i64;
+        while (pick (n) { (1i64) { r = bad(); break l1; }, (*) { give j1 < 0i64; } }) unbounded { j1 = j1 + 1i64; }
+        r = ok(); if (r.is_error) { pass out; }
+    }
+    out = r.value;
+    pass out;
+};
+};
+mod:a1m_macro_cond_continue = {
+error:E5_a1m_macro_cond_continue;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_a1m_macro_cond_continue; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_a1m_macro_cond_continue) { pass 7i64; }, (*) { pass 0i64; } } };
+macro:mb1 = (M_r, M_j1, M_n) { { while (pick (M_n) { (1i64) { M_r = bad(); continue; }, (*) { give M_j1 < 0i64; } }) unbounded { M_j1 = M_j1 + 1i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i1 = 0i64;
+    while (i1 < 2i64) decreases 2i64 - i1 {
+        out = r.value;
+        i1 = i1 + 1i64;
+        int64:j1 = 0i64;
+        #mb1(r, j1, n);
+        r = ok(); if (r.is_error) { pass out; }
+    }
+    pass out;
+};
+};

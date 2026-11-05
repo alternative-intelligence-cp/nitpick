@@ -204,6 +204,8 @@ value is ERR, so the taint cannot cross silently. See D-008.
 | `-%=` | Subtract wrapping & Assign | | `h -%= 1u64;` |
 | `*%=` | Multiply wrapping & Assign | The mix step a hash states. | `h *%= 16777619u32;` |
 
+**An assignment's order (DEF-571, DEF-572, 1.6.1e landing 177d2b2).** The target runs first (its index, its pointer, its bounds check), then the value, then the store; a compound assignment loads the old value before its value. **While the value runs, the names the target read stand still.** The value may not move one (`NITPICK-MOVE-001`) or free one (`NITPICK-MOVE-002`), and may not assign one or `$$m`-claim one (`NITPICK-ASSIGN-005`) unless it's an inline array or struct that can't drop; a compound's name counts as read, and a compound of a name that isn't assigned is `NITPICK-ASSIGN-001`. Each is refused where the value does it. The remedy is to bind the value first. **Why the exemption:** assigning or claiming an aggregate that can't drop frees nothing, so the address the target already formed stays good, and a pointer or an index it read out of the aggregate keeps the value it had, by this order. So `<-(s.p) = pick (n) { (*) { s = S{ p: @v }; give 7i64; } };` stores to the old pointee, on purpose; a pointee a `wild` pointer in the aggregate names, freed by a callee, is DEF-579's. **The rule's limit:** it stands for what the value moves, frees or assigns by name and for a `$$m` claim of a name the target read, and it says nothing of `@l` handed to a callee: a pointer a call returned, at the target, with the `List` grown in the value, is DEF-575. The prover doesn't read this order yet (DEF-573, a verified build only).
+
 ---
 
 ## 3. Comparison & Relational

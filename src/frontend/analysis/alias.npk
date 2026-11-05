@@ -2440,25 +2440,12 @@ func:push_loop_binding_parties = NIL(Alias->:x, DeclId:bind) never fails {
     pass NIL;
 };
 
-// AN ELEMENT THAT MAY DROP (DEF-421, landing 177b; the one closed predicate of the `for` party): what `type_drops` records, and YES wherever the
-// answer cannot be read -- a generic `T`, the `Copy` bound unread (DEF-421's closed choice; `e3c_generic_whole`, `rb3a_generic_nested_array`,
-// `rb3b_generic_optional`, `rb3c_generic_struct`), `Self` and an associated type (`rg1c_self_elem_freed_read`, `rg1f_self_elem_slice_param`), an
-// unresolved type, and the fuel's end (`re1x_generic_array_17`, `rg3_concrete_array_65`: `type_mentions_param`'s 16 and `type_drops`' 64 levels
-// answered NO past their fuel, 67 on 177a, so the element raised no party). A kind holding its element by value answers by the element, a struct
-// or an enum by its type arguments (`Bx<T>`); a pointer, a slice and a function value drop nothing whatever they name (`rg2a_ptr_to_T_elem_generic`:
-// a `T->` element is a true copy, refused until this predicate), and so does every other kind that records no drop.
-func:elem_may_drop = bool(Alias->:x, int32:el, int32:fuel) decreases fuel never fails {
-    if ((fuel <= 0i32) || (raw type_drops(x.tr, el, x.scope, 64i32))) { pass true; }
-    int32:k = raw type_kind(x.types, el);
-    if ((k == (raw TY_PARAM())) || (k == (raw TY_SELF())) || (k == (raw TY_ASSOC())) || (k == (raw TY_INVALID()))) { pass true; }
-    if ((k == (raw TY_ARRAY())) || (k == (raw TY_OPTIONAL())) || (k == (raw TY_RESULT())) || (k == (raw TY_ATOMIC()))) { pass (raw elem_may_drop(x, raw type_elem(x.types, el), fuel - 1i32)); }
-    if ((k == (raw TY_STRUCT())) || (k == (raw TY_ENUM()))) {
-        for (int32:i in 0i32...(raw type_args_count_of(x.types, el))) {
-            if (raw elem_may_drop(x, raw ast_id_at(x.ast, raw type_args_start_of(x.types, el), i), fuel - 1i32)) { pass true; }
-        }
-    }
-    pass false;
-};
+// AN ELEMENT THAT MAY DROP (DEF-421, landing 177b; the one closed predicate of the `for` party): `type_may_drop`, the walk itself and its reasons, in
+// `type_layout.npk`. The cells that read each answer: a generic `T`, the `Copy` bound unread (`e3c_generic_whole`, `rb3a_generic_nested_array`,
+// `rb3b_generic_optional`, `rb3c_generic_struct`), `Self` and an associated type (`rg1c_self_elem_freed_read`, `rg1f_self_elem_slice_param`), the
+// fuel's end (`re1x_generic_array_17`, `rg3_concrete_array_65`: `type_mentions_param`'s 16 and `type_drops`' 64 levels answered NO past their fuel,
+// 67 on 177a, so the element raised no party), a pointer element (`rg2a_ptr_to_T_elem_generic`: a `T->` element is a true copy, refused until this predicate).
+func:elem_may_drop = bool(Alias->:x, int32:el, int32:fuel) never fails { pass (raw type_may_drop(x.tr, el, x.scope, fuel)); };
 
 // A `for` OVER A NAMED ARRAY OR SLICE OF OWNERS (DEF-421, landing 177b): a binding, a field, an element, a dereference or a cast on
 // the way -- the binding is a shallow copy of each element (`emit_for_indexed`), so a write AT the place, ABOVE it (`o = …`, `o.i = …`,

@@ -1,33 +1,41 @@
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 74:24
+// expect-error-at: 82:24
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 80:25
+// expect-error-at: 88:25
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 86:24
+// expect-error-at: 94:24
+// expect-error: NITPICK-ASSIGN-005
+// expect-error-at: 94:28
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 92:25
+// expect-error-at: 100:25
+// expect-error: NITPICK-ASSIGN-005
+// expect-error-at: 100:29
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 99:25
+// expect-error-at: 107:25
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 106:26
+// expect-error-at: 114:26
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 113:25
+// expect-error-at: 121:25
+// expect-error: NITPICK-ASSIGN-005
+// expect-error-at: 121:29
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 120:26
+// expect-error-at: 128:26
+// expect-error: NITPICK-ASSIGN-005
+// expect-error-at: 128:30
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 127:26
+// expect-error-at: 135:26
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 133:38
+// expect-error-at: 141:38
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 139:38
+// expect-error-at: 147:38
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 145:38
+// expect-error-at: 153:38
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 145:67
+// expect-error-at: 153:67
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 160:31
 // expect-error: NITPICK-MOVE-001
-// expect-error-at: 152:5
-// expect-error: NITPICK-BORROW-015
-// expect-error-at: 152:31
+// expect-error-at: 160:31
 // AN ASSIGNMENT'S TARGET IS A WINDOW ITS VALUE MAY NOT CLOSE (DEF-410 (d), landing 176). The emitter forms the
 // target's ELEMENT ADDRESS before the value runs (the place, then the value, then the store), so a value that
 // reallocates, replaces or moves the container -- `l[0] = raw grow(@l)` (the List grown through its address,
@@ -80,13 +88,13 @@ func:list_addr_compound = int64() never fails {
     l[0i64] += raw grow(@l);
     pass l[0i64];
 };
-// 3. a write claim in the value
+// 3. a write claim in the value (a `List` may drop, so ASSIGN-005 too, DEF-571)
 func:list_mclaim = int64() never fails {
     List<int64>:l = raw mk_list();
     l[0i64] = raw grow($$m l);
     pass l[0i64];
 };
-// 4. the compound twin of the claim
+// 4. the compound twin of the claim (the same)
 func:list_mclaim_compound = int64() never fails {
     List<int64>:l = raw mk_list();
     l[0i64] += raw grow($$m l);
@@ -145,7 +153,7 @@ func:nested_sibling = int64() never fails {
     l[0i64].v[1i64] = raw grow_inner(@l[0i64].v) - raw grow_inner(@l[0i64].v);
     pass l[0i64].v[1i64];
 };
-// 13. the move road: the bindings analysis judges the root after the value (DEF-410 (a))
+// 13. the move road: the root the target read, moved while the value runs (DEF-410 (a), DEF-571)
 func:lists_move = int64() never fails {
     List<string>:ls = raw list_init::<string>(2i64);
     drop list_push(@ls, string_concat("ab", "c"));

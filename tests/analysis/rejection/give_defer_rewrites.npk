@@ -1,61 +1,53 @@
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 100:189
+// expect-error-at: 92:189
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 114:172
+// expect-error-at: 106:172
 // expect-error: NITPICK-WILDX-002
-// expect-error-at: 128:320
+// expect-error-at: 120:320
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 142:202
+// expect-error-at: 134:202
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 160:173
+// expect-error-at: 152:173
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 183:208
+// expect-error-at: 175:208
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 202:176
+// expect-error-at: 194:176
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 221:235
+// expect-error-at: 213:235
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 235:281
+// expect-error-at: 227:281
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 249:212
+// expect-error-at: 241:212
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 264:200
+// expect-error-at: 256:200
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 279:251
+// expect-error-at: 271:251
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 294:214
+// expect-error-at: 286:214
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 309:191
+// expect-error-at: 301:191
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 324:250
+// expect-error-at: 316:250
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 339:190
+// expect-error-at: 331:190
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 354:179
+// expect-error-at: 346:179
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 369:181
+// expect-error-at: 361:181
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 384:231
+// expect-error-at: 376:231
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 399:212
+// expect-error-at: 395:262
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 414:255
-// expect-error: NITPICK-ASSIGN-001
-// expect-error-at: 429:238
+// expect-error-at: 409:176
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 451:11
+// expect-error-at: 423:132
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 470:262
-// expect-error: NITPICK-TAINT-001
-// expect-error-at: 484:176
-// expect-error: NITPICK-TAINT-001
-// expect-error-at: 498:132
-// expect-error: NITPICK-TAINT-001
-// expect-error-at: 517:216
+// expect-error-at: 442:216
 // expect-error: NITPICK-MOVE-001
-// expect-error-at: 536:162
+// expect-error-at: 461:162
 // expect-error: NITPICK-TAINT-001
-// expect-error-at: 551:231
+// expect-error-at: 476:231
 mod:give_defer_rewrites;
 // WHAT A `defer` BODY DID, A ROAD THAT GAVE THROUGH IT INHERITS WHOLE (DEF-535, HIGH, pre-existing, landing 177d2b). A `give`
 // runs the `defer`s of the blocks it leaves, and the landing of a block's bodies handed the arm's `give` road only what a body
@@ -75,12 +67,12 @@ mod:give_defer_rewrites;
 //   a statement `pick` (`a1k_statement_pick_defer`), a `give` out of a `for` or a `when` whose body holds the `defer` (`a5`,
 //   `a11`), a body that moves what's read after (`a8k`), and `h9`'s shape with a `give` after the `if` (`k9`: the block's end
 //   reaches that `give` through the `if`'s merge).
-//   THE PRICES, right on every road and refused. The landing merges the BLOCK'S END into the road, all eight facts, and it
-//   does so for every block of the arm that holds a `defer` and ends after the arm's first `give`. So a road loses a permit
-//   it had at its `give` wherever such a block's end doesn't have it, whatever the body does: a `defer` written after the
-//   `give` (`pg1_give_before_defer_price`: that road never ran it); a body that touches nothing of it, the permit earned in
-//   the `if` that gives (`pd1`, TAINT-001; `pd3`, ASSIGN-001); a later block the road never entered (`pd2`). Their twins
-//   without the `defer` are in the program beside this file (`pd1c`, `pd2c`, `pd3c`).
+//   THAT LANDING'S PRICES ARE GONE WITH LANDING 177d2b2. It merged the BLOCK'S END into the road, for every block of the arm
+//   that holds a `defer` and ends after the arm's first `give`, so a road lost a permit it had at its `give` wherever such a
+//   block's end didn't have it. The walk runs each body on the `give`'s own road, at the `give`, so a road loses what a body
+//   it ran took back and nothing else: a `defer` written after the `give` (`pg1_give_before_defer_price`), a body that touches
+//   nothing of it (`pd1`, `pd3`) and a later block the road never entered (`pd2`) are right programs, in the program beside
+//   this file with their twins (`pd1c`, `pd2c`, `pd3c`).
 mod:a10_give_defer_in_guarded_arm = {
 error:E5_a10_give_defer_in_guarded_arm;
 func:mk = string() never fails { pass string_concat("ab", "cde"); };
@@ -382,73 +374,6 @@ enum:Os = { V(string); W(string); Z; };
 func:idn = int64(int64:v) never fails { pass v; };
 func:f = int64() never fails {
 Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 2i64; int64:k = 1i64; int64:q = pick (k) { (1i64) { defer { n = 3i64; } if (n == 2i64) { defer { r = bad(); } give 1i64; } pass 7i64; }, (*) { give 3i64; } }; pass r.value + q - q;
-};
-};
-mod:pd1_unrelated_defer_permit_from_a_branch = {
-error:E5_pd1_unrelated_defer_permit_from_a_branch;
-func:mk = string() never fails { pass string_concat("ab", "cde"); };
-func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
-func:eats = int64(move string:v) never fails { pass 0i64; };
-func:ok = int64() { pass 7i64; };
-func:bad = int64() { fail E5_pd1_unrelated_defer_permit_from_a_branch; };
-struct:P = { int64:a; int64:b; };
-enum:Os = { V(string); W(string); Z; };
-
-func:idn = int64(int64:v) never fails { pass v; };
-func:f = int64() never fails {
-Result<int64>:r = ok(); int64:n = 2i64; int64:k = 1i64; int64:q = pick (k) { (1i64) { defer { n = 3i64; } if (!r.is_error) { give 1i64; } pass 7i64; }, (*) { if (r.is_error) { pass 7i64; } give 3i64; } }; pass r.value + q - q;
-};
-};
-mod:pd2_later_block_with_a_defer = {
-error:E5_pd2_later_block_with_a_defer;
-func:mk = string() never fails { pass string_concat("ab", "cde"); };
-func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
-func:eats = int64(move string:v) never fails { pass 0i64; };
-func:ok = int64() { pass 7i64; };
-func:bad = int64() { fail E5_pd2_later_block_with_a_defer; };
-struct:P = { int64:a; int64:b; };
-enum:Os = { V(string); W(string); Z; };
-
-func:idn = int64(int64:v) never fails { pass v; };
-func:f = int64() never fails {
-Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 2i64; int64:k = 1i64; int64:q = pick (k) { (1i64) { if (n == 5i64) { give 1i64; } { defer { n = 3i64; } r = ok(); } if (r.is_error) { pass 7i64; } give 2i64; }, (*) { give 3i64; } }; pass r.value + q - q;
-};
-};
-mod:pd3_unrelated_defer_assigned_in_a_branch = {
-error:E5_pd3_unrelated_defer_assigned_in_a_branch;
-func:mk = string() never fails { pass string_concat("ab", "cde"); };
-func:rds = int64(string:x) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(x)[0i64] => int64) - 90i64; };
-func:eats = int64(move string:v) never fails { pass 0i64; };
-func:ok = int64() { pass 7i64; };
-func:bad = int64() { fail E5_pd3_unrelated_defer_assigned_in_a_branch; };
-struct:P = { int64:a; int64:b; };
-enum:Os = { V(string); W(string); Z; };
-
-func:idn = int64(int64:v) never fails { pass v; };
-func:f = int64() never fails {
-Result<int64>:r = ok(); if (r.is_error) { pass 1i64; } int64:n = 2i64; int64:k = 1i64; int64:x; int64:q = pick (k) { (1i64) { defer { n = 3i64; } if (n == 2i64) { x = 7i64; give 1i64; } pass 7i64; }, (*) { x = 7i64; give 3i64; } }; pass x + q - q;
-};
-};
-mod:pg1_give_before_defer_price = {
-error:E5_pg1_give_before_defer_price;
-struct:H = { string:s; int64:k; };
-struct:W = { H:h; int64:m; };
-func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
-func:eath = int64(move H:v) never fails { pass 0i64; };
-func:eats = int64(move string:v) never fails { pass v.len; };
-func:rdh = int64(move H:v) never fails { pass v.k; };
-func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
-func:ok = int64() { pass 7i64; };
-func:bad = int64() { fail E5_pg1_give_before_defer_price; };
-func:errv = int64(Error:e) never fails { pick (e) { (E5_pg1_give_before_defer_price) { pass 7i64; }, (*) { pass 0i64; } } };
-func:keep = bool(int64:v, int64->:dst, bool:go) never fails { <-dst = v; pass go; };
-func:f = int64(int64:n) never fails {
-    Result<int64>:r = ok(); if (r.is_error) { pass 7i64; }
-    int64:q = pick (n) {
-        (1i64) { if (n == 1i64) { give 1i64; } defer { r = bad(); } pass 7i64; },
-        (*) { give 2i64; }
-    };
-    pass r.value + q - q;
 };
 };
 mod:a11_give_defer_in_when_body = {

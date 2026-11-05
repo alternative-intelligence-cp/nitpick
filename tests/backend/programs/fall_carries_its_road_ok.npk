@@ -5,7 +5,8 @@ mod:fall_carries_its_road_ok;
 // into keeps its refinement and its guard's grant (`p1`, `p2`); a `fall` that carries the grant keeps it (`q437_fall_carries_grant_ok`,
 // `mf3c`, `f1c`, `lp1c`, `df1c`); an arm with no label takes no road (`q437_later_plain_arm_ok`); the same arms without the `fall`
 // are untouched (`e_*_c`, `y4d`); an inner pick's road is the inner pick's, before, after and beside the outer's (`np1c`, `np4c`,
-// `np5c`); a macro's `fall` with nothing moved (`ls3c`); and a move in code after the `fall` isn't on its road (`dc2c`).
+// `np5c`); a macro's `fall` with nothing moved (`ls3c`); a move in code after the `fall` isn't on its road (`dc2c`); and, since
+// landing 177d2b2, neither is a `defer` body in another arm (`p4`) or one registered after the `fall` left (`pr1`).
 error:Bad;
 mod:f1c_fall_no_rewrite = {
 error:E5_f1c_fall_no_rewrite;
@@ -176,6 +177,24 @@ func:ok = int64() { pass 7i64; };
 func:bad = int64() { fail E5_np5c_inner_defer_not_on_outer_road_ok; };
 pub func:f = int64() never fails { string:s = raw mk(); int64:k = 2i64; int64:t = 0i64; pick (k) { (1i64) { fall g; }, (2i64) { pick (k) { (2i64) { defer { t = 7i64; } t = raw eat(move(s)); }, (*) { } } }, g: (3i64) { t = raw fs(s, 0i64); }, (*) { t = 5i64; } } pass t; };
 };
+mod:p4_defer_in_other_arm_ok = {
+error:E5_p4_defer_in_other_arm_ok;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:eat = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_p4_defer_in_other_arm_ok; };
+pub func:f = int64() never fails { string:s = raw mk(); int64:k = 1i64; int64:t = 0i64; pick (k) { (1i64) { fall c; }, (2i64) { defer { t = 3i64; } t = raw eat(move(s)); }, c: (3i64) { t = raw fs(s, 0i64); }, (*) { t = 5i64; } } pass t; };
+};
+mod:pr1_defer_after_fall_ok = {
+error:E5_pr1_defer_after_fall_ok;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:fs = int64(string:v, int64:k) never fails { string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64 + k; };
+func:eat = int64(move string:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_pr1_defer_after_fall_ok; };
+pub func:f = int64() never fails { string:s = raw mk(); int64:k = 1i64; int64:t = 0i64; pick (k) { (1i64) { if (k == 1i64) { fall g; } defer { t = raw eat(move(s)); } }, g: (2i64) { t = raw fs(s, 0i64); }, (*) { t = 5i64; } } pass t; };
+};
 async func:main = int32(cstring[]:_~argv) {
     if ((raw f1c_fall_no_rewrite.f()) != 7i64) { exit 100i32; }
     if ((raw p1_label_no_fall_refined_ok.f()) != 7i64) { exit 101i32; }
@@ -195,6 +214,8 @@ async func:main = int32(cstring[]:_~argv) {
     if ((raw np1c_inner_road_stays_inner.f()) != 7i64) { exit 115i32; }
     if ((raw np4c_inner_pick_after_outer_fall_ok.f()) != 7i64) { exit 116i32; }
     if ((raw np5c_inner_defer_not_on_outer_road_ok.f()) != 7i64) { exit 117i32; }
+    if ((raw p4_defer_in_other_arm_ok.f()) != 7i64) { exit 118i32; }
+    if ((raw pr1_defer_after_fall_ok.f()) != 7i64) { exit 119i32; }
     exit 0i32;
 };
 func:failsafe = int32(Error:e) {
@@ -228,6 +249,8 @@ func:failsafe = int32(Error:e) {
         (fall_carries_its_road_ok.E5_np1c_inner_road_stays_inner) { exit 75i32; },
         (fall_carries_its_road_ok.E5_np4c_inner_pick_after_outer_fall_ok) { exit 75i32; },
         (fall_carries_its_road_ok.E5_np5c_inner_defer_not_on_outer_road_ok) { exit 75i32; },
+        (fall_carries_its_road_ok.E5_p4_defer_in_other_arm_ok) { exit 75i32; },
+        (fall_carries_its_road_ok.E5_pr1_defer_after_fall_ok) { exit 75i32; },
         (*)                { exit 99i32; }
     }
     exit 9i32;

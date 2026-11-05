@@ -1,0 +1,262 @@
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 36:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 62:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 88:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 117:9
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 141:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 166:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 194:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 221:1
+// expect-error: NITPICK-FLOW-001
+// expect-error-at: 251:9
+mod:break_in_a_value_pick_leaves;
+// A `break L` OR `continue L` HELD IN A VALUE `pick` LEAVES ITS STATEMENT (DEF-548, landing 177d2b2): a `while (true)` it
+// leaves completes, so a function that ends after it falls off its end (FLOW-001), and a value arm that leaves gives nothing (FLOW-001
+// at the arm). Before: the leave was walked as staying, the function returned a zero (67 as zero + 7, 97 a null pointer). `c1c`,
+// `c1rc`, `c2c` were refused before and after.
+mod:c1_expr_break_falls_off = {
+error:E5_c1_expr_break_falls_off;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_c1_expr_break_falls_off; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_c1_expr_break_falls_off) { pass 7i64; }, (*) { pass 0i64; } } };
+func:g = int64(int64:n) never fails {
+    l1: while (true) unbounded {
+        int64:v = pick (n) { (1i64) { break l1; }, (*) { give 5i64; } };
+        pass v;
+    }
+};
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    int64:w = raw g(n);
+    if (w != 5i64) { out = w; }
+    pass out;
+};
+};
+mod:c1c_stmt_break_falls_off = {
+error:E5_c1c_stmt_break_falls_off;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_c1c_stmt_break_falls_off; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_c1c_stmt_break_falls_off) { pass 7i64; }, (*) { pass 0i64; } } };
+func:g = int64(int64:n) never fails {
+    l1: while (true) unbounded {
+        if (n == 1i64) { break l1; }
+        pass 5i64;
+    }
+};
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    int64:w = raw g(n);
+    if (w != 5i64) { out = w; }
+    pass out;
+};
+};
+mod:c1p_pass_break_falls_off = {
+error:E5_c1p_pass_break_falls_off;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_c1p_pass_break_falls_off; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_c1p_pass_break_falls_off) { pass 7i64; }, (*) { pass 0i64; } } };
+func:g = int64(int64:n) never fails {
+    l1: while (true) unbounded {
+        pass pick (n) { (1i64) { break l1; }, (*) { give 5i64; } };
+    }
+};
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    int64:w = raw g(n);
+    if (w != 5i64) { out = w; }
+    pass out;
+};
+};
+mod:c2_arm_break_no_give = {
+error:E5_c2_arm_break_no_give;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_c2_arm_break_no_give; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_c2_arm_break_no_give) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    int64:t1 = pick (n) {
+        (1i64) {
+            l2: while (true) unbounded {
+                int64:v = pick (n) { (1i64) { break l2; }, (*) { give 5i64; } };
+                give v;
+            }
+        },
+        (*) { give 7i64; }
+    };
+    if (t1 == 0i64) { out = 0i64; }
+    pass out;
+};
+};
+mod:c1i_if_cond_break = {
+error:E5_c1i_if_cond_break;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_c1i_if_cond_break; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_c1i_if_cond_break) { pass 7i64; }, (*) { pass 0i64; } } };
+func:g = int64(int64:n) never fails {
+    l1: while (true) unbounded {
+        if (pick (n) { (1i64) { break l1; }, (*) { give true; } }) { pass 5i64; }
+    }
+};
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    int64:w = raw g(n);
+    if (w != 5i64) { out = w; }
+    pass out;
+};
+};
+mod:c1r_ptr_return = {
+error:E5_c1r_ptr_return;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_c1r_ptr_return; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_c1r_ptr_return) { pass 7i64; }, (*) { pass 0i64; } } };
+func:gp = int64->(int64->:q, int64:n) never fails {
+    l1: while (true) unbounded {
+        int64:v = pick (n) { (1i64) { break l1; }, (*) { give 5i64; } };
+        discard(v);
+        pass q;
+    }
+};
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    int64:x = 7i64;
+    int64->:p = raw gp(@x, n);
+    out = <-p;
+    pass out;
+};
+};
+mod:c1rc_ptr_return_stmt = {
+error:E5_c1rc_ptr_return_stmt;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_c1rc_ptr_return_stmt; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_c1rc_ptr_return_stmt) { pass 7i64; }, (*) { pass 0i64; } } };
+func:gp = int64->(int64->:q, int64:n) never fails {
+    l1: while (true) unbounded {
+        if (n == 1i64) { break l1; }
+        pass q;
+    }
+};
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    int64:x = 7i64;
+    int64->:p = raw gp(@x, n);
+    out = <-p;
+    pass out;
+};
+};
+mod:c1w_while_cond_break = {
+error:E5_c1w_while_cond_break;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_c1w_while_cond_break; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_c1w_while_cond_break) { pass 7i64; }, (*) { pass 0i64; } } };
+func:g = int64(int64:n) never fails {
+    l1: while (true) unbounded {
+        while (pick (n) { (1i64) { break l1; }, (*) { give false; } }) unbounded { }
+        pass 5i64;
+    }
+};
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    int64:w = raw g(n);
+    if (w != 5i64) { out = w; }
+    pass out;
+};
+};
+mod:c2c_arm_stmt_break = {
+error:E5_c2c_arm_stmt_break;
+struct:H = { string:s; int64:k; };
+struct:P1 = { int64:a1; int64:b1; };
+struct:P2 = { int64:a2; int64:b2; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:rdh = int64(move H:v) never fails { pass v.k; };
+func:fillh = int64(H->:h) never fails { <-h = H{ s: string_concat("ab", "cde"), k: 7i64 }; pass 1i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_c2c_arm_stmt_break; };
+func:errv = int64(Error:e) never fails { pick (e) { (E5_c2c_arm_stmt_break) { pass 7i64; }, (*) { pass 0i64; } } };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+
+    int64:t1 = pick (n) {
+        (1i64) {
+            l2: while (true) unbounded {
+                if (n == 1i64) { break l2; }
+                give 5i64;
+            }
+        },
+        (*) { give 7i64; }
+    };
+    if (t1 == 0i64) { out = 0i64; }
+    pass out;
+};
+};

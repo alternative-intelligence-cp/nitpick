@@ -1,0 +1,139 @@
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 33:16
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 57:16
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 83:16
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 108:16
+// expect-error: NITPICK-TAINT-001
+// expect-error-at: 127:16
+mod:dead_value_pick_sends_no_road;
+// A VALUE `pick` IN DEAD CODE SENDS NO ROAD OUT (landing 177d2b2). Its arms are walked live there, so FLOW-001 asks what an arm's
+// text can reach and not whether a road reaches the pick (`value_arm_gives_in_dead_code.npk`), and nothing those arms send out is
+// a road: a `break` or a `continue` to a loop around the pick stops at the floor a silent trip uses. THE CONTROLS ARE HERE: the
+// same shapes with the pick live are refused (`pa1k`, `pa2k`), and a live `continue` after a dead pick, inside an inner loop's
+// silent trip, still reaches its loop (`pa3`: the floor is put back where the pick ends; `.value` of an error, 60, before this
+// landing). So does one in the loop the dead pick stands in (`pb1`), and one past an inner loop after a dead pick's `break` to the same outer loop (`pb2`): each read an error's value, 60, on every road
+// before this landing. The right programs are beside this file.
+mod:pa1k_live_value_pick_in_a_live_one = {
+error:E5_pa1k_live_value_pick_in_a_live_one;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_pa1k_live_value_pick_in_a_live_one; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_pa1k_live_value_pick_in_a_live_one; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    while (i < 3i64) decreases 3i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        int64:w = pick (n) {
+            (9i64) { int64:v = pick (n) { (1i64) { r = bad(); continue; }, (*) { give 2i64; } }; give v; },
+            (*) { give 1i64; }
+        };
+        out = out + w - w;
+    }
+    pass out;
+};
+};
+mod:pa2k_loop_inside_the_live_arm = {
+error:E5_pa2k_loop_inside_the_live_arm;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_pa2k_loop_inside_the_live_arm; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_pa2k_loop_inside_the_live_arm; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    lo: while (i < 3i64) decreases 3i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        if (n > 5i64) { out = 7i64;
+            int64:v = pick (n) {
+                (1i64) { int64:j = 0i64; li: while (j < 2i64) decreases 2i64 - j { j = j + 1i64; if (j == 1i64) { continue li; } r = bad(); continue lo; } give j; },
+                (*) { give 2i64; }
+            };
+            out = out + v;
+        }
+    }
+    pass out;
+};
+};
+mod:pa3_dead_pick_in_a_silent_trip_then_a_live_continue = {
+error:E5_pa3_dead_pick_in_a_silent_trip_then_a_live_continue;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_pa3_dead_pick_in_a_silent_trip_then_a_live_continue; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_pa3_dead_pick_in_a_silent_trip_then_a_live_continue; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    lo: while (i < 3i64) decreases 3i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        int64:j = 0i64;
+        while (j < 2i64) decreases 2i64 - j {
+            j = j + 1i64;
+            if (n > 5i64) {
+                pass out;
+                int64:v = pick (n) { (1i64) { r = bad(); continue lo; }, (*) { give 2i64; } };
+                out = out + v;
+            }
+            if (n == 2i64) { r = bad(); continue lo; }
+        }
+    }
+    pass out;
+};
+};
+mod:pb1_dead_value_pick_then_a_live_continue = {
+error:E5_pb1_dead_value_pick_then_a_live_continue;
+func:ok = int64() { pass 7i64; };
+func:okk = int64(int64:k) { if (k == 2i64) { fail E5_pb1_dead_value_pick_then_a_live_continue; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:k = 0i64;
+    o: while (k < 3i64) decreases 3i64 - k {
+        k = k + 1i64;
+        out = r.value;
+        if (n == 99i64) { pass 1i64; int64:v = pick (n) { (*) { continue o; } }; out = v; }
+        r = okk(k);
+        if (k == 2i64) { continue o; }
+        r = ok(); if (r.is_error) { pass 1i64; }
+    }
+    pass out;
+};
+};
+mod:pb2_dead_value_pick_in_a_silent_trip_then_a_live_continue = {
+error:E5_pb2_dead_value_pick_in_a_silent_trip_then_a_live_continue;
+func:ok = int64() { pass 7i64; };
+func:okk = int64(int64:k) { if (k == 2i64) { fail E5_pb2_dead_value_pick_in_a_silent_trip_then_a_live_continue; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:out = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass 1i64; }
+    int64:i = 0i64;
+    lz: while (i < 2i64) decreases 2i64 - i {
+        i = i + 1i64;
+        out = r.value;
+        int64:k = 0i64;
+        o: while (k < 3i64) decreases 3i64 - k {
+            k = k + 1i64;
+            if (n == 99i64) { pass 1i64; int64:v = pick (n) { (*) { break lz; } }; out = v; }
+            r = okk(k);
+            if (k == 2i64) { continue lz; }
+            r = ok(); if (r.is_error) { pass 1i64; }
+        }
+    }
+    pass out;
+};
+};

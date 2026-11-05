@@ -1,0 +1,1104 @@
+// expect-exit: 0
+mod:assignment_target_runs_before_its_value_ok;
+// AN ASSIGNMENT'S TARGET RUNS BEFORE ITS VALUE (DEF-571, landing 177d2b2): right programs that order lets stand, each beside its wrong twin in the rejection file.
+// A jump in the value leaves with what the target did (`oe_asg_val_ix_p` against `oe_asg_ix_val_p`, `oe_cmp_val_ix_p` against `oe_cmp_ix_val_p`, `oh_field_tgt2_p` against `oh_field_tgt_p`), a jump in the target with nothing the value did
+// (`og_asg_ix_val`, `oh_field_tgt_g`: restored), and a target may assign what the value reads (`oi15` against `oi1`). What the target does to itself before the value runs is no matter of this rule (`oi17`, `oi21`, `sb10`, `oi32`).
+// A NAME STANDS STILL WHILE THE VALUE RUNS AND NO LONGER: not at a later statement (`hq8c`, `hq11`, `sb11`, `sb12`, `sb14`), and not if no target read it (`hq0`, `hq10`, `hsc2`, `sb13`, `oi35c`). A value's `defer` over other names is nothing to it (`hr5g`).
+// A claim in the target isn't a read (`sa9`). A name read on another arm or in a loop's earlier trip isn't read unassigned (`oi30`, `oi31`).
+// AN INLINE ARRAY OR STRUCT THAT CAN'T DROP IS THE PLACE ITSELF, so assigning one in the value leaves the address good (`ae1`, `ae3`, `ae7`, `gk4a`, `gk5`, `gk6`, `gk7`, `mc4`), and a field's or an element's write or claim is no event (`sa11`, `sb1`, `sb2`).
+// A call in the target stands if the value leaves its name alone (`kc1`, `kc3`, `ok1` to `ok4`), and a macro in the value is judged by what it expands to (`mc1c`, `mc2c`, `mc3c`).
+error:Bad;
+mod:oe_asg_val_ix_p = {
+error:E5_oe_asg_val_ix_p;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oe_asg_val_ix_p; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oe_asg_val_ix_p; } pass 7i64; };
+struct:S2 = { int64:a; int64:b; };
+struct:M = { int64:k; };
+func:mm = int64(M:self, int64:v) never fails { pass self.k + v; };
+func:two = int64(int64:a, int64:b) never fails { pass a + b; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    int64:cell = 0i64;
+    int64->:pv = @cell;
+    int64:y;
+    int64:i = 0i64;
+    lp: while (true) unbounded {
+        i = i + 1i64;
+        a[pick (n) { (*) { y = 7i64; give 1i64; } }] = pick (n) { (1i64) { break lp; }, (*) { give 0i64; } };
+        if (i > 1i64) { break lp; }
+    }
+    out = y;
+    discard(a[0i64]); discard(<-pv);
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:oe_cmp_val_ix_p = {
+error:E5_oe_cmp_val_ix_p;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oe_cmp_val_ix_p; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oe_cmp_val_ix_p; } pass 7i64; };
+struct:S2 = { int64:a; int64:b; };
+struct:M = { int64:k; };
+func:mm = int64(M:self, int64:v) never fails { pass self.k + v; };
+func:two = int64(int64:a, int64:b) never fails { pass a + b; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    int64:cell = 0i64;
+    int64->:pv = @cell;
+    int64:y;
+    int64:i = 0i64;
+    lp: while (true) unbounded {
+        i = i + 1i64;
+        a[pick (n) { (*) { y = 7i64; give 1i64; } }] += pick (n) { (1i64) { break lp; }, (*) { give 0i64; } };
+        if (i > 1i64) { break lp; }
+    }
+    out = y;
+    discard(a[0i64]); discard(<-pv);
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:og_asg_ix_val = {
+error:E5_og_asg_ix_val;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_og_asg_ix_val; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_og_asg_ix_val; } pass 7i64; };
+struct:S2 = { int64:a; int64:b; };
+struct:M = { int64:k; };
+func:two = int64(int64:a, int64:b) never fails { pass a + b; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    int64[2][2]:g2 = [[0i64, 0i64], [0i64, 0i64]];
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i = 0i64;
+    lp: while (true) unbounded {
+        i = i + 1i64;
+        a[pick (n) { (1i64) { break lp; }, (*) { give 0i64; } }] = pick (n) { (*) { r = bad(); give 1i64; } };
+        r = ok(); if (r.is_error) { pass out; }
+        if (i > 1i64) { break lp; }
+    }
+    out = r.value;
+    discard(a[0i64]); discard(g2[0i64][0i64]);
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:oh_field_tgt_g = {
+error:E5_oh_field_tgt_g;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oh_field_tgt_g; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oh_field_tgt_g; } pass 7i64; };
+struct:M = { int64:k; };
+func:two = int64(int64:v) never fails { pass v; };
+func:pp = int64->(int64:v, int64->:q) never fails { pass q; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    M[2]:sp = [M{ k: 0i64 }, M{ k: 0i64 }];
+    int64:c1 = 0i64;
+    Result<int64>:r = ok(); if (r.is_error) { pass out; }
+    int64:i = 0i64;
+    lp: while (true) unbounded {
+        i = i + 1i64;
+        sp[pick (n) { (1i64) { break lp; }, (*) { give 0i64; } }].k = pick (n) { (*) { r = bad(); give 1i64; } };
+        r = ok(); if (r.is_error) { pass out; }
+        if (i > 1i64) { break lp; }
+    }
+    out = r.value;
+    discard(a[0i64]); discard(sp[0i64].k); discard(c1);
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:oh_field_tgt2_p = {
+error:E5_oh_field_tgt2_p;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oh_field_tgt2_p; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oh_field_tgt2_p; } pass 7i64; };
+struct:M = { int64:k; };
+func:two = int64(int64:v) never fails { pass v; };
+func:pp = int64->(int64:v, int64->:q) never fails { pass q; };
+func:f = int64(int64:n) never fails {
+    int64:out = 7i64;
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    M[2]:sp = [M{ k: 0i64 }, M{ k: 0i64 }];
+    int64:c1 = 0i64;
+    int64:y;
+    int64:i = 0i64;
+    lp: while (true) unbounded {
+        i = i + 1i64;
+        sp[pick (n) { (*) { y = 7i64; give 1i64; } }].k = pick (n) { (1i64) { break lp; }, (*) { give 0i64; } };
+        
+        if (i > 1i64) { break lp; }
+    }
+    out = y;
+    discard(a[0i64]); discard(sp[0i64].k); discard(c1);
+    pass out;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:oi1c_value_assigns_first_by_a_local = {
+error:E5_oi1c_value_assigns_first_by_a_local;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi1c_value_assigns_first_by_a_local; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi1c_value_assigns_first_by_a_local; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    int64:i;
+    int64:v = pick (n) { (*) { i = 1i64; give 7i64; } };
+    a[i] = v;
+    pass a[1i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:oi15_index_writes_value_reads = {
+error:E5_oi15_index_writes_value_reads;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi15_index_writes_value_reads; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi15_index_writes_value_reads; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    int64:y;
+    a[pick (n) { (*) { y = 1i64; give 1i64; } }] = y + 6i64;
+    pass a[1i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:oi17_target_moves_a_name_itself = {
+error:E5_oi17_target_moves_a_name_itself;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi17_target_moves_a_name_itself; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi17_target_moves_a_name_itself; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    H:h = raw mkh();
+    a[pick (n) { (*) { discard(raw eath(move(h))); give 0i64; } }] = 7i64;
+    pass a[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:oi21_nested_value_moves_its_own_read = {
+error:E5_oi21_nested_value_moves_its_own_read;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi21_nested_value_moves_its_own_read; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi21_nested_value_moves_its_own_read; } pass 7i64; };
+func:eatk = int64(move int64:v) never fails { pass v; };
+func:f = int64(int64:n) never fails {
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    int64[4]:b = [0i64, 0i64, 0i64, 0i64];
+    int64:y = 1i64;
+    a[pick (n) { (*) { b[0i64] = raw eatk(move(y)); give 0i64; } }] = 7i64;
+    pass a[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:hq0_wild_control = {
+error:E5_hq0_wild_control;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:eatl = int64(move List<int64>:v) never fails { pass 7i64; };
+func:eatw = int64(move wild int64->:w) never fails { dalloc(w); pass 7i64; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:refill = int64(List<int64>->:p) never fails { <-p = raw mk(); pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:f = int64(int64:n) never fails {
+    wild int64->:p = raw newp();
+    <-p = pick (n) { (*) { give 7i64; } };
+    dalloc(p);
+    pass 7i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:hq8c_scalar_moved_refilled_after = {
+error:E5_hq8c_scalar_moved_refilled_after;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_hq8c_scalar_moved_refilled_after; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_hq8c_scalar_moved_refilled_after; } pass 7i64; };
+func:eatk = int64(move int64:v) never fails { pass v; };
+func:f = int64(int64:n) never fails {
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    int64:y = 0i64;
+    a[y] = 7i64;
+    discard(raw eatk(move(y)));
+    y = 1i64;
+    pass a[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:hq10_refill_of_a_name_the_target_never_read = {
+error:E5_hq10_refill_of_a_name_the_target_never_read;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_hq10_refill_of_a_name_the_target_never_read; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_hq10_refill_of_a_name_the_target_never_read; } pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:f = int64(int64:n) never fails {
+    wild int64->:p = raw newp();
+    wild int64->:q = raw newp();
+    <-p = pick (n) { (*) { dalloc(q); q = raw newp(); give 7i64; } };
+    dalloc(p);
+    dalloc(q);
+    pass 7i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:hq11_next_statement_may_refill = {
+error:E5_hq11_next_statement_may_refill;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_hq11_next_statement_may_refill; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_hq11_next_statement_may_refill; } pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:f = int64(int64:n) never fails {
+    wild int64->:p = raw newp();
+    <-p = 7i64;
+    dalloc(p);
+    p = raw newp();
+    <-p = 7i64;
+    dalloc(p);
+    pass 7i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:hpc_control_no_free = {
+error:E5_hpc_control_no_free;
+struct:H = { string:s; int64:k; };
+struct:P2 = { int64:a; int64:b; };
+struct:HK = { int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:eathk = int64(move H:v) never fails { pass v.k; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_hpc_control_no_free; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_hpc_control_no_free; } pass 7i64; };
+func:ident = int64(int64:n) never fails { pass n; };
+func:setp = int64(int64->:p, int64:v) never fails { <-p = v; pass v; };
+func:pp = int64->(int64:n, int64->:p) never fails { pass p; };
+func:eatw = int64(move wild int64->:w) never fails { dalloc(w); pass 7i64; };
+func:ppw = wild int64->(int64:n, wild int64->:p) never fails { pass p; };
+func:f = int64(int64:n) never fails {
+    wild int64->:p = alloc(64i64) =>! wild int64->;
+    <-(raw ppw(1i64, p)) = 7i64;
+    dalloc(p);
+    pass 7i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:wa3c_taint_ctrl = {
+error:E5_wa3c_taint_ctrl;
+struct:H = { string:s; int64:k; };
+struct:P2 = { int64:a; int64:b; };
+struct:HK = { int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:eathk = int64(move H:v) never fails { pass v.k; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_wa3c_taint_ctrl; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_wa3c_taint_ctrl; } pass 7i64; };
+func:ident = int64(int64:n) never fails { pass n; };
+func:setp = int64(int64->:p, int64:v) never fails { <-p = v; pass v; };
+func:pp = int64->(int64:n, int64->:p) never fails { pass p; };
+func:f = int64(int64:n) never fails {
+    int64:guardA = 11i64;
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    int64:guardB = 11i64;
+    Result<int64>:r = ok();
+    if (r.is_error) { pass 7i64; }
+    a[r.value & 1i64] = pick (n) { (*) { give 1i64; } };
+    discard(a[0i64]);
+    if (guardA != 11i64) { pass 13i64; }
+    if (guardB != 11i64) { pass 14i64; }
+    pass 7i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:oi32_local_of_the_target_freed_and_refilled = {
+error:E5_oi32_local_of_the_target_freed_and_refilled;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi32_local_of_the_target_freed_and_refilled; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi32_local_of_the_target_freed_and_refilled; } pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:f = int64(int64:n) never fails {
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    a[pick (n) { (*) { wild int64->:l = raw newp(); <-l = 0i64; int64:v = <-l; dalloc(l); l = raw newp(); dalloc(l); give v; } }] = 7i64;
+    pass a[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:hr5g_defer_refill_after_the_value_only = {
+error:E5_hr5g_defer_refill_after_the_value_only;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_hr5g_defer_refill_after_the_value_only; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_hr5g_defer_refill_after_the_value_only; } pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:f = int64(int64:n) never fails {
+    wild int64->:p = raw newp();
+    defer { dalloc(p); }
+    <-p = pick (n) { (*) { give 7i64; } };
+    pass 7i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:hsc2_defer_frees_other = {
+error:E5_hsc2_defer_frees_other;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_hsc2_defer_frees_other; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_hsc2_defer_frees_other; } pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:f = int64(int64:n) never fails {
+    wild int64->:p = raw newp();
+    wild int64->:q = raw newp();
+    <-p = pick (n) { (*) { defer { q = raw newp(); } dalloc(q); give 7i64; } };
+    dalloc(q);
+    dalloc(p);
+    pass 7i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:oi30_kept_on_one_arm_assigned_on_another = {
+error:E5_oi30_kept_on_one_arm_assigned_on_another;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi30_kept_on_one_arm_assigned_on_another; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi30_kept_on_one_arm_assigned_on_another; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    int64:q;
+    a[pick (n) { (1i64) { q = 0i64; give q; }, (*) { q = 0i64; give q; } }] = 7i64;
+    pass a[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:oi31_local_of_the_target_declared_in_a_loop = {
+error:E5_oi31_local_of_the_target_declared_in_a_loop;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi31_local_of_the_target_declared_in_a_loop; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi31_local_of_the_target_declared_in_a_loop; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    a[pick (n) { (*) { int64:i = 0i64; int64:s = 0i64; while (i < 2i64) decreases 2i64 - i { int64:q; q = 0i64; s = s + q; i = i + 1i64; } give s; } }] = 7i64;
+    pass a[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:oi35c_nested_target_nothing_freed = {
+error:E5_oi35c_nested_target_nothing_freed;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_oi35c_nested_target_nothing_freed; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_oi35c_nested_target_nothing_freed; } pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:f = int64(int64:n) never fails {
+    wild int64->:p = raw newp();
+    lp: while (true) unbounded {
+        <-p = pick (n) { (*) { if (n == 1i64) { <-p = pick (n) { (*) { give 1i64; } }; break lp; } give 7i64; } };
+        break lp;
+    }
+    dalloc(p);
+    pass 7i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:sb10_target_own_window_stays = {
+error:E5_sb10_target_own_window_stays;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_sb10_target_own_window_stays; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_sb10_target_own_window_stays; } pass 7i64; };
+func:eatk = int64(move int64:k) never fails { pass 0i64; };
+func:f = int64(int64:n) never fails {
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    int64:y = 0i64;
+    a[raw eatk(move(y))] = 7i64;
+    y = 3i64;
+    pass a[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:sb11_a_later_statement_may_touch_it = {
+error:E5_sb11_a_later_statement_may_touch_it;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_sb11_a_later_statement_may_touch_it; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_sb11_a_later_statement_may_touch_it; } pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:f = int64(int64:n) never fails {
+    wild int64->:p = raw newp();
+    <-p = 7i64;
+    dalloc(p);
+    p = raw newp();
+    <-p = pick (n) { (*) { give 7i64; } };
+    int64:v = <-p;
+    dalloc(p);
+    pass v;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:sb12_loop_around_the_assignment = {
+error:E5_sb12_loop_around_the_assignment;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_sb12_loop_around_the_assignment; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_sb12_loop_around_the_assignment; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    int64:i = 0i64;
+    while (i < 3i64) decreases 3i64 - i {
+        a[i] = pick (n) { (*) { give 7i64; } };
+        i = i + 1i64;
+    }
+    pass a[2i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:sb13_two_statements_in_an_arm_of_a_value = {
+error:E5_sb13_two_statements_in_an_arm_of_a_value;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_sb13_two_statements_in_an_arm_of_a_value; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_sb13_two_statements_in_an_arm_of_a_value; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    int64[4]:b = [0i64, 0i64, 0i64, 0i64];
+    int64:i = 0i64;
+    int64:j = 0i64;
+    a[i] = pick (n) { (*) { b[j] = 1i64; j = 1i64; b[j] = 2i64; give 7i64; } };
+    pass a[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:sb14_inner_statement_kept_name_released = {
+error:E5_sb14_inner_statement_kept_name_released;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_sb14_inner_statement_kept_name_released; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_sb14_inner_statement_kept_name_released; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    int64[4]:b = [0i64, 0i64, 0i64, 0i64];
+    int64:j = 0i64;
+    a[pick (n) { (*) { b[j] = 1i64; j = 1i64; give 0i64; } }] = 7i64;
+    pass a[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:sb1_field_claim_of_kept_struct = {
+error:E5_sb1_field_claim_of_kept_struct;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_sb1_field_claim_of_kept_struct; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_sb1_field_claim_of_kept_struct; } pass 7i64; };
+struct:Ti = { int64:a; int64:b; };
+func:fillk = int64(int64->:q) never fails { <-q = 1i64; pass 7i64; };
+func:f = int64(int64:n) never fails {
+    Ti:h = Ti{ a: 0i64, b: 0i64 };
+    h.a = pick (n) { (*) { discard(raw fillk($$m h.b)); give 7i64; } };
+    pass h.a;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:sb2_element_claim_of_kept_array = {
+error:E5_sb2_element_claim_of_kept_array;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_sb2_element_claim_of_kept_array; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_sb2_element_claim_of_kept_array; } pass 7i64; };
+func:fillk = int64(int64->:q) never fails { <-q = 1i64; pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64[2]:g = [0i64, 0i64];
+    g[0i64] = raw fillk($$m g[1i64]);
+    pass g[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:sa9_claim_in_the_target = {
+error:E5_sa9_claim_in_the_target;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_sa9_claim_in_the_target; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_sa9_claim_in_the_target; } pass 7i64; };
+func:idxc = int64(int64->:q) never fails { <-q = 0i64; pass 0i64; };
+func:f = int64(int64:n) never fails {
+    int64[4]:a = [0i64, 0i64, 0i64, 0i64];
+    int64:y = 0i64;
+    a[raw idxc($$m y)] = pick (n) { (*) { y = 1i64; give 7i64; } };
+    pass a[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:sa11_field_of_a_kept_struct_assigned_ptr = {
+error:E5_sa11_field_of_a_kept_struct_assigned_ptr;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_sa11_field_of_a_kept_struct_assigned_ptr; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_sa11_field_of_a_kept_struct_assigned_ptr; } pass 7i64; };
+struct:Sw = { wild int64->:p; int64:k; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:f = int64(int64:n) never fails {
+    wild int64->:o = raw newp();
+    wild int64->:o2 = raw newp();
+    Sw:s = Sw{ p: o, k: 1i64 };
+    <-s.p = pick (n) { (*) { s.p = o2; give 7i64; } };
+    int64:v = <-o;
+    dalloc(o);
+    dalloc(o2);
+    pass v;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ae1_array_reassign_in_value = {
+error:E5_ae1_array_reassign_in_value;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:eatl = int64(move List<int64>:v) never fails { pass 7i64; };
+func:eatw = int64(move wild int64->:w) never fails { dalloc(w); pass 7i64; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:refill = int64(List<int64>->:p) never fails { <-p = raw mk(); pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:rdw = int64(wild int64->:q, int64:z) never fails { pass <-q; };
+struct:SW = { wild int64->:p; int64:k; };
+func:f = int64(int64:n) never fails {
+    int64[2]:g = [1i64, 2i64];
+    g[0i64] = pick (n) { (*) { g = [3i64, 4i64]; give 7i64; } };
+    pass g[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ae3_struct_ptr_old_pointee = {
+error:E5_ae3_struct_ptr_old_pointee;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:eatl = int64(move List<int64>:v) never fails { pass 7i64; };
+func:eatw = int64(move wild int64->:w) never fails { dalloc(w); pass 7i64; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:refill = int64(List<int64>->:p) never fails { <-p = raw mk(); pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:rdw = int64(wild int64->:q, int64:z) never fails { pass <-q; };
+struct:SW = { wild int64->:p; int64:k; };
+func:f = int64(int64:n) never fails {
+    wild int64->:o = raw newp();
+    wild int64->:o2 = raw newp();
+    SW:s = SW{ p: o, k: 1i64 };
+    s.p[0i64] = pick (n) { (*) { s = SW{ p: o2, k: 2i64 }; give 7i64; } };
+    int64:v = <-o;
+    dalloc(o); dalloc(o2);
+    pass v;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ae7_array_claim_and_index = {
+error:E5_ae7_array_claim_and_index;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:eatl = int64(move List<int64>:v) never fails { pass 7i64; };
+func:eatw = int64(move wild int64->:w) never fails { dalloc(w); pass 7i64; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:refill = int64(List<int64>->:p) never fails { <-p = raw mk(); pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:rdw = int64(wild int64->:q, int64:z) never fails { pass <-q; };
+struct:SW = { wild int64->:p; int64:k; };
+func:f = int64(int64:n) never fails {
+    int64[2]:g = [1i64, 2i64];
+    int64:i = 0i64;
+    g[i] = pick (n) { (*) { g = [3i64, 4i64]; give 7i64; } };
+    pass g[i];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:kc1_callee_target_no_replace = {
+error:E5_kc1_callee_target_no_replace;
+struct:H = { List<int64>:l; int64:k; };
+struct:HH = { H:h; int64:z; };
+struct:SW = { wild int64->:p; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:eatl = int64(move List<int64>:v) never fails { pass 7i64; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:refill = int64(List<int64>->:p) never fails { <-p = raw mk(); pass 7i64; };
+func:reseth = int64(H->:w) never fails { <-w = raw mkh(); pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:f = int64(int64:n) never fails {
+    List<int64>:l = raw mk();
+    <-(raw first(@l)) = 7i64;
+    pass l[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:kc3_callee_read_no_replace = {
+error:E5_kc3_callee_read_no_replace;
+struct:H = { List<int64>:l; int64:k; };
+struct:HH = { H:h; int64:z; };
+struct:SW = { wild int64->:p; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:eatl = int64(move List<int64>:v) never fails { pass 7i64; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:refill = int64(List<int64>->:p) never fails { <-p = raw mk(); pass 7i64; };
+func:reseth = int64(H->:w) never fails { <-w = raw mkh(); pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:f = int64(int64:n) never fails {
+    List<int64>:l = raw mk();
+    int64:v = raw rd2(raw first(@l), 0i64);
+    pass v + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ok1_sibling_write = {
+error:E5_ok1_sibling_write;
+struct:H = { List<int64>:l; int64:k; };
+struct:HH = { H:h; int64:z; };
+struct:SW = { wild int64->:p; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:eatl = int64(move List<int64>:v) never fails { pass 7i64; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:refill = int64(List<int64>->:p) never fails { <-p = raw mk(); pass 7i64; };
+func:reseth = int64(H->:w) never fails { <-w = raw mkh(); pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:W = { H->:hp; };
+func:fp2 = int64->(W->:w) never fails { pass @((<-w.hp).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:ap = int64->(List<int64>[2]->:a) never fails { pass @((<-a)[0i64][0i64]); };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    int64->:e = raw fp(@h);
+    h.k = 2i64;
+    <-e = 7i64;
+    pass h.l[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ok2_field_ptr_list_grown = {
+error:E5_ok2_field_ptr_list_grown;
+struct:H = { List<int64>:l; int64:k; };
+struct:HH = { H:h; int64:z; };
+struct:SW = { wild int64->:p; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:eatl = int64(move List<int64>:v) never fails { pass 7i64; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:refill = int64(List<int64>->:p) never fails { <-p = raw mk(); pass 7i64; };
+func:reseth = int64(H->:w) never fails { <-w = raw mkh(); pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:W = { H->:hp; };
+func:fp2 = int64->(W->:w) never fails { pass @((<-w.hp).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:ap = int64->(List<int64>[2]->:a) never fails { pass @((<-a)[0i64][0i64]); };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    int64->:e = raw kp(@h);
+    discard(raw growh(@h));
+    <-e = 7i64;
+    pass h.k;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ok3_read_through_then_use = {
+error:E5_ok3_read_through_then_use;
+struct:H = { List<int64>:l; int64:k; };
+struct:HH = { H:h; int64:z; };
+struct:SW = { wild int64->:p; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:eatl = int64(move List<int64>:v) never fails { pass 7i64; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:refill = int64(List<int64>->:p) never fails { <-p = raw mk(); pass 7i64; };
+func:reseth = int64(H->:w) never fails { <-w = raw mkh(); pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:W = { H->:hp; };
+func:fp2 = int64->(W->:w) never fails { pass @((<-w.hp).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:ap = int64->(List<int64>[2]->:a) never fails { pass @((<-a)[0i64][0i64]); };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    int64->:e = raw fp(@h);
+    <-e = 7i64;
+    pass h.l[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ok4_temp_then_read_same_list = {
+error:E5_ok4_temp_then_read_same_list;
+struct:H = { List<int64>:l; int64:k; };
+struct:HH = { H:h; int64:z; };
+struct:SW = { wild int64->:p; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:eatl = int64(move List<int64>:v) never fails { pass 7i64; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:refill = int64(List<int64>->:p) never fails { <-p = raw mk(); pass 7i64; };
+func:reseth = int64(H->:w) never fails { <-w = raw mkh(); pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:W = { H->:hp; };
+func:fp2 = int64->(W->:w) never fails { pass @((<-w.hp).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:ap = int64->(List<int64>[2]->:a) never fails { pass @((<-a)[0i64][0i64]); };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    <-(raw fp(@h)) = 6i64 + h.k - 1i64;
+    pass h.l[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:gk4a_int_array_15_exempt = {
+error:E5_gk4a_int_array_15_exempt;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gk4a_int_array_15_exempt; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gk4a_int_array_15_exempt; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64[1][1][1][1][1][1][1][1][1][1][1][1][1][1][1]:a = [[[[[[[[[[[[[[[0i64]]]]]]]]]]]]]]];
+    a[0i64][0i64][0i64][0i64][0i64][0i64][0i64][0i64][0i64][0i64][0i64][0i64][0i64][0i64][0i64] = pick (n) { (*) { a = [[[[[[[[[[[[[[[1i64]]]]]]]]]]]]]]]; give 7i64; } };
+    pass a[0i64][0i64][0i64][0i64][0i64][0i64][0i64][0i64][0i64][0i64][0i64][0i64][0i64][0i64][0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:gk5_pointer_array_exempt = {
+error:E5_gk5_pointer_array_exempt;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gk5_pointer_array_exempt; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gk5_pointer_array_exempt; } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    int64:u = 7i64;
+    int64:v = 7i64;
+    int64->[1]:a = [@u];
+    <-(a[0i64]) = pick (n) { (*) { a = [@v]; give 7i64; } };
+    pass u;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:gk6_generic_pointer_array_exempt = {
+error:E5_gk6_generic_pointer_array_exempt;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gk6_generic_pointer_array_exempt; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gk6_generic_pointer_array_exempt; } pass 7i64; };
+func:g<T> = int64(T->:u, T->:v, int64:n) never fails {
+    T->[1]:a = [u];
+    int64:r = 0i64;
+    a[0i64] = pick (n) { (*) { a = [v]; give v; } };
+    pass 7i64;
+};
+func:f = int64(int64:n) never fails { int64:u = 1i64; int64:v = 2i64; pass raw g::<int64>(@u, @v, n); };
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:gk7_nonowning_generic_struct_args_int = {
+error:E5_gk7_nonowning_generic_struct_args_int;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_gk7_nonowning_generic_struct_args_int; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_gk7_nonowning_generic_struct_args_int; } pass 7i64; };
+struct:Bx<T> = { T:v; int64:k; };
+func:f = int64(int64:n) never fails {
+    Bx<int64>:b = Bx{ v: 1i64, k: 1i64 };
+    b.v = pick (n) { (*) { b = Bx{ v: 2i64, k: 2i64 }; give 7i64; } };
+    pass b.v;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:mc1c_stmt_macro_frees_another = {
+error:E5_mc1c_stmt_macro_frees_another;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_mc1c_stmt_macro_frees_another; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_mc1c_stmt_macro_frees_another; } pass 7i64; };
+macro:fr = (X) { dalloc(X); };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:f = int64(int64:n) never fails {
+    wild int64->:p = raw newp();
+    wild int64->:q = raw newp();
+    <-p = pick (n) { (*) { #fr(q); give 7i64; } };
+    int64:v = <-p;
+    dalloc(p);
+    pass v;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:mc2c_expr_macro_moves_another = {
+error:E5_mc2c_expr_macro_moves_another;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_mc2c_expr_macro_moves_another; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_mc2c_expr_macro_moves_another; } pass 7i64; };
+macro:mvp = (S) { (raw eatw(move(S))) == 7i64; };
+func:eatw = int64(move wild int64->:w) never fails { dalloc(w); pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:f = int64(int64:n) never fails {
+    wild int64->:p = raw newp();
+    wild int64->:q = raw newp();
+    <-p = pick (n) { (*) { discard(#mvp(q)); give 7i64; } };
+    int64:v = <-p;
+    dalloc(p);
+    pass v;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:mc3c_stmt_macro_assigns_another = {
+error:E5_mc3c_stmt_macro_assigns_another;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_mc3c_stmt_macro_assigns_another; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_mc3c_stmt_macro_assigns_another; } pass 7i64; };
+macro:st = (X) { X = 1i64; };
+func:f = int64(int64:n) never fails {
+    int64[2]:a = [0i64, 0i64];
+    int64:i = 0i64;
+    int64:j = 0i64;
+    a[i] = pick (n) { (*) { #st(j); give 7i64; } };
+    pass a[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:mc4_macro_exempt_aggregate = {
+error:E5_mc4_macro_exempt_aggregate;
+struct:H = { string:s; int64:k; };
+func:mkh = H() never fails { pass H{ s: string_concat("ab", "cde"), k: 7i64 }; };
+func:eath = int64(move H:v) never fails { pass 0i64; };
+func:ok = int64() { pass 7i64; };
+func:bad = int64() { fail E5_mc4_macro_exempt_aggregate; };
+func:okn = int64(int64:n) { if (n > 90i64) { fail E5_mc4_macro_exempt_aggregate; } pass 7i64; };
+macro:st = (X) { X = [1i64, 2i64]; };
+func:f = int64(int64:n) never fails {
+    int64[2]:a = [0i64, 0i64];
+    a[0i64] = pick (n) { (*) { #st(a); give 7i64; } };
+    pass a[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+func:main = int32(cstring[]:argv) {
+    if ((raw oe_asg_val_ix_p.cell_main(argv.len)) != 67i32) { exit 100i32; }
+    if ((raw oe_cmp_val_ix_p.cell_main(argv.len)) != 67i32) { exit 101i32; }
+    if ((raw og_asg_ix_val.cell_main(argv.len)) != 67i32) { exit 102i32; }
+    if ((raw oh_field_tgt_g.cell_main(argv.len)) != 67i32) { exit 103i32; }
+    if ((raw oh_field_tgt2_p.cell_main(argv.len)) != 67i32) { exit 104i32; }
+    if ((raw oi1c_value_assigns_first_by_a_local.cell_main(argv.len)) != 67i32) { exit 105i32; }
+    if ((raw oi15_index_writes_value_reads.cell_main(argv.len)) != 67i32) { exit 106i32; }
+    if ((raw oi17_target_moves_a_name_itself.cell_main(argv.len)) != 67i32) { exit 107i32; }
+    if ((raw oi21_nested_value_moves_its_own_read.cell_main(argv.len)) != 67i32) { exit 108i32; }
+    if ((raw hq0_wild_control.cell_main(argv.len)) != 67i32) { exit 109i32; }
+    if ((raw hq8c_scalar_moved_refilled_after.cell_main(argv.len)) != 67i32) { exit 110i32; }
+    if ((raw hq10_refill_of_a_name_the_target_never_read.cell_main(argv.len)) != 67i32) { exit 111i32; }
+    if ((raw hq11_next_statement_may_refill.cell_main(argv.len)) != 67i32) { exit 112i32; }
+    if ((raw hpc_control_no_free.cell_main(argv.len)) != 67i32) { exit 113i32; }
+    if ((raw wa3c_taint_ctrl.cell_main(argv.len)) != 67i32) { exit 114i32; }
+    if ((raw oi32_local_of_the_target_freed_and_refilled.cell_main(argv.len)) != 67i32) { exit 115i32; }
+    if ((raw hr5g_defer_refill_after_the_value_only.cell_main(argv.len)) != 67i32) { exit 116i32; }
+    if ((raw hsc2_defer_frees_other.cell_main(argv.len)) != 67i32) { exit 117i32; }
+    if ((raw oi30_kept_on_one_arm_assigned_on_another.cell_main(argv.len)) != 67i32) { exit 118i32; }
+    if ((raw oi31_local_of_the_target_declared_in_a_loop.cell_main(argv.len)) != 67i32) { exit 119i32; }
+    if ((raw oi35c_nested_target_nothing_freed.cell_main(argv.len)) != 67i32) { exit 120i32; }
+    if ((raw sb10_target_own_window_stays.cell_main(argv.len)) != 67i32) { exit 121i32; }
+    if ((raw sb11_a_later_statement_may_touch_it.cell_main(argv.len)) != 67i32) { exit 122i32; }
+    if ((raw sb12_loop_around_the_assignment.cell_main(argv.len)) != 67i32) { exit 123i32; }
+    if ((raw sb13_two_statements_in_an_arm_of_a_value.cell_main(argv.len)) != 67i32) { exit 124i32; }
+    if ((raw sb14_inner_statement_kept_name_released.cell_main(argv.len)) != 67i32) { exit 125i32; }
+    if ((raw sb1_field_claim_of_kept_struct.cell_main(argv.len)) != 67i32) { exit 126i32; }
+    if ((raw sb2_element_claim_of_kept_array.cell_main(argv.len)) != 67i32) { exit 127i32; }
+    if ((raw sa9_claim_in_the_target.cell_main(argv.len)) != 67i32) { exit 128i32; }
+    if ((raw sa11_field_of_a_kept_struct_assigned_ptr.cell_main(argv.len)) != 67i32) { exit 129i32; }
+    if ((raw ae1_array_reassign_in_value.cell_main(argv.len)) != 67i32) { exit 130i32; }
+    if ((raw ae3_struct_ptr_old_pointee.cell_main(argv.len)) != 67i32) { exit 131i32; }
+    if ((raw ae7_array_claim_and_index.cell_main(argv.len)) != 67i32) { exit 132i32; }
+    if ((raw kc1_callee_target_no_replace.cell_main(argv.len)) != 67i32) { exit 133i32; }
+    if ((raw kc3_callee_read_no_replace.cell_main(argv.len)) != 67i32) { exit 134i32; }
+    if ((raw ok1_sibling_write.cell_main(argv.len)) != 67i32) { exit 135i32; }
+    if ((raw ok2_field_ptr_list_grown.cell_main(argv.len)) != 67i32) { exit 136i32; }
+    if ((raw ok3_read_through_then_use.cell_main(argv.len)) != 67i32) { exit 137i32; }
+    if ((raw ok4_temp_then_read_same_list.cell_main(argv.len)) != 67i32) { exit 138i32; }
+    if ((raw gk4a_int_array_15_exempt.cell_main(argv.len)) != 67i32) { exit 139i32; }
+    if ((raw gk5_pointer_array_exempt.cell_main(argv.len)) != 67i32) { exit 140i32; }
+    if ((raw gk6_generic_pointer_array_exempt.cell_main(argv.len)) != 67i32) { exit 141i32; }
+    if ((raw gk7_nonowning_generic_struct_args_int.cell_main(argv.len)) != 67i32) { exit 142i32; }
+    if ((raw mc1c_stmt_macro_frees_another.cell_main(argv.len)) != 67i32) { exit 143i32; }
+    if ((raw mc2c_expr_macro_moves_another.cell_main(argv.len)) != 67i32) { exit 144i32; }
+    if ((raw mc3c_stmt_macro_assigns_another.cell_main(argv.len)) != 67i32) { exit 145i32; }
+    if ((raw mc4_macro_exempt_aggregate.cell_main(argv.len)) != 67i32) { exit 146i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (Bad)              { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (assignment_target_runs_before_its_value_ok.E5_oe_asg_val_ix_p) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_oe_cmp_val_ix_p) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_og_asg_ix_val) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_oh_field_tgt_g) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_oh_field_tgt2_p) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_oi1c_value_assigns_first_by_a_local) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_oi15_index_writes_value_reads) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_oi17_target_moves_a_name_itself) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_oi21_nested_value_moves_its_own_read) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_hq0_wild_control) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_hq8c_scalar_moved_refilled_after) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_hq10_refill_of_a_name_the_target_never_read) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_hq11_next_statement_may_refill) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_hpc_control_no_free) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_wa3c_taint_ctrl) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_oi32_local_of_the_target_freed_and_refilled) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_hr5g_defer_refill_after_the_value_only) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_hsc2_defer_frees_other) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_oi30_kept_on_one_arm_assigned_on_another) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_oi31_local_of_the_target_declared_in_a_loop) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_oi35c_nested_target_nothing_freed) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_sb10_target_own_window_stays) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_sb11_a_later_statement_may_touch_it) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_sb12_loop_around_the_assignment) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_sb13_two_statements_in_an_arm_of_a_value) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_sb14_inner_statement_kept_name_released) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_sb1_field_claim_of_kept_struct) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_sb2_element_claim_of_kept_array) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_sa9_claim_in_the_target) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_sa11_field_of_a_kept_struct_assigned_ptr) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_ae1_array_reassign_in_value) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_ae3_struct_ptr_old_pointee) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_ae7_array_claim_and_index) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_kc1_callee_target_no_replace) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_kc3_callee_read_no_replace) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_ok1_sibling_write) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_ok2_field_ptr_list_grown) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_ok3_read_through_then_use) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_ok4_temp_then_read_same_list) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_gk4a_int_array_15_exempt) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_gk5_pointer_array_exempt) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_gk6_generic_pointer_array_exempt) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_gk7_nonowning_generic_struct_args_int) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_mc1c_stmt_macro_frees_another) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_mc2c_expr_macro_moves_another) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_mc3c_stmt_macro_assigns_another) { exit 75i32; },
+        (assignment_target_runs_before_its_value_ok.E5_mc4_macro_exempt_aggregate) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};
