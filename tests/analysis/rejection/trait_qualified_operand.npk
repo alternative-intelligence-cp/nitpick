@@ -1,0 +1,620 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 115:134
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 132:37
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 151:119
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 169:94
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 187:98
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 187:145
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 204:107
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 222:87
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 240:89
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 259:72
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 276:83
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 293:50
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 307:130
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 312:83
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 342:41
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 368:54
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 394:58
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 420:29
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 446:42
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 472:46
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 495:25
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 496:10
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 519:38
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 520:10
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 543:42
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 564:68
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 581:82
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 598:48
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 614:88
+mod:trait_qualified_operand;
+// A TRAIT'S NAME BEFORE THE DOT IS A QUALIFIER, NOT A RECEIVER (DEF-624, landing 177d2b3). `Tp.tpm(@h1)` (D-172) names the trait before the dot,
+// and its arguments are the callee's parameters from 0: `@h1` is `self`. The plain road's three readers took the operand as the receiver: escape's
+// `collect_view_refs` (rule A's refs) and `escape_expr` (rule B, the store matrix, the holder scope) in escape.npk, and `acc_expr` (the freeze) in
+// alias.npk. The trait's name took parameter 0 and `@h1` was judged by parameter 1, so what the call returned or stored was tied to nothing:
+// `H:h1 = raw mkh(); e = raw Tp.tpm(@h1); discard(raw growh(@h1)); v = <-(e);` read the List the growth had freed, where `h1.tpm()` and
+// `fmp(@h1)` are refused (236 on both legs, 97 under the detector). Now the three readers ask `method_recv`, DEF-362's rule at the spawn arm:
+// an operand with a recorded type is the receiver; an untyped one that names a trait is a qualifier, the arguments counted from parameter 0;
+// any other untyped operand answers none, and `escape_expr`'s arm reports it (BORROW-INTERNAL naming DEF-624, the closed direction; no program
+// that type-checks reaches it: the typer refuses every other spelling first). Each module is one cell, refused as its method-spelled twin is.
+// THE FACES: the result kept across a growth (`grow`) and past the block (`blk`); a pointer parameter (`parm`); the store through a holder declared
+// outside the block (`store`, `Tk.tkeep(@h1, @hd)`); the return of a local's element (`ret`); a by-value `Self` handing back its literal's pointer
+// member (`byval`, `Tv.tv(PE{ … })`); the second argument handed back (`arg2`, `T2.t2(@hx, …)`); the growth spelled through the trait (`tgrow`,
+// `Tg.tg(@h1)`, and `tgrowp` on a pointer parameter: the freeze's road); a generic `T: Tp` (`gen`), its store (`genk`) and its growth (`geng`); a
+// `for` binding (`forp`); a consuming `pick`'s binding (`cpick`, and `cpickg` with the growth inside the arm); the awaited call (`paw`,
+// `await Wa.wp(@h1)`, an async method); the trait's name in parentheses (`u_paren`) and imported from an inline module (`u_muse`). THE RELEASE
+// GATE's trait-qualified column (`rgq_…`): a `for` or a consuming `pick` binding's pointer read through `Tq.tqp(@b)` or stored through
+// `Tks.tks(@b, @e)`.
+error:E5;
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mks = string() never fails { pass string_concat("A", ""); };
+trait:Tp = { func:tpm = int64->(Self->:self) never fails; };
+struct:PE = { int64->:p; int64:z; };
+trait:Tg = { func:tg = int64(Self->:self) never fails; };
+struct:K = { int64:k; };
+enum:EK = { A(int64->); Z; };
+enum:EP = { A(PE); Z; };
+enum:EA = { A(int64->[2]); Z; };
+impl:PE = { func:getp = int64->(PE:self) never fails { pass self.p; }; func:getpp = int64->(PE->:self) never fails { pass (<-self).p; }; };
+func:getppf = int64->(PE->:q) never fails { pass (<-q).p; };
+struct:PO = { int64->:p; List<int64>:own; };
+enum:EOK = { A(PO); Z; };
+impl:PO = { func:getpp = int64->(PO->:self) never fails { pass (<-self).p; }; };
+func:getpof = int64->(PO->:q) never fails { pass (<-q).p; };
+trait:Tq = { func:tqp = int64->(Self->:self) never fails; };
+impl:PE:Tq = { func:tqp = int64->(PE->:self) never fails { pass (<-self).p; }; };
+impl:PO:Tq = { func:tqp = int64->(PO->:self) never fails { pass (<-self).p; }; };
+func:tqpf = int64->(PE->:q) never fails { pass (<-q).p; };
+func:tqpof = int64->(PO->:q) never fails { pass (<-q).p; };
+trait:Tks = { func:tks = NIL(Self->:self, int64->->:o) never fails; };
+impl:PE:Tks = { func:tks = NIL(PE->:self, int64->->:o) never fails { <-o = (<-self).p; pass NIL; }; };
+impl:PO:Tks = { func:tks = NIL(PO->:self, int64->->:o) never fails { <-o = (<-self).p; pass NIL; }; };
+func:tksf = NIL(PE->:q, int64->->:o) never fails { <-o = (<-q).p; pass NIL; };
+func:tksof = NIL(PO->:q, int64->->:o) never fails { <-o = (<-q).p; pass NIL; };
+// --- arg2_t
+struct:H_arg2_t = { List<int64>:l; string:s; int64:k; };
+func:mkh_arg2_t = H_arg2_t() never fails { pass H_arg2_t{ l: raw mk(), s: raw mks(), k: 1i64 }; };
+func:growh_arg2_t = int64(H_arg2_t->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_arg2_t = int64->(H_arg2_t->:q) never fails { pass @((<-q).l[0i64]); };
+trait:T2 = { func:t2 = int64->(Self->:self, int64->:q) never fails; };
+impl:H_arg2_t:T2 = { func:t2 = int64->(H_arg2_t->:self, int64->:q) never fails { pass q; }; };
+func:g_arg2_t = int64(H_arg2_t->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64:v = 0i64;
+    int64->:e = @one;
+    H_arg2_t->:hd = hp;
+    H_arg2_t:hx = raw mkh_arg2_t(); H_arg2_t:h1 = raw mkh_arg2_t(); e = raw T2.t2(@hx, raw fp_arg2_t(@h1)); discard(raw growh_arg2_t(@h1)); v = <-(e);
+    pass v + 6i64;
+};
+func:f_arg2_t = int64(int64:n) never fails {
+    H_arg2_t:h0 = raw mkh_arg2_t();
+    pass raw g_arg2_t(@h0, n);
+};
+// --- blk_t
+struct:H_blk_t = { List<int64>:l; string:s; int64:k; };
+func:mkh_blk_t = H_blk_t() never fails { pass H_blk_t{ l: raw mk(), s: raw mks(), k: 1i64 }; };
+func:growh_blk_t = int64(H_blk_t->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+impl:H_blk_t:Tp = { func:tpm = int64->(H_blk_t->:self) never fails { pass @((<-self).l[0i64]); }; };
+func:g_blk_t = int64(H_blk_t->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64:v = 0i64;
+    int64->:e = @one;
+    H_blk_t->:hd = hp;
+    { H_blk_t:h1 = raw mkh_blk_t(); e = raw Tp.tpm(@h1); } v = <-(e);
+    pass v + 6i64;
+};
+func:f_blk_t = int64(int64:n) never fails {
+    H_blk_t:h0 = raw mkh_blk_t();
+    pass raw g_blk_t(@h0, n);
+};
+// --- byval_t
+struct:H_byval_t = { List<int64>:l; string:s; int64:k; };
+func:mkh_byval_t = H_byval_t() never fails { pass H_byval_t{ l: raw mk(), s: raw mks(), k: 1i64 }; };
+func:growh_byval_t = int64(H_byval_t->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_byval_t = int64->(H_byval_t->:q) never fails { pass @((<-q).l[0i64]); };
+trait:Tv = { func:tv = int64->(Self:self) never fails; };
+impl:PE:Tv = { func:tv = int64->(PE:self) never fails { pass self.p; }; };
+func:g_byval_t = int64(H_byval_t->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64:v = 0i64;
+    int64->:e = @one;
+    H_byval_t->:hd = hp;
+    H_byval_t:h1 = raw mkh_byval_t(); e = raw Tv.tv(PE{ p: raw fp_byval_t(@h1), z: 0i64 }); discard(raw growh_byval_t(@h1)); v = <-(e);
+    pass v + 6i64;
+};
+func:f_byval_t = int64(int64:n) never fails {
+    H_byval_t:h0 = raw mkh_byval_t();
+    pass raw g_byval_t(@h0, n);
+};
+// --- cpick_t
+struct:H_cpick_t = { List<int64>:l; string:s; int64:k; };
+enum:EH_cpick_t = { A(H_cpick_t); Z; };
+func:mkh_cpick_t = H_cpick_t() never fails { pass H_cpick_t{ l: raw mk(), s: raw mks(), k: 1i64 }; };
+func:growh_cpick_t = int64(H_cpick_t->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+impl:H_cpick_t:Tp = { func:tpm = int64->(H_cpick_t->:self) never fails { pass @((<-self).l[0i64]); }; };
+func:g_cpick_t = int64(H_cpick_t->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64:v = 0i64;
+    int64->:e = @one;
+    H_cpick_t->:hd = hp;
+    { EH_cpick_t:eh = EH_cpick_t.A(raw mkh_cpick_t()); pick (move(eh)) { (EH_cpick_t.A(b)) { e = raw Tp.tpm(@b); }, (EH_cpick_t.Z) { } } } v = <-(e);
+    pass v + 6i64;
+};
+func:f_cpick_t = int64(int64:n) never fails {
+    H_cpick_t:h0 = raw mkh_cpick_t();
+    pass raw g_cpick_t(@h0, n);
+};
+// --- cpickg_t
+struct:H_cpickg_t = { List<int64>:l; string:s; int64:k; };
+enum:EH_cpickg_t = { A(H_cpickg_t); Z; };
+func:mkh_cpickg_t = H_cpickg_t() never fails { pass H_cpickg_t{ l: raw mk(), s: raw mks(), k: 1i64 }; };
+func:growh_cpickg_t = int64(H_cpickg_t->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+impl:H_cpickg_t:Tp = { func:tpm = int64->(H_cpickg_t->:self) never fails { pass @((<-self).l[0i64]); }; };
+func:g_cpickg_t = int64(H_cpickg_t->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64:v = 0i64;
+    int64->:e = @one;
+    H_cpickg_t->:hd = hp;
+    { EH_cpickg_t:eh = EH_cpickg_t.A(raw mkh_cpickg_t()); pick (move(eh)) { (EH_cpickg_t.A(b)) { e = raw Tp.tpm(@b); discard(raw growh_cpickg_t(@b)); v = <-(e); }, (EH_cpickg_t.Z) { } } }
+    pass v + 6i64;
+};
+func:f_cpickg_t = int64(int64:n) never fails {
+    H_cpickg_t:h0 = raw mkh_cpickg_t();
+    pass raw g_cpickg_t(@h0, n);
+};
+// --- forp_t
+struct:H_forp_t = { List<int64>:l; string:s; int64:k; };
+func:mkh_forp_t = H_forp_t() never fails { pass H_forp_t{ l: raw mk(), s: raw mks(), k: 1i64 }; };
+func:growh_forp_t = int64(H_forp_t->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+impl:H_forp_t:Tp = { func:tpm = int64->(H_forp_t->:self) never fails { pass @((<-self).l[0i64]); }; };
+func:g_forp_t = int64(H_forp_t->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64:v = 0i64;
+    int64->:e = @one;
+    H_forp_t->:hd = hp;
+    H_forp_t->[2]:ps = [hp, hp]; for (H_forp_t->:k in ps) { e = raw Tp.tpm(k); } discard(raw growh_forp_t(hp)); v = <-(e);
+    pass v + 6i64;
+};
+func:f_forp_t = int64(int64:n) never fails {
+    H_forp_t:h0 = raw mkh_forp_t();
+    pass raw g_forp_t(@h0, n);
+};
+// --- gen_t
+struct:H_gen_t = { List<int64>:l; string:s; int64:k; };
+func:mkh_gen_t = H_gen_t() never fails { pass H_gen_t{ l: raw mk(), s: raw mks(), k: 1i64 }; };
+func:growh_gen_t = int64(H_gen_t->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+impl:H_gen_t:Tp = { func:tpm = int64->(H_gen_t->:self) never fails { pass @((<-self).l[0i64]); }; };
+func:gt<T: Tp> = int64->(T->:t) never fails { pass raw Tp.tpm(t); };
+func:g_gen_t = int64(H_gen_t->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64:v = 0i64;
+    int64->:e = @one;
+    H_gen_t->:hd = hp;
+    H_gen_t:h1 = raw mkh_gen_t(); e = raw gt::<H_gen_t>(@h1); discard(raw growh_gen_t(@h1)); v = <-(e);
+    pass v + 6i64;
+};
+func:f_gen_t = int64(int64:n) never fails {
+    H_gen_t:h0 = raw mkh_gen_t();
+    pass raw g_gen_t(@h0, n);
+};
+// --- geng_t
+struct:H_geng_t = { List<int64>:l; string:s; int64:k; };
+func:mkh_geng_t = H_geng_t() never fails { pass H_geng_t{ l: raw mk(), s: raw mks(), k: 1i64 }; };
+func:fp_geng_t = int64->(H_geng_t->:q) never fails { pass @((<-q).l[0i64]); };
+impl:H_geng_t:Tg = { func:tg = int64(H_geng_t->:self) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@self.l, 1i64); } pass 7i64; }; };
+func:gtg<T: Tg> = int64(T->:t) never fails { pass raw Tg.tg(t); };
+func:g_geng_t = int64(H_geng_t->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64:v = 0i64;
+    int64->:e = @one;
+    H_geng_t->:hd = hp;
+    H_geng_t:h1 = raw mkh_geng_t(); e = raw fp_geng_t(@h1); discard(raw gtg::<H_geng_t>(@h1)); v = <-(e);
+    pass v + 6i64;
+};
+func:f_geng_t = int64(int64:n) never fails {
+    H_geng_t:h0 = raw mkh_geng_t();
+    pass raw g_geng_t(@h0, n);
+};
+// --- genk_t
+struct:H_genk_t = { List<int64>:l; string:s; int64:k; };
+func:mkh_genk_t = H_genk_t() never fails { pass H_genk_t{ l: raw mk(), s: raw mks(), k: 1i64 }; };
+func:fp_genk_t = int64->(H_genk_t->:q) never fails { pass @((<-q).l[0i64]); };
+trait:Tk_genk_t = { func:tkeep = NIL(Self->:self, H_genk_t->->:o) never fails; };
+impl:H_genk_t:Tk_genk_t = { func:tkeep = NIL(H_genk_t->:self, H_genk_t->->:o) never fails { <-o = self; pass NIL; }; };
+func:gtk_genk_t<T: Tk_genk_t> = NIL(T->:t, H_genk_t->->:o) never fails { drop Tk_genk_t.tkeep(t, o); pass NIL; };
+func:g_genk_t = int64(H_genk_t->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64:v = 0i64;
+    int64->:e = @one;
+    H_genk_t->:hd = hp;
+    { H_genk_t:h1 = raw mkh_genk_t(); drop gtk_genk_t::<H_genk_t>(@h1, @hd); } v = <-(raw fp_genk_t(hd));
+    pass v + 6i64;
+};
+func:f_genk_t = int64(int64:n) never fails {
+    H_genk_t:h0 = raw mkh_genk_t();
+    pass raw g_genk_t(@h0, n);
+};
+// --- grow_t
+struct:H_grow_t = { List<int64>:l; string:s; int64:k; };
+func:mkh_grow_t = H_grow_t() never fails { pass H_grow_t{ l: raw mk(), s: raw mks(), k: 1i64 }; };
+func:growh_grow_t = int64(H_grow_t->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+impl:H_grow_t:Tp = { func:tpm = int64->(H_grow_t->:self) never fails { pass @((<-self).l[0i64]); }; };
+func:g_grow_t = int64(H_grow_t->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64:v = 0i64;
+    int64->:e = @one;
+    H_grow_t->:hd = hp;
+    H_grow_t:h1 = raw mkh_grow_t(); e = raw Tp.tpm(@h1); discard(raw growh_grow_t(@h1)); v = <-(e);
+    pass v + 6i64;
+};
+func:f_grow_t = int64(int64:n) never fails {
+    H_grow_t:h0 = raw mkh_grow_t();
+    pass raw g_grow_t(@h0, n);
+};
+// --- parm_t
+struct:H_parm_t = { List<int64>:l; string:s; int64:k; };
+func:mkh_parm_t = H_parm_t() never fails { pass H_parm_t{ l: raw mk(), s: raw mks(), k: 1i64 }; };
+func:growh_parm_t = int64(H_parm_t->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+impl:H_parm_t:Tp = { func:tpm = int64->(H_parm_t->:self) never fails { pass @((<-self).l[0i64]); }; };
+func:g_parm_t = int64(H_parm_t->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64:v = 0i64;
+    int64->:e = @one;
+    H_parm_t->:hd = hp;
+    e = raw Tp.tpm(hp); discard(raw growh_parm_t(hp)); v = <-(e);
+    pass v + 6i64;
+};
+func:f_parm_t = int64(int64:n) never fails {
+    H_parm_t:h0 = raw mkh_parm_t();
+    pass raw g_parm_t(@h0, n);
+};
+// --- paw_t
+struct:H_paw_t = { List<int64>:l; string:s; int64:k; };
+func:mkh_paw_t = H_paw_t() never fails { pass H_paw_t{ l: raw mk(), s: raw mks(), k: 1i64 }; };
+func:growh_paw_t = int64(H_paw_t->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+trait:Wa = { async func:wp = int64->(Self->:self); };
+impl:H_paw_t:Wa = { async func:wp = int64->(H_paw_t->:self) { pass @((<-self).l[0i64]); }; };
+async func:fwp_paw_t = int64->(H_paw_t->:q) { pass @((<-q).l[0i64]); };
+async func:ga_paw_t = int64(int64:n) { H_paw_t:h1 = raw mkh_paw_t(); int64->:e = await Wa.wp(@h1) ?! E5; discard(raw growh_paw_t(@h1)); pass <-(e); };
+// --- ret_t
+struct:H_ret_t = { List<int64>:l; string:s; int64:k; };
+func:mkh_ret_t = H_ret_t() never fails { pass H_ret_t{ l: raw mk(), s: raw mks(), k: 1i64 }; };
+impl:H_ret_t:Tp = { func:tpm = int64->(H_ret_t->:self) never fails { pass @((<-self).l[0i64]); }; };
+func:rq_ret_t = int64->(int64:n) never fails { H_ret_t:h1 = raw mkh_ret_t(); pass raw Tp.tpm(@h1); };
+func:g_ret_t = int64(H_ret_t->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64:v = 0i64;
+    int64->:e = @one;
+    H_ret_t->:hd = hp;
+    e = raw rq_ret_t(n); v = <-(e);
+    pass v + 6i64;
+};
+func:f_ret_t = int64(int64:n) never fails {
+    H_ret_t:h0 = raw mkh_ret_t();
+    pass raw g_ret_t(@h0, n);
+};
+// --- rgq_cpick_held_o_q
+struct:H_rgq_cpick_held_o_q = { List<int64>:l; int64:k; K:kk; };
+func:mkh_rgq_cpick_held_o_q = H_rgq_cpick_held_o_q() never fails { pass H_rgq_cpick_held_o_q{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
+func:growh_rgq_cpick_held_o_q = int64(H_rgq_cpick_held_o_q->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_rgq_cpick_held_o_q = int64->(H_rgq_cpick_held_o_q->:q) never fails { pass @((<-q).l[0i64]); };
+func:mkpa_rgq_cpick_held_o_q = int64->[2](H_rgq_cpick_held_o_q->:q) never fails { int64->[2]:a = [raw fp_rgq_cpick_held_o_q(q), raw fp_rgq_cpick_held_o_q(q)]; pass a; };
+func:mkpe2_rgq_cpick_held_o_q = PE[2](H_rgq_cpick_held_o_q->:q) never fails { PE[2]:a = [PE{ p: raw fp_rgq_cpick_held_o_q(q), z: 0i64 }, PE{ p: raw fp_rgq_cpick_held_o_q(q), z: 1i64 }]; pass a; };
+func:mkpaa_rgq_cpick_held_o_q = int64->[2][2](H_rgq_cpick_held_o_q->:q) never fails { int64->[2][2]:a = [raw mkpa_rgq_cpick_held_o_q(q), raw mkpa_rgq_cpick_held_o_q(q)]; pass a; };
+func:mkek_rgq_cpick_held_o_q = EK(H_rgq_cpick_held_o_q->:q) never fails { pass EK.A(raw fp_rgq_cpick_held_o_q(q)); };
+func:mkep_rgq_cpick_held_o_q = EP(H_rgq_cpick_held_o_q->:q) never fails { pass EP.A(PE{ p: raw fp_rgq_cpick_held_o_q(q), z: 0i64 }); };
+func:mkea_rgq_cpick_held_o_q = EA(H_rgq_cpick_held_o_q->:q) never fails { pass EA.A(raw mkpa_rgq_cpick_held_o_q(q)); };
+func:mkeo_rgq_cpick_held_o_q = EOK(H_rgq_cpick_held_o_q->:q) never fails { pass EOK.A(PO{ p: raw fp_rgq_cpick_held_o_q(q), own: raw mk() }); };
+func:g_rgq_cpick_held_o_q = int64(H_rgq_cpick_held_o_q->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64->:e = @one;
+    {
+        EOK:src = raw mkeo_rgq_cpick_held_o_q(hp);
+        pick (move(src)) { (EOK.A(b)) { e = raw Tq.tqp(@b); }, (EOK.Z) { e = @one; } }
+    }
+    discard(raw growh_rgq_cpick_held_o_q(hp));
+    pass (<-(e)) + 6i64;
+};
+func:f_rgq_cpick_held_o_q = int64(int64:n) never fails {
+    H_rgq_cpick_held_o_q:h0 = raw mkh_rgq_cpick_held_o_q();
+    pass raw g_rgq_cpick_held_o_q(@h0, n);
+};
+// --- rgq_cpick_held_o_qk
+struct:H_rgq_cpick_held_o_qk = { List<int64>:l; int64:k; K:kk; };
+func:mkh_rgq_cpick_held_o_qk = H_rgq_cpick_held_o_qk() never fails { pass H_rgq_cpick_held_o_qk{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
+func:growh_rgq_cpick_held_o_qk = int64(H_rgq_cpick_held_o_qk->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_rgq_cpick_held_o_qk = int64->(H_rgq_cpick_held_o_qk->:q) never fails { pass @((<-q).l[0i64]); };
+func:mkpa_rgq_cpick_held_o_qk = int64->[2](H_rgq_cpick_held_o_qk->:q) never fails { int64->[2]:a = [raw fp_rgq_cpick_held_o_qk(q), raw fp_rgq_cpick_held_o_qk(q)]; pass a; };
+func:mkpe2_rgq_cpick_held_o_qk = PE[2](H_rgq_cpick_held_o_qk->:q) never fails { PE[2]:a = [PE{ p: raw fp_rgq_cpick_held_o_qk(q), z: 0i64 }, PE{ p: raw fp_rgq_cpick_held_o_qk(q), z: 1i64 }]; pass a; };
+func:mkpaa_rgq_cpick_held_o_qk = int64->[2][2](H_rgq_cpick_held_o_qk->:q) never fails { int64->[2][2]:a = [raw mkpa_rgq_cpick_held_o_qk(q), raw mkpa_rgq_cpick_held_o_qk(q)]; pass a; };
+func:mkek_rgq_cpick_held_o_qk = EK(H_rgq_cpick_held_o_qk->:q) never fails { pass EK.A(raw fp_rgq_cpick_held_o_qk(q)); };
+func:mkep_rgq_cpick_held_o_qk = EP(H_rgq_cpick_held_o_qk->:q) never fails { pass EP.A(PE{ p: raw fp_rgq_cpick_held_o_qk(q), z: 0i64 }); };
+func:mkea_rgq_cpick_held_o_qk = EA(H_rgq_cpick_held_o_qk->:q) never fails { pass EA.A(raw mkpa_rgq_cpick_held_o_qk(q)); };
+func:mkeo_rgq_cpick_held_o_qk = EOK(H_rgq_cpick_held_o_qk->:q) never fails { pass EOK.A(PO{ p: raw fp_rgq_cpick_held_o_qk(q), own: raw mk() }); };
+func:g_rgq_cpick_held_o_qk = int64(H_rgq_cpick_held_o_qk->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64->:e = @one;
+    {
+        EOK:src = raw mkeo_rgq_cpick_held_o_qk(hp);
+        pick (move(src)) { (EOK.A(b)) { PO->:k = @b; e = raw Tq.tqp(k); }, (EOK.Z) { e = @one; } }
+    }
+    discard(raw growh_rgq_cpick_held_o_qk(hp));
+    pass (<-(e)) + 6i64;
+};
+func:f_rgq_cpick_held_o_qk = int64(int64:n) never fails {
+    H_rgq_cpick_held_o_qk:h0 = raw mkh_rgq_cpick_held_o_qk();
+    pass raw g_rgq_cpick_held_o_qk(@h0, n);
+};
+// --- rgq_cpick_held_o_s
+struct:H_rgq_cpick_held_o_s = { List<int64>:l; int64:k; K:kk; };
+func:mkh_rgq_cpick_held_o_s = H_rgq_cpick_held_o_s() never fails { pass H_rgq_cpick_held_o_s{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
+func:growh_rgq_cpick_held_o_s = int64(H_rgq_cpick_held_o_s->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_rgq_cpick_held_o_s = int64->(H_rgq_cpick_held_o_s->:q) never fails { pass @((<-q).l[0i64]); };
+func:mkpa_rgq_cpick_held_o_s = int64->[2](H_rgq_cpick_held_o_s->:q) never fails { int64->[2]:a = [raw fp_rgq_cpick_held_o_s(q), raw fp_rgq_cpick_held_o_s(q)]; pass a; };
+func:mkpe2_rgq_cpick_held_o_s = PE[2](H_rgq_cpick_held_o_s->:q) never fails { PE[2]:a = [PE{ p: raw fp_rgq_cpick_held_o_s(q), z: 0i64 }, PE{ p: raw fp_rgq_cpick_held_o_s(q), z: 1i64 }]; pass a; };
+func:mkpaa_rgq_cpick_held_o_s = int64->[2][2](H_rgq_cpick_held_o_s->:q) never fails { int64->[2][2]:a = [raw mkpa_rgq_cpick_held_o_s(q), raw mkpa_rgq_cpick_held_o_s(q)]; pass a; };
+func:mkek_rgq_cpick_held_o_s = EK(H_rgq_cpick_held_o_s->:q) never fails { pass EK.A(raw fp_rgq_cpick_held_o_s(q)); };
+func:mkep_rgq_cpick_held_o_s = EP(H_rgq_cpick_held_o_s->:q) never fails { pass EP.A(PE{ p: raw fp_rgq_cpick_held_o_s(q), z: 0i64 }); };
+func:mkea_rgq_cpick_held_o_s = EA(H_rgq_cpick_held_o_s->:q) never fails { pass EA.A(raw mkpa_rgq_cpick_held_o_s(q)); };
+func:mkeo_rgq_cpick_held_o_s = EOK(H_rgq_cpick_held_o_s->:q) never fails { pass EOK.A(PO{ p: raw fp_rgq_cpick_held_o_s(q), own: raw mk() }); };
+func:g_rgq_cpick_held_o_s = int64(H_rgq_cpick_held_o_s->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64->:e = @one;
+    {
+        EOK:src = raw mkeo_rgq_cpick_held_o_s(hp);
+        pick (move(src)) { (EOK.A(b)) { drop Tks.tks(@b, @e); }, (EOK.Z) { e = @one; } }
+    }
+    discard(raw growh_rgq_cpick_held_o_s(hp));
+    pass (<-(e)) + 6i64;
+};
+func:f_rgq_cpick_held_o_s = int64(int64:n) never fails {
+    H_rgq_cpick_held_o_s:h0 = raw mkh_rgq_cpick_held_o_s();
+    pass raw g_rgq_cpick_held_o_s(@h0, n);
+};
+// --- rgq_for_held_o_q
+struct:H_rgq_for_held_o_q = { List<int64>:l; int64:k; K:kk; };
+func:mkh_rgq_for_held_o_q = H_rgq_for_held_o_q() never fails { pass H_rgq_for_held_o_q{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
+func:growh_rgq_for_held_o_q = int64(H_rgq_for_held_o_q->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_rgq_for_held_o_q = int64->(H_rgq_for_held_o_q->:q) never fails { pass @((<-q).l[0i64]); };
+func:mkpa_rgq_for_held_o_q = int64->[2](H_rgq_for_held_o_q->:q) never fails { int64->[2]:a = [raw fp_rgq_for_held_o_q(q), raw fp_rgq_for_held_o_q(q)]; pass a; };
+func:mkpe2_rgq_for_held_o_q = PE[2](H_rgq_for_held_o_q->:q) never fails { PE[2]:a = [PE{ p: raw fp_rgq_for_held_o_q(q), z: 0i64 }, PE{ p: raw fp_rgq_for_held_o_q(q), z: 1i64 }]; pass a; };
+func:mkpaa_rgq_for_held_o_q = int64->[2][2](H_rgq_for_held_o_q->:q) never fails { int64->[2][2]:a = [raw mkpa_rgq_for_held_o_q(q), raw mkpa_rgq_for_held_o_q(q)]; pass a; };
+func:mkek_rgq_for_held_o_q = EK(H_rgq_for_held_o_q->:q) never fails { pass EK.A(raw fp_rgq_for_held_o_q(q)); };
+func:mkep_rgq_for_held_o_q = EP(H_rgq_for_held_o_q->:q) never fails { pass EP.A(PE{ p: raw fp_rgq_for_held_o_q(q), z: 0i64 }); };
+func:mkea_rgq_for_held_o_q = EA(H_rgq_for_held_o_q->:q) never fails { pass EA.A(raw mkpa_rgq_for_held_o_q(q)); };
+func:mkeo_rgq_for_held_o_q = EOK(H_rgq_for_held_o_q->:q) never fails { pass EOK.A(PO{ p: raw fp_rgq_for_held_o_q(q), own: raw mk() }); };
+func:g_rgq_for_held_o_q = int64(H_rgq_for_held_o_q->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64->:e = @one;
+    {
+        PE[2]:src = raw mkpe2_rgq_for_held_o_q(hp);
+        for (PE:b in src) { e = raw Tq.tqp(@b); }
+    }
+    discard(raw growh_rgq_for_held_o_q(hp));
+    pass (<-(e)) + 6i64;
+};
+func:f_rgq_for_held_o_q = int64(int64:n) never fails {
+    H_rgq_for_held_o_q:h0 = raw mkh_rgq_for_held_o_q();
+    pass raw g_rgq_for_held_o_q(@h0, n);
+};
+// --- rgq_for_held_o_qk
+struct:H_rgq_for_held_o_qk = { List<int64>:l; int64:k; K:kk; };
+func:mkh_rgq_for_held_o_qk = H_rgq_for_held_o_qk() never fails { pass H_rgq_for_held_o_qk{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
+func:growh_rgq_for_held_o_qk = int64(H_rgq_for_held_o_qk->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_rgq_for_held_o_qk = int64->(H_rgq_for_held_o_qk->:q) never fails { pass @((<-q).l[0i64]); };
+func:mkpa_rgq_for_held_o_qk = int64->[2](H_rgq_for_held_o_qk->:q) never fails { int64->[2]:a = [raw fp_rgq_for_held_o_qk(q), raw fp_rgq_for_held_o_qk(q)]; pass a; };
+func:mkpe2_rgq_for_held_o_qk = PE[2](H_rgq_for_held_o_qk->:q) never fails { PE[2]:a = [PE{ p: raw fp_rgq_for_held_o_qk(q), z: 0i64 }, PE{ p: raw fp_rgq_for_held_o_qk(q), z: 1i64 }]; pass a; };
+func:mkpaa_rgq_for_held_o_qk = int64->[2][2](H_rgq_for_held_o_qk->:q) never fails { int64->[2][2]:a = [raw mkpa_rgq_for_held_o_qk(q), raw mkpa_rgq_for_held_o_qk(q)]; pass a; };
+func:mkek_rgq_for_held_o_qk = EK(H_rgq_for_held_o_qk->:q) never fails { pass EK.A(raw fp_rgq_for_held_o_qk(q)); };
+func:mkep_rgq_for_held_o_qk = EP(H_rgq_for_held_o_qk->:q) never fails { pass EP.A(PE{ p: raw fp_rgq_for_held_o_qk(q), z: 0i64 }); };
+func:mkea_rgq_for_held_o_qk = EA(H_rgq_for_held_o_qk->:q) never fails { pass EA.A(raw mkpa_rgq_for_held_o_qk(q)); };
+func:mkeo_rgq_for_held_o_qk = EOK(H_rgq_for_held_o_qk->:q) never fails { pass EOK.A(PO{ p: raw fp_rgq_for_held_o_qk(q), own: raw mk() }); };
+func:g_rgq_for_held_o_qk = int64(H_rgq_for_held_o_qk->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64->:e = @one;
+    {
+        PE[2]:src = raw mkpe2_rgq_for_held_o_qk(hp);
+        for (PE:b in src) { PE->:k = @b; e = raw Tq.tqp(k); }
+    }
+    discard(raw growh_rgq_for_held_o_qk(hp));
+    pass (<-(e)) + 6i64;
+};
+func:f_rgq_for_held_o_qk = int64(int64:n) never fails {
+    H_rgq_for_held_o_qk:h0 = raw mkh_rgq_for_held_o_qk();
+    pass raw g_rgq_for_held_o_qk(@h0, n);
+};
+// --- rgq_for_held_o_s
+struct:H_rgq_for_held_o_s = { List<int64>:l; int64:k; K:kk; };
+func:mkh_rgq_for_held_o_s = H_rgq_for_held_o_s() never fails { pass H_rgq_for_held_o_s{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
+func:growh_rgq_for_held_o_s = int64(H_rgq_for_held_o_s->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_rgq_for_held_o_s = int64->(H_rgq_for_held_o_s->:q) never fails { pass @((<-q).l[0i64]); };
+func:mkpa_rgq_for_held_o_s = int64->[2](H_rgq_for_held_o_s->:q) never fails { int64->[2]:a = [raw fp_rgq_for_held_o_s(q), raw fp_rgq_for_held_o_s(q)]; pass a; };
+func:mkpe2_rgq_for_held_o_s = PE[2](H_rgq_for_held_o_s->:q) never fails { PE[2]:a = [PE{ p: raw fp_rgq_for_held_o_s(q), z: 0i64 }, PE{ p: raw fp_rgq_for_held_o_s(q), z: 1i64 }]; pass a; };
+func:mkpaa_rgq_for_held_o_s = int64->[2][2](H_rgq_for_held_o_s->:q) never fails { int64->[2][2]:a = [raw mkpa_rgq_for_held_o_s(q), raw mkpa_rgq_for_held_o_s(q)]; pass a; };
+func:mkek_rgq_for_held_o_s = EK(H_rgq_for_held_o_s->:q) never fails { pass EK.A(raw fp_rgq_for_held_o_s(q)); };
+func:mkep_rgq_for_held_o_s = EP(H_rgq_for_held_o_s->:q) never fails { pass EP.A(PE{ p: raw fp_rgq_for_held_o_s(q), z: 0i64 }); };
+func:mkea_rgq_for_held_o_s = EA(H_rgq_for_held_o_s->:q) never fails { pass EA.A(raw mkpa_rgq_for_held_o_s(q)); };
+func:mkeo_rgq_for_held_o_s = EOK(H_rgq_for_held_o_s->:q) never fails { pass EOK.A(PO{ p: raw fp_rgq_for_held_o_s(q), own: raw mk() }); };
+func:g_rgq_for_held_o_s = int64(H_rgq_for_held_o_s->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64->:e = @one;
+    {
+        PE[2]:src = raw mkpe2_rgq_for_held_o_s(hp);
+        for (PE:b in src) { drop Tks.tks(@b, @e); }
+    }
+    discard(raw growh_rgq_for_held_o_s(hp));
+    pass (<-(e)) + 6i64;
+};
+func:f_rgq_for_held_o_s = int64(int64:n) never fails {
+    H_rgq_for_held_o_s:h0 = raw mkh_rgq_for_held_o_s();
+    pass raw g_rgq_for_held_o_s(@h0, n);
+};
+// --- rgq_for_param_o_q
+struct:H_rgq_for_param_o_q = { List<int64>:l; int64:k; K:kk; };
+func:mkh_rgq_for_param_o_q = H_rgq_for_param_o_q() never fails { pass H_rgq_for_param_o_q{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
+func:growh_rgq_for_param_o_q = int64(H_rgq_for_param_o_q->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_rgq_for_param_o_q = int64->(H_rgq_for_param_o_q->:q) never fails { pass @((<-q).l[0i64]); };
+func:mkpa_rgq_for_param_o_q = int64->[2](H_rgq_for_param_o_q->:q) never fails { int64->[2]:a = [raw fp_rgq_for_param_o_q(q), raw fp_rgq_for_param_o_q(q)]; pass a; };
+func:mkpe2_rgq_for_param_o_q = PE[2](H_rgq_for_param_o_q->:q) never fails { PE[2]:a = [PE{ p: raw fp_rgq_for_param_o_q(q), z: 0i64 }, PE{ p: raw fp_rgq_for_param_o_q(q), z: 1i64 }]; pass a; };
+func:mkpaa_rgq_for_param_o_q = int64->[2][2](H_rgq_for_param_o_q->:q) never fails { int64->[2][2]:a = [raw mkpa_rgq_for_param_o_q(q), raw mkpa_rgq_for_param_o_q(q)]; pass a; };
+func:mkek_rgq_for_param_o_q = EK(H_rgq_for_param_o_q->:q) never fails { pass EK.A(raw fp_rgq_for_param_o_q(q)); };
+func:mkep_rgq_for_param_o_q = EP(H_rgq_for_param_o_q->:q) never fails { pass EP.A(PE{ p: raw fp_rgq_for_param_o_q(q), z: 0i64 }); };
+func:mkea_rgq_for_param_o_q = EA(H_rgq_for_param_o_q->:q) never fails { pass EA.A(raw mkpa_rgq_for_param_o_q(q)); };
+func:mkeo_rgq_for_param_o_q = EOK(H_rgq_for_param_o_q->:q) never fails { pass EOK.A(PO{ p: raw fp_rgq_for_param_o_q(q), own: raw mk() }); };
+func:g_rgq_for_param_o_q = int64->(PE[2]:src, int64->:dflt, int64:n) never fails {
+    int64->:e = dflt;
+    for (PE:b in src) { e = raw Tq.tqp(@b); }
+    pass e;
+};
+func:f_rgq_for_param_o_q = int64(int64:n) never fails {
+    int64:one = 1i64;
+    H_rgq_for_param_o_q:h0 = raw mkh_rgq_for_param_o_q();
+    int64->:e = raw g_rgq_for_param_o_q(raw mkpe2_rgq_for_param_o_q(@h0), @one, n);
+    discard(raw growh_rgq_for_param_o_q(@h0));
+    pass (<-(e)) + 6i64;
+};
+// --- rgq_for_param_o_qk
+struct:H_rgq_for_param_o_qk = { List<int64>:l; int64:k; K:kk; };
+func:mkh_rgq_for_param_o_qk = H_rgq_for_param_o_qk() never fails { pass H_rgq_for_param_o_qk{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
+func:growh_rgq_for_param_o_qk = int64(H_rgq_for_param_o_qk->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_rgq_for_param_o_qk = int64->(H_rgq_for_param_o_qk->:q) never fails { pass @((<-q).l[0i64]); };
+func:mkpa_rgq_for_param_o_qk = int64->[2](H_rgq_for_param_o_qk->:q) never fails { int64->[2]:a = [raw fp_rgq_for_param_o_qk(q), raw fp_rgq_for_param_o_qk(q)]; pass a; };
+func:mkpe2_rgq_for_param_o_qk = PE[2](H_rgq_for_param_o_qk->:q) never fails { PE[2]:a = [PE{ p: raw fp_rgq_for_param_o_qk(q), z: 0i64 }, PE{ p: raw fp_rgq_for_param_o_qk(q), z: 1i64 }]; pass a; };
+func:mkpaa_rgq_for_param_o_qk = int64->[2][2](H_rgq_for_param_o_qk->:q) never fails { int64->[2][2]:a = [raw mkpa_rgq_for_param_o_qk(q), raw mkpa_rgq_for_param_o_qk(q)]; pass a; };
+func:mkek_rgq_for_param_o_qk = EK(H_rgq_for_param_o_qk->:q) never fails { pass EK.A(raw fp_rgq_for_param_o_qk(q)); };
+func:mkep_rgq_for_param_o_qk = EP(H_rgq_for_param_o_qk->:q) never fails { pass EP.A(PE{ p: raw fp_rgq_for_param_o_qk(q), z: 0i64 }); };
+func:mkea_rgq_for_param_o_qk = EA(H_rgq_for_param_o_qk->:q) never fails { pass EA.A(raw mkpa_rgq_for_param_o_qk(q)); };
+func:mkeo_rgq_for_param_o_qk = EOK(H_rgq_for_param_o_qk->:q) never fails { pass EOK.A(PO{ p: raw fp_rgq_for_param_o_qk(q), own: raw mk() }); };
+func:g_rgq_for_param_o_qk = int64->(PE[2]:src, int64->:dflt, int64:n) never fails {
+    int64->:e = dflt;
+    for (PE:b in src) { PE->:k = @b; e = raw Tq.tqp(k); }
+    pass e;
+};
+func:f_rgq_for_param_o_qk = int64(int64:n) never fails {
+    int64:one = 1i64;
+    H_rgq_for_param_o_qk:h0 = raw mkh_rgq_for_param_o_qk();
+    int64->:e = raw g_rgq_for_param_o_qk(raw mkpe2_rgq_for_param_o_qk(@h0), @one, n);
+    discard(raw growh_rgq_for_param_o_qk(@h0));
+    pass (<-(e)) + 6i64;
+};
+// --- rgq_for_param_o_s
+struct:H_rgq_for_param_o_s = { List<int64>:l; int64:k; K:kk; };
+func:mkh_rgq_for_param_o_s = H_rgq_for_param_o_s() never fails { pass H_rgq_for_param_o_s{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
+func:growh_rgq_for_param_o_s = int64(H_rgq_for_param_o_s->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_rgq_for_param_o_s = int64->(H_rgq_for_param_o_s->:q) never fails { pass @((<-q).l[0i64]); };
+func:mkpa_rgq_for_param_o_s = int64->[2](H_rgq_for_param_o_s->:q) never fails { int64->[2]:a = [raw fp_rgq_for_param_o_s(q), raw fp_rgq_for_param_o_s(q)]; pass a; };
+func:mkpe2_rgq_for_param_o_s = PE[2](H_rgq_for_param_o_s->:q) never fails { PE[2]:a = [PE{ p: raw fp_rgq_for_param_o_s(q), z: 0i64 }, PE{ p: raw fp_rgq_for_param_o_s(q), z: 1i64 }]; pass a; };
+func:mkpaa_rgq_for_param_o_s = int64->[2][2](H_rgq_for_param_o_s->:q) never fails { int64->[2][2]:a = [raw mkpa_rgq_for_param_o_s(q), raw mkpa_rgq_for_param_o_s(q)]; pass a; };
+func:mkek_rgq_for_param_o_s = EK(H_rgq_for_param_o_s->:q) never fails { pass EK.A(raw fp_rgq_for_param_o_s(q)); };
+func:mkep_rgq_for_param_o_s = EP(H_rgq_for_param_o_s->:q) never fails { pass EP.A(PE{ p: raw fp_rgq_for_param_o_s(q), z: 0i64 }); };
+func:mkea_rgq_for_param_o_s = EA(H_rgq_for_param_o_s->:q) never fails { pass EA.A(raw mkpa_rgq_for_param_o_s(q)); };
+func:mkeo_rgq_for_param_o_s = EOK(H_rgq_for_param_o_s->:q) never fails { pass EOK.A(PO{ p: raw fp_rgq_for_param_o_s(q), own: raw mk() }); };
+func:g_rgq_for_param_o_s = int64->(PE[2]:src, int64->:dflt, int64:n) never fails {
+    int64->:e = dflt;
+    for (PE:b in src) { drop Tks.tks(@b, @e); }
+    pass e;
+};
+func:f_rgq_for_param_o_s = int64(int64:n) never fails {
+    int64:one = 1i64;
+    H_rgq_for_param_o_s:h0 = raw mkh_rgq_for_param_o_s();
+    int64->:e = raw g_rgq_for_param_o_s(raw mkpe2_rgq_for_param_o_s(@h0), @one, n);
+    discard(raw growh_rgq_for_param_o_s(@h0));
+    pass (<-(e)) + 6i64;
+};
+// --- store_t
+struct:H_store_t = { List<int64>:l; string:s; int64:k; };
+func:mkh_store_t = H_store_t() never fails { pass H_store_t{ l: raw mk(), s: raw mks(), k: 1i64 }; };
+func:fp_store_t = int64->(H_store_t->:q) never fails { pass @((<-q).l[0i64]); };
+trait:Tk_store_t = { func:tkeep = NIL(Self->:self, H_store_t->->:o) never fails; };
+impl:H_store_t:Tk_store_t = { func:tkeep = NIL(H_store_t->:self, H_store_t->->:o) never fails { <-o = self; pass NIL; }; };
+func:g_store_t = int64(H_store_t->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64:v = 0i64;
+    int64->:e = @one;
+    H_store_t->:hd = hp;
+    { H_store_t:h1 = raw mkh_store_t(); drop Tk_store_t.tkeep(@h1, @hd); } v = <-(raw fp_store_t(hd));
+    pass v + 6i64;
+};
+func:f_store_t = int64(int64:n) never fails {
+    H_store_t:h0 = raw mkh_store_t();
+    pass raw g_store_t(@h0, n);
+};
+// --- tgrow_t
+struct:H_tgrow_t = { List<int64>:l; string:s; int64:k; };
+func:mkh_tgrow_t = H_tgrow_t() never fails { pass H_tgrow_t{ l: raw mk(), s: raw mks(), k: 1i64 }; };
+func:fp_tgrow_t = int64->(H_tgrow_t->:q) never fails { pass @((<-q).l[0i64]); };
+impl:H_tgrow_t:Tg = { func:tg = int64(H_tgrow_t->:self) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@self.l, 1i64); } pass 7i64; }; };
+func:g_tgrow_t = int64(H_tgrow_t->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64:v = 0i64;
+    int64->:e = @one;
+    H_tgrow_t->:hd = hp;
+    H_tgrow_t:h1 = raw mkh_tgrow_t(); e = raw fp_tgrow_t(@h1); discard(raw Tg.tg(@h1)); v = <-(e);
+    pass v + 6i64;
+};
+func:f_tgrow_t = int64(int64:n) never fails {
+    H_tgrow_t:h0 = raw mkh_tgrow_t();
+    pass raw g_tgrow_t(@h0, n);
+};
+// --- tgrowp_t
+struct:H_tgrowp_t = { List<int64>:l; string:s; int64:k; };
+func:mkh_tgrowp_t = H_tgrowp_t() never fails { pass H_tgrowp_t{ l: raw mk(), s: raw mks(), k: 1i64 }; };
+func:fp_tgrowp_t = int64->(H_tgrowp_t->:q) never fails { pass @((<-q).l[0i64]); };
+impl:H_tgrowp_t:Tg = { func:tg = int64(H_tgrowp_t->:self) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@self.l, 1i64); } pass 7i64; }; };
+func:g_tgrowp_t = int64(H_tgrowp_t->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64:v = 0i64;
+    int64->:e = @one;
+    H_tgrowp_t->:hd = hp;
+    e = raw fp_tgrowp_t(hp); discard(raw Tg.tg(hp)); v = <-(e);
+    pass v + 6i64;
+};
+func:f_tgrowp_t = int64(int64:n) never fails {
+    H_tgrowp_t:h0 = raw mkh_tgrowp_t();
+    pass raw g_tgrowp_t(@h0, n);
+};
+// --- u_paren
+struct:H_u_paren = { List<int64>:l; string:s; int64:k; };
+func:mkh_u_paren = H_u_paren() never fails { pass H_u_paren{ l: raw mk(), s: raw mks(), k: 1i64 }; };
+func:growh_u_paren = int64(H_u_paren->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+impl:H_u_paren:Tp = { func:tpm = int64->(H_u_paren->:self) never fails { pass @((<-self).l[0i64]); }; };
+func:g_u_paren = int64(H_u_paren->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64:v = 0i64;
+    int64->:e = @one;
+    H_u_paren:h1 = raw mkh_u_paren(); e = raw (Tp).tpm(@h1); discard(raw growh_u_paren(@h1)); v = <-(e);
+    pass v + 6i64;
+};
+func:f_u_paren = int64(int64:n) never fails {
+    H_u_paren:h0 = raw mkh_u_paren();
+    pass raw g_u_paren(@h0, n);
+};

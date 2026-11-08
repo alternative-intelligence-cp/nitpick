@@ -1,0 +1,149 @@
+// expect-exit: 24
+// expect-obligation: bounds open 9
+// expect-obligation: ensures discharged 7
+// expect-obligation: ensures open 1
+// expect-obligation: exhaustive checker 1
+// expect-obligation: failsafe-post discharged 16
+// expect-obligation: overflow discharged 8
+// expect-obligation: overflow open 8
+// expect-obligation: requires discharged 8
+// expect-obligation: requires open 7
+//
+// AT A CALL, A BARE PARAMETER IN THE CALLEE'S `ensures` IS THE CALLEE'S OWN VALUE AT ITS RETURN (DEF-586, landing
+// 177d2b3; D-243). `g_set` writes `k` and promises `result <= k`: true of `k` as it is at the return, and checked there.
+// The caller was handed the clause over its ARGUMENT, so `c = raw g_set(1i64)` gave `c <= 1`, `arr[c]` lost its guard,
+// and the verified build read `arr[100]`. Now nothing is known at a call of a bare parameter, the `bounds` row stays
+// `open`, and the guard traps `OutOfBounds`, 24, as the plain build always did. One caller per way a body writes a
+// parameter (an assignment, a compound, one road of a branch, a field, through its address), one through `?!` over a
+// callee that may fail, one over a `pure` callee, whose value is an uninterpreted function's, and one whose own local,
+// its address taken, is spelled like the callee's parameter: eight `open` rows. No list of those ways is kept by the
+// encoder; these are here so that one can't be added quietly.
+// THE NINTH `open` ROW IS A CLAUSE THAT WAS FALSE OF THE ARGUMENT. `g_clamp` clamps `k` and promises `k <= 1` of it.
+// Read as the argument of `g_clamp(5i64)` that says `5 <= 1`, and a false hypothesis proves every row after it:
+// `arr[c + 5i64]`, which is out of bounds whatever `c` is, was `discharged`.
+mod:ensures_param_written;
+error:E9;
+struct:P = { int64:v; int64:w; };
+
+func:bump = int64(int64->:p) never fails {
+    <-p = (<-p) + 100i64;
+    pass 0i64;
+};
+func:rd = int64(int64->:p) never fails { pass <-p; };
+
+func:g_set = int64(int64:k) requires k >= 0i64 never fails ensures ((result >= 0i64) && (result <= k)) {
+    k = k + 100i64;
+    pass k - 1i64;
+};
+func:g_cmpd = int64(int64:k) requires k >= 0i64 never fails ensures ((result >= 0i64) && (result <= k)) {
+    k += 100i64;
+    pass k - 1i64;
+};
+func:g_branch = int64(int64:k) requires k >= 0i64 never fails ensures ((result >= 0i64) && (result <= k)) {
+    if (k < 5i64) { k = k + 100i64; }
+    pass k - 1i64;
+};
+func:g_field = int64(P:k) requires k.v >= 0i64 never fails ensures ((result >= 0i64) && (result <= k.v)) {
+    k.v = k.v + 100i64;
+    pass k.v - 1i64;
+};
+func:g_addr = int64(int64:k) requires k >= 0i64 never fails ensures ((result >= 0i64) && (result <= k)) {
+    int64:z = raw bump(@k);
+    pass (k - 1i64) + z;
+};
+func:g_may = int64(int64:k) requires k >= 0i64 ensures ((result >= 0i64) && (result <= k)) {
+    k = k + 100i64;
+    pass k - 1i64;
+};
+func:g_pure = int64(int64:k) requires k >= 0i64 pure never fails ensures ((result >= 0i64) && (result <= k)) {
+    k = k + 100i64;
+    pass k - 1i64;
+};
+func:g_clamp = int64(int64:k) never fails ensures ((result >= 0i64) && (result <= k) && (k <= 1i64)) {
+    if (k > 1i64) { k = 1i64; }
+    if (k < 0i64) { k = 0i64; }
+    pass k;
+};
+
+func:f_set = int64(int64:_~n) never fails {
+    int64[2]:arr = [0i64, 7i64];
+    int64:c = raw g_set(1i64);
+    pass arr[c];
+};
+func:f_cmpd = int64(int64:_~n) never fails {
+    int64[2]:arr = [0i64, 7i64];
+    int64:c = raw g_cmpd(1i64);
+    pass arr[c];
+};
+func:f_branch = int64(int64:_~n) never fails {
+    int64[2]:arr = [0i64, 7i64];
+    int64:c = raw g_branch(1i64);
+    pass arr[c];
+};
+func:f_field = int64(int64:_~n) never fails {
+    int64[2]:arr = [0i64, 7i64];
+    int64:c = raw g_field(P{ v: 1i64, w: 0i64 });
+    pass arr[c];
+};
+func:f_addr = int64(int64:_~n) never fails {
+    int64[2]:arr = [0i64, 7i64];
+    int64:c = raw g_addr(1i64);
+    pass arr[c];
+};
+func:f_may = int64(int64:_~n) never fails {
+    int64[2]:arr = [0i64, 7i64];
+    int64:c = g_may(1i64) ?! E9;
+    pass arr[c];
+};
+func:f_pure = int64(int64:_~n) never fails {
+    int64[2]:arr = [0i64, 7i64];
+    int64:c = raw g_pure(1i64);
+    pass arr[c];
+};
+func:f_esc = int64(int64:_~n) never fails {
+    int64[2]:arr = [0i64, 7i64];
+    int64:k = 5i64;
+    int64:u = raw rd(@k);
+    int64:c = raw g_set(1i64);
+    if (u != 5i64) { pass 0i64; }
+    pass arr[c];
+};
+func:f_clamp = int64(int64:_~n) never fails {
+    int64[2]:arr = [0i64, 7i64];
+    int64:c = raw g_clamp(5i64);
+    pass arr[c + 5i64];
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw f_set(0i64)) != 7i64) { exit 10i32; }
+    if ((raw f_cmpd(0i64)) != 7i64) { exit 11i32; }
+    if ((raw f_branch(0i64)) != 7i64) { exit 12i32; }
+    if ((raw f_field(0i64)) != 7i64) { exit 13i32; }
+    if ((raw f_addr(0i64)) != 7i64) { exit 14i32; }
+    if ((raw f_may(0i64)) != 7i64) { exit 15i32; }
+    if ((raw f_pure(0i64)) != 7i64) { exit 18i32; }
+    if ((raw f_esc(0i64)) != 7i64) { exit 16i32; }
+    if ((raw f_clamp(0i64)) != 7i64) { exit 17i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (OutOfBounds)       { exit 24i32; },
+        (IntOverflow)       { exit 23i32; },
+        (DivByZero)         { exit 21i32; },
+        (DivOverflow)       { exit 22i32; },
+        (HeapBadRequest)    { exit 9i32; },
+        (HeapOom)           { exit 9i32; },
+        (Unreachable)       { exit 9i32; },
+        (WildLeak)          { exit 9i32; },
+        (StackExhausted)    { exit 9i32; },
+        (MachineFault)      { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
+        (*)                 { exit 9i32; }
+    }
+    exit 9i32;
+};

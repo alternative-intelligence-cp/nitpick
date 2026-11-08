@@ -1,0 +1,49 @@
+// expect-exit: 24
+// expect-obligation: bounds open 1
+// expect-obligation: ensures discharged 1
+// expect-obligation: exhaustive checker 1
+// expect-obligation: failsafe-post discharged 17
+// expect-obligation: overflow discharged 1
+// expect-obligation: overflow open 1
+// expect-obligation: requires discharged 1
+// expect-obligation: requires open 1
+//
+// THE SAME THROUGH AN `await` (DEF-586, landing 177d2b3): an awaited call's `ensures` reaches its caller by the road a
+// plain call's does. `g` writes `k` and promises `result <= k`; `arr[c]` keeps its guard, the `bounds open` row, and
+// traps `OutOfBounds`, 24. Read as the argument, the clause gave `c <= 1` and the verified build read `arr[100]`.
+mod:ensures_param_written_async;
+error:E9;
+
+async func:g = int64(int64:k) requires k >= 0i64 ensures ((result >= 0i64) && (result <= k)) {
+    k = k + 100i64;
+    pass k - 1i64;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int64[2]:arr = [0i64, 7i64];
+    int64:c = (await g(1i64)) ?! E9;
+    if (arr[c] != 7i64) { exit 10i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (DeadlineExceeded)  { exit 35i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (OutOfBounds)       { exit 24i32; },
+        (IntOverflow)       { exit 23i32; },
+        (DivByZero)         { exit 21i32; },
+        (DivOverflow)       { exit 22i32; },
+        (HeapBadRequest)    { exit 9i32; },
+        (HeapOom)           { exit 9i32; },
+        (Unreachable)       { exit 9i32; },
+        (WildLeak)          { exit 9i32; },
+        (StackExhausted)    { exit 9i32; },
+        (MachineFault)      { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
+        (*)                 { exit 9i32; }
+    }
+    exit 9i32;
+};

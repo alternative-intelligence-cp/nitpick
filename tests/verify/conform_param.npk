@@ -1,0 +1,59 @@
+// expect-exit: 0
+// expect-obligation: ensures discharged 4
+// expect-obligation: exhaustive checker 1
+// expect-obligation: failsafe-post discharged 16
+// expect-obligation: requires discharged 2
+//
+// THE CONFORMANCE ROW NAMES A PARAMETER ONCE, FOR THE TRAIT'S CLAUSES AND THE IMPL'S (L-6; landing 177d2b3, beside
+// DEF-586). It isn't a call: the trait's clauses are read over this method's own parameters, so `scale`'s
+// `result <= n` in the impl proves the trait's `result <= n`, and `floor`'s `result >= old(n)` with the trait's
+// `requires n >= 0i64` proves the trait's `result >= 0i64`. Both `ensures` conformance rows discharge, and `floor`'s
+// `requires` row with them (the impl asks nothing). DEF-586 gave a CALL's `ensures` a parameter of its own at the
+// return; had that reached here, each goal would speak of a value nothing else names and both rows would be `open`.
+// Neither impl writes its parameter. One that does is DEF-564's, open: this row reads its bare `n` as the value at
+// entry on both sides.
+mod:conform_param;
+error:E9;
+
+trait:Scaled = {
+    func:scale = int64(Self:self, int64:n) ensures result <= n;
+    func:floor = int64(Self:self, int64:n) requires n >= 0i64 ensures result >= 0i64;
+};
+struct:Box = { int64:w; };
+impl:Box:Scaled = {
+    func:scale = int64(Box:_~self, int64:n) ensures result <= n { pass n; };
+    func:floor = int64(Box:_~self, int64:n) ensures result >= old(n) { pass n; };
+};
+
+func:through = int64(dyn Scaled:s) {
+    if (((s.scale(3i64)) ?! E9) != 3i64) { pass 1i64; }
+    if (((s.floor(4i64)) ?! E9) != 4i64) { pass 2i64; }
+    pass 0i64;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    Box:b = Box{ w: 1i64 };
+    if ((through(b) ?! E9) != 0i64) { exit 10i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (OutOfBounds)       { exit 24i32; },
+        (IntOverflow)       { exit 23i32; },
+        (DivByZero)         { exit 21i32; },
+        (DivOverflow)       { exit 22i32; },
+        (HeapBadRequest)    { exit 9i32; },
+        (HeapOom)           { exit 9i32; },
+        (Unreachable)       { exit 9i32; },
+        (WildLeak)          { exit 9i32; },
+        (StackExhausted)    { exit 9i32; },
+        (MachineFault)      { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
+        (*)                 { exit 9i32; }
+    }
+    exit 9i32;
+};

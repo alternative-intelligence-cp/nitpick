@@ -1,0 +1,52 @@
+// expect-exit: 90
+// expect-obligation: bounds discharged 2
+// expect-obligation: bounds open 3
+// expect-obligation: disjoint open 2
+// expect-obligation: exhaustive checker 1
+// expect-obligation: failsafe-post discharged 16
+// expect-obligation: overflow discharged 2
+// expect-obligation: overflow open 1
+//
+// THE TARGET'S ALIASING COMPARE RUNS BEFORE THE VALUE TOO (DEF-573, landing 177d2b3; D-286): it stands inside
+// `addr_of`, with the bounds check. `$$m a[j]` is held and the target is `a[i]` with `i == j`, so the compare traps
+// `BorrowOverlap`, 90, before the value runs. The value's own bounds check, `b[i - j - 1]`, passes only when
+// `i > j`, which proves the two indices apart -- at a moment after the compare ran. With the `disjoint` row recorded
+// after the value it was discharged on that fact, the verified build dropped the compare, and the value's check
+// trapped instead (24).
+mod:assign_order_alias;
+error:E9;
+
+func:both = int32(int32:i, int32:j) never fails {
+    int32[4]:a = [1i32, 2i32, 3i32, 4i32];
+    int32[4]:b = [5i32, 6i32, 7i32, 8i32];
+    int32->:p = $$m a[j => int64];
+    a[i => int64] = b[((i - j) - 1i32) => int64];
+    <-p = 9i32;
+    pass a[0i64] + b[0i64];
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:n = argv.len =>! int32;
+    exit (raw both(n, n));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (BorrowOverlap) { exit 90i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

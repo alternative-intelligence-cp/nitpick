@@ -1,0 +1,46 @@
+// expect-exit: 7
+// expect-obligation: bounds discharged 2
+// expect-obligation: bounds open 1
+// expect-obligation: exhaustive checker 1
+// expect-obligation: failsafe-post discharged 16
+// expect-obligation: overflow open 1
+//
+// THE ROWS OF AN ASSIGNMENT, TARGET FIRST (DEF-573, landing 177d2b3), on a program that runs right. `a` holds 4 and
+// `b` holds 8. The target `a[i]` is the open row, and the fact its guard leaves, `i < 4`, discharges the value's read
+// of `b[i]`: one `bounds` row open. Read value first, as the prover read it until this landing, `b[i]` is open and
+// its fact, `i < 8`, proves nothing about `a[i]`: two open, and where the lengths are equal the wrong one of the two
+// is discharged (`assign_order_same_index.npk`).
+mod:assign_order_rows;
+error:E9;
+
+func:narrow_first = int32(int32:i) never fails {
+    int32[4]:a = [1i32, 2i32, 3i32, 4i32];
+    int32[8]:b = [1i32, 1i32, 1i32, 1i32, 1i32, 1i32, 1i32, 1i32];
+    a[i => int64] = b[i => int64];
+    pass a[0i64];
+};
+
+func:main = int32(cstring[]:argv) {
+    exit ((raw narrow_first(argv.len =>! int32)) + 6i32);
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (BorrowOverlap) { exit 90i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

@@ -498,8 +498,7 @@ func:emit_one_flagged_drop = NIL(ExprEmitter->:x, int64:i) never fails {
     // seventeen 0xAA bytes at a deterministic line and the concat tripwire
     // named reader and freer under gdb. That instrument stays, off by
     // default, for the next hunt.
-    string->:fl = raw fnem_local_flag_at(x.fe, i);
-    if (fl.len == 0i64) { pass NIL; }
+    if ((raw fnem_local_flag_at(x.fe, i)).len == 0i64) { pass NIL; }
     if (raw fnem_local_taken_at(x.fe, i)) {
         drop irw_line(x.fe.w, raw cat3("call void ",
                           raw drop_fn_sym(x.fe.ctx, raw fnem_local_type_at(x.fe, i)),
@@ -508,8 +507,10 @@ func:emit_one_flagged_drop = NIL(ExprEmitter->:x, int64:i) never fails {
                                   raw fnem_local_slot_at(x.fe, i)), ")")));
         pass NIL;
     }
+    // The flag's TEXT, copied once (DEF-584): a pointer into `lflags` held across the writes through `x.fe` below is BORROW-015 now, as its local twin is.
+    string:fl = string_concat(<-(raw fnem_local_flag_at(x.fe, i)), "");
     string:lf = raw irw_temp(x.fe.w);
-    drop irw_line(x.fe.w, raw cat4(lf, " = load i8, ptr ", <-fl, ""));
+    drop irw_line(x.fe.w, raw cat4(lf, " = load i8, ptr ", fl, ""));
     string:lb = raw irw_temp(x.fe.w);
     drop irw_line(x.fe.w, raw cat3(lb, " = icmp ne i8 ",
                       string_concat(lf, ", 0")));
@@ -932,8 +933,7 @@ pub func:mark_root_taken = NIL(ExprEmitter->:x, ExprId:vid) never fails {
     if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
     int64:li = raw ident_slot(x, rn);   // by the resolver's symbol (DEF-144)
     if (li < 0i64) { pass NIL; }
-    string->:fl = raw fnem_local_flag_at(x.fe, li);
-    if (fl.len == 0i64) { pass NIL; }   // no flag, no drop: nothing to protect
+    if ((raw fnem_local_flag_at(x.fe, li)).len == 0i64) { pass NIL; }   // no flag, no drop: nothing to protect
     drop fnem_mark_taken(x.fe, li);
     pass NIL;
 };
@@ -1120,9 +1120,8 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
             if (tgt.kind == ExprKind.ExprIdentifierExpr) {
                 int64:tli = raw ident_slot(x, tgt);   // by the resolver's symbol (DEF-144)
                 if (tli >= 0i64) {
-                    string->:tfl = raw fnem_local_flag_at(x.fe, tli);
-                    if (tfl.len > 0i64) {
-                        aflag = string_concat(<-tfl, "");
+                    if ((raw fnem_local_flag_at(x.fe, tli)).len > 0i64) {
+                        aflag = string_concat(<-(raw fnem_local_flag_at(x.fe, tli)), "");
                         string:of = raw irw_temp(x.fe.w);
                         drop irw_line(x.fe.w, raw cat4(of, " = load i8, ptr ",
                                           aflag, ""));
@@ -1152,14 +1151,18 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
         if (aflag.len > 0i64) {
             drop irw_line(x.fe.w, raw cat3("store i8 1, ptr ", aflag, ""));
         }
-        // THE SECOND WRITE POINT (1.5.2 step 2, D-251), after the store.
-        IrVal:lc = raw emit_assign_limit(x, raw stmt_target(s), asite, s.span);
-        if (!(raw iv_is_ok(lc))) { pass lc; }
-        // ... AND A LIMITED FIELD'S (D-308, 1.5.8b step 6): the rule is the field's,
-        // through any path, so `p.f = v` through a pointer is checked here too.
+        // A LIMITED FIELD'S WRITE POINT (D-308, 1.5.8b step 6), after the store: the rule is the field's,
+        // through any path, so `p.f = v` through a pointer is checked here too. IT RUNS BEFORE THE ROOT'S
+        // (DEF-582): a read of a limited field is taken to satisfy the field's rule wherever it stands (D-308),
+        // the root's rule function among them, so that function's own guards are discharged on it -- and it ran
+        // first, on a value the field's rule hadn't been asked of (`Rules<Tank>:r = { $.arr[$.n] >= 0 }` read past
+        // `arr` with its bounds check elided). The prover records the two rows in this order.
         IrVal:flc = raw emit_field_assign_limit(x, raw stmt_target(s), place.addr,
                                                 place.type_id, s.span);
         if (!(raw iv_is_ok(flc))) { pass flc; }
+        // THE SECOND WRITE POINT (1.5.2 step 2, D-251): the root's rule, over the root's whole value.
+        IrVal:lc = raw emit_assign_limit(x, raw stmt_target(s), asite, s.span);
+        if (!(raw iv_is_ok(lc))) { pass lc; }
         pass (raw iv_nil());
     }
 
@@ -1195,13 +1198,13 @@ func:emit_assign = IrVal(ExprEmitter->:x, StmtNode:s) never fails {
     if (!(raw iv_is_ok(res))) { pass res; }
     drop irw_line(x.fe.w, raw cat5("store ", res.ll, " ", res.ref,
                       string_concat(", ptr ", place.addr)));
-    // THE SECOND WRITE POINT (1.5.2 step 2, D-251): the arithmetic's own
-    // guards ran above; the rule is asked of the stored result.
-    IrVal:lc2 = raw emit_assign_limit(x, raw stmt_target(s), asite, s.span);
-    if (!(raw iv_is_ok(lc2))) { pass lc2; }
+    // THE WRITE POINTS (1.5.2 step 2, D-251; D-308): the arithmetic's own guards ran above; the rules are asked
+    // of the stored result, the FIELD's before the ROOT's as at a plain `=` (DEF-582).
     IrVal:flc2 = raw emit_field_assign_limit(x, raw stmt_target(s), place.addr,
                                              place.type_id, s.span);
     if (!(raw iv_is_ok(flc2))) { pass flc2; }
+    IrVal:lc2 = raw emit_assign_limit(x, raw stmt_target(s), asite, s.span);
+    if (!(raw iv_is_ok(lc2))) { pass lc2; }
     pass (raw iv_nil());
 };
 

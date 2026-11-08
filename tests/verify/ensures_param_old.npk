@@ -1,0 +1,65 @@
+// expect-exit: 0
+// expect-obligation: bounds discharged 1
+// expect-obligation: bounds open 1
+// expect-obligation: ensures discharged 2
+// expect-obligation: exhaustive checker 1
+// expect-obligation: failsafe-post discharged 16
+// expect-obligation: overflow open 1
+// expect-obligation: requires discharged 2
+// expect-obligation: requires open 2
+//
+// `old(k)` IS THE ARGUMENT AT A CALL, AND A BARE `k` ISN'T (DEF-586, landing 177d2b3; D-243). `h_old` writes `k` and
+// promises `result <= old(k)`: the caller knows `c <= 1` of `c = raw h_old(1i64)`, and its `arr[c]` is proven, the one
+// `bounds discharged` row. `h_bare` never writes `k` and promises `result <= k`: the same fact is true of it, and the
+// caller isn't handed it, because the encoder keeps no account of what a body writes. That's the rule's price: the
+// second `arr[c]` keeps its guard, the one `bounds open` row, and a callee that wants its caller to have the fact
+// spells it `old(k)`.
+mod:ensures_param_old;
+error:E9;
+
+func:h_old = int64(int64:k) requires k >= 0i64 never fails ensures ((result >= 0i64) && (result <= old(k))) {
+    int64:r = k;
+    k = k + 100i64;
+    pass r;
+};
+func:h_bare = int64(int64:k) requires k >= 0i64 never fails ensures ((result >= 0i64) && (result <= k)) {
+    pass k;
+};
+
+func:f_old = int64(int64:_~n) never fails {
+    int64[2]:arr = [0i64, 7i64];
+    int64:c = raw h_old(1i64);
+    pass arr[c];
+};
+func:f_bare = int64(int64:_~n) never fails {
+    int64[2]:arr = [0i64, 7i64];
+    int64:c = raw h_bare(1i64);
+    pass arr[c];
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw f_old(0i64)) != 7i64) { exit 10i32; }
+    if ((raw f_bare(0i64)) != 7i64) { exit 11i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (OutOfBounds)       { exit 24i32; },
+        (IntOverflow)       { exit 23i32; },
+        (DivByZero)         { exit 21i32; },
+        (DivOverflow)       { exit 22i32; },
+        (HeapBadRequest)    { exit 9i32; },
+        (HeapOom)           { exit 9i32; },
+        (Unreachable)       { exit 9i32; },
+        (WildLeak)          { exit 9i32; },
+        (StackExhausted)    { exit 9i32; },
+        (MachineFault)      { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
+        (*)                 { exit 9i32; }
+    }
+    exit 9i32;
+};

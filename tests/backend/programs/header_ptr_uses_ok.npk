@@ -46,7 +46,7 @@ func:f = int64() never fails { string:s = raw mks(); fixed uint8[]:v = string_by
 pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
 };
 
-// R3, R14: A READ `x.ptr[i]` IS THE HEADER'S OWN CHECKED INDEX, `wild` HEADER INCLUDED (`r17`). WITH A CALL IN THE INDEX IT STANDS ONLY OVER A HEADER WHOSE OWN STORAGE CAN'T DIE UNDER IT: A BY-VALUE LOCAL, PARAMETER OR MODULE BINDING, OR A FIELD OR FRAME-ARRAY ELEMENT OF ONE (`q13c` READS THE NEW BLOCK, 89); A CONSTANT INDEX NEEDS NONE OF THAT; A `for` BINDING IS A COPY IN THE FRAME (`q61`). THE ORDINARY BRACKET COPIES THE HEADER FIRST AND READS THE RIGHT VALUE (`q23`, `q28`, `q37`, `q8c`).
+// R3, R14: A READ `x.ptr[i]` IS THE HEADER'S OWN CHECKED INDEX, `wild` HEADER INCLUDED (`r17`). WITH A CALL IN THE INDEX IT STANDS ONLY OVER A HEADER WHOSE OWN STORAGE CAN'T DIE UNDER IT: A BY-VALUE LOCAL, PARAMETER OR MODULE BINDING, OR A FIELD OR FRAME-ARRAY ELEMENT OF ONE (`q13c` READS THE NEW BLOCK, 89); A CONSTANT INDEX NEEDS NONE OF THAT; A `for` BINDING IS A COPY IN THE FRAME (`q61`). THE ORDINARY BRACKET COPIES THE HEADER FIRST AND READS THE RIGHT VALUE (`q23`, `q28`, `q37`, `q8c`). SINCE DEF-575 (LANDING 177d2b3) `q8c`, `q23`, `q28`, `q29c` AND `wq21c` TAKE THE HEADER'S ADDRESS IN A FRAME ARRAY (`hs`), WHILE THE INDEX'S CALL STILL GROWS THE `List`: A POINTER A CALL RETURNS INTO THE `List` ITSELF IS FROZEN NOW, AND THE FIVE AS THEY STOOD ARE BORROW-015 SITES OF `tests/analysis/rejection/list_ptr_from_call.npk`.
 mod:r16_in_bounds_ctl = {
 func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; pass (v.ptr[7i64] => int64) + 6i64; };
 pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
@@ -58,7 +58,7 @@ pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32);
 mod:q8c_ctl_deref_copy = {
 func:grow2 = int64(List<uint8[]>->:l, uint8[]:seed) never fails { for (int64:i in 0i64...4096i64) { drop list_push(l, seed); } pass 0i64; };
 func:idp = uint8[]->(uint8[]->:p) never fails { pass p; };
-func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; List<uint8[]>:l = raw list_init::<uint8[]>(1i64); drop list_push(@l, v); int64:k = ((<-(raw idp(@l[0i64])))[raw grow2(@l, v)] => int64); pass k + 6i64; };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; uint8[][1]:hs = [v]; List<uint8[]>:l = raw list_init::<uint8[]>(1i64); drop list_push(@l, v); int64:k = ((<-(raw idp(@hs[0i64])))[raw grow2(@l, v)] => int64); pass k + 6i64; };
 pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
 };
 mod:q13c_ctl_named_ptr_index_frees = {
@@ -92,7 +92,7 @@ mod:q23_ordinary_bracket_pointer_param = {
 func:grow2 = int64(List<uint8[]>->:l, uint8[]:seed) never fails { for (int64:i in 0i64...4096i64) { drop list_push(l, seed); } pass 0i64; };
 func:idp = uint8[]->(uint8[]->:p) never fails { pass p; };
 func:viao = int64(uint8[]->:h, List<uint8[]>->:l, uint8[]:v) never fails { pass ((<-h)[raw grow2(l, v)] => int64); };
-func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; List<uint8[]>:l = raw list_init::<uint8[]>(1i64); drop list_push(@l, v); int64:k = raw viao(raw idp(@l[0i64]), @l, v); pass k + 6i64; };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; uint8[][1]:hs = [v]; List<uint8[]>:l = raw list_init::<uint8[]>(1i64); drop list_push(@l, v); int64:k = raw viao(raw idp(@hs[0i64]), @l, v); pass k + 6i64; };
 pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
 };
 mod:q28_ordinary_field_behind_param = {
@@ -100,14 +100,14 @@ struct:SV_q28 = { uint8[]:h; };
 func:gs = int64(List<SV_q28>->:l, uint8[]:v) never fails { for (int64:i in 0i64...4096i64) { drop list_push(l, SV_q28{ h: v }); } pass 0i64; };
 func:ids2 = SV_q28->(SV_q28->:p) never fails { pass p; };
 func:viag = int64(SV_q28->:s, List<SV_q28>->:l, uint8[]:v) never fails { pass (s.h[raw gs(l, v)] => int64); };
-func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; List<SV_q28>:l = raw list_init::<SV_q28>(1i64); drop list_push(@l, SV_q28{ h: v }); int64:k = raw viag(raw ids2(@l[0i64]), @l, v); pass k + 6i64; };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; SV_q28[1]:hs = [SV_q28{ h: v }]; List<SV_q28>:l = raw list_init::<SV_q28>(1i64); drop list_push(@l, SV_q28{ h: v }); int64:k = raw viag(raw ids2(@hs[0i64]), @l, v); pass k + 6i64; };
 pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
 };
 mod:q29c_ctl_index_first = {
 func:grow2 = int64(List<uint8[]>->:l, uint8[]:seed) never fails { for (int64:i in 0i64...4096i64) { drop list_push(l, seed); } pass 0i64; };
 func:idp = uint8[]->(uint8[]->:p) never fails { pass p; };
 func:viai = int64(uint8[]->:h, List<uint8[]>->:l, uint8[]:v) never fails { int64:i = raw grow2(l, v); pass (v[i] => int64); };
-func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; List<uint8[]>:l = raw list_init::<uint8[]>(1i64); drop list_push(@l, v); int64:k = raw viai(raw idp(@l[0i64]), @l, v); pass k + 6i64; };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; uint8[][1]:hs = [v]; List<uint8[]>:l = raw list_init::<uint8[]>(1i64); drop list_push(@l, v); int64:k = raw viai(raw idp(@hs[0i64]), @l, v); pass k + 6i64; };
 pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
 };
 mod:q30c_ctl_local_header_call = {
@@ -221,7 +221,7 @@ mod:wq21c_ordinary_bracket_array_of_pointers = {
 func:grow2 = int64(List<uint8[]>->:l, uint8[]:seed) never fails { for (int64:i in 0i64...4096i64) { drop list_push(l, seed); } pass 0i64; };
 func:idp = uint8[]->(uint8[]->:p) never fails { pass p; };
 func:viaa = int64(uint8[]->:h, List<uint8[]>->:l, uint8[]:v) never fails { uint8[]->[1]:arr = [h]; pass ((<-(arr[0i64]))[raw grow2(l, v)] => int64); };
-func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; List<uint8[]>:l = raw list_init::<uint8[]>(1i64); drop list_push(@l, v); int64:k = raw viaa(raw idp(@l[0i64]), @l, v); pass k + 6i64; };
+func:f = int64() never fails { uint8[8]:b = [1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8, 1u8]; uint8[]:v = b[0i64...8i64]; uint8[][1]:hs = [v]; List<uint8[]>:l = raw list_init::<uint8[]>(1i64); drop list_push(@l, v); int64:k = raw viaa(raw idp(@hs[0i64]), @l, v); pass k + 6i64; };
 pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
 };
 
@@ -434,7 +434,7 @@ func:f = int64() never fails { int64:y = 1i64; int64->:q = @y; wild int64->:a = 
 pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
 };
 
-// THE CONTROLS OF WHAT STAYS OPEN: DEF-319'S READ RIGHT (`q44c`, `q46`, `q47`, `q48`, `q49c`, `q50c`), DEF-481'S AND DEF-391'S PLAIN ELEMENT.
+// THE CONTROLS OF WHAT STAYS OPEN: DEF-319'S READ RIGHT (`q44c`, `q46`, `q47`, `q48`, `q49c`, `q50c`; SINCE DEF-575, LANDING 177d2b3, `q46`, `q47` AND `q48` REACH THE INNER `List` IN A FRAME ARRAY, `la`, AND AS THEY STOOD THEY ARE BORROW-015 SITES OF `tests/analysis/rejection/list_ptr_from_call.npk`), DEF-481'S AND DEF-391'S PLAIN ELEMENT.
 mod:q44c_ctl_grow_first_then_call_ptr = {
 func:idq = List<int64>->(List<int64>->:p) never fails { pass p; };
 func:growq = int64(List<List<int64>>->:ll) never fails { for (int64:i in 0i64...4096i64) { drop list_push(ll, raw list_init::<int64>(1i64)); } pass 0i64; };
@@ -446,20 +446,20 @@ mod:q46_elem_of_call_ptr_later_grow = {
 func:idq = List<int64>->(List<int64>->:p) never fails { pass p; };
 func:growq = int64(List<List<int64>>->:ll) never fails { for (int64:i in 0i64...4096i64) { drop list_push(ll, raw list_init::<int64>(1i64)); } pass 0i64; };
 func:rde = int64(int64->:e, int64:n) never fails { pass (<-e) + n; };
-func:f = int64() never fails { List<List<int64>>:ll = raw list_init::<List<int64>>(1i64); List<int64>:i0 = raw list_init::<int64>(1i64); drop list_push(@i0, 7i64); drop list_push(@ll, move(i0)); int64:k = raw rde(@(<-(raw idq(@ll[0i64])))[0i64], raw growq(@ll)); pass k; };
+func:f = int64() never fails { List<List<int64>>:ll = raw list_init::<List<int64>>(1i64); List<int64>:i0 = raw list_init::<int64>(1i64); drop list_push(@i0, 7i64); List<int64>[1]:la = [move(i0)]; int64:k = raw rde(@(<-(raw idq(@la[0i64])))[0i64], raw growq(@ll)); pass k; };
 pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
 };
 mod:q47_ptr_of_elem_later_grow = {
 func:growq = int64(List<List<int64>>->:ll) never fails { for (int64:i in 0i64...4096i64) { drop list_push(ll, raw list_init::<int64>(1i64)); } pass 0i64; };
 func:eidq = int64->(List<int64>->:p) never fails { pass @(<-p)[0i64]; };
 func:rde = int64(int64->:e, int64:n) never fails { pass (<-e) + n; };
-func:f = int64() never fails { List<List<int64>>:ll = raw list_init::<List<int64>>(1i64); List<int64>:i0 = raw list_init::<int64>(1i64); drop list_push(@i0, 7i64); drop list_push(@ll, move(i0)); int64:k = raw rde(raw eidq(@ll[0i64]), raw growq(@ll)); pass k; };
+func:f = int64() never fails { List<List<int64>>:ll = raw list_init::<List<int64>>(1i64); List<int64>:i0 = raw list_init::<int64>(1i64); drop list_push(@i0, 7i64); List<int64>[1]:la = [move(i0)]; int64:k = raw rde(raw eidq(@la[0i64]), raw growq(@ll)); pass k; };
 pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
 };
 mod:q48_binop_call_ptr_then_grow = {
 func:idq = List<int64>->(List<int64>->:p) never fails { pass p; };
 func:growq = int64(List<List<int64>>->:ll) never fails { for (int64:i in 0i64...4096i64) { drop list_push(ll, raw list_init::<int64>(1i64)); } pass 0i64; };
-func:f = int64() never fails { List<List<int64>>:ll = raw list_init::<List<int64>>(1i64); List<int64>:i0 = raw list_init::<int64>(1i64); drop list_push(@i0, 7i64); drop list_push(@ll, move(i0)); int64:k = (<-(raw idq(@ll[0i64])))[0i64] + raw growq(@ll) + (<-(raw idq(@ll[0i64])))[0i64]; pass k; };
+func:f = int64() never fails { List<List<int64>>:ll = raw list_init::<List<int64>>(1i64); List<int64>:i0 = raw list_init::<int64>(1i64); drop list_push(@i0, 7i64); List<int64>[1]:la = [move(i0)]; int64:k = (<-(raw idq(@la[0i64])))[0i64] + raw growq(@ll) + (<-(raw idq(@la[0i64])))[0i64]; pass k; };
 pub func:cell_main = int32() never fails { pass (((raw f()) + 60i64) =>! int32); };
 };
 mod:q49c_ctl_no_grow = {

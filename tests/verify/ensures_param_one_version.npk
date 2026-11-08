@@ -1,0 +1,60 @@
+// expect-exit: 0
+// expect-obligation: bounds discharged 2
+// expect-obligation: ensures discharged 1
+// expect-obligation: exhaustive checker 1
+// expect-obligation: failsafe-post discharged 16
+//
+// A BARE PARAMETER IN A CALLEE'S `ensures` IS ONE VALUE AT A CALL, WHEREVER THE CLAUSE READS IT (DEF-586, landing
+// 177d2b3). `clamp` writes `k` and promises `result <= k` and `k <= 1`, both of `k` at the return, both checked there.
+// Nothing is known of that `k` at a call but what the clause says, and the clause says it of one value: so the caller
+// knows `c <= 1` and each `arr[c]` is proven, two `bounds discharged` rows. `f_esc` holds a local of its own spelled
+// `k` with its address taken: the callee's `k` is the callee's, named however the caller's names stand.
+mod:ensures_param_one_version;
+error:E9;
+
+func:clamp = int64(int64:k) never fails ensures ((result >= 0i64) && (result <= k) && (k <= 1i64)) {
+    if (k > 1i64) { k = 1i64; }
+    if (k < 0i64) { k = 0i64; }
+    pass k;
+};
+func:rd = int64(int64->:p) never fails { pass <-p; };
+
+func:f_plain = int64(int64:_~n) never fails {
+    int64[2]:arr = [0i64, 7i64];
+    int64:c = raw clamp(5i64);
+    pass arr[c];
+};
+func:f_esc = int64(int64:_~n) never fails {
+    int64[2]:arr = [0i64, 7i64];
+    int64:k = 5i64;
+    int64:u = raw rd(@k);
+    int64:c = raw clamp(u);
+    pass arr[c];
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw f_plain(0i64)) != 7i64) { exit 10i32; }
+    if ((raw f_esc(0i64)) != 7i64) { exit 11i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)                { exit 20i32; },
+        (RequiresViolated)  { exit 32i32; },
+        (EnsuresViolated)   { exit 33i32; },
+        (OutOfBounds)       { exit 24i32; },
+        (IntOverflow)       { exit 23i32; },
+        (DivByZero)         { exit 21i32; },
+        (DivOverflow)       { exit 22i32; },
+        (HeapBadRequest)    { exit 9i32; },
+        (HeapOom)           { exit 9i32; },
+        (Unreachable)       { exit 9i32; },
+        (WildLeak)          { exit 9i32; },
+        (StackExhausted)    { exit 9i32; },
+        (MachineFault)      { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
+        (*)                 { exit 9i32; }
+    }
+    exit 9i32;
+};

@@ -2208,6 +2208,15 @@ pub func:type_elem = int32(TypeTable->:t, int32:id) never fails {
     pass ((raw tt_get(t, id)).a);
 };
 
+// THE TYPE UNDER EVERY OPTIONAL AND `Result` (DEF-601's peel; one writer since DEF-613): a wrapper holds its one value, and an unwrap (`o ??! E`, `??`, `r ?! E`,
+// `?|`, `relay`) yields it. It ends: each trip takes a wrapper's element, and an element is interned before its wrapper, so a chain back to itself would be a type
+// of infinite size; a counted loop would answer the open way past its bound.
+pub func:type_unwrapped = int32(TypeTable->:t, int32:id) never fails {
+    int32:u = id;
+    while (((raw type_kind(t, u)) == (raw TY_OPTIONAL())) || ((raw type_kind(t, u)) == (raw TY_RESULT()))) unbounded { u = raw type_elem(t, u); }
+    pass u;
+};
+
 // A FUNCTION TYPE's parameter window — `b` is the start, `c` the count, and the
 // window lives in the AST's id pool because that is where `resolve_func_type`
 // built it. Named accessors so no call site reads `b` and `c` raw and has to

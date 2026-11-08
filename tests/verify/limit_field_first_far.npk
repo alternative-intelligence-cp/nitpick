@@ -1,0 +1,49 @@
+// expect-exit: 31
+// expect-obligation: bounds discharged 1
+// expect-obligation: exhaustive checker 1
+// expect-obligation: failsafe-post discharged 15
+// expect-obligation: limit discharged 1
+// expect-obligation: limit open 3
+// expect-obligation: overflow discharged 1
+//
+// DEF-582 (landing 177d2b3; `limit_field_first.npk` has the account), far out: `n` becomes 2^40. The field's rule
+// fails before the root's rule reads `$.arr[$.n]`, and both builds trap `LimitViolated`, 31. Before, the verified
+// build's root rule read far past `arr` with its bounds check dropped and took a machine fault (the plain
+// build trapped `OutOfBounds`).
+mod:limit_field_first_far;
+error:E9;
+
+Rules<int64>:r_slot = { $ >= 0i64, $ <= 3i64 };
+struct:Shelf = { limit<r_slot> int64:n; int64[4]:arr; };
+Rules<Shelf>:r_shelf = { $.arr[$.n] >= 0i64 };
+
+func:put = int32(int64:v) never fails {
+    limit<r_shelf> Shelf:t = Shelf{ n: 1i64, arr: [0i64, 0i64, 0i64, 0i64] };
+    t.n = v;
+    discard(t.n);
+    pass 7i32;
+};
+
+func:main = int32(cstring[]:argv) {
+    exit (raw put(argv.len + 1099511627775i64));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

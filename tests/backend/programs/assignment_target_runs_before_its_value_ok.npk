@@ -6,7 +6,7 @@ mod:assignment_target_runs_before_its_value_ok;
 // A NAME STANDS STILL WHILE THE VALUE RUNS AND NO LONGER: not at a later statement (`hq8c`, `hq11`, `sb11`, `sb12`, `sb14`), and not if no target read it (`hq0`, `hq10`, `hsc2`, `sb13`, `oi35c`). A value's `defer` over other names is nothing to it (`hr5g`).
 // A claim in the target isn't a read (`sa9`). A name read on another arm or in a loop's earlier trip isn't read unassigned (`oi30`, `oi31`).
 // AN INLINE ARRAY OR STRUCT THAT CAN'T DROP IS THE PLACE ITSELF, so assigning one in the value leaves the address good (`ae1`, `ae3`, `ae7`, `gk4a`, `gk5`, `gk6`, `gk7`, `mc4`), and a field's or an element's write or claim is no event (`sa11`, `sb1`, `sb2`).
-// A call in the target stands if the value leaves its name alone (`kc1`, `kc3`, `ok1` to `ok4`), and a macro in the value is judged by what it expands to (`mc1c`, `mc2c`, `mc3c`).
+// A call in the target stands if the value leaves its name alone (`kc1`, `kc3`, `ok3`, `ok4`; `ok1` and `ok2` left at landing 177d2b3, where DEF-575 refuses them as its named prices: `tests/analysis/rejection/list_ptr_from_call.npk`), and a macro in the value is judged by what it expands to (`mc1c`, `mc2c`, `mc3c`).
 error:Bad;
 mod:oe_asg_val_ix_p = {
 error:E5_oe_asg_val_ix_p;
@@ -724,68 +724,6 @@ func:f = int64(int64:n) never fails {
 };
 pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
 };
-mod:ok1_sibling_write = {
-error:E5_ok1_sibling_write;
-struct:H = { List<int64>:l; int64:k; };
-struct:HH = { H:h; int64:z; };
-struct:SW = { wild int64->:p; int64:k; };
-func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
-func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
-func:eatl = int64(move List<int64>:v) never fails { pass 7i64; };
-func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
-func:refill = int64(List<int64>->:p) never fails { <-p = raw mk(); pass 7i64; };
-func:reseth = int64(H->:w) never fails { <-w = raw mkh(); pass 7i64; };
-func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
-func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
-func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
-func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
-func:idp = int64->(int64->:q) never fails { pass q; };
-func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-struct:W = { H->:hp; };
-func:fp2 = int64->(W->:w) never fails { pass @((<-w.hp).l[0i64]); };
-func:kp = int64->(H->:w) never fails { pass @w.k; };
-func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
-func:ap = int64->(List<int64>[2]->:a) never fails { pass @((<-a)[0i64][0i64]); };
-func:f = int64(int64:n) never fails {
-    H:h = raw mkh();
-    int64->:e = raw fp(@h);
-    h.k = 2i64;
-    <-e = 7i64;
-    pass h.l[0i64];
-};
-pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
-};
-mod:ok2_field_ptr_list_grown = {
-error:E5_ok2_field_ptr_list_grown;
-struct:H = { List<int64>:l; int64:k; };
-struct:HH = { H:h; int64:z; };
-struct:SW = { wild int64->:p; int64:k; };
-func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
-func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
-func:eatl = int64(move List<int64>:v) never fails { pass 7i64; };
-func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
-func:refill = int64(List<int64>->:p) never fails { <-p = raw mk(); pass 7i64; };
-func:reseth = int64(H->:w) never fails { <-w = raw mkh(); pass 7i64; };
-func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
-func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
-func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
-func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
-func:idp = int64->(int64->:q) never fails { pass q; };
-func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-struct:W = { H->:hp; };
-func:fp2 = int64->(W->:w) never fails { pass @((<-w.hp).l[0i64]); };
-func:kp = int64->(H->:w) never fails { pass @w.k; };
-func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
-func:ap = int64->(List<int64>[2]->:a) never fails { pass @((<-a)[0i64][0i64]); };
-func:f = int64(int64:n) never fails {
-    H:h = raw mkh();
-    int64->:e = raw kp(@h);
-    discard(raw growh(@h));
-    <-e = 7i64;
-    pass h.k;
-};
-pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
-};
 mod:ok3_read_through_then_use = {
 error:E5_ok3_read_through_then_use;
 struct:H = { List<int64>:l; int64:k; };
@@ -1021,8 +959,6 @@ func:main = int32(cstring[]:argv) {
     if ((raw ae7_array_claim_and_index.cell_main(argv.len)) != 67i32) { exit 132i32; }
     if ((raw kc1_callee_target_no_replace.cell_main(argv.len)) != 67i32) { exit 133i32; }
     if ((raw kc3_callee_read_no_replace.cell_main(argv.len)) != 67i32) { exit 134i32; }
-    if ((raw ok1_sibling_write.cell_main(argv.len)) != 67i32) { exit 135i32; }
-    if ((raw ok2_field_ptr_list_grown.cell_main(argv.len)) != 67i32) { exit 136i32; }
     if ((raw ok3_read_through_then_use.cell_main(argv.len)) != 67i32) { exit 137i32; }
     if ((raw ok4_temp_then_read_same_list.cell_main(argv.len)) != 67i32) { exit 138i32; }
     if ((raw gk4a_int_array_15_exempt.cell_main(argv.len)) != 67i32) { exit 139i32; }
@@ -1086,8 +1022,6 @@ func:failsafe = int32(Error:e) {
         (assignment_target_runs_before_its_value_ok.E5_ae7_array_claim_and_index) { exit 75i32; },
         (assignment_target_runs_before_its_value_ok.E5_kc1_callee_target_no_replace) { exit 75i32; },
         (assignment_target_runs_before_its_value_ok.E5_kc3_callee_read_no_replace) { exit 75i32; },
-        (assignment_target_runs_before_its_value_ok.E5_ok1_sibling_write) { exit 75i32; },
-        (assignment_target_runs_before_its_value_ok.E5_ok2_field_ptr_list_grown) { exit 75i32; },
         (assignment_target_runs_before_its_value_ok.E5_ok3_read_through_then_use) { exit 75i32; },
         (assignment_target_runs_before_its_value_ok.E5_ok4_temp_then_read_same_list) { exit 75i32; },
         (assignment_target_runs_before_its_value_ok.E5_gk4a_int_array_15_exempt) { exit 75i32; },

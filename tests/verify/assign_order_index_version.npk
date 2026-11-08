@@ -1,0 +1,49 @@
+// expect-exit: 24
+// expect-obligation: bounds discharged 1
+// expect-obligation: bounds open 1
+// expect-obligation: exhaustive checker 2
+// expect-obligation: failsafe-post discharged 16
+// expect-obligation: overflow open 1
+//
+// THE TARGET'S INDEX IS THE VERSION THE TARGET READ (DEF-573, landing 177d2b3; the row's first face). The target reads
+// `s.k`, 99, and its bounds check traps `OutOfBounds`, 24, before the value runs; the value replaces `s` (a struct that
+// can't drop, ASSIGN-005's exemption) with one whose `k` is in bounds. With the value read first the prover checked
+// the target's index at the NEW `k`, discharged the row, and the verified build stored out of bounds (exit 7 at -O0,
+// 9 at -O2).
+mod:assign_order_index_version;
+error:E9;
+
+struct:Slot = { int64:k; };
+
+func:store = int32(int32:n) never fails {
+    int32[4]:b = [1i32, 2i32, 3i32, 4i32];
+    Slot:s = Slot{ k: 99i64 };
+    b[s.k] = pick (n) { (*) { s = Slot{ k: 1i64 }; give 0i32; } };
+    discard(s.k);
+    pass b[0i64] + 6i32;
+};
+
+func:main = int32(cstring[]:argv) {
+    exit (raw store(argv.len =>! int32));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (BorrowOverlap) { exit 90i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

@@ -1,0 +1,1313 @@
+// expect-exit: 0
+mod:list_ptr_from_call_ok;
+// WHAT DEF-575 LEAVES LEGAL (landing 177d2b3), each module one cell that reads 67: the same calls with nothing growing or replacing the `List`
+// (`kc1`, `kc3`, `ric`, `krc`, `kac`, `kn4c`, `kn5c`, `k3hc`, `xa1c`, `xe1c` to `xe5c`, `xf5c`, `xg1c`, `xh1c`, `xr1c`, `xw13c`); a write THROUGH the
+// pointer itself (`ok3`, `ok4`, `ok7`, `ok8`, `xe15`), a push through a pointer to the inner `List` (`ok5`, `ok6`, and `xe9`, the same pointer in a
+// struct); a struct with no `List` (`kn1`); a `List` that can't hold the pointee (`kn2`, `kn2t`: an `int64->` out of a struct whose only `List`
+// holds strings; `xh2`, the same through a generic struct); an identity pointer over a type that isn't recursive (`kn3`, and `xe10`, `xe11`, the
+// same pointer in a struct, with a sibling written and the `List` grown); a pointer member, which is other storage (`kn7`); a field through an
+// identity pointer as an assignment's target (`k3m`); the named pointer re-pointed inside the window (`r3g`, and `xr5`, a copy of a pointer
+// PARAMETER re-pointed there). And the compiler's own shapes, which the `wild` line keeps: `xw1` (a struct that owns `List`s and its own `wild`
+// arrays, handed by `@` to a callee that grows a `List` and stores a copy of one of its own fields back: `assign_module(@asg, ...)`), `xw4` (a
+// struct holding a pointer to another's header beside its own `wild` array, while the other is written: `finish_layouts(@tr, ...)` under `esc`);
+// `xx1`, `xx4` are the two over a `wildx` field. A PLACE THAT HOLDS NO `List` HAS NO ELEMENT TO POINT INTO, whatever the holder is: an enum with
+// payloads and a `dyn` answer for themselves that they may hold such a pointer (nobody reads them), so the place is asked too, and it may be
+// written while the holder lives (`xn1`, an enum's payload over a struct of two `int64`); `xn2c` is the same holder over a struct that holds a
+// `List`, with nothing growing it. The `dyn` holders' four (`xn3`, `xn5`, `xn4c`, `xn6c`) are `list_ptr_from_call_dyn_ok.npk`, at file level:
+// an `impl:PD:Tl` inside an inline module is TYPE-001 under `npkc` (DEF-463, open).
+// A FIELD'S TYPE IS READ WHERE THE STRUCT WAS WRITTEN, WITH ITS INSTANCE'S ARGUMENTS BOUND (`struct_member_type`, type_layout.npk): `xt1` (a `K2->`
+// into `GP<K2>`'s inline `T:v`, which its `List<int64>` can't hold, while the `List` grows), `xm1` (the same over a struct of another module
+// with a field of a type private to that module); `xt2c`, `xm2c` are the controls of the refused `xt2`, `xm2`.
+// `tests/analysis/rejection/list_ptr_from_call.npk` is the refusals beside them.
+error:Bad;
+mod:kc1_callee_target_no_replace = {
+error:E5_kc1_callee_target_no_replace;
+struct:H = { List<int64>:l; int64:k; };
+struct:HH = { H:h; int64:z; };
+struct:SW = { wild int64->:p; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:eatl = int64(move List<int64>:v) never fails { pass 7i64; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:refill = int64(List<int64>->:p) never fails { <-p = raw mk(); pass 7i64; };
+func:reseth = int64(H->:w) never fails { <-w = raw mkh(); pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:f = int64(int64:n) never fails {
+    List<int64>:l = raw mk();
+    <-(raw first(@l)) = 7i64;
+    pass l[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:kc3_callee_read_no_replace = {
+error:E5_kc3_callee_read_no_replace;
+struct:H = { List<int64>:l; int64:k; };
+struct:HH = { H:h; int64:z; };
+struct:SW = { wild int64->:p; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:eatl = int64(move List<int64>:v) never fails { pass 7i64; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:refill = int64(List<int64>->:p) never fails { <-p = raw mk(); pass 7i64; };
+func:reseth = int64(H->:w) never fails { <-w = raw mkh(); pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:f = int64(int64:n) never fails {
+    List<int64>:l = raw mk();
+    int64:v = raw rd2(raw first(@l), 0i64);
+    pass v + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ok3_read_through_then_use = {
+error:E5_ok3_read_through_then_use;
+struct:H = { List<int64>:l; int64:k; };
+struct:HH = { H:h; int64:z; };
+struct:SW = { wild int64->:p; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:eatl = int64(move List<int64>:v) never fails { pass 7i64; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:refill = int64(List<int64>->:p) never fails { <-p = raw mk(); pass 7i64; };
+func:reseth = int64(H->:w) never fails { <-w = raw mkh(); pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:W = { H->:hp; };
+func:fp2 = int64->(W->:w) never fails { pass @((<-w.hp).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:ap = int64->(List<int64>[2]->:a) never fails { pass @((<-a)[0i64][0i64]); };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    int64->:e = raw fp(@h);
+    <-e = 7i64;
+    pass h.l[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ok4_temp_then_read_same_list = {
+error:E5_ok4_temp_then_read_same_list;
+struct:H = { List<int64>:l; int64:k; };
+struct:HH = { H:h; int64:z; };
+struct:SW = { wild int64->:p; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:eatl = int64(move List<int64>:v) never fails { pass 7i64; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:refill = int64(List<int64>->:p) never fails { <-p = raw mk(); pass 7i64; };
+func:reseth = int64(H->:w) never fails { <-w = raw mkh(); pass 7i64; };
+func:newp = wild int64->() never fails { pass alloc(64i64) =>! wild int64->; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:W = { H->:hp; };
+func:fp2 = int64->(W->:w) never fails { pass @((<-w.hp).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:ap = int64->(List<int64>[2]->:a) never fails { pass @((<-a)[0i64][0i64]); };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    <-(raw fp(@h)) = 6i64 + h.k - 1i64;
+    pass h.l[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ric_elem_through_call_no_grow = {
+error:E5_ric_elem_through_call_no_grow;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:f = int64(int64:n) never fails {
+    List<int64>:l = raw mk();
+    int64:v = raw rd2(raw idp(@l[0i64]), 0i64);
+    pass v + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:krc_recursive_no_replace = {
+error:E5_krc_recursive_no_replace;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:Nd = { List<Nd>:kids; int64:v; };
+func:leaf = Nd(int64:v) never fails { pass Nd{ kids: raw list_init::<Nd>(1i64), v: v }; };
+func:mkn = Nd() never fails { Nd:r = raw leaf(1i64); drop list_push(@r.kids, raw leaf(7i64)); pass r; };
+func:kid0 = Nd->(Nd->:q) never fails { pass @((<-q).kids[0i64]); };
+func:idn = Nd->(Nd->:q) never fails { pass q; };
+func:f = int64(int64:n) never fails {
+    Nd:nd = raw mkn();
+    Nd->:c = raw kid0(@nd);
+    pass c.v;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:kac_aggregate_holder_no_replace = {
+error:E5_kac_aggregate_holder_no_replace;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    PE:pe = PE{ p: raw fp(@h), z: 0i64 };
+    pass (<-pe.p) + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:kn4c_any_pointee_no_replace = {
+error:E5_kn4c_any_pointee_no_replace;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:af = any->(H->:q) never fails { pass (@((<-q).l[0i64])) =>! any->; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    any->:e = raw af(@h);
+    pass (<-(e =>! int64->)) + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:kn5c_ten_deep_no_replace = {
+error:E5_kn5c_ten_deep_no_replace;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:S0 = { List<int64>:l; };
+struct:S1 = { S0:s; };
+struct:S2 = { S1:s; };
+struct:S3 = { S2:s; };
+struct:S4 = { S3:s; };
+struct:S5 = { S4:s; };
+struct:S6 = { S5:s; };
+struct:S7 = { S6:s; };
+struct:S8 = { S7:s; };
+struct:S9 = { S8:s; };
+struct:S10 = { S9:s; };
+func:mk10 = S10() never fails { pass S10{ s: S9{ s: S8{ s: S7{ s: S6{ s: S5{ s: S4{ s: S3{ s: S2{ s: S1{ s: S0{ l: raw mk() } } } } } } } } } } }; };
+func:dp = int64->(S10->:q) never fails { pass @(q.s.s.s.s.s.s.s.s.s.s.l[0i64]); };
+func:f = int64(int64:n) never fails {
+    S10:d = raw mk10();
+    int64->:e = raw dp(@d);
+    pass (<-e) + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:k3hc_list_ptr_index_target_ok = {
+error:E5_k3hc_list_ptr_index_target_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    (<-(raw getl(@h)))[0i64] = 6i64 + h.k - 1i64;
+    pass h.l[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ok5_listptr_holder_push_through = {
+error:E5_ok5_listptr_holder_push_through;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    List<int64>->:lp = raw getl(@h);
+    drop list_push(lp, 5i64);
+    pass (<-lp)[1i64] + 2i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ok6_listptr_temp_push_through = {
+error:E5_ok6_listptr_temp_push_through;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    drop list_push(raw getl(@h), 5i64);
+    pass h.l[1i64] + 2i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ok7_elem_holder_write_through = {
+error:E5_ok7_elem_holder_write_through;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    int64->:e = raw fp(@h);
+    <-e = 7i64;
+    <-e = (<-e) + h.k - 2i64;
+    pass h.l[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:ok8_field_ptr_holder_write_k = {
+error:E5_ok8_field_ptr_holder_write_k;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    int64->:e = raw kp(@h);
+    <-e = 7i64;
+    pass h.k;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:kn1_no_list_field_ptr_ok = {
+error:E5_kn1_no_list_field_ptr_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:P2 = { int64:a; int64:b; };
+func:pa = int64->(P2->:q) never fails { pass @q.a; };
+func:f = int64(int64:n) never fails {
+    P2:p = P2{ a: 1i64, b: 2i64 };
+    int64->:e = raw pa(@p);
+    p.b = 6i64;
+    <-e = 1i64;
+    pass (<-e) + p.b;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:kn2_list_of_other_type_ok = {
+error:E5_kn2_list_of_other_type_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:HS = { List<string>:names; int64:k; };
+func:mkhs = HS() never fails { pass HS{ names: raw list_init::<string>(1i64), k: 2i64 }; };
+func:kps = int64->(HS->:w) never fails { pass @w.k; };
+func:addn = int64(HS->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.names, string_concat("a", "b")); } pass 0i64; };
+func:f = int64(int64:n) never fails {
+    HS:hs = raw mkhs();
+    int64->:e = raw kps(@hs);
+    discard(raw addn(@hs));
+    <-e = 7i64;
+    pass hs.k;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:kn2t_list_of_other_type_temp_ok = {
+error:E5_kn2t_list_of_other_type_temp_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:HS = { List<string>:names; int64:k; };
+func:mkhs = HS() never fails { pass HS{ names: raw list_init::<string>(1i64), k: 2i64 }; };
+func:kps = int64->(HS->:w) never fails { pass @w.k; };
+func:addn = int64(HS->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.names, string_concat("a", "b")); } pass 0i64; };
+func:f = int64(int64:n) never fails {
+    HS:hs = raw mkhs();
+    int64:v = raw rd2(raw kps(@hs), raw addn(@hs));
+    pass v + 5i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:kn3_identity_sibling_write_ok = {
+error:E5_kn3_identity_sibling_write_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idh = H->(H->:q) never fails { pass q; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    H->:q = raw idh(@h);
+    h.k = 7i64;
+    pass q.k;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:kn7_ptr_member_not_followed_ok = {
+error:E5_kn7_ptr_member_not_followed_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:W2 = { H->:hp; int64:z; int64:y; };
+func:wzp = int64->(W2->:q) never fails { pass @q.z; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    W2:w2 = W2{ hp: @h, z: 1i64, y: 2i64 };
+    int64->:e = raw wzp(@w2);
+    w2.y = 6i64;
+    <-e = 1i64;
+    pass (<-e) + w2.y;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:k3m_field_through_identity_target_ok = {
+error:E5_k3m_field_through_identity_target_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idh2 = H->(H->:q) never fails { pass q; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    (<-(raw idh2(@h))).k = raw growh(@h);
+    pass h.k;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:r3g_temp_named_ptr_repointed_ok = {
+error:E5_r3g_temp_named_ptr_repointed_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    H:h2 = raw mkh();
+    H->:q = @h;
+    int64:v = raw rd2(raw fp(q), pick (n) { (*) { q = @h2; give 0i64; } });
+    pass v + 6i64 + (q.k - 2i64);
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xa1c_ptr_holder_no_init = {
+error:E5_xa1c_ptr_holder_no_init;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    int64:k = 0i64;
+    int64->:e = @k;
+    e = raw fp(@h);
+    pass (<-e) + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xe1c_optional_ptr_holder = {
+error:E5_xe1c_optional_ptr_holder;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    int64->?:o = raw fp(@h);
+    pass (<-(o ??! E5_xe1c_optional_ptr_holder)) + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xe2c_array_holder = {
+error:E5_xe2c_array_holder;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    int64->[1]:a = [raw fp(@h)];
+    pass (<-a[0i64]) + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xe3c_list_of_ptr_holder = {
+error:E5_xe3c_list_of_ptr_holder;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    List<int64->>:ps = raw list_init::<int64->>(1i64);
+    drop list_push(@ps, raw fp(@h));
+    pass (<-ps[0i64]) + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xe4c_field_assigned_later = {
+error:E5_xe4c_field_assigned_later;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    int64:k = 0i64;
+    PE:pe = PE{ p: @k, z: 0i64 };
+    pe.p = raw fp(@h);
+    pass (<-pe.p) + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xe5c_call_result_struct = {
+error:E5_xe5c_call_result_struct;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+func:mkpe = PE(H->:q) never fails { pass PE{ p: @((<-q).l[0i64]), z: 0i64 }; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    PE:pe = raw mkpe(@h);
+    pass (<-pe.p) + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xf5c_struct_temp_arg = {
+error:E5_xf5c_struct_temp_arg;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+func:mkpe = PE(H->:q) never fails { pass PE{ p: @((<-q).l[0i64]), z: 0i64 }; };
+func:rdpe = int64(PE:pe, int64:z) never fails { pass <-pe.p; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    int64:v = raw rdpe(raw mkpe(@h), 0i64);
+    pass v + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xg1c_method_result_holder = {
+error:E5_xg1c_method_result_holder;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+impl:H = {
+    func:mfp = int64->(Self->:s) never fails { pass @((<-s).l[0i64]); };
+};
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    int64->:e = raw h.mfp();
+    pass (<-e) + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xh1c_generic_struct_holder = {
+error:E5_xh1c_generic_struct_holder;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+struct:Bx<T> = { List<T>:l; int64:k; };
+func:mkb = Bx<int64>() never fails { pass Bx{ l: raw mk(), k: 2i64 }; };
+func:bfp = int64->(Bx<int64>->:q) never fails { pass @((<-q).l[0i64]); };
+func:bkp = int64->(Bx<string>->:q) never fails { pass @q.k; };
+func:f = int64(int64:n) never fails {
+    Bx<int64>:bx = raw mkb();
+    int64->:e = raw bfp(@bx);
+    pass (<-e) + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xr1c_param_elem_through_call = {
+error:E5_xr1c_param_elem_through_call;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+func:g = int64(List<int64>->:lp) never fails {
+    pass (raw rd2(raw idp(@(<-lp)[0i64]), 0i64)) + 6i64;
+};
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    List<int64>:l = raw mk();
+    pass raw g(@l);
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xe9_aggregate_holds_list_ptr_push_ok = {
+error:E5_xe9_aggregate_holds_list_ptr_push_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+struct:PL = { List<int64>->:lp; int64:z; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    PL:pl = PL{ lp: raw getl(@h), z: 0i64 };
+    drop list_push(pl.lp, 5i64);
+    pass h.l[1i64] + 2i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xe10_aggregate_holds_whole_ptr_sibling_ok = {
+error:E5_xe10_aggregate_holds_whole_ptr_sibling_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+struct:PH = { H->:hp; int64:z; };
+func:idh = H->(H->:q) never fails { pass q; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    PH:ph = PH{ hp: raw idh(@h), z: 0i64 };
+    h.k = 7i64;
+    pass ph.hp.k;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xe11_aggregate_holds_whole_ptr_grow_ok = {
+error:E5_xe11_aggregate_holds_whole_ptr_grow_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+struct:PH = { H->:hp; int64:z; };
+func:idh = H->(H->:q) never fails { pass q; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    PH:ph = PH{ hp: raw idh(@h), z: 0i64 };
+    discard(raw growh(@h));
+    pass ph.hp.k + 5i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xe15_list_ptr_holder_write_through_ok = {
+error:E5_xe15_list_ptr_holder_write_through_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+func:f = int64(int64:n) never fails {
+    List<int64>:l = raw mk();
+    int64->:e = raw first(@l);
+    <-e = 7i64;
+    pass l[0i64];
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xh2_generic_struct_other_arg_ok = {
+error:E5_xh2_generic_struct_other_arg_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+struct:Bx<T> = { List<T>:l; int64:k; };
+func:mkb = Bx<int64>() never fails { pass Bx{ l: raw mk(), k: 2i64 }; };
+func:bfp = int64->(Bx<int64>->:q) never fails { pass @((<-q).l[0i64]); };
+func:bkp = int64->(Bx<string>->:q) never fails { pass @q.k; };
+func:f = int64(int64:n) never fails {
+    Bx<string>:bs = Bx{ l: raw list_init::<string>(1i64), k: 2i64 };
+    int64->:e = raw bkp(@bs);
+    drop list_push(@bs.l, "a");
+    <-e = 7i64;
+    pass bs.k;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xr5_param_elem_through_call_repointed_ok = {
+error:E5_xr5_param_elem_through_call_repointed_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+func:g = int64(List<int64>->:lp, List<int64>->:lq) never fails {
+    List<int64>->:c = lp;
+    int64:v = raw rd2(raw idp(@(<-c)[0i64]), pick ((<-lp).count) { (*) { c = lq; give 0i64; } });
+    pass v + 6i64 + ((<-c)[0i64] - 1i64);
+};
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    List<int64>:l = raw mk();
+    pass raw g(@l, @l);
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xw1_wild_scratch_self_flow_ok = {
+error:E5_xw1_wild_scratch_self_flow_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+struct:St = { wild int64->:bits; int64:n; };
+struct:Cx = { wild int64->:scratch; St:road; List<int64>:slots; int64:k; };
+func:mkcx = Cx() never fails { wild int8->:a = alloc(64i64); wild int8->:b = alloc(64i64); pass Cx{ scratch: a =>! wild int64->, road: St{ bits: b =>! wild int64->, n: 0i64 }, slots: raw mk(), k: 2i64 }; };
+func:step = int64(Cx->:x) never fails { St:saved = x.road; drop list_push(@x.slots, 5i64); x.road = saved; pass 7i64; };
+func:fin = int64(Cx->:x) never fails { dalloc(x.scratch); dalloc(x.road.bits); pass 0i64; };
+func:f = int64(int64:n) never fails {
+    Cx:cx = raw mkcx();
+    discard(raw step(@cx));
+    discard(raw step(@cx));
+    int64:v = cx.slots[1i64] + 2i64;
+    discard(raw fin(@cx));
+    pass v;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xw4_wild_scratch_holder_of_header_ok = {
+error:E5_xw4_wild_scratch_holder_of_header_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+struct:Tr = { List<int64>:names; int64:counter; };
+struct:Es = { Tr->:tr; wild int64->:holds; int64:n; };
+func:mkes = Es(Tr->:t) never fails { wild int8->:a = alloc(64i64); pass Es{ tr: t, holds: a =>! wild int64->, n: 0i64 }; };
+func:bump = int64(Tr->:t) never fails { t.counter = t.counter + 5i64; pass 7i64; };
+func:fines = int64(Es->:e) never fails { dalloc(e.holds); pass 0i64; };
+func:f = int64(int64:n) never fails {
+    Tr:tr = Tr{ names: raw mk(), counter: 0i64 };
+    Es:es = raw mkes(@tr);
+    discard(raw bump(@tr));
+    int64:v = es.tr.counter + 2i64;
+    discard(raw fines(@es));
+    pass v;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xx1_wildx_scratch_self_flow_ok = {
+error:E5_xx1_wildx_scratch_self_flow_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+struct:St = { wildx int64->:bits; int64:n; };
+struct:Cx = { wildx int64->:scratch; St:road; List<int64>:slots; int64:k; };
+func:mkcx = Cx() never fails { wild int8->:a = alloc(64i64); wild int8->:b = alloc(64i64); pass Cx{ scratch: a =>! wild int64->, road: St{ bits: b =>! wild int64->, n: 0i64 }, slots: raw mk(), k: 2i64 }; };
+func:step = int64(Cx->:x) never fails { St:saved = x.road; drop list_push(@x.slots, 5i64); x.road = saved; pass 7i64; };
+func:fin = int64(Cx->:x) never fails { dalloc(x.scratch); dalloc(x.road.bits); pass 0i64; };
+func:f = int64(int64:n) never fails {
+    Cx:cx = raw mkcx();
+    discard(raw step(@cx));
+    discard(raw step(@cx));
+    int64:v = cx.slots[1i64] + 2i64;
+    discard(raw fin(@cx));
+    pass v;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xx4_wildx_scratch_holder_of_header_ok = {
+error:E5_xx4_wildx_scratch_holder_of_header_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+struct:Tr = { List<int64>:names; int64:counter; };
+struct:Es = { Tr->:tr; wildx int64->:holds; int64:n; };
+func:mkes = Es(Tr->:t) never fails { wild int8->:a = alloc(64i64); pass Es{ tr: t, holds: a =>! wild int64->, n: 0i64 }; };
+func:bump = int64(Tr->:t) never fails { t.counter = t.counter + 5i64; pass 7i64; };
+func:fines = int64(Es->:e) never fails { dalloc(e.holds); pass 0i64; };
+func:f = int64(int64:n) never fails {
+    Tr:tr = Tr{ names: raw mk(), counter: 0i64 };
+    Es:es = raw mkes(@tr);
+    discard(raw bump(@tr));
+    int64:v = es.tr.counter + 2i64;
+    discard(raw fines(@es));
+    pass v;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xw13c_wild_holder_crossed = {
+error:E5_xw13c_wild_holder_crossed;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+struct:WH = { wild H->:p; int64:z; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    WH:wh = WH{ p: (@h) =>! wild H->, z: 0i64 };
+    pass (<-wh.p).l[0i64] + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xn2c_enum_holder_list = {
+error:E5_xn2c_enum_holder_list;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+enum:EK = { A(int64->); Z; };
+func:rdk = int64(EK:e) never fails { int64:v = 0i64; pick (e) { (EK.A(q)) { v = <-q; }, (EK.Z) { v = 0i64; } } pass v; };
+func:f = int64(int64:n) never fails {
+    H:h = raw mkh();
+    EK:e = EK.A(raw fp(@h));
+    pass (raw rdk(e)) + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xn1_enum_holder_no_list_write_ok = {
+error:E5_xn1_enum_holder_no_list_write_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+enum:EK = { A(int64->); Z; };
+func:rdk = int64(EK:e) never fails { int64:v = 0i64; pick (e) { (EK.A(q)) { v = <-q; }, (EK.Z) { v = 0i64; } } pass v; };
+struct:K2 = { int64:k; int64:j; };
+func:kk = int64->(K2->:q) never fails { pass @q.k; };
+func:setk = int64(K2->:q) never fails { q.k = 7i64; pass 0i64; };
+func:f = int64(int64:n) never fails {
+    K2:a = K2{ k: 1i64, j: 2i64 };
+    EK:e = EK.A(raw kk(@a));
+    a.k = 7i64;
+    pass raw rdk(e);
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xt1_generic_place_inline_field_other_list_grow_ok = {
+error:E5_xt1_generic_place_inline_field_other_list_grow_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+struct:K2 = { int64:k; int64:j; };
+struct:GP<T> = { T:v; List<int64>:l; };
+func:gv = K2->(GP<K2>->:q) never fails { pass @q.v; };
+func:growg = int64(GP<K2>->:q) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@q.l, 1i64); } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    GP<K2>:g = GP{ v: K2{ k: 1i64, j: 2i64 }, l: raw mk() };
+    K2->:p = raw gv(@g);
+    discard(raw growg(@g));
+    pass (<-p).k + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xt2c_generic_place_list_of_param = {
+error:E5_xt2c_generic_place_list_of_param;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+struct:K2 = { int64:k; int64:j; };
+struct:GP2<T> = { int64:z; List<T>:l; };
+func:mkk = List<K2>() never fails { List<K2>:l = raw list_init::<K2>(1i64); drop list_push(@l, K2{ k: 1i64, j: 2i64 }); pass l; };
+func:ge = K2->(GP2<K2>->:q) never fails { pass @((<-q).l[0i64]); };
+func:growg2 = int64(GP2<K2>->:q) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@q.l, K2{ k: 3i64, j: 4i64 }); } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    GP2<K2>:g = GP2{ z: 0i64, l: raw mkk() };
+    K2->:p = raw ge(@g);
+    pass (<-p).k + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xm1_foreign_struct_private_field_other_list_grow_ok = {
+error:E5_xm1_foreign_struct_private_field_other_list_grow_ok;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+mod:mm = {
+    struct:In = { int64:a; };
+    pub struct:Zz = { int64:k; };
+    pub struct:MP = { In:i; Zz:z; List<int64>:l; };
+    func:mkl2 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+    pub func:mkmp = MP() never fails { pass MP{ i: In{ a: 1i64 }, z: Zz{ k: 1i64 }, l: raw mkl2() }; };
+    pub func:zp = Zz->(MP->:q) never fails { pass @q.z; };
+    pub func:ep = int64->(MP->:q) never fails { pass @((<-q).l[0i64]); };
+    pub func:growmp = int64(MP->:q) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@q.l, 1i64); } pass 7i64; };
+};
+use mm.{MP, Zz};
+func:f = int64(int64:n) never fails {
+    MP:g = raw mm.mkmp();
+    Zz->:p = raw mm.zp(@g);
+    discard(raw mm.growmp(@g));
+    pass (<-p).k + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+mod:xm2c_foreign_struct_private_field_elem = {
+error:E5_xm2c_foreign_struct_private_field_elem;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:grow = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp = int64->(H->:w) never fails { pass @w.k; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE = { int64->:p; int64:z; };
+mod:mm = {
+    struct:In = { int64:a; };
+    pub struct:Zz = { int64:k; };
+    pub struct:MP = { In:i; Zz:z; List<int64>:l; };
+    func:mkl2 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+    pub func:mkmp = MP() never fails { pass MP{ i: In{ a: 1i64 }, z: Zz{ k: 1i64 }, l: raw mkl2() }; };
+    pub func:zp = Zz->(MP->:q) never fails { pass @q.z; };
+    pub func:ep = int64->(MP->:q) never fails { pass @((<-q).l[0i64]); };
+    pub func:growmp = int64(MP->:q) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@q.l, 1i64); } pass 7i64; };
+};
+use mm.{MP, Zz};
+func:f = int64(int64:n) never fails {
+    MP:g = raw mm.mkmp();
+    int64->:p = raw mm.ep(@g);
+    pass (<-p) + 6i64;
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+func:main = int32(cstring[]:argv) {
+    if ((raw kc1_callee_target_no_replace.cell_main(argv.len)) != 67i32) { exit 100i32; }
+    if ((raw kc3_callee_read_no_replace.cell_main(argv.len)) != 67i32) { exit 101i32; }
+    if ((raw ok3_read_through_then_use.cell_main(argv.len)) != 67i32) { exit 102i32; }
+    if ((raw ok4_temp_then_read_same_list.cell_main(argv.len)) != 67i32) { exit 103i32; }
+    if ((raw ric_elem_through_call_no_grow.cell_main(argv.len)) != 67i32) { exit 104i32; }
+    if ((raw krc_recursive_no_replace.cell_main(argv.len)) != 67i32) { exit 105i32; }
+    if ((raw kac_aggregate_holder_no_replace.cell_main(argv.len)) != 67i32) { exit 106i32; }
+    if ((raw kn4c_any_pointee_no_replace.cell_main(argv.len)) != 67i32) { exit 107i32; }
+    if ((raw kn5c_ten_deep_no_replace.cell_main(argv.len)) != 67i32) { exit 108i32; }
+    if ((raw k3hc_list_ptr_index_target_ok.cell_main(argv.len)) != 67i32) { exit 109i32; }
+    if ((raw ok5_listptr_holder_push_through.cell_main(argv.len)) != 67i32) { exit 110i32; }
+    if ((raw ok6_listptr_temp_push_through.cell_main(argv.len)) != 67i32) { exit 111i32; }
+    if ((raw ok7_elem_holder_write_through.cell_main(argv.len)) != 67i32) { exit 112i32; }
+    if ((raw ok8_field_ptr_holder_write_k.cell_main(argv.len)) != 67i32) { exit 113i32; }
+    if ((raw kn1_no_list_field_ptr_ok.cell_main(argv.len)) != 67i32) { exit 114i32; }
+    if ((raw kn2_list_of_other_type_ok.cell_main(argv.len)) != 67i32) { exit 115i32; }
+    if ((raw kn2t_list_of_other_type_temp_ok.cell_main(argv.len)) != 67i32) { exit 116i32; }
+    if ((raw kn3_identity_sibling_write_ok.cell_main(argv.len)) != 67i32) { exit 117i32; }
+    if ((raw kn7_ptr_member_not_followed_ok.cell_main(argv.len)) != 67i32) { exit 118i32; }
+    if ((raw k3m_field_through_identity_target_ok.cell_main(argv.len)) != 67i32) { exit 119i32; }
+    if ((raw r3g_temp_named_ptr_repointed_ok.cell_main(argv.len)) != 67i32) { exit 120i32; }
+    if ((raw xa1c_ptr_holder_no_init.cell_main(argv.len)) != 67i32) { exit 121i32; }
+    if ((raw xe1c_optional_ptr_holder.cell_main(argv.len)) != 67i32) { exit 122i32; }
+    if ((raw xe2c_array_holder.cell_main(argv.len)) != 67i32) { exit 123i32; }
+    if ((raw xe3c_list_of_ptr_holder.cell_main(argv.len)) != 67i32) { exit 124i32; }
+    if ((raw xe4c_field_assigned_later.cell_main(argv.len)) != 67i32) { exit 125i32; }
+    if ((raw xe5c_call_result_struct.cell_main(argv.len)) != 67i32) { exit 126i32; }
+    if ((raw xf5c_struct_temp_arg.cell_main(argv.len)) != 67i32) { exit 127i32; }
+    if ((raw xg1c_method_result_holder.cell_main(argv.len)) != 67i32) { exit 128i32; }
+    if ((raw xh1c_generic_struct_holder.cell_main(argv.len)) != 67i32) { exit 129i32; }
+    if ((raw xr1c_param_elem_through_call.cell_main(argv.len)) != 67i32) { exit 130i32; }
+    if ((raw xe9_aggregate_holds_list_ptr_push_ok.cell_main(argv.len)) != 67i32) { exit 131i32; }
+    if ((raw xe10_aggregate_holds_whole_ptr_sibling_ok.cell_main(argv.len)) != 67i32) { exit 132i32; }
+    if ((raw xe11_aggregate_holds_whole_ptr_grow_ok.cell_main(argv.len)) != 67i32) { exit 133i32; }
+    if ((raw xe15_list_ptr_holder_write_through_ok.cell_main(argv.len)) != 67i32) { exit 134i32; }
+    if ((raw xh2_generic_struct_other_arg_ok.cell_main(argv.len)) != 67i32) { exit 135i32; }
+    if ((raw xr5_param_elem_through_call_repointed_ok.cell_main(argv.len)) != 67i32) { exit 136i32; }
+    if ((raw xw1_wild_scratch_self_flow_ok.cell_main(argv.len)) != 67i32) { exit 137i32; }
+    if ((raw xw4_wild_scratch_holder_of_header_ok.cell_main(argv.len)) != 67i32) { exit 138i32; }
+    if ((raw xx1_wildx_scratch_self_flow_ok.cell_main(argv.len)) != 67i32) { exit 139i32; }
+    if ((raw xx4_wildx_scratch_holder_of_header_ok.cell_main(argv.len)) != 67i32) { exit 140i32; }
+    if ((raw xw13c_wild_holder_crossed.cell_main(argv.len)) != 67i32) { exit 141i32; }
+    if ((raw xn2c_enum_holder_list.cell_main(argv.len)) != 67i32) { exit 142i32; }
+    if ((raw xn1_enum_holder_no_list_write_ok.cell_main(argv.len)) != 67i32) { exit 143i32; }
+    if ((raw xt1_generic_place_inline_field_other_list_grow_ok.cell_main(argv.len)) != 67i32) { exit 144i32; }
+    if ((raw xt2c_generic_place_list_of_param.cell_main(argv.len)) != 67i32) { exit 145i32; }
+    if ((raw xm1_foreign_struct_private_field_other_list_grow_ok.cell_main(argv.len)) != 67i32) { exit 146i32; }
+    if ((raw xm2c_foreign_struct_private_field_elem.cell_main(argv.len)) != 67i32) { exit 147i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (Bad)              { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (list_ptr_from_call_ok.E5_kc1_callee_target_no_replace) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_kc3_callee_read_no_replace) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_ok3_read_through_then_use) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_ok4_temp_then_read_same_list) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_ric_elem_through_call_no_grow) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_krc_recursive_no_replace) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_kac_aggregate_holder_no_replace) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_kn4c_any_pointee_no_replace) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_kn5c_ten_deep_no_replace) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_k3hc_list_ptr_index_target_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_ok5_listptr_holder_push_through) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_ok6_listptr_temp_push_through) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_ok7_elem_holder_write_through) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_ok8_field_ptr_holder_write_k) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_kn1_no_list_field_ptr_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_kn2_list_of_other_type_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_kn2t_list_of_other_type_temp_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_kn3_identity_sibling_write_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_kn7_ptr_member_not_followed_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_k3m_field_through_identity_target_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_r3g_temp_named_ptr_repointed_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xa1c_ptr_holder_no_init) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xe1c_optional_ptr_holder) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xe2c_array_holder) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xe3c_list_of_ptr_holder) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xe4c_field_assigned_later) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xe5c_call_result_struct) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xf5c_struct_temp_arg) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xg1c_method_result_holder) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xh1c_generic_struct_holder) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xr1c_param_elem_through_call) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xe9_aggregate_holds_list_ptr_push_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xe10_aggregate_holds_whole_ptr_sibling_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xe11_aggregate_holds_whole_ptr_grow_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xe15_list_ptr_holder_write_through_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xh2_generic_struct_other_arg_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xr5_param_elem_through_call_repointed_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xw1_wild_scratch_self_flow_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xw4_wild_scratch_holder_of_header_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xx1_wildx_scratch_self_flow_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xx4_wildx_scratch_holder_of_header_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xw13c_wild_holder_crossed) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xn2c_enum_holder_list) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xn1_enum_holder_no_list_write_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xt1_generic_place_inline_field_other_list_grow_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xt2c_generic_place_list_of_param) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xm1_foreign_struct_private_field_other_list_grow_ok) { exit 75i32; },
+        (list_ptr_from_call_ok.E5_xm2c_foreign_struct_private_field_elem) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

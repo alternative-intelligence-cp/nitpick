@@ -3,6 +3,8 @@
 // `param_copy_summary.npk` refuses, each with the hazard removed -- no view live, the view's block ended, the copy only
 // READ through, another pointee written. Each control is a function failing at its own exit (11-22); exit 0 at both legs
 // under this compiler AND landing 166's. The planted wrong expectations each fail at their own exit (`.internal/planted167.sh`).
+// CONTROL 22 LEFT AT LANDING 177d2b3 (DEF-584): `sfn_view_block_ended`, an `any->` parameter cast to `H2->` and held across a write through another cast copy, is
+// refused now, a named price (the pointee of an `any->` is anything): it is `xpr1` of `tests/analysis/rejection/list_ptr_through_param.npk`.
 mod:param_copy_summary_ok;
 
 struct:H2 = { string:o; int64:k; };
@@ -26,8 +28,6 @@ func:wrc2e = NIL(H2->:q) never fails { H2->:q2 = q => H2->; q2.o = string_concat
 // `any->` parameter's cast copy forwarded to a writer
 func:wrlaund = NIL(H2->:q) never fails { any->:q2 = q =>! any->; (<-(q2 =>! H2->)).o = string_concat("x", "y"); pass NIL; };
 func:wrany3 = NIL(any->:q) never fails { H2->:q2 = q =>! H2->; drop wr(q2); pass NIL; };
-// the same-function control's body: the view's block ENDED before the write through the other cast copy
-func:sfn_view_block_ended = int64(any->:q) never fails { H2->:hq = q =>! H2->; { fixed uint8[]:vw = string_bytes(hq.o); discard(vw.len); } H2->:q2 = q =>! H2->; q2.o = string_concat("x", "y"); pass hq.o.len; };
 // the accepted over-refusal: a DISJOINT field written through the copy (the whole extent is recorded)
 func:wrk = NIL(H2->:q) never fails { H2->:q2 = q; q2.k = 9i64; pass NIL; };
 // the control's reader
@@ -130,13 +130,6 @@ func:any_param_copy_forwarded_no_view = int64() never fails {
     pass h.o.len;
 };
 
-// 22. the same-function shape with the view's block ended before the write through the other cast copy
-func:same_fn_cast_copy_view_block_ended = int64() never fails {
-    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
-    any->:ap = (@h) =>! any->;
-    pass (raw sfn_view_block_ended(ap));
-};
-
 func:main = int32(cstring[]:_~argv) {
     if ((raw copy_read_only_under_view()) != 97i64) { exit 11i32; }
     if ((raw copy_write_no_view()) != 2i64) { exit 12i32; }
@@ -149,7 +142,6 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw copy_move_out_no_view()) != 1i64) { exit 19i32; }
     if ((raw plain_param_laundered_no_view()) != 2i64) { exit 20i32; }
     if ((raw any_param_copy_forwarded_no_view()) != 2i64) { exit 21i32; }
-    if ((raw same_fn_cast_copy_view_block_ended()) != 2i64) { exit 22i32; }
     exit 0i32;
 };
 

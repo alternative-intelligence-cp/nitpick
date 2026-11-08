@@ -1,0 +1,47 @@
+// expect-exit: 24
+// expect-obligation: bounds discharged 3
+// expect-obligation: bounds open 1
+// expect-obligation: exhaustive checker 2
+// expect-obligation: failsafe-post discharged 16
+// expect-obligation: overflow open 2
+//
+// WHAT THE TARGET ASSIGNS, THE VALUE SEES (DEF-573, landing 177d2b3; the other direction). The target's index is a
+// value `pick` that sets `i` to 99, and the value then reads `b[i]`: `OutOfBounds`, 24, on both builds. With the
+// value read first the prover checked `b[i]` at the OLD `i`, 1, discharged its row, and the verified build read out
+// of bounds (exit 6 at -O0, 9 at -O2).
+mod:assign_order_target_writes;
+error:E9;
+
+func:reads = int32(int32:n) never fails {
+    int32[4]:a = [1i32, 2i32, 3i32, 4i32];
+    int32[4]:b = [1i32, 2i32, 3i32, 4i32];
+    int64:i = 1i64;
+    a[pick (n) { (*) { i = 99i64; give 0i64; } }] = b[i];
+    discard(i);
+    pass a[0i64] + b[0i64] + 5i32;
+};
+
+func:main = int32(cstring[]:argv) {
+    exit (raw reads(argv.len =>! int32));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (BorrowOverlap) { exit 90i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

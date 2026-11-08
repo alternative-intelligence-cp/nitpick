@@ -59,6 +59,17 @@ pub func:struct_field = FieldInfo(TypeResolver->:r, int32:struct_type,
     pass f;
 };
 
+// ONE FIELD'S TYPE, BY ITS MEMBER, AND NO OFFSET (DEF-575's cost): `struct_field` lays out every field before the one it names, so a walk of a struct's F fields by name resolves
+// F*F/2 types. A walker that wants each field's type and no offset asks this once per member: the same binding, the same home scope, the same `resolve_type` as the walk above.
+// KEEP THE TWO EQUAL: `struct_field_bound` below is the other reader of a field's type, and a change to how either resolves one is owed to both.
+// Its caller has a struct type in hand, as `struct_field_bound`'s has; `scope` is the fallback for a declaration with no home, as there.
+pub func:struct_member_type = int32(TypeResolver->:r, int32:struct_type, DeclNode:m, int32:scope) never fails {
+    GenericScope:saved = raw bind_instance(r, struct_type);
+    int32:ft = raw resolve_type(r, raw field_type(m), raw symtab_home_scope(r.tab, raw type_decl(r.types, struct_type), scope));
+    r.generics = saved;
+    pass ft;
+};
+
 // A FIELD OF A GENERIC STRUCT IS RESOLVED WITH THE INSTANCE'S ARGUMENTS BOUND.
 //
 // `Container<int32>`'s `value` is an `int32` and `Container<string>`'s is a
@@ -108,7 +119,7 @@ func:struct_field_bound = FieldInfo(TypeResolver->:r, int32:struct_type,
         DeclId:mid = raw item_member(r.ast, d, i);
         DeclNode:m = raw ast_decl(r.ast, mid);
         if (m.kind == DeclKind.DeclFieldDecl) {
-            int32:ft = raw resolve_type(r, raw field_type(m), scope);
+            int32:ft = raw resolve_type(r, raw field_type(m), scope);   // `struct_member_type` above reads this same type and no offset: KEEP THE TWO EQUAL
             // A FIELD WHOSE LAYOUT IS NOT YET COMPUTED PUTS EVERY LATER FIELD AT
             // THE WRONG OFFSET — silently, since zero is a perfectly good number
             // to add to a running sum.

@@ -1,0 +1,52 @@
+// expect-exit: 31
+// expect-obligation: div-min discharged 1
+// expect-obligation: div-zero discharged 1
+// expect-obligation: exhaustive checker 1
+// expect-obligation: failsafe-post discharged 15
+// expect-obligation: limit discharged 2
+// expect-obligation: limit open 2
+// expect-obligation: overflow discharged 1
+// expect-obligation: overflow open 1
+//
+// DEF-582 with a root rule that DIVIDES by the field (landing 177d2b3; `limit_field_first.npk` has the account).
+// Inside `r_shelf`, `$.n >= 0` by the field's rule, so `$.n + 1` is nonzero and the division's `div-zero` row is
+// discharged. `n` becomes -1: the field's rule fails first and both builds trap `LimitViolated`, 31. Before, the
+// root's rule ran first: the plain build trapped `DivByZero` there (21) and the verified build divided by zero with
+// no guard (a machine fault, 9).
+mod:limit_field_first_div;
+error:E9;
+
+Rules<int64>:r_slot = { $ >= 0i64 };
+struct:Shelf = { limit<r_slot> int64:n; int64:serial; };
+Rules<Shelf>:r_shelf = { (100i64 / ($.n + 1i64)) >= 1i64 };
+
+func:put = int32(int64:v) never fails {
+    limit<r_shelf> Shelf:t = Shelf{ n: 1i64, serial: 1i64 };
+    t.n = v;
+    discard(t.n);
+    pass 7i32;
+};
+
+func:main = int32(cstring[]:argv) {
+    exit (raw put(argv.len - 2i64));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

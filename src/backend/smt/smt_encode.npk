@@ -3872,7 +3872,7 @@ func:record_requires = NIL(Encoder->:e, ExprId:id, ExprNode:n, CallEnc:ce, int32
     DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: ce.cd });
     if ((raw contract_count(e, cdn, raw CONTRACT_REQUIRES())) == 0i32) { pass NIL; }
     Term:g = raw enc_under(e, ce.names, ce.types, ce.terms, cdn, raw CONTRACT_REQUIRES(), false,
-                           raw term_none());
+                           raw term_none(), false);
     if (!g.ok) {
         List<int32>:none = raw list_init::<int32>(1i64);
         drop record_at(e, raw OK_REQUIRES(), "", none, raw SITE_EXPR(), id.index, n.span, false,
@@ -3895,7 +3895,7 @@ func:push_callee_ensures = NIL(Encoder->:e, CallEnc:ce, Term:val) never fails {
     DeclNode:cdn = raw ast_decl(e.ast, DeclId{ index: ce.cd });
     if ((raw contract_count(e, cdn, raw CONTRACT_ENSURES())) == 0i32) { pass NIL; }
     Term:h = raw enc_under(e, ce.names, ce.types, ce.terms, cdn, raw CONTRACT_ENSURES(), true,
-                           raw term_copy(val));
+                           raw term_copy(val), true);
     if (h.ok) { drop hyp_push(e, h.text, h.syms); }
     pass NIL;
 };
@@ -4061,11 +4061,23 @@ func:invariant_clauses = int32(Encoder->:e, VerifyId:inv) never fails {
 // opaque version), so a compound argument is named once -- and `result`
 // bound to `result_term`. QUIET: the clauses' own guards are the callee's
 // (L-5), never this function's sites. The bindings are released after.
+// AT A CALL, AN `ensures` SPEAKS OF A CALL THAT HAS RETURNED (DEF-586; `returned`). A by-value parameter's value at the return is the callee's own: the body may have
+// written it (`k = k + 100i64;`, `k += n;`, a field of it, through `@k`), and the callee's seam checks the clause of the parameter as it is THEN (D-243: a bare name is
+// its value at the return, `old(k)` its value at entry). So here a bare name is a fresh version nothing is known of, and `old(...)` alone reads the argument (the
+// binding's `entry`, which `enc_k_identifier_expr` reads under `old`). Read as the argument, `ensures result <= k` over `k = k + 100i64; pass k - 1i64;` gave the
+// caller `c <= 1` for `c = raw g(1i64)`, its `arr[c]` lost its guard, and the verified build read `arr[100]` (`tests/verify/ensures_param_written.npk`). No list of
+// the ways a body writes a parameter is kept, so no way can be missed. The price is a caller's fact drawn from a bare parameter its callee never writes: spell it `old(k)`.
+// THE OTHER READER OF AN `ensures` THROUGH HERE, the conformance row's goal (`enc_conformance`), isn't a call and is left as it was: it and the impl's own clauses
+// beside it both read a bare parameter as its entry value, which is wrong of an impl whose body writes one, and that row guards nothing (DEF-564).
 func:enc_under = Term(Encoder->:e, List<int32>:names, List<int32>:types, List<Term>:terms,
-                      DeclNode:d, int32:kind, bool:partial, Term:result_term) never fails {
+                      DeclNode:d, int32:kind, bool:partial, Term:result_term, bool:returned) never fails {
     int64:mark = raw scope_mark(e);
     for (int64:i in 0i64...names.count) {
         drop bind_define(e, names[i], types[i], raw term_copy(terms[i]), 0i32, true);
+        if (returned) {   // a second binding over the first: a fresh version by `bind_define`'s own rule for a term it can't use, its `entry` the first's
+            drop bind_define(e, names[i], types[i], raw term_none(), 0i32, true);
+            e.binds[e.binds.count - 1i64].entry = e.binds[e.binds.count - 2i64].entry;
+        }
     }
     Term:saved_res = raw term_copy(e.res_term);
     e.res_term = raw term_copy(result_term);
@@ -4152,7 +4164,7 @@ func:enc_conformance = NIL(Encoder->:e, DeclNode:d) never fails {
     int32:im_n = raw contract_count(e, d, raw CONTRACT_REQUIRES());
     if ((tr_n > 0i32) || (im_n > 0i32)) {
         drop region_enter(e);
-        Term:th = raw enc_under(e, names, types, terms, tm, raw CONTRACT_REQUIRES(), true, raw term_none());
+        Term:th = raw enc_under(e, names, types, terms, tm, raw CONTRACT_REQUIRES(), true, raw term_none(), false);
         if (th.ok) { drop hyp_push(e, th.text, th.syms); }
         e.quiet = e.quiet + 1i32;
         Term:ig = raw contract_conj(e, d, raw CONTRACT_REQUIRES(), false);
@@ -4173,7 +4185,7 @@ func:enc_conformance = NIL(Encoder->:e, DeclNode:d) never fails {
         drop region_enter(e);
         // The trait's precondition is knowledge here too: the trait's
         // postcondition is claimed only for calls that satisfied it.
-        Term:th2 = raw enc_under(e, names, types, terms, tm, raw CONTRACT_REQUIRES(), true, raw term_none());
+        Term:th2 = raw enc_under(e, names, types, terms, tm, raw CONTRACT_REQUIRES(), true, raw term_none(), false);
         if (th2.ok) { drop hyp_push(e, th2.text, th2.syms); }
         Term:r = raw term_opaque(e, e.ret_type);
         Term:saved_res = raw term_copy(e.res_term);
@@ -4183,7 +4195,7 @@ func:enc_conformance = NIL(Encoder->:e, DeclNode:d) never fails {
         e.quiet = e.quiet - 1i32;
         e.res_term = move(saved_res);
         if (ih.ok) { drop hyp_push(e, ih.text, ih.syms); }
-        Term:tg = raw enc_under(e, names, types, terms, tm, raw CONTRACT_ENSURES(), false, raw term_copy(r));
+        Term:tg = raw enc_under(e, names, types, terms, tm, raw CONTRACT_ENSURES(), false, raw term_copy(r), false);
         if (tg.ok) {
             drop record_at(e, raw OK_ENSURES(), tg.text, tg.syms, raw SITE_CONF(), e.fn_decl, d.span, true,
                            raw ROLE_CONFORM(), e.fn_decl, 0i32);
@@ -4691,8 +4703,10 @@ func:bitwise_base = TokenKind(TokenKind:op) never fails {
     pass op;
 };
 
+// `prior` IS A COMPOUND'S CURRENT VALUE, READ BY THE CALLER BEFORE THE VALUE RAN (DEF-573): the emitter loads it
+// there (`emit_assign`), and for a `simd` binding that read recorded the binding's lanes at the target's node.
 func:assign_ident = NIL(Encoder->:e, StmtNode:s, TokenKind:op, ExprId:target,
-                        int32:name, Term:rhs) never fails {
+                        int32:name, Term:rhs, Term:prior) never fails {
     // A `simd` BINDING (D-282): a plain assignment carries the value's lanes;
     // a compound one is a fresh opaque set (the elementwise operation's
     // lanes were recorded at the expression, the binding's not yet).
@@ -4710,7 +4724,6 @@ func:assign_ident = NIL(Encoder->:e, StmtNode:s, TokenKind:op, ExprId:target,
             int32:selem = raw type_elem(e.types, svt);
             TokenKind:sbop = raw arith_base(op);
             if ((sbop == TokenKind.OpSlash) || (sbop == TokenKind.OpPercent)) {
-                drop lanes_of_binding(e, sb, target.index);
                 List<Term>:sla = raw lanes_of(e, target, svt);
                 List<Term>:slb = raw lanes_of(e, raw stmt_assigned(s), svt);
                 drop record_division_lanes(e, selem, sla, slb, target.index, s.span);
@@ -4721,7 +4734,6 @@ func:assign_ident = NIL(Encoder->:e, StmtNode:s, TokenKind:op, ExprId:target,
             }
             bool:sov = ((sbop == TokenKind.OpPlus) || (sbop == TokenKind.OpMinus) || (sbop == TokenKind.OpStar));
             if (sov && (raw is_int(e, selem))) {
-                drop lanes_of_binding(e, sb, target.index);
                 List<Term>:sla3 = raw lanes_of(e, target, svt);
                 List<Term>:slb3 = raw lanes_of(e, raw stmt_assigned(s), svt);
                 drop record_overflow_lanes(e, selem, raw overflow_out_lanes(e, sbop, selem, sla3, slb3, s.span),
@@ -4733,7 +4745,6 @@ func:assign_ident = NIL(Encoder->:e, StmtNode:s, TokenKind:op, ExprId:target,
     }
     if (op == TokenKind.OpAssign) { drop bind_assign(e, name, rhs); pass NIL; }
     // Compound: the current value op the right-hand side.
-    Term:prior = raw enc_expr(e, target);
     int64:bi = raw bind_find(e, name);
     int32:lt = 0i32;
     if (bi >= 0i64) { lt = e.binds[bi].type_id; }
@@ -6539,34 +6550,19 @@ func:walk_k_assign_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
     TokenKind:op = raw stmt_op(s);
     ExprId:target = raw stmt_target(s);
     ExprNode:tn = raw ast_expr(e.ast, target);
-    Term:rhs = raw enc_expr(e, raw stmt_assigned(s));
-    if (tn.kind != ExprKind.ExprIdentifierExpr) {
-        // A field, element or pointee write: its own subexpressions are
-        // sites; no SCALAR symbol changes (an address-taken local is never
-        // defined, so a write through a pointer invalidates nothing here),
-        // and the AGGREGATE the place is rooted at, when it has a term, gets
-        // its new version and the update frame at the end (D-317,
-        // `agg_write`): the value written is `agg_val` -- the right-hand
-        // side of a plain `=`, the arithmetic's result of `+= -= *=`, none
-        // for the rest (the field's image is fresh).
-        Term:agg_val = raw term_none();
-        if (op == TokenKind.OpAssign) { agg_val = raw term_copy(rhs); }
+    // THE TARGET RUNS BEFORE THE VALUE, AS THE EMITTER RUNS IT (DEF-573; `emit_assign`): `addr_of` forms the
+    // place -- its index and that index's bounds check, its pointer, its aliasing compare -- a compound then loads
+    // the current value, and only then does the value run. So the target's rows are recorded, and its reads
+    // encoded, before the value's: a fact the value's own checks leave behind is no fact at the target's check,
+    // which has already run (`a[i] = a[i] + 1` discharged the target's row on the value's read and the verified
+    // build stored unchecked), and a name the value assigns is read here at the version the target saw.
+    Term:cur = raw term_none();
+    if (tn.kind == ExprKind.ExprIdentifierExpr) {
+        if (op != TokenKind.OpAssign) { cur = raw enc_expr(e, target); }
+    } else {
         // THE TARGET'S OWN INDEX IS MEMOISED AND THE TARGET IS A GUARD
         // SITE WHEN MARKED (D-286, 1.5.5 step 2): the children are walked
         // once, the top node's index kept for the `disjoint` row.
-        // A LIMITED FIELD'S WRITE POINT (D-308 SS2, 1.5.8b step 6): the
-        // rule over the value STORED, at the member access -- the emitter's
-        // own key. A plain `=` stores the right-hand side; a compound
-        // stores the arithmetic's result, which the `fov` branch below
-        // builds as `ft` for the `overflow` row, so the row is recorded
-        // there. A limited ROOT's row is `emit_assign_limit`'s, at the
-        // statement's key: two checks, two keys, both counted.
-        if (tn.kind == ExprKind.ExprMemberAccessExpr) {
-            if (op == TokenKind.OpAssign) {
-                drop record_field_limit(e, raw ty_of(e, raw expr_operand(tn)),
-                                        tn.payload =>! int32, rhs, target.index, s.span);
-            }
-        }
         if (tn.kind == ExprKind.ExprIndexExpr) {
             Term:tbase = raw enc_expr(e, raw expr_lhs(tn));
             Term:tidx = raw enc_expr(e, raw expr_rhs(tn));
@@ -6590,12 +6586,38 @@ func:walk_k_assign_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
             drop walk_children(e, tn);
         }
         drop enc_alias_site(e, target);
+        // THE CURRENT VALUE (D-317): the field's application when the place is rooted at an aggregate with a
+        // term -- so `s.n += 1` under a rule on `n` decides -- none otherwise, and its readers make it opaque.
+        if (op != TokenKind.OpAssign) { cur = raw agg_read_quiet(e, target); }
+    }
+    Term:rhs = raw enc_expr(e, raw stmt_assigned(s));
+    if (tn.kind != ExprKind.ExprIdentifierExpr) {
+        // A field, element or pointee write: its own subexpressions are
+        // sites; no SCALAR symbol changes (an address-taken local is never
+        // defined, so a write through a pointer invalidates nothing here),
+        // and the AGGREGATE the place is rooted at, when it has a term, gets
+        // its new version and the update frame at the end (D-317,
+        // `agg_write`): the value written is `agg_val` -- the right-hand
+        // side of a plain `=`, the arithmetic's result of `+= -= *=`, none
+        // for the rest (the field's image is fresh).
+        Term:agg_val = raw term_none();
+        if (op == TokenKind.OpAssign) { agg_val = raw term_copy(rhs); }
+        // A LIMITED FIELD'S WRITE POINT (D-308 SS2, 1.5.8b step 6): the
+        // rule over the value STORED, at the member access -- the emitter's
+        // own key. A plain `=` stores the right-hand side; a compound
+        // stores the arithmetic's result, which the `fov` branch below
+        // builds as `ft` for the `overflow` row, so the row is recorded
+        // there. A limited ROOT's row is `emit_assign_limit`'s, at the
+        // statement's key: two checks, two keys, both counted.
+        if (tn.kind == ExprKind.ExprMemberAccessExpr) {
+            if (op == TokenKind.OpAssign) {
+                drop record_field_limit(e, raw ty_of(e, raw expr_operand(tn)),
+                                        tn.payload =>! int32, rhs, target.index, s.span);
+            }
+        }
         if ((op == TokenKind.OpSlashAssign) || (op == TokenKind.OpPercentAssign)) {
             int32:pt = raw ty_of(e, target);
             if (raw is_int(e, pt)) {
-                // THE CURRENT VALUE (D-317): the field's application when the
-                // place is rooted at an aggregate with a term, opaque otherwise.
-                Term:cur = raw agg_read_quiet(e, target);
                 if (!cur.ok) { cur = raw term_opaque(e, pt); }
                 drop record_division(e, pt, cur, rhs, target.index, s.span);
             }
@@ -6617,10 +6639,7 @@ func:walk_k_assign_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
             int32:pt3 = raw ty_of(e, target);
             TokenKind:fbop = raw arith_base(op);
             if (raw is_int(e, pt3)) {
-                // THE CURRENT VALUE (D-317): the field's application when the
-                // place is rooted at an aggregate with a term -- so `s.n += 1`
-                // under a rule on `n` decides -- opaque otherwise, as before.
-                Term:fcur = raw agg_read_quiet(e, target);
+                Term:fcur = raw term_copy(cur);
                 if (!fcur.ok) { fcur = raw term_opaque(e, pt3); }
                 Term:ft = raw term_none();
                 if (rhs.ok && (!rhs.is_bool)) {
@@ -6672,7 +6691,7 @@ func:walk_k_assign_stmt = NIL(Encoder->:e, StmtId:sid, StmtNode:s) never fails {
         pass NIL;
     }
     int32:name = tn.payload =>! int32;
-    drop assign_ident(e, s, op, target, name, rhs);
+    drop assign_ident(e, s, op, target, name, rhs, cur);
     // THE SECOND WRITE POINT (D-251, L-7), AFTER the new version: the
     // site's obligation, then the rule as a hypothesis.
     drop after_write(e, name, raw SITE_STMT(), sid.index, s.span);

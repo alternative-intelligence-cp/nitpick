@@ -90,6 +90,7 @@ use "../type_members.npk".*;   // type_param_at_of: the receiver's parameter
 use "../expr_types.npk".*;
 use "./analysis_codes.npk".*;
 use "./escape.npk".*;          // carries_pointer (pub since 1.5.5 step 1)
+use "./wild_places.npk".*;     // field_named_wild: a `wild` field holds no plain address (DEF-575)
 
 pub func:ALIAS_DEPTH = int32() never fails { pass (raw AST_DEPTH_MAX()); };  // the one bound (DEF-150's c2, 1.6.1e step 2)
 
@@ -615,6 +616,34 @@ func:pre_has_elem_party = bool(Alias->:x, int32:holder, ExprId:place) never fail
     pass false;
 };
 
+// MAY A `List`'S BUFFER UNDER A VALUE OF TYPE `t` HOLD A VALUE OF TYPE `r` (DEF-575)? A call handed `@h` may hand back a pointer to anything `h` reaches, and what dangles when `h` is
+// written is what sits in a buffer `h` owns: an element of a `List` inline in `h` at any depth, a part of one, an element of a `List` inside that. `heap` says a `List` was crossed on the
+// way here, so `t == r` counts only below one: `@w.k` and `fp`'s `@w.l[0i64]` are both `int64->` and both count where `h` holds a `List<int64>`, by type alone (the callee's summary keeps
+// no path for what it hands back), while a `Sink->` out of a writer whose lists hold no `Sink` does not. A pointer member is other storage. A type nobody can read (unresolved, a generic
+// parameter, `Self`, an associated type, `dyn`, `any`, an enum with payloads, the fuel's end) answers YES, and so does a pointee nobody can read under a `List`: DEF-54's closed direction.
+// The enum's YES is that default and no measured need: no road forms a pointer into a payload today (a lending `pick`'s binding has no address, TYPE-067; a payload is no place, TYPE-024).
+func:type_heap_holds = bool(Alias->:x, int32:t, int32:r, bool:heap, int32:fuel) decreases fuel never fails {
+    if ((fuel <= 0i32) || (raw escape_type_open(x.esc, t))) { pass true; }
+    if (heap && ((t == r) || (raw escape_type_open(x.esc, r)))) { pass true; }
+    int32:k = raw type_kind(x.types, t);
+    if (k == (raw TY_POINTER())) { pass false; }
+    if (k == (raw TY_ENUM())) { pass (raw enum_has_payload(x.ast, x.types, t)); }
+    if (raw type_is_list(x.tr, t)) { pass (raw type_heap_holds(x, raw list_elem_type(x.tr, t), r, true, fuel - 1i32)); }
+    if (k == (raw TY_STRUCT())) {
+        int32:sdi = raw type_decl(x.types, t);
+        if ((sdi <= 0i32) || (sdi >= (raw ast_decl_count(x.ast)))) { pass true; }
+        DeclNode:d = raw ast_decl(x.ast, DeclId{ index: sdi });
+        for (int32:mi in 0i32...(raw item_member_count(x.ast, d))) {
+            DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, mi));
+            if (m.kind != DeclKind.DeclFieldDecl) { continue; }
+            if (raw type_heap_holds(x, raw struct_member_type(x.tr, t, m, 0i32), r, heap, fuel - 1i32)) { pass true; }   // each field's type once, at the struct's home (an unresolved one is `type_open`'s YES)
+        }
+        pass false;
+    }
+    if (raw type_kind_has_elem(k)) { pass (raw type_heap_holds(x, raw type_elem(x.types, t), r, heap, fuel - 1i32)); }
+    pass false;
+};
+
 // DOES A TYPE HOLD A POINTER THAT MAY REACH INTO A `List`'S ELEMENTS (DEF-307,
 // landing 165, the c8 face)? A value of this type built from an address of the
 // `List` `lt` -- a REF_ADDR of `l` among a holder's refs: `PE{ p: raw first(@l) }`,
@@ -630,6 +659,7 @@ func:type_holds_elem_pointer = bool(Alias->:x, int32:t, int32:lt, int32:fuel) de
     if (fuel <= 0i32) { pass true; }
     if (t == 0i32) { pass true; }
     int32:k = raw type_kind(x.types, t);
+    if ((k == (raw TY_POINTER())) && (!(raw type_is_list(x.tr, lt)))) { pass (raw type_heap_holds(x, lt, raw type_elem(x.types, t), false, fuel)); }   // DEF-575: a place that HOLDS a `List`
     if (k == (raw TY_POINTER())) { pass ((raw type_elem(x.types, t)) != lt); }
     if ((k == (raw TY_DYN())) || (k == (raw TY_ANY()))) { pass true; }
     if (k == (raw TY_ENUM())) { pass (raw enum_has_payload(x.ast, x.types, t)); }
@@ -645,7 +675,12 @@ func:type_holds_elem_pointer = bool(Alias->:x, int32:t, int32:lt, int32:fuel) de
         for (int32:mi in 0i32...nmembers) {
             DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, mi));
             if (m.kind != DeclKind.DeclFieldDecl) { continue; }
-            FieldInfo:fi = raw struct_field(x.tr, t, raw decl_name(m), home);
+            // A `wild` FIELD HOLDS NO PLAIN ADDRESS (DEF-575, the aggregate holder over a place that HOLDS a `List`): a `wild` slot takes a plain address only through `=>! wild T->`;
+            // without the cast it's BORROW-011 (a store through a parameter, a literal's field, an assignment, a plain local, a `wild` parameter: five roads measured). So a struct's
+            // `wild` arrays (`Assign`'s, `Escape`'s, an `LlCtx`'s) are no pointers into the `List`s of what it was built from. The cast's own crossing is DEF-585's second face, OPEN.
+            // Over a place that IS a `List`, and for the plain party (`lt` 0), every pointer member counts, as it did.
+            if ((lt != 0i32) && (!(raw type_is_list(x.tr, lt))) && (raw field_named_wild(x.ast, x.types, t, raw decl_name(m)))) { continue; }   // BORROW-011's own reading of a field's regime
+            FieldInfo:fi = raw struct_field(x.tr, t, raw decl_name(m), home);   // by name still: F*F/2 resolves a struct (DEF-420); `type_heap_holds` above asks `struct_member_type`
             if (!fi.found) { pass true; }
             if (raw type_holds_elem_pointer(x, fi.type_id, lt, fuel - 1i32)) { pass true; }
         }
@@ -703,6 +738,17 @@ func:prescan_party = NIL(Alias->:x, ExprId:site, int32:kind, int32:holder) never
     pass NIL;
 };
 
+// A POINTER PARAMETER HANDED ON IS THE ADDRESS OF ITS POINTEE (DEF-584). A local pointer resolves to its target, a REF_ADDR of what it points at (`kc7`). A parameter has no
+// target in this frame: its value carried into a holder or a call's result is a REF_PASS whose place is the parameter's own name (escape.npk's identifier arm). Where that
+// name is a pointer, what a call handed it may give back is what `@(<-hp)` would: the pointee's type. Where the value was READ out of the parameter (escape.npk's
+// `mark_read_as`), its own type answers: `hp.lp`, `<-hpp` and a by-value `w.hp` are pointers too, while `hp.l[0i64]` and the prelude's `T:out = move(l.items[i]);` hold
+// no address of anything, and a `wild` slot's value (-1) is manual storage's. An Optional or a `Result` that holds the pointer is asked as the pointer, at every level (DEF-601): an unwrap (`o ??! E5`, `??`, `r ?! E`, `?|`, `relay`) yields the wrapper's one value and no arm marks it, so the ref still has the wrapper's type (`H->?`, `Result<H->>`, `Result<H->?>`). 0 for a ref that is no pointer a parameter gave.
+func:passed_pointee = int32(Alias->:x, ViewRef:vr) never fails {
+    if ((vr.kind != (raw REF_PASS())) || (vr.read < 0i32)) { pass 0i32; }
+    int32:t = raw type_unwrapped(x.types, is (vr.read != 0i32) : vr.read : (raw exprtypes_get(x.etypes, ExprId{ index: vr.place })));   // types.npk says why the peel ends
+    pass is ((raw type_kind(x.types, t)) == (raw TY_POINTER())) : (raw type_elem(x.types, t)) : 0i32;
+};
+
 // THE VIEW PARTIES A DECLARED BINDING HOLDS (D-325): one per view reference the
 // escape fixpoint recorded on the declaring statement -- from its initialiser
 // and from every assignment into it, so the party is live from the DECLARATION
@@ -739,15 +785,26 @@ func:prescan_view_parties = NIL(Alias->:x, StmtId:sid, int32:holder) never fails
         // `raw mkpe(@l)`; `type_holds_elem_pointer`). A pointer TO the `List`
         // (`List<H2>->:lp = raw idl(@l)`, `PL{ lp: @l }`, its pointee the `List`) is
         // D-286's plain party and freezes nothing.
+        // DEF-584: the holder's two questions, asked of a pointer parameter's pointee (`int64->:e = raw fp(hp);`, `PE:pe = PE{ p: raw first(lp), z: 0i64 };`). The party is
+        // rooted at the parameter, as `@hp.l[0i64]`'s is; a copy of the parameter (`H->:q = hp;`) answers NO by its type and stays no party.
+        int32:ppt = raw passed_pointee(x, vr);
+        if ((ppt != 0i32) && (hty != 0i32) && (raw type_holds_elem_pointer(x, hty, ppt, 8i32)) && (raw type_heap_holds(x, ppt, 0i32, false, 8i32))) {
+            if (!(raw pre_has_elem_party(x, holder, place))) {
+                drop list_push(@x.pre, Party{ site: place, kind: raw PARTY_ELEM_ADDR(), root: vr.root, holder: holder, place: place, view_kind: 0i32, root_ptr: true, path: vr.path });
+            }
+            continue;
+        }
         if (vr.kind == (raw REF_ADDR())) {
             bool:elem = raw place_is_list_element(x, place);
             if ((!elem) && ptr_holder && (pte != 0i32)) {
                 int32:pt = raw exprtypes_get(x.etypes, place);
-                if ((pt != 0i32) && (pt != pte) && (raw type_is_list(x.tr, pt))) { elem = true; }
+                if ((pt != 0i32) && (raw type_holds_elem_pointer(x, hty, pt, 8i32))) { elem = true; }   // DEF-575: the pointer leaf's answer (`pt != pte` over a `List`)
             }
             if ((!elem) && (!ptr_holder) && (hty != 0i32)) {
                 int32:pt = raw exprtypes_get(x.etypes, place);
-                if ((pt != 0i32) && (raw type_is_list(x.tr, pt)) && (raw type_holds_elem_pointer(x, hty, pt, 8i32))) { elem = true; }
+                // DEF-575: a place that IS a `List` or HOLDS one (`PE{ p: raw fp(@h), z: 0i64 }`). A place that holds none has no element to point into, whatever the holder is: an enum
+                // with payloads or a `dyn` answers YES by itself, and `EP:e = EP.A(@a);` over a struct of a lock and an `int32` freezes nothing (`type_heap_holds` with no pointee: is a `List` under it?).
+                if ((pt != 0i32) && (raw type_holds_elem_pointer(x, hty, pt, 8i32)) && (raw type_heap_holds(x, pt, 0i32, false, 8i32))) { elem = true; }
             }
             if (!elem) {
                 // A PLAIN ADDRESS A VALUE CARRIES INTO ITS HOLDER (DEF-413's holder faces, landing 176): a call's result
@@ -1784,6 +1841,18 @@ func:ptr_write_base = ExprId(Alias->:x, ExprId:place, int64:n) never fails {
     pass (raw ptr_last_base(x, place));
 };
 
+// IS A VALUE OF TYPE `t`, CARRIED OUT OF A PARAMETER, WHAT A POINTER OF TYPE `pty` (pointee `pte`) POINTS AT? It is where it IS the pointer's type (`hp = p2`), where it
+// is a pointer whose pointee holds the pointee by value (DEF-426's twin: `get(p2)` may hand back what `p2` points into), and (DEF-590) where it is a BY-VALUE AGGREGATE
+// carried whole that holds the pointer's type (`W:loc = w;`, `H->[2]:loc = pa;`), asked of its own members (`type_heap_holds` from `heap`: a member that IS the type
+// counts, a pointer member is other storage): fuel 2, so a nested aggregate answers YES, the closed direction. A whole walk is every member of every level per ask
+// with nothing remembered: by name (`escape_type_holds`) a struct 16 wide and 4 deep took a compile from 4.2 s to 81 s, and one of 1,024 members from 1.3 s to 12.9 s
+// at fuel 2 (`costgrid590.sh`).
+func:pass_type_is_target = bool(Alias->:x, int32:t, int32:pty, int32:pte) never fails {
+    if (t == pty) { pass true; }
+    if ((raw type_kind(x.types, t)) != (raw TY_POINTER())) { pass (raw type_heap_holds(x, t, pty, true, 2i32)); }
+    pass (raw escape_type_holds(x.esc, raw type_elem(x.types, t), pte, 8i32));
+};
+
 // IS THIS CHAIN REF A TARGET of a pointer of type `pty` (pointee `pte`)? an
 // address whose place IS the pointee type (`hp = @h`), a parameter's value
 // carried whose place is the pointer's own type (`hp = p2`).
@@ -1801,14 +1870,19 @@ func:ptr_ref_is_target = bool(Alias->:x, ViewRef:vr, int32:pty, int32:pte) never
     // The REVERSE too (f9j6b3: a view through one cast copy of an `any->` parameter, the
     // write through another, 113 at both legs): a ref carried as an `any->` VALUE is a
     // target of every pointee -- `escape_any_pointer_link`, the three readers' one predicate.
-    if (raw escape_any_pointer_link(x.esc, pt, pte)) { pass ((vr.kind == (raw REF_ADDR())) || (vr.kind == (raw REF_PASS()))); }
+    // DEF-590: the link is asked by the place's type OR by what the value was READ as (`H->:k = q.a =>! H->;` over an `any->` member: `za1k`, `za3k`; the place an
+    // `any->` parameter and the read an `H->` carried on as an `H2->`: `za9k`)
+    if ((raw escape_any_pointer_link(x.esc, pt, pte)) || ((vr.read > 0i32) && (raw escape_any_pointer_link(x.esc, vr.read, pte)))) { pass ((vr.kind == (raw REF_ADDR())) || (vr.kind == (raw REF_PASS()))); }
     // WHAT A CALL'S RESULT REACHES (DEF-426, landing 177c): a call handed `@h` may hand back what `h` holds, so the address counts where its pointee's type holds the
     // pointer's target (`get(@holder)`), by type, as the rest of this question is. A result carried from a pointer parameter (`REF_PASS`) is that parameter's pointee's twin.
     if (vr.kind == (raw REF_ADDR())) { pass ((pt == pte) || (raw escape_type_holds(x.esc, pt, pte, 8i32))); }
-    if (vr.kind == (raw REF_PASS())) {
-        if (pt == pty) { pass true; }
-        pass ((raw type_kind(x.types, pt)) == (raw TY_POINTER())) && (raw escape_type_holds(x.esc, raw type_elem(x.types, pt), pte, 8i32));
-    }
+    // A VALUE READ OUT OF A PARAMETER IS ASKED BY WHAT IT WAS READ AS, BESIDE THE PARAMETER'S OWN TYPE (DEF-590; `ViewRef.read`, DEF-584's mark; only a PASS ref is
+    // marked, and a `wild` slot's mark is -1, which asks nothing): `H->:k = hp.lp;`, `= pa[1i64];`, `= <-pp;`, `= w.hp;` put a PASS ref of the parameter on `k`'s chain,
+    // and asked by the parameter's own type alone (`HP->`, `H->[2]`, a by-value `W`) it was no target of an `H->`: `growh(k)` wrote to no one under `int64->:e = raw
+    // fp(k);` and `e` read freed heap, where the growth through the parameter is BORROW-015 (`xq1`, `xq13`, the `zk` cells). THE PLACE'S OWN ASK STAYS: a value read
+    // out and carried on as another pointer type through `any->` (`HP->:k = ((q.lp) =>! any->) =>! HP->;`) is a target by the parameter's type and by nothing the read
+    // says (`zb4k`, `zb5k`), so nothing this reader refused is accepted.
+    if (vr.kind == (raw REF_PASS())) { pass (raw pass_type_is_target(x, pt, pty, pte)) || ((vr.read > 0i32) && (raw pass_type_is_target(x, vr.read, pty, pte))); }
     pass false;
 };
 
@@ -1885,6 +1959,12 @@ func:targets_held = NIL(Alias->:x, int32:rr, int32:from, int32:pty, int32:pte, i
     }
     pass NIL;
 };
+func:sourced_targets = NIL(Alias->:x, ExprId:pe, int32:pty, int32:pte, List<ViewRef>->:out) never fails {
+    List<ViewRef>:lrefs = raw list_init::<ViewRef>(4i64);
+    drop escape_value_views(x.esc, pe, @lrefs);
+    for (int64:li in 0i64...lrefs.count) { if (raw ptr_ref_is_target(x, lrefs[li], pty, pte)) { drop list_push(out, lrefs[li]); } }
+    pass NIL;
+};
 func:pointer_targets_of = NIL(Alias->:x, ExprId:pe_in, int32:fuel, List<ViewRef>->:out) decreases fuel never fails {
     if (fuel <= 0i32) { pass NIL; }
     ExprId:pe = raw peel_ptr_casts(x, pe_in);   // DEF-343: the pointer under its casts
@@ -1892,10 +1972,13 @@ func:pointer_targets_of = NIL(Alias->:x, ExprId:pe_in, int32:fuel, List<ViewRef>
     int32:r = raw place_root_symbol(x, pe);
     if (r == 0i32) { pass NIL; }
     Symbol:sy = raw symtab_get(x.tab, r);
-    if (sy.origin_kind != (raw SYM_STMT())) { pass NIL; }   // a local's chain holds where it points
     int32:pty = raw exprtypes_get(x.etypes, pe);
     if (pty == 0i32) { pass NIL; }
     int32:pte = raw type_elem(x.types, pty);
+    if (sy.origin_kind != (raw SYM_STMT())) {   // a local's chain holds where it points
+        if (raw sym_is_sourced(x.esc, r)) { drop sourced_targets(x, pe, pty, pte, out); }
+        pass NIL;
+    }
     ExprId:inner = raw ptr_inner_base(x, pe);
     if (!(raw expr_is_none(inner))) {
         // reached through a pointer: resolve it, then each pointee's chain
@@ -1905,7 +1988,13 @@ func:pointer_targets_of = NIL(Alias->:x, ExprId:pe_in, int32:fuel, List<ViewRef>
             int32:rr = innertgts[ii].root;
             if (rr == 0i32) { continue; }
             Symbol:rsy = raw symtab_get(x.tab, rr);
-            if (rsy.origin_kind != (raw SYM_STMT())) { continue; }
+            // A POINTEE THAT IS A PARAMETER'S HAS NO CHAIN HERE (DEF-590): `HP->:k = q; … growh(k.lp)` over a pointer parameter `q` resolves `k` to `q`, and what `k.lp`
+            // reaches is somewhere under `q`, which only `q` names in this frame. The inner target stands for it, whole (`zt1`, `zt2`, `zt4`).
+            if (rsy.origin_kind != (raw SYM_STMT())) {
+                drop list_push(out, innertgts[ii]);
+                if (raw sym_is_sourced(x.esc, rr)) { drop sourced_targets(x, ExprId{ index: innertgts[ii].place }, pty, pte, out); }
+                continue;
+            }
             int32:e2 = raw escape_view_ref_first(x.esc, rsy.origin);
             while (e2 >= 0i32) decreases e2 + 1i32 {
                 ViewRef:vr2 = raw escape_view_ref(x.esc, e2);
@@ -1975,7 +2064,9 @@ func:check_pointer_targets = bool(Alias->:x, ExprId:place, List<Step>:ap, int32:
     // `any->:ap` (`wrs(ap)` writing `(<-(q =>! S->)).x`) or through `ap =>! S->` names the
     // cast target's field on the storage the pointer reaches; the write is each target WHOLE.
     bool:erase = raw casts_change_pointee(x, place);
-    if (raw expr_is_none(pe)) {
+    // A POINTER BASE WITH NO NAMED ROOT IS NO BASE (DEF-615): `growh((raw idhp(q)).lp)`, `growh((o ??! E5).lp)`. `ptr_last_base` answers the call or the unwrap, whose
+    // steps nobody can spell, and the named arm below answered false: a write to no one. The place itself is the rootless pointer, resolved by rule A.
+    if ((raw expr_is_none(pe)) || ((raw place_root_symbol(x, pe)) == 0i32)) {
         // DEF-305: a pointer that is a CALL'S RESULT (or any pointer expression
         // with NO named root) has no place chain -- resolve it by rule A
         // (`escape_pointer_targets`), the whole write path `ap` composed onto each
@@ -2213,15 +2304,26 @@ func:report_lent_conflict = NIL(Alias->:x, Party:p, int32:akind, int32:root, Lis
 // parties that outlive it (a spawn's LENT parties, holder 0); a nested statement's own expressions mark above them. A
 // view read to completion before the invalidation (`v[0] + take(move(s))`) is refused too: the rule is CLOSED by
 // management_11's ruling of 2026-10-31 20:40, a construct-scoped relaxation owed cells after landing 180.
-func:push_value_view_parties = NIL(Alias->:x, ExprId:id) never fails {
+// `frozen` (DEF-575): the value is the pointer an assignment's target indexed a `List`, a `buffer` or a `cstring` through, with no name at its root (`push_target_party`), so what it reaches is frozen WHOLE.
+func:push_value_view_parties = NIL(Alias->:x, ExprId:id, bool:frozen) never fails {
     List<ViewRef>:refs = raw list_init::<ViewRef>(4i64);
     drop escape_value_views(x.esc, id, @refs);
     for (int64:i in 0i64...refs.count) {
         ViewRef:vr = refs[i];
         if (vr.root == 0i32) { continue; }
+        int32:ppt = raw passed_pointee(x, vr);   // DEF-584: a pointer PARAMETER the call was handed, and a result that may point into a `List` under its pointee (`rd2(raw first(lp), raw grow(lp))`)
+        if ((ppt != 0i32) && (frozen || ((raw type_holds_elem_pointer(x, raw exprtypes_get(x.etypes, id), ppt, 8i32)) && (raw type_heap_holds(x, ppt, 0i32, false, 8i32))))) {
+            drop list_push(@x.live, Party{ site: id, kind: raw PARTY_ELEM_ADDR(), root: vr.root, holder: 0i32 - 1i32, place: ExprId{ index: vr.place }, view_kind: 0i32, root_ptr: true, path: vr.path });
+            continue;
+        }
         if (vr.kind == (raw REF_ADDR())) {   // a plain address the call RETURNED (`keepp(@h)`): an ADDRESS party to the end of the full expression (DEF-410 (b)'s gap, the keepp cells)
-            drop list_push(@x.live, Party{ site: id, kind: raw PARTY_ADDR(), root: vr.root, holder: 0i32 - 1i32, place: ExprId{ index: vr.place },
-                                           view_kind: 0i32, root_ptr: false, path: vr.path });
+            // INTO A `List` IT IS THE ELEMENT ADDRESS A HOLDER OF IT WOULD BE (DEF-575; `prescan_view_parties`' two questions): `rd2(raw first(@l), raw grow(@l))` and `rd2(raw idp(@l[0i64]), raw grow(@l))` read the freed buffer.
+            ExprId:apl = ExprId{ index: vr.place };
+            int32:apt = raw exprtypes_get(x.etypes, apl);
+            int32:rty = raw exprtypes_get(x.etypes, id);
+            bool:elem = frozen || (raw place_is_list_element(x, apl)) || ((raw type_holds_elem_pointer(x, rty, apt, 8i32)) && (raw type_heap_holds(x, apt, 0i32, false, 8i32)));   // the holder's answer, and a `List` under the place
+            drop list_push(@x.live, Party{ site: id, kind: is (elem) : (raw PARTY_ELEM_ADDR()) : (raw PARTY_ADDR()), root: vr.root, holder: 0i32 - 1i32, place: apl,
+                                           view_kind: 0i32, root_ptr: elem && (raw root_ident_is_pointer(x, apl)), path: vr.path });
             continue;
         }
         if ((vr.kind != (raw VIEW_DIRECT())) && (vr.kind != (raw VIEW_LAUNDERED()))) { continue; }
@@ -2271,6 +2373,7 @@ func:drop_value_parties = NIL(Alias->:x, int64:m) never fails {
 // inline array's and a slice's storage is stable (measured: `g[0] = raw reset(@g)` lands, 69), a local's or a field's too.
 func:push_target_party = NIL(Alias->:x, ExprId:tgt, int32:holder) never fails {
     ExprId:cur = tgt;
+    bool:frozen = false;
     for (int32:hop in 0i32...(raw BORROW_FUEL())) {
         if (raw expr_is_none(cur)) { pass NIL; }
         ExprNode:n = raw ast_expr(x.ast, cur);
@@ -2284,15 +2387,19 @@ func:push_target_party = NIL(Alias->:x, ExprId:tgt, int32:holder) never fails {
                     if (root != 0i32) {
                         drop list_push(@x.live, Party{ site: tgt, kind: raw PARTY_TARGET(), root: root, holder: holder, place: base,
                                                        view_kind: 0i32, root_ptr: raw root_ident_is_pointer(x, base), path: 0i32 });
+                        pass NIL;
                     }
-                    pass NIL;
+                    frozen = true;   // no name roots the container (DEF-575; `s3_rootless`): `(<-(raw getl(@h)))[0i64] = raw growh(@h);` stored into the freed buffer, so the chain is walked on to the call
                 }
             }
             cur = base;
             continue;
         }
         if ((n.kind != ExprKind.ExprMemberAccessExpr) && (n.kind != ExprKind.ExprSafeNavExpr) && (n.kind != ExprKind.ExprDerefExpr)
-            && (n.kind != ExprKind.ExprCastExpr) && (n.kind != ExprKind.ExprUncheckedCastExpr)) { pass NIL; }
+            && (n.kind != ExprKind.ExprCastExpr) && (n.kind != ExprKind.ExprUncheckedCastExpr)) {
+            if (n.kind != ExprKind.ExprIdentifierExpr) { drop push_value_view_parties(x, cur, frozen); }   // a pointer the target's call formed stands over the value (DEF-575): `<-(raw first(@l)) = raw grow(@l);`
+            pass NIL;
+        }
         cur = raw expr_operand(n);   // a step down the chain (DEF-272, DEF-343)
     }
     pass NIL;
@@ -2587,7 +2694,7 @@ func:alias_stmt = NIL(Alias->:x, StmtId:id, int32:depth) never fails {
         drop acc_top(x, raw stmt_for_iter(x.ast, s), raw ACC_READ(), dd, false);
         drop frame_push(x);
         // F (management_12's ruling of 2026-11-01 10:55): a `for` over a call's result or a range holds that VIEW's header for its whole body, so the view is a party of the loop's frame: `for (.. in raw mkv(@s)) { setq(q); }` read freed bytes (44, 229; `h3b`..`h3g`, `f1`..`f15`; `h3e_for_ctl` is a call result too, its owner left alone). A loop over a NAMED place is DEF-421's party below.
-        if ((raw ast_expr(x.ast, raw stmt_for_iter(x.ast, s))).kind != ExprKind.ExprIdentifierExpr) { drop push_value_view_parties(x, raw stmt_for_iter(x.ast, s)); }
+        if ((raw ast_expr(x.ast, raw stmt_for_iter(x.ast, s))).kind != ExprKind.ExprIdentifierExpr) { drop push_value_view_parties(x, raw stmt_for_iter(x.ast, s), false); }
         drop push_for_place_party(x, raw stmt_for_iter(x.ast, s));
         drop push_loop_binding_parties(x, raw stmt_for_binding(s));
         drop alias_stmt(x, raw stmt_for_body(x.ast, s), dd);
@@ -2907,7 +3014,7 @@ func:acc_indices = NIL(Alias->:x, ExprId:place, int32:depth) never fails {
         // BEFORE its bounds are walked, so such a bound is BORROW-015 as a later invalidation is; it lives to the end
         // of the full expression (holder -1, `drop_value_parties`), DEF-410 (b)'s lifetime, on every road that steps
         // through a range -- this walk is the one place a range's bounds are read.
-        if ((raw ast_expr(x.ast, ix)).kind == ExprKind.ExprRangeExpr) { drop push_value_view_parties(x, step); }
+        if ((raw ast_expr(x.ast, ix)).kind == ExprKind.ExprRangeExpr) { drop push_value_view_parties(x, step, false); }
         drop acc_expr(x, ix, raw ACC_READ(), depth - 1i32);
         // AN ELEMENT'S ADDRESS IS FORMED BEFORE THE NEXT STEP'S INDEX RUNS (E-b, DEF-410 (e), landing 177a): `l[0i64].v[(raw grow_outer(@l)) - 9i64]` addressed `l[0]`, the index
         // reallocated `l`, and `.v`'s header loaded from the freed element (97 on 175 and 176b; the target's road, `l[0].v[…] = 9`, a machine fault). The read road's twin of (d)'s
@@ -3085,7 +3192,7 @@ func:acc_expr = NIL(Alias->:x, ExprId:id, int32:akind, int32:depth) never fails 
                     drop check_access_ex(x, id, 0i32, raw ACC_WRITE(), raw expr_none(), rvn.span, raw CHECK_CLAIMS());
                 } else {
                     drop acc_place(x, id, raw ACC_WRITE(), raw expr_none(), dd);
-                    drop push_value_view_parties(x, id);   // a range view as a VALUE is live to the end of its full expression (DEF-410 (b))
+                    drop push_value_view_parties(x, id, false);   // a range view as a VALUE is live to the end of its full expression (DEF-410 (b))
                 }
                 pass NIL;
             }
@@ -3158,6 +3265,7 @@ func:acc_expr = NIL(Alias->:x, ExprId:id, int32:akind, int32:depth) never fails 
     if (n.kind == ExprKind.ExprMethodCallExpr) {
         ExprId:recv = raw expr_operand(n);
         if ((raw exprtypes_ns_decl(x.etypes, id)) != 0i32) { recv = raw expr_none(); }
+        recv = raw method_recv(x.esc, id, recv, false);   // DEF-624: a trait's name is a qualifier (D-172), no receiver; escape reports any other untyped operand
         drop acc_call(x, id, n, recv, raw expr_list_start(n), raw expr_list_count(n), raw expr_none(), dd);
         pass NIL;
     }
@@ -3476,7 +3584,7 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
         int64:sm = x.live.count;
         drop push_snapshot_parties(x, a2, a2, false, raw ALIAS_DEPTH());
         // A USER CALL'S VIEW IS JUDGED THE SAME WAY (DEF-410 (b)'s other order, landing 177a): `gv(@s, raw mkv(s))`, under `?!` or `relay` too, read the bytes the callee freed through the address (83 on 175 and 176b).
-        if (!(raw is_place_chain(x, a2))) { drop push_value_view_parties(x, a2); }
+        if (!(raw is_place_chain(x, a2))) { drop push_value_view_parties(x, a2, false); }
         if (x.live.count > sm) {
             bool:vals = (!(raw escape_call_is_bare_builtin(x.esc, id))) && (n.kind != ExprKind.ExprBuiltinExpr);
             drop rejudge_earlier(x, a2, id, recv, start, j, callee_fn, vals);
@@ -3503,7 +3611,7 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
                                        place: raw expr_operand(an3), view_kind: 0i32, root_ptr: false, path: 0i32 });
     }
     drop list_truncate(@x.live, mark);
-    drop push_value_view_parties(x, id);   // the RESULT's views outlive the call, to the end of the full expression (DEF-410 (b))
+    drop push_value_view_parties(x, id, false);   // the RESULT's views outlive the call, to the end of the full expression (DEF-410 (b))
     // A SPAWN LENDS ITS CROSSINGS UNTIL THE BLOCK'S JOIN (DEF-148, 1.6.1e
     // step 1): each argument that is a pointer to one of D-180's five kinds --
     // `@s` of a binding, or a pointer binding handed on -- becomes a LENT

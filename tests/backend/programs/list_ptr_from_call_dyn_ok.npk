@@ -1,0 +1,65 @@
+// expect-exit: 0
+mod:list_ptr_from_call_dyn_ok;
+// A `dyn` HOLDER OVER A PLACE THAT HOLDS NO `List` FREEZES NOTHING (DEF-575, landing 177d2b3): a `dyn` answers for itself that it may hold a pointer into a `List` (nobody
+// reads it), so the place is asked too, and a struct of two `int64` has no element to point into. `xn3` writes the place in a later argument while a `dyn` temporary holds its
+// address, `xn5` in a later statement while a `dyn` local does. Over a struct that holds a `List` the same two stand while nothing grows it (`xn4c`, `xn6c`); their growing twins
+// `xn4`, `xn6` are BORROW-015 sites of `tests/analysis/rejection/list_ptr_from_call.npk`. These four are `list_ptr_from_call_ok.npk`'s kin and stand at FILE level because an
+// `impl:PD:Tl` inside an inline module is TYPE-001 under `npkc` (DEF-463, open). `xk5` (DEF-584, the same landing) is `xn3` with the place behind a pointer PARAMETER: the
+// parameter's pointee holds no `List`, so the `dyn` temporary freezes nothing there either (`tests/analysis/rejection/list_ptr_through_param.npk` has its growing kin, `xk6`).
+// `yc1c` (DEF-592, the same landing): a `dyn` member's by-value receiver reached through a local pointer, `q.d.get()`, hands back what the pointee holds and no address of
+// the pointee, as its `<-` twin `yc1ec` and the place itself `yc1dc` always did. The row's parent refused `yc1c` alone (BORROW-015).
+error:Bad;
+struct:H = { List<int64>:l; int64:k; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+struct:K2 = { int64:k; int64:j; };
+func:kk = int64->(K2->:q) never fails { pass @q.k; };
+func:setk = int64(K2->:q) never fails { q.k = 7i64; pass 0i64; };
+trait:Tl = { func:ln = int64(Self:self) never fails; };
+struct:PD = { int64->:p; };
+impl:PD:Tl = { func:ln = int64(PD:self) never fails { pass <-self.p; }; };
+func:gd = int64(dyn Tl:d, int64:z) never fails { pass (raw d.ln()) + z; };
+func:xn3_dyn_temp_no_list_write = int64() never fails { K2:a = K2{ k: 1i64, j: 2i64 }; pass raw gd(PD{ p: raw kk(@a) } => dyn Tl, raw setk(@a)); };
+func:xk5_dyn_temp_no_list_write_param = int64(K2->:ap) never fails { pass raw gd(PD{ p: raw kk(ap) } => dyn Tl, raw setk(ap)); };
+func:xn5_dyn_holder_no_list_write = int64() never fails { K2:a = K2{ k: 1i64, j: 2i64 }; dyn Tl:d = PD{ p: raw kk(@a) } => dyn Tl; a.k = 7i64; pass raw gd(d, 0i64); };
+func:xn4c_dyn_temp_list = int64() never fails { H:h = raw mkh(); pass raw gd(PD{ p: raw fp(@h) } => dyn Tl, 6i64); };
+func:xn6c_dyn_holder_list = int64() never fails { H:h = raw mkh(); dyn Tl:d = PD{ p: raw fp(@h) } => dyn Tl; pass raw gd(d, 6i64); };
+struct:HP = { H->:lp; int64:z; };
+trait:Tg = { func:get = H->(Self:self) never fails; };
+impl:HP:Tg = { func:get = H->(HP:self) never fails { pass self.lp; }; };
+struct:DW = { dyn Tg:d; int64:z; };
+func:yc1c_dyn_member_recv_through_ptr = int64() never fails { H:h0 = raw mkh(); DW:w = DW{ d: HP{ lp: @h0, z: 0i64 } => dyn Tg, z: 0i64 }; DW->:q = @w; int64->:e = raw fp(raw q.d.get()); pass (<-e) + 6i64; };
+func:yc1ec_dyn_member_recv_through_ptr = int64() never fails { H:h0 = raw mkh(); DW:w = DW{ d: HP{ lp: @h0, z: 0i64 } => dyn Tg, z: 0i64 }; DW->:q = @w; int64->:e = raw fp(raw (<-q).d.get()); pass (<-e) + 6i64; };
+func:yc1dc_dyn_member_recv_through_ptr = int64() never fails { H:h0 = raw mkh(); DW:w = DW{ d: HP{ lp: @h0, z: 0i64 } => dyn Tg, z: 0i64 }; int64->:e = raw fp(raw w.d.get()); pass (<-e) + 6i64; };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw xn3_dyn_temp_no_list_write()) != 7i64) { exit 1i32; }
+    if ((raw xn5_dyn_holder_no_list_write()) != 7i64) { exit 2i32; }
+    if ((raw xn4c_dyn_temp_list()) != 7i64) { exit 3i32; }
+    if ((raw xn6c_dyn_holder_list()) != 7i64) { exit 4i32; }
+    K2:a5 = K2{ k: 1i64, j: 2i64 };
+    if ((raw xk5_dyn_temp_no_list_write_param(@a5)) != 7i64) { exit 5i32; }
+    if ((raw yc1c_dyn_member_recv_through_ptr()) != 7i64) { exit 6i32; }
+    if ((raw yc1ec_dyn_member_recv_through_ptr()) != 7i64) { exit 7i32; }
+    if ((raw yc1dc_dyn_member_recv_through_ptr()) != 7i64) { exit 8i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (Bad)              { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

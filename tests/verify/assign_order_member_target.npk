@@ -1,0 +1,51 @@
+// expect-exit: 24
+// expect-obligation: bounds discharged 2
+// expect-obligation: bounds open 1
+// expect-obligation: div-min discharged 1
+// expect-obligation: div-zero open 1
+// expect-obligation: exhaustive checker 1
+// expect-obligation: failsafe-post discharged 16
+// expect-obligation: overflow open 4
+//
+// A FIELD OF AN ELEMENT AS THE TARGET (DEF-573, landing 177d2b3; a dereference's target walks the same way): the target's own
+// subexpressions run before the value whatever the target's shape, so its element's bounds check stops the program
+// before the value divides by zero. `i` is out of bounds and `z` is 0: both builds trap `OutOfBounds`, 24. With the
+// value read first the target's row was discharged on the value's read of `sq[i]`, the verified build dropped the
+// target's compare, and the division trapped instead (21).
+mod:assign_order_member_target;
+error:E9;
+
+struct:Cell = { int32:k; };
+
+func:put = int32(int32:i, int32:z) never fails {
+    Cell[4]:sp = [Cell{ k: 0i32 }, Cell{ k: 0i32 }, Cell{ k: 0i32 }, Cell{ k: 0i32 }];
+    Cell[4]:sq = [Cell{ k: 1i32 }, Cell{ k: 1i32 }, Cell{ k: 1i32 }, Cell{ k: 1i32 }];
+    sp[i => int64].k = (8i32 / z) + sq[i => int64].k;
+    pass sp[0i64].k + 7i32;
+};
+
+func:main = int32(cstring[]:argv) {
+    int32:n = argv.len =>! int32;
+    exit (raw put(n + 98i32, n - 1i32));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (BorrowOverlap) { exit 90i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

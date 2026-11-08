@@ -1,0 +1,942 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 138:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 154:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 171:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 189:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 207:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 226:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 242:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 276:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 292:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 323:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 341:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 375:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 391:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 422:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 445:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 466:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 488:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 504:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 521:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 537:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 554:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 572:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 587:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 602:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 618:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 635:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 652:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 670:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 692:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 714:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 737:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 752:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 767:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 783:23
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 794:27
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 808:27
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 825:27
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 841:27
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 859:31
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 877:10
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 897:10
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 915:26
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 934:26
+mod:list_ptr_open_type;
+// AN OPEN TYPE HOLDS WHATEVER IS ASKED, AND THE ROOTLESS READER ASKS A POINTER'S POINTEE (DEF-600 with DEF-611, landing 177d2b3). A write through a pointer a call
+// returned is a write to what the call's arguments reach, asked by type: a place whose type holds the pointer's pointee is a target (DEF-330, DEF-426). DEF-600: asked
+// of a type nobody can read (a generic `T`, `Self`, a `dyn`, a projection), `escape_type_holds` found no member to walk and answered NO. So in a generic body, in a
+// trait's default body and over a `dyn` local, `int64->:e = raw fp(raw s.tgt()); discard(raw growh(raw s.tgt()));` wrote to no one and `e` read freed heap, where every
+// concrete twin is BORROW-015. It answers YES now, at the type asked and at a member of it (`Bx<T>`, `List<T>`). DEF-611: `escape_pointer_targets`, the reader of a
+// pointer that has no place of its own (`growh(raw q.tgt())`), asked a pointer parameter's ref by the pointer's own type alone, where alias.npk's reader of a held copy
+// asks its pointee since DEF-426; a concrete `WV->:q` whose `tgt` passes `@self.hv` faulted the same way. It asks the pointee now. The cells stand at FILE level, each
+// under its own name as a suffix: an `impl:X:Tr` inside an inline module is TYPE-001 under `npkc` (DEF-463).
+// THE LEGEND. `zq_a`, `zq_e`: a local `T:s`, the getter's result used in place and through held copies (DEF-600's four ruled faces are the `gV` and `gW`).
+// `zr_f`, `zr_r`: a `T->` parameter, held copies and in place. `zr_i`, `zr_j`: a by-value parameter used in place, and through held copies. `zr_s`, `zr_t`: a trait's
+// default body over `Self->`, in place and held copies. `zr_d`, `zr_e`: a `dyn Lk` local. `zr_b`, `zr_l`: only a MEMBER is open, a `T` held by value in `Bx<T>` and a
+// `List<T>`. `zr_a`: the getter takes a second pointer (`tga(Self->:self, It->:ip)`) and the take's receiver and the growth's are two parameters, so only that pointer's
+// pointee ties them; `r` and `f` a pointer parameter in place and through copies, `i` and `j` a by-value parameter. `zr_x_hL`: DEF-611 over a `List` member itself
+// (`lx` passes `@self.l2`). `zt1`, `zt2`: the STORE side through the getter (BORROW-002, on every build).
+// THE SUFFIX. `g` generic, `h` its concrete twin; `V` at `WV` (`tgt` passes `@self.hv`), `W` at `W` (`tgt` passes the pointer member `self.hp`), `A` at `WA` (the
+// projection `T.It` is `WV`). DEF-611's concrete faces are `zr_r_hV`, `zr_ar_hA` and `zr_x_hL`; the other `h` cells were refused before this row.
+// THE PROJECTION CELLS (`zr_a*_gA`) ARE THE CHECKER'S ALONE: a parameter of type `T.It` is refused where its function is instantiated (TYPE-001; DEF-377 and DEF-489,
+// open), so no program holding one builds, and their controls `zr_a*_gAc_ok` (the take with no growth) stand HERE, where they must stay silent.
+error:E5;
+struct:K = { int64:k; };
+struct:H = { List<int64>:l; int64:k; K:kk; };
+struct:H2 = { H:inner; int64:z; };
+struct:HP = { H->:lp; int64:z; };
+struct:W = { H->:hp; int64:z; };
+struct:S = { int64:a; int64:b; };
+struct:PE = { int64->:p; int64:z; };
+enum:EK = { A(int64->); Z; };
+func:rdk = int64(EK:e) never fails { int64:v = 0i64; pick (e) { (EK.A(q)) { v = <-q; }, (EK.Z) { v = 0i64; } } pass v; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:fpl = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fa = int64->(S->:q) never fails { pass @((<-q).a); };
+func:idp = int64->(int64->:q) never fails { pass q; };
+func:idh = H->(H->:q) never fails { pass q; };
+func:fp2 = int64->(int64:v, H->:q) never fails { pass @((<-q).l[0i64]); };
+func:fp2b = int64->(H->:q, int64:v) never fails { pass @((<-q).l[0i64]); };
+func:rd2 = int64(int64->:e, int64:z) never fails { pass <-e; };
+impl:H = { func:first = int64->(H->:self) never fails { pass @((<-self).l[0i64]); }; };
+impl:K = { func:sel = int64->(K:self, H->:q) never fails { pass @((<-q).l[0i64]); }; };
+// zq_a_gV_take_grow_results
+struct:W_zq_a_gV_take_grow_results = { H->:hp; int64:z; };
+trait:Lk_zq_a_gV_take_grow_results = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zq_a_gV_take_grow_results = { H:hv; int64:z; };
+impl:W_zq_a_gV_take_grow_results:Lk_zq_a_gV_take_grow_results = { func:tgt = H->(W_zq_a_gV_take_grow_results->:self) never fails { pass self.hp; }; };
+impl:WV_zq_a_gV_take_grow_results:Lk_zq_a_gV_take_grow_results = { func:tgt = H->(WV_zq_a_gV_take_grow_results->:self) never fails { pass @self.hv; }; };
+func:g_zq_a_gV_take_grow_results<T: Lk_zq_a_gV_take_grow_results> = int64(move T:k0, int64:n) never fails {
+    T:s = move(k0);
+    int64->:e = raw fp(raw s.tgt());
+    discard(raw growh(raw s.tgt()));
+    pass (<-e) + 6i64;
+};
+func:f_zq_a_gV_take_grow_results = int64(int64:n) never fails {
+    WV_zq_a_gV_take_grow_results:k = WV_zq_a_gV_take_grow_results{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zq_a_gV_take_grow_results::<WV_zq_a_gV_take_grow_results>(move(k), n);
+};
+// zq_a_gW_take_grow_results
+struct:W_zq_a_gW_take_grow_results = { H->:hp; int64:z; };
+trait:Lk_zq_a_gW_take_grow_results = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zq_a_gW_take_grow_results = { H:hv; int64:z; };
+impl:W_zq_a_gW_take_grow_results:Lk_zq_a_gW_take_grow_results = { func:tgt = H->(W_zq_a_gW_take_grow_results->:self) never fails { pass self.hp; }; };
+impl:WV_zq_a_gW_take_grow_results:Lk_zq_a_gW_take_grow_results = { func:tgt = H->(WV_zq_a_gW_take_grow_results->:self) never fails { pass @self.hv; }; };
+func:g_zq_a_gW_take_grow_results<T: Lk_zq_a_gW_take_grow_results> = int64(move T:k0, int64:n) never fails {
+    T:s = move(k0);
+    int64->:e = raw fp(raw s.tgt());
+    discard(raw growh(raw s.tgt()));
+    pass (<-e) + 6i64;
+};
+func:f_zq_a_gW_take_grow_results = int64(int64:n) never fails {
+    H:h0 = raw mkh();
+    W_zq_a_gW_take_grow_results:k = W_zq_a_gW_take_grow_results{ hp: @h0, z: 0i64 };
+    pass raw g_zq_a_gW_take_grow_results::<W_zq_a_gW_take_grow_results>(move(k), n);
+};
+// zq_a_hV_take_grow_results
+struct:W_zq_a_hV_take_grow_results = { H->:hp; int64:z; };
+trait:Lk_zq_a_hV_take_grow_results = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zq_a_hV_take_grow_results = { H:hv; int64:z; };
+impl:W_zq_a_hV_take_grow_results:Lk_zq_a_hV_take_grow_results = { func:tgt = H->(W_zq_a_hV_take_grow_results->:self) never fails { pass self.hp; }; };
+impl:WV_zq_a_hV_take_grow_results:Lk_zq_a_hV_take_grow_results = { func:tgt = H->(WV_zq_a_hV_take_grow_results->:self) never fails { pass @self.hv; }; };
+func:g_zq_a_hV_take_grow_results = int64(move WV_zq_a_hV_take_grow_results:k0, int64:n) never fails {
+    WV_zq_a_hV_take_grow_results:s = move(k0);
+    int64->:e = raw fp(raw s.tgt());
+    discard(raw growh(raw s.tgt()));
+    pass (<-e) + 6i64;
+};
+func:f_zq_a_hV_take_grow_results = int64(int64:n) never fails {
+    WV_zq_a_hV_take_grow_results:k = WV_zq_a_hV_take_grow_results{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zq_a_hV_take_grow_results(move(k), n);
+};
+// zq_e_gV_take_grow_copies
+struct:W_zq_e_gV_take_grow_copies = { H->:hp; int64:z; };
+trait:Lk_zq_e_gV_take_grow_copies = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zq_e_gV_take_grow_copies = { H:hv; int64:z; };
+impl:W_zq_e_gV_take_grow_copies:Lk_zq_e_gV_take_grow_copies = { func:tgt = H->(W_zq_e_gV_take_grow_copies->:self) never fails { pass self.hp; }; };
+impl:WV_zq_e_gV_take_grow_copies:Lk_zq_e_gV_take_grow_copies = { func:tgt = H->(WV_zq_e_gV_take_grow_copies->:self) never fails { pass @self.hv; }; };
+func:g_zq_e_gV_take_grow_copies<T: Lk_zq_e_gV_take_grow_copies> = int64(move T:k0, int64:n) never fails {
+    T:s = move(k0);
+    H->:p = raw s.tgt();
+    int64->:e = raw fp(p);
+    H->:q = p;
+    discard(raw growh(q));
+    pass (<-e) + 6i64;
+};
+func:f_zq_e_gV_take_grow_copies = int64(int64:n) never fails {
+    WV_zq_e_gV_take_grow_copies:k = WV_zq_e_gV_take_grow_copies{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zq_e_gV_take_grow_copies::<WV_zq_e_gV_take_grow_copies>(move(k), n);
+};
+// zq_e_gW_take_grow_copies
+struct:W_zq_e_gW_take_grow_copies = { H->:hp; int64:z; };
+trait:Lk_zq_e_gW_take_grow_copies = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zq_e_gW_take_grow_copies = { H:hv; int64:z; };
+impl:W_zq_e_gW_take_grow_copies:Lk_zq_e_gW_take_grow_copies = { func:tgt = H->(W_zq_e_gW_take_grow_copies->:self) never fails { pass self.hp; }; };
+impl:WV_zq_e_gW_take_grow_copies:Lk_zq_e_gW_take_grow_copies = { func:tgt = H->(WV_zq_e_gW_take_grow_copies->:self) never fails { pass @self.hv; }; };
+func:g_zq_e_gW_take_grow_copies<T: Lk_zq_e_gW_take_grow_copies> = int64(move T:k0, int64:n) never fails {
+    T:s = move(k0);
+    H->:p = raw s.tgt();
+    int64->:e = raw fp(p);
+    H->:q = p;
+    discard(raw growh(q));
+    pass (<-e) + 6i64;
+};
+func:f_zq_e_gW_take_grow_copies = int64(int64:n) never fails {
+    H:h0 = raw mkh();
+    W_zq_e_gW_take_grow_copies:k = W_zq_e_gW_take_grow_copies{ hp: @h0, z: 0i64 };
+    pass raw g_zq_e_gW_take_grow_copies::<W_zq_e_gW_take_grow_copies>(move(k), n);
+};
+// zq_e_hV_take_grow_copies
+struct:W_zq_e_hV_take_grow_copies = { H->:hp; int64:z; };
+trait:Lk_zq_e_hV_take_grow_copies = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zq_e_hV_take_grow_copies = { H:hv; int64:z; };
+impl:W_zq_e_hV_take_grow_copies:Lk_zq_e_hV_take_grow_copies = { func:tgt = H->(W_zq_e_hV_take_grow_copies->:self) never fails { pass self.hp; }; };
+impl:WV_zq_e_hV_take_grow_copies:Lk_zq_e_hV_take_grow_copies = { func:tgt = H->(WV_zq_e_hV_take_grow_copies->:self) never fails { pass @self.hv; }; };
+func:g_zq_e_hV_take_grow_copies = int64(move WV_zq_e_hV_take_grow_copies:k0, int64:n) never fails {
+    WV_zq_e_hV_take_grow_copies:s = move(k0);
+    H->:p = raw s.tgt();
+    int64->:e = raw fp(p);
+    H->:q = p;
+    discard(raw growh(q));
+    pass (<-e) + 6i64;
+};
+func:f_zq_e_hV_take_grow_copies = int64(int64:n) never fails {
+    WV_zq_e_hV_take_grow_copies:k = WV_zq_e_hV_take_grow_copies{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zq_e_hV_take_grow_copies(move(k), n);
+};
+// zr_af_gA
+struct:WV_zr_af_gA = { H:hv; int64:z; };
+trait:La_zr_af_gA = { assoc:It; func:tga = H->(Self->:self, It->:ip) never fails; };
+struct:WA_zr_af_gA = { int64:z; };
+impl:WA_zr_af_gA:La_zr_af_gA = { assoc:It = WV_zr_af_gA; func:tga = H->(WA_zr_af_gA->:self, WV_zr_af_gA->:ip) never fails { pass @ip.hv; }; };
+func:g_zr_af_gA<T: La_zr_af_gA> = int64(T->:q1, T->:q2, T.It->:ip, int64:n) never fails {
+    H->:p = raw q1.tga(ip);
+    int64->:e = raw fp(p);
+    H->:k = raw q2.tga(ip);
+    discard(raw growh(k));
+    pass (<-e) + 6i64;
+};
+func:f_zr_af_gA = int64(int64:n) never fails {
+    WA_zr_af_gA:k1 = WA_zr_af_gA{ z: 0i64 };
+    WA_zr_af_gA:k2 = WA_zr_af_gA{ z: 0i64 };
+    WV_zr_af_gA:w = WV_zr_af_gA{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_af_gA::<WA_zr_af_gA>(@k1, @k2, @w, n);
+};
+// zr_af_gAc_ok
+struct:WV_zr_af_gAc_ok = { H:hv; int64:z; };
+trait:La_zr_af_gAc_ok = { assoc:It; func:tga = H->(Self->:self, It->:ip) never fails; };
+struct:WA_zr_af_gAc_ok = { int64:z; };
+impl:WA_zr_af_gAc_ok:La_zr_af_gAc_ok = { assoc:It = WV_zr_af_gAc_ok; func:tga = H->(WA_zr_af_gAc_ok->:self, WV_zr_af_gAc_ok->:ip) never fails { pass @ip.hv; }; };
+func:g_zr_af_gAc_ok<T: La_zr_af_gAc_ok> = int64(T->:q1, T->:q2, T.It->:ip, int64:n) never fails {
+    H->:p = raw q1.tga(ip);
+    int64->:e = raw fp(p);
+    pass (<-e) + 6i64;
+};
+func:f_zr_af_gAc_ok = int64(int64:n) never fails {
+    WA_zr_af_gAc_ok:k1 = WA_zr_af_gAc_ok{ z: 0i64 };
+    WA_zr_af_gAc_ok:k2 = WA_zr_af_gAc_ok{ z: 0i64 };
+    WV_zr_af_gAc_ok:w = WV_zr_af_gAc_ok{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_af_gAc_ok::<WA_zr_af_gAc_ok>(@k1, @k2, @w, n);
+};
+// zr_af_hA
+struct:WV_zr_af_hA = { H:hv; int64:z; };
+trait:La_zr_af_hA = { assoc:It; func:tga = H->(Self->:self, It->:ip) never fails; };
+struct:WA_zr_af_hA = { int64:z; };
+impl:WA_zr_af_hA:La_zr_af_hA = { assoc:It = WV_zr_af_hA; func:tga = H->(WA_zr_af_hA->:self, WV_zr_af_hA->:ip) never fails { pass @ip.hv; }; };
+func:g_zr_af_hA = int64(WA_zr_af_hA->:q1, WA_zr_af_hA->:q2, WV_zr_af_hA->:ip, int64:n) never fails {
+    H->:p = raw q1.tga(ip);
+    int64->:e = raw fp(p);
+    H->:k = raw q2.tga(ip);
+    discard(raw growh(k));
+    pass (<-e) + 6i64;
+};
+func:f_zr_af_hA = int64(int64:n) never fails {
+    WA_zr_af_hA:k1 = WA_zr_af_hA{ z: 0i64 };
+    WA_zr_af_hA:k2 = WA_zr_af_hA{ z: 0i64 };
+    WV_zr_af_hA:w = WV_zr_af_hA{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_af_hA(@k1, @k2, @w, n);
+};
+// zr_ai_gA
+struct:WV_zr_ai_gA = { H:hv; int64:z; };
+trait:La_zr_ai_gA = { assoc:It; func:tga = H->(Self->:self, It->:ip) never fails; };
+struct:WA_zr_ai_gA = { int64:z; };
+impl:WA_zr_ai_gA:La_zr_ai_gA = { assoc:It = WV_zr_ai_gA; func:tga = H->(WA_zr_ai_gA->:self, WV_zr_ai_gA->:ip) never fails { pass @ip.hv; }; };
+func:g_zr_ai_gA<T: La_zr_ai_gA> = int64(T->:q1, T->:q2, move T.It:it, int64:n) never fails {
+    int64->:e = raw fp(raw q1.tga(@it));
+    discard(raw growh(raw q2.tga(@it)));
+    pass (<-e) + 6i64;
+};
+func:f_zr_ai_gA = int64(int64:n) never fails {
+    WA_zr_ai_gA:k1 = WA_zr_ai_gA{ z: 0i64 };
+    WA_zr_ai_gA:k2 = WA_zr_ai_gA{ z: 0i64 };
+    WV_zr_ai_gA:w = WV_zr_ai_gA{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_ai_gA::<WA_zr_ai_gA>(@k1, @k2, move(w), n);
+};
+// zr_ai_gAc_ok
+struct:WV_zr_ai_gAc_ok = { H:hv; int64:z; };
+trait:La_zr_ai_gAc_ok = { assoc:It; func:tga = H->(Self->:self, It->:ip) never fails; };
+struct:WA_zr_ai_gAc_ok = { int64:z; };
+impl:WA_zr_ai_gAc_ok:La_zr_ai_gAc_ok = { assoc:It = WV_zr_ai_gAc_ok; func:tga = H->(WA_zr_ai_gAc_ok->:self, WV_zr_ai_gAc_ok->:ip) never fails { pass @ip.hv; }; };
+func:g_zr_ai_gAc_ok<T: La_zr_ai_gAc_ok> = int64(T->:q1, T->:q2, move T.It:it, int64:n) never fails {
+    int64->:e = raw fp(raw q1.tga(@it));
+    pass (<-e) + 6i64;
+};
+func:f_zr_ai_gAc_ok = int64(int64:n) never fails {
+    WA_zr_ai_gAc_ok:k1 = WA_zr_ai_gAc_ok{ z: 0i64 };
+    WA_zr_ai_gAc_ok:k2 = WA_zr_ai_gAc_ok{ z: 0i64 };
+    WV_zr_ai_gAc_ok:w = WV_zr_ai_gAc_ok{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_ai_gAc_ok::<WA_zr_ai_gAc_ok>(@k1, @k2, move(w), n);
+};
+// zr_ai_hA
+struct:WV_zr_ai_hA = { H:hv; int64:z; };
+trait:La_zr_ai_hA = { assoc:It; func:tga = H->(Self->:self, It->:ip) never fails; };
+struct:WA_zr_ai_hA = { int64:z; };
+impl:WA_zr_ai_hA:La_zr_ai_hA = { assoc:It = WV_zr_ai_hA; func:tga = H->(WA_zr_ai_hA->:self, WV_zr_ai_hA->:ip) never fails { pass @ip.hv; }; };
+func:g_zr_ai_hA = int64(WA_zr_ai_hA->:q1, WA_zr_ai_hA->:q2, move WV_zr_ai_hA:it, int64:n) never fails {
+    int64->:e = raw fp(raw q1.tga(@it));
+    discard(raw growh(raw q2.tga(@it)));
+    pass (<-e) + 6i64;
+};
+func:f_zr_ai_hA = int64(int64:n) never fails {
+    WA_zr_ai_hA:k1 = WA_zr_ai_hA{ z: 0i64 };
+    WA_zr_ai_hA:k2 = WA_zr_ai_hA{ z: 0i64 };
+    WV_zr_ai_hA:w = WV_zr_ai_hA{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_ai_hA(@k1, @k2, move(w), n);
+};
+// zr_aj_gA
+struct:WV_zr_aj_gA = { H:hv; int64:z; };
+trait:La_zr_aj_gA = { assoc:It; func:tga = H->(Self->:self, It->:ip) never fails; };
+struct:WA_zr_aj_gA = { int64:z; };
+impl:WA_zr_aj_gA:La_zr_aj_gA = { assoc:It = WV_zr_aj_gA; func:tga = H->(WA_zr_aj_gA->:self, WV_zr_aj_gA->:ip) never fails { pass @ip.hv; }; };
+func:g_zr_aj_gA<T: La_zr_aj_gA> = int64(T->:q1, T->:q2, move T.It:it, int64:n) never fails {
+    H->:p = raw q1.tga(@it);
+    int64->:e = raw fp(p);
+    H->:k = raw q2.tga(@it);
+    discard(raw growh(k));
+    pass (<-e) + 6i64;
+};
+func:f_zr_aj_gA = int64(int64:n) never fails {
+    WA_zr_aj_gA:k1 = WA_zr_aj_gA{ z: 0i64 };
+    WA_zr_aj_gA:k2 = WA_zr_aj_gA{ z: 0i64 };
+    WV_zr_aj_gA:w = WV_zr_aj_gA{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_aj_gA::<WA_zr_aj_gA>(@k1, @k2, move(w), n);
+};
+// zr_aj_gAc_ok
+struct:WV_zr_aj_gAc_ok = { H:hv; int64:z; };
+trait:La_zr_aj_gAc_ok = { assoc:It; func:tga = H->(Self->:self, It->:ip) never fails; };
+struct:WA_zr_aj_gAc_ok = { int64:z; };
+impl:WA_zr_aj_gAc_ok:La_zr_aj_gAc_ok = { assoc:It = WV_zr_aj_gAc_ok; func:tga = H->(WA_zr_aj_gAc_ok->:self, WV_zr_aj_gAc_ok->:ip) never fails { pass @ip.hv; }; };
+func:g_zr_aj_gAc_ok<T: La_zr_aj_gAc_ok> = int64(T->:q1, T->:q2, move T.It:it, int64:n) never fails {
+    H->:p = raw q1.tga(@it);
+    int64->:e = raw fp(p);
+    pass (<-e) + 6i64;
+};
+func:f_zr_aj_gAc_ok = int64(int64:n) never fails {
+    WA_zr_aj_gAc_ok:k1 = WA_zr_aj_gAc_ok{ z: 0i64 };
+    WA_zr_aj_gAc_ok:k2 = WA_zr_aj_gAc_ok{ z: 0i64 };
+    WV_zr_aj_gAc_ok:w = WV_zr_aj_gAc_ok{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_aj_gAc_ok::<WA_zr_aj_gAc_ok>(@k1, @k2, move(w), n);
+};
+// zr_aj_hA
+struct:WV_zr_aj_hA = { H:hv; int64:z; };
+trait:La_zr_aj_hA = { assoc:It; func:tga = H->(Self->:self, It->:ip) never fails; };
+struct:WA_zr_aj_hA = { int64:z; };
+impl:WA_zr_aj_hA:La_zr_aj_hA = { assoc:It = WV_zr_aj_hA; func:tga = H->(WA_zr_aj_hA->:self, WV_zr_aj_hA->:ip) never fails { pass @ip.hv; }; };
+func:g_zr_aj_hA = int64(WA_zr_aj_hA->:q1, WA_zr_aj_hA->:q2, move WV_zr_aj_hA:it, int64:n) never fails {
+    H->:p = raw q1.tga(@it);
+    int64->:e = raw fp(p);
+    H->:k = raw q2.tga(@it);
+    discard(raw growh(k));
+    pass (<-e) + 6i64;
+};
+func:f_zr_aj_hA = int64(int64:n) never fails {
+    WA_zr_aj_hA:k1 = WA_zr_aj_hA{ z: 0i64 };
+    WA_zr_aj_hA:k2 = WA_zr_aj_hA{ z: 0i64 };
+    WV_zr_aj_hA:w = WV_zr_aj_hA{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_aj_hA(@k1, @k2, move(w), n);
+};
+// zr_ar_gA
+struct:WV_zr_ar_gA = { H:hv; int64:z; };
+trait:La_zr_ar_gA = { assoc:It; func:tga = H->(Self->:self, It->:ip) never fails; };
+struct:WA_zr_ar_gA = { int64:z; };
+impl:WA_zr_ar_gA:La_zr_ar_gA = { assoc:It = WV_zr_ar_gA; func:tga = H->(WA_zr_ar_gA->:self, WV_zr_ar_gA->:ip) never fails { pass @ip.hv; }; };
+func:g_zr_ar_gA<T: La_zr_ar_gA> = int64(T->:q1, T->:q2, T.It->:ip, int64:n) never fails {
+    int64->:e = raw fp(raw q1.tga(ip));
+    discard(raw growh(raw q2.tga(ip)));
+    pass (<-e) + 6i64;
+};
+func:f_zr_ar_gA = int64(int64:n) never fails {
+    WA_zr_ar_gA:k1 = WA_zr_ar_gA{ z: 0i64 };
+    WA_zr_ar_gA:k2 = WA_zr_ar_gA{ z: 0i64 };
+    WV_zr_ar_gA:w = WV_zr_ar_gA{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_ar_gA::<WA_zr_ar_gA>(@k1, @k2, @w, n);
+};
+// zr_ar_gAc_ok
+struct:WV_zr_ar_gAc_ok = { H:hv; int64:z; };
+trait:La_zr_ar_gAc_ok = { assoc:It; func:tga = H->(Self->:self, It->:ip) never fails; };
+struct:WA_zr_ar_gAc_ok = { int64:z; };
+impl:WA_zr_ar_gAc_ok:La_zr_ar_gAc_ok = { assoc:It = WV_zr_ar_gAc_ok; func:tga = H->(WA_zr_ar_gAc_ok->:self, WV_zr_ar_gAc_ok->:ip) never fails { pass @ip.hv; }; };
+func:g_zr_ar_gAc_ok<T: La_zr_ar_gAc_ok> = int64(T->:q1, T->:q2, T.It->:ip, int64:n) never fails {
+    int64->:e = raw fp(raw q1.tga(ip));
+    pass (<-e) + 6i64;
+};
+func:f_zr_ar_gAc_ok = int64(int64:n) never fails {
+    WA_zr_ar_gAc_ok:k1 = WA_zr_ar_gAc_ok{ z: 0i64 };
+    WA_zr_ar_gAc_ok:k2 = WA_zr_ar_gAc_ok{ z: 0i64 };
+    WV_zr_ar_gAc_ok:w = WV_zr_ar_gAc_ok{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_ar_gAc_ok::<WA_zr_ar_gAc_ok>(@k1, @k2, @w, n);
+};
+// zr_ar_hA
+struct:WV_zr_ar_hA = { H:hv; int64:z; };
+trait:La_zr_ar_hA = { assoc:It; func:tga = H->(Self->:self, It->:ip) never fails; };
+struct:WA_zr_ar_hA = { int64:z; };
+impl:WA_zr_ar_hA:La_zr_ar_hA = { assoc:It = WV_zr_ar_hA; func:tga = H->(WA_zr_ar_hA->:self, WV_zr_ar_hA->:ip) never fails { pass @ip.hv; }; };
+func:g_zr_ar_hA = int64(WA_zr_ar_hA->:q1, WA_zr_ar_hA->:q2, WV_zr_ar_hA->:ip, int64:n) never fails {
+    int64->:e = raw fp(raw q1.tga(ip));
+    discard(raw growh(raw q2.tga(ip)));
+    pass (<-e) + 6i64;
+};
+func:f_zr_ar_hA = int64(int64:n) never fails {
+    WA_zr_ar_hA:k1 = WA_zr_ar_hA{ z: 0i64 };
+    WA_zr_ar_hA:k2 = WA_zr_ar_hA{ z: 0i64 };
+    WV_zr_ar_hA:w = WV_zr_ar_hA{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_ar_hA(@k1, @k2, @w, n);
+};
+// zr_b_gV
+struct:W_zr_b_gV = { H->:hp; int64:z; };
+trait:Lk_zr_b_gV = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_b_gV = { H:hv; int64:z; };
+impl:W_zr_b_gV:Lk_zr_b_gV = { func:tgt = H->(W_zr_b_gV->:self) never fails { pass self.hp; }; };
+impl:WV_zr_b_gV:Lk_zr_b_gV = { func:tgt = H->(WV_zr_b_gV->:self) never fails { pass @self.hv; }; };
+struct:Bx_zr_b_gV<T> = { T:v; int64:z; };
+func:tgtb_zr_b_gV<T: Lk_zr_b_gV> = H->(Bx_zr_b_gV<T>->:b) never fails { pass raw b.v.tgt(); };
+func:tgtl_zr_b_gV<T: Lk_zr_b_gV> = H->(List<T>->:l) never fails { pass raw (<-l)[0i64].tgt(); };
+func:g_zr_b_gV<T: Lk_zr_b_gV> = int64(move T:k0, int64:n) never fails {
+    Bx_zr_b_gV<T>:b = Bx_zr_b_gV{ v: move(k0), z: 0i64 };
+    H->:p = raw tgtb_zr_b_gV::<T>(@b);
+    int64->:e = raw fp(p);
+    H->:k = p;
+    discard(raw growh(k));
+    pass (<-e) + 6i64;
+};
+func:f_zr_b_gV = int64(int64:n) never fails {
+    WV_zr_b_gV:k = WV_zr_b_gV{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_b_gV::<WV_zr_b_gV>(move(k), n);
+};
+// zr_b_gW
+struct:W_zr_b_gW = { H->:hp; int64:z; };
+trait:Lk_zr_b_gW = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_b_gW = { H:hv; int64:z; };
+impl:W_zr_b_gW:Lk_zr_b_gW = { func:tgt = H->(W_zr_b_gW->:self) never fails { pass self.hp; }; };
+impl:WV_zr_b_gW:Lk_zr_b_gW = { func:tgt = H->(WV_zr_b_gW->:self) never fails { pass @self.hv; }; };
+struct:Bx_zr_b_gW<T> = { T:v; int64:z; };
+func:tgtb_zr_b_gW<T: Lk_zr_b_gW> = H->(Bx_zr_b_gW<T>->:b) never fails { pass raw b.v.tgt(); };
+func:tgtl_zr_b_gW<T: Lk_zr_b_gW> = H->(List<T>->:l) never fails { pass raw (<-l)[0i64].tgt(); };
+func:g_zr_b_gW<T: Lk_zr_b_gW> = int64(move T:k0, int64:n) never fails {
+    Bx_zr_b_gW<T>:b = Bx_zr_b_gW{ v: move(k0), z: 0i64 };
+    H->:p = raw tgtb_zr_b_gW::<T>(@b);
+    int64->:e = raw fp(p);
+    H->:k = p;
+    discard(raw growh(k));
+    pass (<-e) + 6i64;
+};
+func:f_zr_b_gW = int64(int64:n) never fails {
+    H:h0 = raw mkh();
+    W_zr_b_gW:k = W_zr_b_gW{ hp: @h0, z: 0i64 };
+    pass raw g_zr_b_gW::<W_zr_b_gW>(move(k), n);
+};
+// zr_b_hV
+struct:W_zr_b_hV = { H->:hp; int64:z; };
+trait:Lk_zr_b_hV = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_b_hV = { H:hv; int64:z; };
+impl:W_zr_b_hV:Lk_zr_b_hV = { func:tgt = H->(W_zr_b_hV->:self) never fails { pass self.hp; }; };
+impl:WV_zr_b_hV:Lk_zr_b_hV = { func:tgt = H->(WV_zr_b_hV->:self) never fails { pass @self.hv; }; };
+struct:Bx_zr_b_hV<T> = { T:v; int64:z; };
+func:tgtb_zr_b_hV<T: Lk_zr_b_hV> = H->(Bx_zr_b_hV<T>->:b) never fails { pass raw b.v.tgt(); };
+func:tgtl_zr_b_hV<T: Lk_zr_b_hV> = H->(List<T>->:l) never fails { pass raw (<-l)[0i64].tgt(); };
+func:g_zr_b_hV = int64(move WV_zr_b_hV:k0, int64:n) never fails {
+    Bx_zr_b_hV<WV_zr_b_hV>:b = Bx_zr_b_hV{ v: move(k0), z: 0i64 };
+    H->:p = raw tgtb_zr_b_hV::<WV_zr_b_hV>(@b);
+    int64->:e = raw fp(p);
+    H->:k = p;
+    discard(raw growh(k));
+    pass (<-e) + 6i64;
+};
+func:f_zr_b_hV = int64(int64:n) never fails {
+    WV_zr_b_hV:k = WV_zr_b_hV{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_b_hV(move(k), n);
+};
+// zr_d_dV
+struct:W_zr_d_dV = { H->:hp; int64:z; };
+trait:Lk_zr_d_dV = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_d_dV = { H:hv; int64:z; };
+impl:W_zr_d_dV:Lk_zr_d_dV = { func:tgt = H->(W_zr_d_dV->:self) never fails { pass self.hp; }; };
+impl:WV_zr_d_dV:Lk_zr_d_dV = { func:tgt = H->(WV_zr_d_dV->:self) never fails { pass @self.hv; }; };
+func:g_zr_d_dV = int64(int64:n) never fails {
+    dyn Lk_zr_d_dV:d = WV_zr_d_dV{ hv: raw mkh(), z: 0i64 } => dyn Lk_zr_d_dV;
+    int64->:e = raw fp(raw d.tgt());
+    discard(raw growh(raw d.tgt()));
+    pass (<-e) + 6i64;
+};
+func:f_zr_d_dV = int64(int64:n) never fails {
+    pass raw g_zr_d_dV(n);
+};
+// zr_e_dV
+struct:W_zr_e_dV = { H->:hp; int64:z; };
+trait:Lk_zr_e_dV = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_e_dV = { H:hv; int64:z; };
+impl:W_zr_e_dV:Lk_zr_e_dV = { func:tgt = H->(W_zr_e_dV->:self) never fails { pass self.hp; }; };
+impl:WV_zr_e_dV:Lk_zr_e_dV = { func:tgt = H->(WV_zr_e_dV->:self) never fails { pass @self.hv; }; };
+func:g_zr_e_dV = int64(int64:n) never fails {
+    dyn Lk_zr_e_dV:d = WV_zr_e_dV{ hv: raw mkh(), z: 0i64 } => dyn Lk_zr_e_dV;
+    H->:p = raw d.tgt();
+    int64->:e = raw fp(p);
+    H->:k = p;
+    discard(raw growh(k));
+    pass (<-e) + 6i64;
+};
+func:f_zr_e_dV = int64(int64:n) never fails {
+    pass raw g_zr_e_dV(n);
+};
+// zr_f_gV
+struct:W_zr_f_gV = { H->:hp; int64:z; };
+trait:Lk_zr_f_gV = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_f_gV = { H:hv; int64:z; };
+impl:W_zr_f_gV:Lk_zr_f_gV = { func:tgt = H->(W_zr_f_gV->:self) never fails { pass self.hp; }; };
+impl:WV_zr_f_gV:Lk_zr_f_gV = { func:tgt = H->(WV_zr_f_gV->:self) never fails { pass @self.hv; }; };
+func:g_zr_f_gV<T: Lk_zr_f_gV> = int64(T->:q, int64:n) never fails {
+    H->:p = raw q.tgt();
+    int64->:e = raw fp(p);
+    H->:k = p;
+    discard(raw growh(k));
+    pass (<-e) + 6i64;
+};
+func:f_zr_f_gV = int64(int64:n) never fails {
+    WV_zr_f_gV:k = WV_zr_f_gV{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_f_gV::<WV_zr_f_gV>(@k, n);
+};
+// zr_f_gW
+struct:W_zr_f_gW = { H->:hp; int64:z; };
+trait:Lk_zr_f_gW = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_f_gW = { H:hv; int64:z; };
+impl:W_zr_f_gW:Lk_zr_f_gW = { func:tgt = H->(W_zr_f_gW->:self) never fails { pass self.hp; }; };
+impl:WV_zr_f_gW:Lk_zr_f_gW = { func:tgt = H->(WV_zr_f_gW->:self) never fails { pass @self.hv; }; };
+func:g_zr_f_gW<T: Lk_zr_f_gW> = int64(T->:q, int64:n) never fails {
+    H->:p = raw q.tgt();
+    int64->:e = raw fp(p);
+    H->:k = p;
+    discard(raw growh(k));
+    pass (<-e) + 6i64;
+};
+func:f_zr_f_gW = int64(int64:n) never fails {
+    H:h0 = raw mkh();
+    W_zr_f_gW:k = W_zr_f_gW{ hp: @h0, z: 0i64 };
+    pass raw g_zr_f_gW::<W_zr_f_gW>(@k, n);
+};
+// zr_f_hV
+struct:W_zr_f_hV = { H->:hp; int64:z; };
+trait:Lk_zr_f_hV = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_f_hV = { H:hv; int64:z; };
+impl:W_zr_f_hV:Lk_zr_f_hV = { func:tgt = H->(W_zr_f_hV->:self) never fails { pass self.hp; }; };
+impl:WV_zr_f_hV:Lk_zr_f_hV = { func:tgt = H->(WV_zr_f_hV->:self) never fails { pass @self.hv; }; };
+func:g_zr_f_hV = int64(WV_zr_f_hV->:q, int64:n) never fails {
+    H->:p = raw q.tgt();
+    int64->:e = raw fp(p);
+    H->:k = p;
+    discard(raw growh(k));
+    pass (<-e) + 6i64;
+};
+func:f_zr_f_hV = int64(int64:n) never fails {
+    WV_zr_f_hV:k = WV_zr_f_hV{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_f_hV(@k, n);
+};
+// zr_i_gV
+struct:W_zr_i_gV = { H->:hp; int64:z; };
+trait:Lk_zr_i_gV = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_i_gV = { H:hv; int64:z; };
+impl:W_zr_i_gV:Lk_zr_i_gV = { func:tgt = H->(W_zr_i_gV->:self) never fails { pass self.hp; }; };
+impl:WV_zr_i_gV:Lk_zr_i_gV = { func:tgt = H->(WV_zr_i_gV->:self) never fails { pass @self.hv; }; };
+func:g_zr_i_gV<T: Lk_zr_i_gV> = int64(move T:k0, int64:n) never fails {
+    int64->:e = raw fp(raw k0.tgt());
+    discard(raw growh(raw k0.tgt()));
+    pass (<-e) + 6i64;
+};
+func:f_zr_i_gV = int64(int64:n) never fails {
+    WV_zr_i_gV:k = WV_zr_i_gV{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_i_gV::<WV_zr_i_gV>(move(k), n);
+};
+// zr_i_gW
+struct:W_zr_i_gW = { H->:hp; int64:z; };
+trait:Lk_zr_i_gW = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_i_gW = { H:hv; int64:z; };
+impl:W_zr_i_gW:Lk_zr_i_gW = { func:tgt = H->(W_zr_i_gW->:self) never fails { pass self.hp; }; };
+impl:WV_zr_i_gW:Lk_zr_i_gW = { func:tgt = H->(WV_zr_i_gW->:self) never fails { pass @self.hv; }; };
+func:g_zr_i_gW<T: Lk_zr_i_gW> = int64(move T:k0, int64:n) never fails {
+    int64->:e = raw fp(raw k0.tgt());
+    discard(raw growh(raw k0.tgt()));
+    pass (<-e) + 6i64;
+};
+func:f_zr_i_gW = int64(int64:n) never fails {
+    H:h0 = raw mkh();
+    W_zr_i_gW:k = W_zr_i_gW{ hp: @h0, z: 0i64 };
+    pass raw g_zr_i_gW::<W_zr_i_gW>(move(k), n);
+};
+// zr_i_hV
+struct:W_zr_i_hV = { H->:hp; int64:z; };
+trait:Lk_zr_i_hV = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_i_hV = { H:hv; int64:z; };
+impl:W_zr_i_hV:Lk_zr_i_hV = { func:tgt = H->(W_zr_i_hV->:self) never fails { pass self.hp; }; };
+impl:WV_zr_i_hV:Lk_zr_i_hV = { func:tgt = H->(WV_zr_i_hV->:self) never fails { pass @self.hv; }; };
+func:g_zr_i_hV = int64(move WV_zr_i_hV:k0, int64:n) never fails {
+    int64->:e = raw fp(raw k0.tgt());
+    discard(raw growh(raw k0.tgt()));
+    pass (<-e) + 6i64;
+};
+func:f_zr_i_hV = int64(int64:n) never fails {
+    WV_zr_i_hV:k = WV_zr_i_hV{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_i_hV(move(k), n);
+};
+// zr_j_gV
+struct:W_zr_j_gV = { H->:hp; int64:z; };
+trait:Lk_zr_j_gV = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_j_gV = { H:hv; int64:z; };
+impl:W_zr_j_gV:Lk_zr_j_gV = { func:tgt = H->(W_zr_j_gV->:self) never fails { pass self.hp; }; };
+impl:WV_zr_j_gV:Lk_zr_j_gV = { func:tgt = H->(WV_zr_j_gV->:self) never fails { pass @self.hv; }; };
+func:g_zr_j_gV<T: Lk_zr_j_gV> = int64(move T:k0, int64:n) never fails {
+    H->:p = raw k0.tgt();
+    int64->:e = raw fp(p);
+    H->:k = p;
+    discard(raw growh(k));
+    pass (<-e) + 6i64;
+};
+func:f_zr_j_gV = int64(int64:n) never fails {
+    WV_zr_j_gV:k = WV_zr_j_gV{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_j_gV::<WV_zr_j_gV>(move(k), n);
+};
+// zr_j_gW
+struct:W_zr_j_gW = { H->:hp; int64:z; };
+trait:Lk_zr_j_gW = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_j_gW = { H:hv; int64:z; };
+impl:W_zr_j_gW:Lk_zr_j_gW = { func:tgt = H->(W_zr_j_gW->:self) never fails { pass self.hp; }; };
+impl:WV_zr_j_gW:Lk_zr_j_gW = { func:tgt = H->(WV_zr_j_gW->:self) never fails { pass @self.hv; }; };
+func:g_zr_j_gW<T: Lk_zr_j_gW> = int64(move T:k0, int64:n) never fails {
+    H->:p = raw k0.tgt();
+    int64->:e = raw fp(p);
+    H->:k = p;
+    discard(raw growh(k));
+    pass (<-e) + 6i64;
+};
+func:f_zr_j_gW = int64(int64:n) never fails {
+    H:h0 = raw mkh();
+    W_zr_j_gW:k = W_zr_j_gW{ hp: @h0, z: 0i64 };
+    pass raw g_zr_j_gW::<W_zr_j_gW>(move(k), n);
+};
+// zr_j_hV
+struct:W_zr_j_hV = { H->:hp; int64:z; };
+trait:Lk_zr_j_hV = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_j_hV = { H:hv; int64:z; };
+impl:W_zr_j_hV:Lk_zr_j_hV = { func:tgt = H->(W_zr_j_hV->:self) never fails { pass self.hp; }; };
+impl:WV_zr_j_hV:Lk_zr_j_hV = { func:tgt = H->(WV_zr_j_hV->:self) never fails { pass @self.hv; }; };
+func:g_zr_j_hV = int64(move WV_zr_j_hV:k0, int64:n) never fails {
+    H->:p = raw k0.tgt();
+    int64->:e = raw fp(p);
+    H->:k = p;
+    discard(raw growh(k));
+    pass (<-e) + 6i64;
+};
+func:f_zr_j_hV = int64(int64:n) never fails {
+    WV_zr_j_hV:k = WV_zr_j_hV{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_j_hV(move(k), n);
+};
+// zr_l_gV
+struct:W_zr_l_gV = { H->:hp; int64:z; };
+trait:Lk_zr_l_gV = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_l_gV = { H:hv; int64:z; };
+impl:W_zr_l_gV:Lk_zr_l_gV = { func:tgt = H->(W_zr_l_gV->:self) never fails { pass self.hp; }; };
+impl:WV_zr_l_gV:Lk_zr_l_gV = { func:tgt = H->(WV_zr_l_gV->:self) never fails { pass @self.hv; }; };
+struct:Bx_zr_l_gV<T> = { T:v; int64:z; };
+func:tgtb_zr_l_gV<T: Lk_zr_l_gV> = H->(Bx_zr_l_gV<T>->:b) never fails { pass raw b.v.tgt(); };
+func:tgtl_zr_l_gV<T: Lk_zr_l_gV> = H->(List<T>->:l) never fails { pass raw (<-l)[0i64].tgt(); };
+func:g_zr_l_gV<T: Lk_zr_l_gV> = int64(move T:k0, int64:n) never fails {
+    List<T>:l = raw list_init::<T>(1i64);
+    drop list_push(@l, move(k0));
+    H->:p = raw tgtl_zr_l_gV::<T>(@l);
+    int64->:e = raw fp(p);
+    H->:k = p;
+    discard(raw growh(k));
+    pass (<-e) + 6i64;
+};
+func:f_zr_l_gV = int64(int64:n) never fails {
+    WV_zr_l_gV:k = WV_zr_l_gV{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_l_gV::<WV_zr_l_gV>(move(k), n);
+};
+// zr_l_gW
+struct:W_zr_l_gW = { H->:hp; int64:z; };
+trait:Lk_zr_l_gW = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_l_gW = { H:hv; int64:z; };
+impl:W_zr_l_gW:Lk_zr_l_gW = { func:tgt = H->(W_zr_l_gW->:self) never fails { pass self.hp; }; };
+impl:WV_zr_l_gW:Lk_zr_l_gW = { func:tgt = H->(WV_zr_l_gW->:self) never fails { pass @self.hv; }; };
+struct:Bx_zr_l_gW<T> = { T:v; int64:z; };
+func:tgtb_zr_l_gW<T: Lk_zr_l_gW> = H->(Bx_zr_l_gW<T>->:b) never fails { pass raw b.v.tgt(); };
+func:tgtl_zr_l_gW<T: Lk_zr_l_gW> = H->(List<T>->:l) never fails { pass raw (<-l)[0i64].tgt(); };
+func:g_zr_l_gW<T: Lk_zr_l_gW> = int64(move T:k0, int64:n) never fails {
+    List<T>:l = raw list_init::<T>(1i64);
+    drop list_push(@l, move(k0));
+    H->:p = raw tgtl_zr_l_gW::<T>(@l);
+    int64->:e = raw fp(p);
+    H->:k = p;
+    discard(raw growh(k));
+    pass (<-e) + 6i64;
+};
+func:f_zr_l_gW = int64(int64:n) never fails {
+    H:h0 = raw mkh();
+    W_zr_l_gW:k = W_zr_l_gW{ hp: @h0, z: 0i64 };
+    pass raw g_zr_l_gW::<W_zr_l_gW>(move(k), n);
+};
+// zr_l_hV
+struct:W_zr_l_hV = { H->:hp; int64:z; };
+trait:Lk_zr_l_hV = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_l_hV = { H:hv; int64:z; };
+impl:W_zr_l_hV:Lk_zr_l_hV = { func:tgt = H->(W_zr_l_hV->:self) never fails { pass self.hp; }; };
+impl:WV_zr_l_hV:Lk_zr_l_hV = { func:tgt = H->(WV_zr_l_hV->:self) never fails { pass @self.hv; }; };
+struct:Bx_zr_l_hV<T> = { T:v; int64:z; };
+func:tgtb_zr_l_hV<T: Lk_zr_l_hV> = H->(Bx_zr_l_hV<T>->:b) never fails { pass raw b.v.tgt(); };
+func:tgtl_zr_l_hV<T: Lk_zr_l_hV> = H->(List<T>->:l) never fails { pass raw (<-l)[0i64].tgt(); };
+func:g_zr_l_hV = int64(move WV_zr_l_hV:k0, int64:n) never fails {
+    List<WV_zr_l_hV>:l = raw list_init::<WV_zr_l_hV>(1i64);
+    drop list_push(@l, move(k0));
+    H->:p = raw tgtl_zr_l_hV::<WV_zr_l_hV>(@l);
+    int64->:e = raw fp(p);
+    H->:k = p;
+    discard(raw growh(k));
+    pass (<-e) + 6i64;
+};
+func:f_zr_l_hV = int64(int64:n) never fails {
+    WV_zr_l_hV:k = WV_zr_l_hV{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_l_hV(move(k), n);
+};
+// zr_r_gV
+struct:W_zr_r_gV = { H->:hp; int64:z; };
+trait:Lk_zr_r_gV = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_r_gV = { H:hv; int64:z; };
+impl:W_zr_r_gV:Lk_zr_r_gV = { func:tgt = H->(W_zr_r_gV->:self) never fails { pass self.hp; }; };
+impl:WV_zr_r_gV:Lk_zr_r_gV = { func:tgt = H->(WV_zr_r_gV->:self) never fails { pass @self.hv; }; };
+func:g_zr_r_gV<T: Lk_zr_r_gV> = int64(T->:q, int64:n) never fails {
+    int64->:e = raw fp(raw q.tgt());
+    discard(raw growh(raw q.tgt()));
+    pass (<-e) + 6i64;
+};
+func:f_zr_r_gV = int64(int64:n) never fails {
+    WV_zr_r_gV:k = WV_zr_r_gV{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_r_gV::<WV_zr_r_gV>(@k, n);
+};
+// zr_r_gW
+struct:W_zr_r_gW = { H->:hp; int64:z; };
+trait:Lk_zr_r_gW = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_r_gW = { H:hv; int64:z; };
+impl:W_zr_r_gW:Lk_zr_r_gW = { func:tgt = H->(W_zr_r_gW->:self) never fails { pass self.hp; }; };
+impl:WV_zr_r_gW:Lk_zr_r_gW = { func:tgt = H->(WV_zr_r_gW->:self) never fails { pass @self.hv; }; };
+func:g_zr_r_gW<T: Lk_zr_r_gW> = int64(T->:q, int64:n) never fails {
+    int64->:e = raw fp(raw q.tgt());
+    discard(raw growh(raw q.tgt()));
+    pass (<-e) + 6i64;
+};
+func:f_zr_r_gW = int64(int64:n) never fails {
+    H:h0 = raw mkh();
+    W_zr_r_gW:k = W_zr_r_gW{ hp: @h0, z: 0i64 };
+    pass raw g_zr_r_gW::<W_zr_r_gW>(@k, n);
+};
+// zr_r_hV
+struct:W_zr_r_hV = { H->:hp; int64:z; };
+trait:Lk_zr_r_hV = { func:tgt = H->(Self->:self) never fails; };
+struct:WV_zr_r_hV = { H:hv; int64:z; };
+impl:W_zr_r_hV:Lk_zr_r_hV = { func:tgt = H->(W_zr_r_hV->:self) never fails { pass self.hp; }; };
+impl:WV_zr_r_hV:Lk_zr_r_hV = { func:tgt = H->(WV_zr_r_hV->:self) never fails { pass @self.hv; }; };
+func:g_zr_r_hV = int64(WV_zr_r_hV->:q, int64:n) never fails {
+    int64->:e = raw fp(raw q.tgt());
+    discard(raw growh(raw q.tgt()));
+    pass (<-e) + 6i64;
+};
+func:f_zr_r_hV = int64(int64:n) never fails {
+    WV_zr_r_hV:k = WV_zr_r_hV{ hv: raw mkh(), z: 0i64 };
+    pass raw g_zr_r_hV(@k, n);
+};
+// zr_s_gV
+struct:W_zr_s_gV = { H->:hp; int64:z; };
+trait:Lk_zr_s_gV = { func:tgt = H->(Self->:self) never fails; func:run = int64(Self->:self) never fails {
+        int64->:e = raw fp(raw self.tgt());
+        discard(raw growh(raw self.tgt()));
+        pass (<-e) + 6i64;
+    }; };
+struct:WV_zr_s_gV = { H:hv; int64:z; };
+impl:W_zr_s_gV:Lk_zr_s_gV = { func:tgt = H->(W_zr_s_gV->:self) never fails { pass self.hp; }; };
+impl:WV_zr_s_gV:Lk_zr_s_gV = { func:tgt = H->(WV_zr_s_gV->:self) never fails { pass @self.hv; }; };
+func:f_zr_s_gV = int64(int64:n) never fails {
+    WV_zr_s_gV:k = WV_zr_s_gV{ hv: raw mkh(), z: 0i64 };
+    pass raw k.run();
+};
+// zr_s_gW
+struct:W_zr_s_gW = { H->:hp; int64:z; };
+trait:Lk_zr_s_gW = { func:tgt = H->(Self->:self) never fails; func:run = int64(Self->:self) never fails {
+        int64->:e = raw fp(raw self.tgt());
+        discard(raw growh(raw self.tgt()));
+        pass (<-e) + 6i64;
+    }; };
+struct:WV_zr_s_gW = { H:hv; int64:z; };
+impl:W_zr_s_gW:Lk_zr_s_gW = { func:tgt = H->(W_zr_s_gW->:self) never fails { pass self.hp; }; };
+impl:WV_zr_s_gW:Lk_zr_s_gW = { func:tgt = H->(WV_zr_s_gW->:self) never fails { pass @self.hv; }; };
+func:f_zr_s_gW = int64(int64:n) never fails {
+    H:h0 = raw mkh();
+    W_zr_s_gW:k = W_zr_s_gW{ hp: @h0, z: 0i64 };
+    pass raw k.run();
+};
+// zr_t_gV
+struct:W_zr_t_gV = { H->:hp; int64:z; };
+trait:Lk_zr_t_gV = { func:tgt = H->(Self->:self) never fails; func:run = int64(Self->:self) never fails {
+        H->:p = raw self.tgt();
+        int64->:e = raw fp(p);
+        H->:k = p;
+        discard(raw growh(k));
+        pass (<-e) + 6i64;
+    }; };
+struct:WV_zr_t_gV = { H:hv; int64:z; };
+impl:W_zr_t_gV:Lk_zr_t_gV = { func:tgt = H->(W_zr_t_gV->:self) never fails { pass self.hp; }; };
+impl:WV_zr_t_gV:Lk_zr_t_gV = { func:tgt = H->(WV_zr_t_gV->:self) never fails { pass @self.hv; }; };
+func:f_zr_t_gV = int64(int64:n) never fails {
+    WV_zr_t_gV:k = WV_zr_t_gV{ hv: raw mkh(), z: 0i64 };
+    pass raw k.run();
+};
+// zr_t_gW
+struct:W_zr_t_gW = { H->:hp; int64:z; };
+trait:Lk_zr_t_gW = { func:tgt = H->(Self->:self) never fails; func:run = int64(Self->:self) never fails {
+        H->:p = raw self.tgt();
+        int64->:e = raw fp(p);
+        H->:k = p;
+        discard(raw growh(k));
+        pass (<-e) + 6i64;
+    }; };
+struct:WV_zr_t_gW = { H:hv; int64:z; };
+impl:W_zr_t_gW:Lk_zr_t_gW = { func:tgt = H->(W_zr_t_gW->:self) never fails { pass self.hp; }; };
+impl:WV_zr_t_gW:Lk_zr_t_gW = { func:tgt = H->(WV_zr_t_gW->:self) never fails { pass @self.hv; }; };
+func:f_zr_t_gW = int64(int64:n) never fails {
+    H:h0 = raw mkh();
+    W_zr_t_gW:k = W_zr_t_gW{ hp: @h0, z: 0i64 };
+    pass raw k.run();
+};
+// zr_x_hL
+struct:WX_zr_x_hL = { K:kk; List<int64>:l2; H->:hp; int64:z; };
+impl:WX_zr_x_hL = { func:tgx = H->(WX_zr_x_hL->:self) never fails { pass self.hp; }; func:fx = int64->(WX_zr_x_hL->:self) never fails { pass @((<-self).l2[0i64]); };
+            func:lx = List<int64>->(WX_zr_x_hL->:self) never fails { pass @self.l2; }; };
+func:growl_zr_x_hL = int64(List<int64>->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(w, 1i64); } pass 7i64; };
+func:g_zr_x_hL = int64(WX_zr_x_hL->:q, int64:n) never fails {
+    int64->:e = raw fpl(raw q.lx());
+    discard(raw growl_zr_x_hL(raw q.lx()));
+    pass (<-e) + 6i64;
+};
+func:f_zr_x_hL = int64(int64:n) never fails {
+    H:h0 = raw mkh();
+    WX_zr_x_hL:k = WX_zr_x_hL{ kk: K{ k: 3i64 }, l2: raw mk(), hp: @h0, z: 0i64 };
+    pass raw g_zr_x_hL(@k, n);
+};
+// zt1g_store_through_getter
+struct:G_zt1g_store_through_getter = { H->:hp2; int64:z; };
+struct:WG_zt1g_store_through_getter = { G_zt1g_store_through_getter:gv; int64:z; };
+trait:Lg_zt1g_store_through_getter = { func:tgt = G_zt1g_store_through_getter->(Self->:self) never fails; func:rd = int64(Self->:self) never fails; };
+impl:WG_zt1g_store_through_getter:Lg_zt1g_store_through_getter = { func:tgt = G_zt1g_store_through_getter->(WG_zt1g_store_through_getter->:self) never fails { pass @self.gv; }; func:rd = int64(WG_zt1g_store_through_getter->:self) never fails { pass self.gv.hp2.l[0i64]; }; };
+func:g_zt1g_store_through_getter<T: Lg_zt1g_store_through_getter> = int64(move T:k0, H->:d2) never fails {
+    T:s = move(k0);
+    {
+        H:inner = raw mkh();
+        G_zt1g_store_through_getter->:p = raw s.tgt();
+        p.hp2 = @inner;
+    }
+    pass (raw s.rd()) + 6i64;
+};
+func:f_zt1g_store_through_getter = int64(int64:n) never fails {
+    H:h0 = raw mkh();
+    H:h1 = raw mkh();
+    WG_zt1g_store_through_getter:k = WG_zt1g_store_through_getter{ gv: G_zt1g_store_through_getter{ hp2: @h0, z: 0i64 }, z: 0i64 };
+    pass raw g_zt1g_store_through_getter::<WG_zt1g_store_through_getter>(move(k), @h1);
+};
+// zt1h_store_through_getter
+struct:G_zt1h_store_through_getter = { H->:hp2; int64:z; };
+struct:WG_zt1h_store_through_getter = { G_zt1h_store_through_getter:gv; int64:z; };
+trait:Lg_zt1h_store_through_getter = { func:tgt = G_zt1h_store_through_getter->(Self->:self) never fails; func:rd = int64(Self->:self) never fails; };
+impl:WG_zt1h_store_through_getter:Lg_zt1h_store_through_getter = { func:tgt = G_zt1h_store_through_getter->(WG_zt1h_store_through_getter->:self) never fails { pass @self.gv; }; func:rd = int64(WG_zt1h_store_through_getter->:self) never fails { pass self.gv.hp2.l[0i64]; }; };
+func:g_zt1h_store_through_getter = int64(H->:d, H->:d2) never fails {
+    WG_zt1h_store_through_getter:s = WG_zt1h_store_through_getter{ gv: G_zt1h_store_through_getter{ hp2: d, z: 0i64 }, z: 0i64 };
+    {
+        H:inner = raw mkh();
+        G_zt1h_store_through_getter->:p = raw s.tgt();
+        p.hp2 = @inner;
+    }
+    pass (raw s.rd()) + 6i64;
+};
+func:f_zt1h_store_through_getter = int64(int64:n) never fails {
+    H:h0 = raw mkh();
+    H:h1 = raw mkh();
+    pass raw g_zt1h_store_through_getter(@h0, @h1);
+};
+// zt2g_store_through_getter
+struct:G_zt2g_store_through_getter = { H->:hp2; int64:z; };
+struct:WG_zt2g_store_through_getter = { G_zt2g_store_through_getter:gv; int64:z; };
+trait:Lg_zt2g_store_through_getter = { func:tgt = G_zt2g_store_through_getter->(Self->:self) never fails; func:rd = int64(Self->:self) never fails; };
+impl:WG_zt2g_store_through_getter:Lg_zt2g_store_through_getter = { func:tgt = G_zt2g_store_through_getter->(WG_zt2g_store_through_getter->:self) never fails { pass @self.gv; }; func:rd = int64(WG_zt2g_store_through_getter->:self) never fails { pass self.gv.hp2.l[0i64]; }; };
+func:g_zt2g_store_through_getter<T: Lg_zt2g_store_through_getter> = int64(move T:k0, H->:d2) never fails {
+    T:s = move(k0);
+    {
+        H:inner = raw mkh();
+        (<-(raw s.tgt())).hp2 = @inner;
+    }
+    pass (raw s.rd()) + 6i64;
+};
+func:f_zt2g_store_through_getter = int64(int64:n) never fails {
+    H:h0 = raw mkh();
+    H:h1 = raw mkh();
+    WG_zt2g_store_through_getter:k = WG_zt2g_store_through_getter{ gv: G_zt2g_store_through_getter{ hp2: @h0, z: 0i64 }, z: 0i64 };
+    pass raw g_zt2g_store_through_getter::<WG_zt2g_store_through_getter>(move(k), @h1);
+};
+// zt2h_store_through_getter
+struct:G_zt2h_store_through_getter = { H->:hp2; int64:z; };
+struct:WG_zt2h_store_through_getter = { G_zt2h_store_through_getter:gv; int64:z; };
+trait:Lg_zt2h_store_through_getter = { func:tgt = G_zt2h_store_through_getter->(Self->:self) never fails; func:rd = int64(Self->:self) never fails; };
+impl:WG_zt2h_store_through_getter:Lg_zt2h_store_through_getter = { func:tgt = G_zt2h_store_through_getter->(WG_zt2h_store_through_getter->:self) never fails { pass @self.gv; }; func:rd = int64(WG_zt2h_store_through_getter->:self) never fails { pass self.gv.hp2.l[0i64]; }; };
+func:g_zt2h_store_through_getter = int64(H->:d, H->:d2) never fails {
+    WG_zt2h_store_through_getter:s = WG_zt2h_store_through_getter{ gv: G_zt2h_store_through_getter{ hp2: d, z: 0i64 }, z: 0i64 };
+    {
+        H:inner = raw mkh();
+        (<-(raw s.tgt())).hp2 = @inner;
+    }
+    pass (raw s.rd()) + 6i64;
+};
+func:f_zt2h_store_through_getter = int64(int64:n) never fails {
+    H:h0 = raw mkh();
+    H:h1 = raw mkh();
+    pass raw g_zt2h_store_through_getter(@h0, @h1);
+};

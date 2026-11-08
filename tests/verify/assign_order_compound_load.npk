@@ -1,0 +1,47 @@
+// expect-exit: 23
+// expect-obligation: exhaustive checker 2
+// expect-obligation: failsafe-post discharged 16
+// expect-obligation: overflow open 1
+//
+// A COMPOUND LOADS ITS CURRENT VALUE BEFORE ITS VALUE RUNS (DEF-573, landing 177d2b3): `s.k += v` is the target's
+// address, a load of `s.k`, THEN `v`, then the guarded add (`emit_assign`). The value replaces `s` whole, which the
+// walk allows for a struct that can't drop (ASSIGN-005's exemption): the add still takes the `k` loaded before, the
+// largest `int32`, and traps `IntOverflow`, 23, on both builds. With the current value read after the value the
+// prover added 1 to the NEW `k`, discharged the `overflow` row, and the verified build added with no guard (exit 7
+// at -O0, 9 at -O2).
+mod:assign_order_compound_load;
+error:E9;
+
+struct:Count = { int32:k; };
+
+func:step = int32(int32:n) never fails {
+    Count:s = Count{ k: 2147483647i32 };
+    s.k += pick (n) { (*) { s = Count{ k: 1i32 }; give 1i32; } };
+    discard(s.k);
+    pass 7i32;
+};
+
+func:main = int32(cstring[]:argv) {
+    exit (raw step(argv.len =>! int32));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (BorrowOverlap) { exit 90i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};

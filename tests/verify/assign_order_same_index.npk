@@ -1,0 +1,47 @@
+// expect-exit: 24
+// expect-obligation: bounds discharged 2
+// expect-obligation: bounds open 1
+// expect-obligation: exhaustive checker 1
+// expect-obligation: failsafe-post discharged 16
+// expect-obligation: overflow open 3
+//
+// AN ASSIGNMENT'S TARGET IS CHECKED BEFORE ITS VALUE RUNS (DEF-573, landing 177d2b3): the emitter forms the target's
+// address first -- its index, that index's bounds check -- and only then runs the value (`emit_assign`), and the
+// prover reads them in that order. Here `i` is out of bounds. The TARGET's row is the open one, its guard is kept,
+// and the value's read of the same element is discharged on the fact that guard leaves: both builds trap
+// `OutOfBounds`, 24. The prover read the value first until this landing, so the value's read held the open row and
+// the target's was discharged on a check that runs AFTER it: the verified build put `llvm.assume` where the target's
+// compare stood, ahead of the kept one, `opt -O2` deleted the kept one on it, and the store ran unchecked (exit 7).
+mod:assign_order_same_index;
+error:E9;
+
+func:bump = int32(int32:i) never fails {
+    int32[4]:a = [1i32, 2i32, 3i32, 4i32];
+    a[i => int64] = a[i => int64] + 1i32;
+    pass a[0i64] + 6i32;
+};
+
+func:main = int32(cstring[]:argv) {
+    exit (raw bump((argv.len =>! int32) + 98i32));
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9) { exit 8i32; },
+        (BorrowOverlap) { exit 90i32; },
+        (LimitViolated) { exit 31i32; },
+        (DivByZero) { exit 21i32; },
+        (DivOverflow) { exit 22i32; },
+        (IntOverflow) { exit 23i32; },
+        (OutOfBounds) { exit 24i32; },
+        (HeapBadRequest) { exit 9i32; },
+        (HeapOom) { exit 9i32; },
+        (Unreachable) { exit 9i32; },
+        (WildLeak) { exit 9i32; },
+        (StackExhausted) { exit 9i32; },
+        (MachineFault) { exit 9i32; },
+        (DecreasesViolated) { exit 9i32; },
+        (*) { exit 9i32; }
+    }
+    exit 9i32;
+};
