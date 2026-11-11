@@ -906,7 +906,7 @@ pub func:clear_root_flag = NIL(ExprEmitter->:x, ExprId:vid) never fails {
     if (rn.kind != ExprKind.ExprIdentifierExpr) { pass NIL; }
     int64:li = raw ident_slot(x, rn);   // by the resolver's symbol (DEF-144)
     if (li < 0i64) { pass NIL; }
-    string->:fl = raw fnem_local_flag_at(x.fe, li);
+    string->:fl = @x.fe.lflags[li];   // the field by name (DEF-591, landing 177d2b4, row 6): `fnem_local_flag_at`'s result is all of `x.fe` to the checker, which `irw_line` writes through `x.fe.w`
     if (fl.len == 0i64) { pass NIL; }
     drop irw_line(x.fe.w, raw cat3("store i8 0, ptr ", <-fl, ""));
     pass NIL;

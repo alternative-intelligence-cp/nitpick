@@ -5,6 +5,10 @@
 // under this compiler AND landing 166's. The planted wrong expectations each fail at their own exit (`.internal/planted167.sh`).
 // CONTROL 22 LEFT AT LANDING 177d2b3 (DEF-584): `sfn_view_block_ended`, an `any->` parameter cast to `H2->` and held across a write through another cast copy, is
 // refused now, a named price (the pointee of an `any->` is anything): it is `xpr1` of `tests/analysis/rejection/list_ptr_through_param.npk`.
+// CONTROL 20 LEFT AT LANDING 177d2b4, ROW 7 (DEF-639, Tue 2026-11-10): `plain_param_laundered_no_view` and its writer `wrlaund` (a plain
+// parameter laundered into an `any->` local and written through its cast back) are refused now, DEF-585's coarse view of the retyped copy
+// against the write on its own road, though nothing grows: it is `p639b` of `tests/analysis/rejection/retyped_pointer_freeze.npk`, and it
+// comes back here when DEF-639 is lifted (177d2b5's LOW rows).
 mod:param_copy_summary_ok;
 
 struct:H2 = { string:o; int64:k; };
@@ -24,9 +28,7 @@ func:wrcwh = NIL(H2->:q) never fails { H2->:q2 = q; (<-q2) = H2{ o: string_conca
 func:wrc2 = NIL(H2->:q) never fails { H2->:q2 = q =>! H2->; q2.o = string_concat("x", "y"); pass NIL; };
 func:wrany2 = NIL(any->:q) never fails { H2->:q2 = q =>! H2->; q2.o = string_concat("x", "y"); pass NIL; };
 func:wrc2e = NIL(H2->:q) never fails { H2->:q2 = q => H2->; q2.o = string_concat("x", "y"); pass NIL; };
-// DEF-341's `any->` face, both laundering directions (build 8): a plain parameter copied into an `any->` local, an
-// `any->` parameter's cast copy forwarded to a writer
-func:wrlaund = NIL(H2->:q) never fails { any->:q2 = q =>! any->; (<-(q2 =>! H2->)).o = string_concat("x", "y"); pass NIL; };
+// DEF-341's `any->` face, its forwarding direction (build 8): an `any->` parameter's cast copy forwarded to a writer
 func:wrany3 = NIL(any->:q) never fails { H2->:q2 = q =>! H2->; drop wr(q2); pass NIL; };
 // the accepted over-refusal: a DISJOINT field written through the copy (the whole extent is recorded)
 func:wrk = NIL(H2->:q) never fails { H2->:q2 = q; q2.k = 9i64; pass NIL; };
@@ -114,14 +116,6 @@ func:copy_move_out_no_view = int64() never fails {
     pass h.k + h.o.len;
 };
 
-// 20. (f9j6cn) a plain pointer parameter copied into an `any->` local and written through its cast back, NO view live
-func:plain_param_laundered_no_view = int64() never fails {
-    H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
-    H2->:hp = @h;
-    drop wrlaund(hp);
-    pass h.o.len;
-};
-
 // 21. (f9j6n's forwarding twin) an `any->` parameter's cast copy forwarded to a writer, NO view live
 func:any_param_copy_forwarded_no_view = int64() never fails {
     H2:h = H2{ o: string_concat("ab", "cd"), k: 1i64 };
@@ -140,7 +134,6 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw copy_writes_other_pointee()) != 97i64) { exit 17i32; }
     if ((raw copy_whole_assign_no_view()) != 9i64) { exit 18i32; }
     if ((raw copy_move_out_no_view()) != 1i64) { exit 19i32; }
-    if ((raw plain_param_laundered_no_view()) != 2i64) { exit 20i32; }
     if ((raw any_param_copy_forwarded_no_view()) != 2i64) { exit 21i32; }
     exit 0i32;
 };

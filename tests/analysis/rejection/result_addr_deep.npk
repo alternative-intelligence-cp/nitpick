@@ -1,7 +1,7 @@
-// expect-error: NITPICK-TAINT-001
-// expect-error-at: 89:18
-// expect-error: NITPICK-TAINT-001
-// expect-error-at: 90:11
+// expect-error: NITPICK-TYPE-024
+// expect-error-at: 96:148
+// expect-error: NITPICK-TYPE-024
+// expect-error-at: 97:141
 // AN ADDRESS TAKEN PAST THE PLACE WALK'S FUEL FAILS CLOSED (DEF-402; landing 175's review, F4).
 //
 // `note_addr_taken` reads the binding under a place with `place_root` and its 64 of fuel
@@ -13,6 +13,13 @@
 // receiver is the one road. Now exhaustion sets `addr_deep`, and every refined read of
 // the function refuses, as `expr_types.npk`'s rule for exhaustion says (fail closed).
 // Generated shape: S0 holds an `int64`, S{i} holds an S{i-1}.
+// 2026-11-08, landing 177d2b4 (DEF-430's receiver road, row 1): the typer refuses this receiver now, before the analyses run --
+// TYPE-024 at 64 steps, as `@` of the same place has been -- so the two TAINT-001 sites this file named are gone, and `addr_deep` is
+// the closed end that no program in the population or that row's cells reaches: its three callers (`@`, `$$i`/`$$m`, the receiver)
+// each ask `place_root` of the expression the typer checks, `$$m`, `$$i` and `@` of the 64-step place are TYPE-024 there, and the
+// padded spellings tried (`<-(@…)`, a cast under a `<-`) are TYPE-103. 63 steps are TAINT-001 still, by the address-taken set.
+// 2026-11-08, landing 177d2b4 (DEF-430, row 2): the receiver is refused at its own span now (Part A in the typer, before the method's roads), and the
+// returned read of the same 64-step place (`pass r.value.a…a.v`) is a second TYPE-024 site; 63 steps are unchanged.
 mod:result_addr_deep;
 error:E5;
 struct:S0 = { int64:a; };

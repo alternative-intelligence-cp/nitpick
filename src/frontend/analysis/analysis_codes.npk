@@ -73,7 +73,10 @@ pub func:BORROW_INTERNAL = string() never fails  { pass "NITPICK-BORROW-008"; };
 // a destructuring the analysis would have to model to say anything about. Silently
 // answering "not a borrow" for those two would be an escape hatch, so a borrow of
 // this frame reaching either is refused with a sentence that says which. A binding's
-// REFS are followed (DEF-517, `push_source_refs` in escape.npk).
+// REFS are followed (DEF-517, `push_source_refs` in escape.npk). Its uses have outgrown
+// bindings: a pointer binding whose target has no name (D-325), a slice whose storage
+// can't be named, and an address a callee keeps whose place has no named root
+// (`refuse_rootless_store`, landing 177d2b4 row 4) are refused under it too.
 pub func:BORROW_UNTRACKED = string() never fails  { pass "NITPICK-BORROW-009"; };
 
 // THE MARKING FIXPOINT DID NOT SETTLE within its round bound, so the analysis does

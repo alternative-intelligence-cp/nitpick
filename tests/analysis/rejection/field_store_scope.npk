@@ -36,7 +36,7 @@
 // expect-error-at: 261:14
 // expect-error: NITPICK-BORROW-011
 // expect-error-at: 267:11
-// expect-error: NITPICK-BORROW-002
+// expect-error: NITPICK-BORROW-009
 // expect-error-at: 274:22
 // expect-error: NITPICK-BORROW-002
 // expect-error-at: 285:22
@@ -483,3 +483,4 @@ func:failsafe = int32(Error:e) {
     }
     exit 9i32;
 };
+// Re-expected 2026-11-10 (landing 177d2b4, row 5): the store into the consuming `pick` binding in `pick_binding` is BORROW-009, DEF-633's (b), the closed refusal (a `pick` binding's chain is kept nowhere); W2 reads the binding as this frame's storage, so rule 3's BORROW-002 no longer stands there. One report (management_31's rulings of 01:07 and 02:16).

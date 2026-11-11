@@ -184,6 +184,9 @@ pub struct:ExprTyper = {
     // internal defect ("a node it has no classification for") in the program's
     // own fault.
     int32:counted_depth;
+    // A `where` GUARD'S MOVE WALK REPORTED ITS END ALREADY (DEF-430's H1): cleared before each guard's walk, so the walk's
+    // closed end is one report per guard however many of its branches run out (D-240).
+    bool:guard_deep_said;
 
     // THE CONTRACT CONTEXT (1.5.1, D-221): nonzero — one of the CTX_* values
     // — while a `requires`, an `ensures`, an `invariant`, a `Rules` clause, a
@@ -292,7 +295,7 @@ pub func:etyper_init = ExprTyper(Ast->:ast, TypeTable->:types, SymbolTable->:tab
     ExprTyper:e = ExprTyper{ ast: ast, types: types, tab: tab, interns: interns,
                              diags: diags, expected: 0i32, expect_refused: false, null_ctx: 0i32, door_role: 0i32, door_count: raw expr_none(), give_ctx: 0i32, give_free: 0i32, ptr_ok: 0i32, scope: scope,
                              fn_success: 0i32, fn_decl: 0i32, wip_mark: false, fn_terminal: false, fn_never_fails: false, in_defer: false, fn_is_async: false, fn_gives: false, give_operand: 0i32, await_operand: 0i32, return_lit: 0i32, callee_typing: 0i32, arm_depth: 0i32, givex_depth: 0i32,
-                             counted_depth: 0i32,
+                             counted_depth: 0i32, guard_deep_said: false,
                              contract_ctx: 0i32, rules_subject: 0i32,
                              contract_raw_operand: 0i32, in_old: false,
                              fn_pure: false, fn_comptime: false, const_site: false,
@@ -4610,6 +4613,14 @@ pub func:type_of_expr = int32(ExprTyper->:e, ExprId:id) never fails {
     // report (D-240), and `sys` refuses a `fixed` header itself. A user struct's field named `ptr` is no header, `header_ptr_read`.
     if ((!ptr_admitted) && (nsaved != 1i32) && (nsaved != 4i32) && (raw header_ptr_read(e.ast, e.interns, e.expr_types, e.types, id))) {
         t = raw te_error(e, raw TYPE_INDEX_PLAIN(), "a header's `.ptr` has five uses, with `x.ptr` itself in the position (DEF-425): `x.ptr[i]`, the header's own checked read; a comparison; the operand of `=>!`, which states the crossing; a builtin's byte argument counted by the same header's `.len`; and a register of `sys`, unless the header is `fixed`. Anything else walks or writes past what the header bounds: write `x[i]`, or `x.ptr =>! wild T->` with what you assert", (raw ast_expr(e.ast, id)).span);
+    }
+    // A PLACE PAST THE PLACE WALKS' REACH IS REFUSED WHERE IT IS TYPED (DEF-430's class, fail-closed): the walks that ask a
+    // place's root stop at `BORROW_FUEL` steps, and some answered "no root", "not fixed", "not limited", "not lent" there --
+    // a range, a `for`, a lending `pick`, a pointer receiver (the fuel census's H3 to H7). The count is `place_path_steps`'
+    // storage steps. One report, at the lowest node that reaches the limit; its parents see a 0 (D-240), so a method call
+    // on such a receiver passes 0 before its receiver's roads ask anything (`type_method_call`).
+    if ((t != 0i32) && ((raw place_path_steps(e.ast, id, raw BORROW_FUEL())) >= (raw BORROW_FUEL()))) {
+        t = raw te_error(e, raw TYPE_NOT_A_PLACE(), "this place is 64 or more steps from its root, counting each `.f`, `[i]`, `[lo...hi]` and `<-`, past what the compiler's place checks can read (DEF-430), so a read, a write, a view, a loan or an address of it can't be checked here -- a method whose receiver is a pointer takes that address, as `@` does: bind a part nearer its root to a local or a pointer, and reach the rest from there", (raw ast_expr(e.ast, id)).span);
     }
     // A SLICE READ OFF A `fixed` PLACE IS THE READ-ONLY VIEW (D-348 (ii), D-350;
     // DEF-246's fourth face): `h.view` over a `fixed Holder:h` carries the rights

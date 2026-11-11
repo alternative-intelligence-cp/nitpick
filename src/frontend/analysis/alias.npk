@@ -303,20 +303,7 @@ func:alias_fn = NIL(Alias->:x, DeclNode:d, StmtId:body) never fails {
     // parties are the parameter's, live for the whole body.
     int32:npar = raw fn_param_count(x.ast, d);
     for (int32:pi in 0i32...npar) {
-        DeclId:pdid = raw fn_param(x.ast, d, pi);
-        int32:psym = raw decl_symbol_of(x, pdid.index);
-        if (psym == 0i32) { continue; }
-        int32:e = raw escape_param_view_ref_first(x.esc, pdid.index);
-        while (e >= 0i32) decreases e + 1i32 {
-            ViewRef:vr = raw escape_view_ref(x.esc, e);
-            e = raw escape_view_ref_next(x.esc, e);
-            if (vr.root == 0i32) { continue; }
-            if ((vr.kind != (raw VIEW_DIRECT())) && (vr.kind != (raw VIEW_LAUNDERED()))) { continue; }
-            ExprId:place = ExprId{ index: vr.place };
-            drop list_push(@x.pre, Party{ site: place, kind: raw PARTY_VIEW(), root: vr.root, holder: psym,
-                                          place: place, view_kind: vr.kind, root_ptr: raw root_ident_is_pointer(x, place),
-                                          path: vr.path });
-        }
+        drop decl_chain_parties(x, raw fn_param(x.ast, d, pi));
     }
     // A parameter holder's scope is the function: its parties are live at entry.
     for (int64:i in 0i64...x.pre.count) {
@@ -655,7 +642,7 @@ func:type_heap_holds = bool(Alias->:x, int32:t, int32:r, bool:heap, int32:fuel) 
 // an array, a slice, a `List` hold one when a member does; an enum with
 // payloads, a `dyn`, `any`, an unresolved type and fuel run out answer YES, the
 // closed direction (DEF-54); a scalar, a `string`, a `cstring` hold none.
-func:type_holds_elem_pointer = bool(Alias->:x, int32:t, int32:lt, int32:fuel) decreases fuel never fails {
+func:type_holds_elem_pointer = bool(Alias->:x, int32:t, int32:lt, int32:fuel, int32:wx) decreases fuel never fails {
     if (fuel <= 0i32) { pass true; }
     if (t == 0i32) { pass true; }
     int32:k = raw type_kind(x.types, t);
@@ -664,7 +651,7 @@ func:type_holds_elem_pointer = bool(Alias->:x, int32:t, int32:lt, int32:fuel) de
     if ((k == (raw TY_DYN())) || (k == (raw TY_ANY()))) { pass true; }
     if (k == (raw TY_ENUM())) { pass (raw enum_has_payload(x.ast, x.types, t)); }
     if (k == (raw TY_STRUCT())) {
-        if (raw type_is_list(x.tr, t)) { pass (raw type_holds_elem_pointer(x, raw list_elem_type(x.tr, t), lt, fuel - 1i32)); }
+        if (raw type_is_list(x.tr, t)) { pass (raw type_holds_elem_pointer(x, raw list_elem_type(x.tr, t), lt, fuel - 1i32, wx)); }
         int32:sdi = raw type_decl(x.types, t);
         if (sdi <= 0i32) { pass true; }
         if (sdi >= (raw ast_decl_count(x.ast))) { pass true; }
@@ -677,16 +664,20 @@ func:type_holds_elem_pointer = bool(Alias->:x, int32:t, int32:lt, int32:fuel) de
             if (m.kind != DeclKind.DeclFieldDecl) { continue; }
             // A `wild` FIELD HOLDS NO PLAIN ADDRESS (DEF-575, the aggregate holder over a place that HOLDS a `List`): a `wild` slot takes a plain address only through `=>! wild T->`;
             // without the cast it's BORROW-011 (a store through a parameter, a literal's field, an assignment, a plain local, a `wild` parameter: five roads measured). So a struct's
-            // `wild` arrays (`Assign`'s, `Escape`'s, an `LlCtx`'s) are no pointers into the `List`s of what it was built from. The cast's own crossing is DEF-585's second face, OPEN.
+            // `wild` arrays (`Assign`'s, `Escape`'s, an `LlCtx`'s) are no pointers into the `List`s of what it was built from. THE CAST'S OWN CROSSING (DEF-585's second face) is
+            // the slot's one road in: an address that crossed (`wx`, its ref's `xc`) is read in the slot that can take it, a pointer slot to the pointee it kept
+            // (`wx` > 0) or a slot that isn't a pointer, and in every `wild` slot when the crossing's type isn't known (-1).
             // Over a place that IS a `List`, and for the plain party (`lt` 0), every pointer member counts, as it did.
-            if ((lt != 0i32) && (!(raw type_is_list(x.tr, lt))) && (raw field_named_wild(x.ast, x.types, t, raw decl_name(m)))) { continue; }   // BORROW-011's own reading of a field's regime
+            if ((lt != 0i32) && (!(raw type_is_list(x.tr, lt))) && (raw field_named_wild(x.ast, x.types, t, raw decl_name(m)))
+                && (!((wx == (0i32 - 1i32)) || ((wx > 0i32) && (((raw type_kind(x.types, raw struct_member_type(x.tr, t, m, 0i32))) != (raw TY_POINTER()))
+                    || ((raw type_elem(x.types, raw struct_member_type(x.tr, t, m, 0i32))) == wx)))))) { continue; }   // BORROW-011's own reading of a field's regime
             FieldInfo:fi = raw struct_field(x.tr, t, raw decl_name(m), home);   // by name still: F*F/2 resolves a struct (DEF-420); `type_heap_holds` above asks `struct_member_type`
             if (!fi.found) { pass true; }
-            if (raw type_holds_elem_pointer(x, fi.type_id, lt, fuel - 1i32)) { pass true; }
+            if (raw type_holds_elem_pointer(x, fi.type_id, lt, fuel - 1i32, wx)) { pass true; }
         }
         pass false;
     }
-    if (raw type_kind_has_elem(k)) { pass (raw type_holds_elem_pointer(x, raw type_elem(x.types, t), lt, fuel - 1i32)); }
+    if (raw type_kind_has_elem(k)) { pass (raw type_holds_elem_pointer(x, raw type_elem(x.types, t), lt, fuel - 1i32, wx)); }
     // A GENERIC PARAMETER, `Self`, an associated type and an invalid type are the
     // UNRESOLVED types the comment above gives the closed direction (DEF-54): they fell
     // to the `false` below until landing 166 (the review of 165, its P4).
@@ -755,21 +746,32 @@ func:passed_pointee = int32(Alias->:x, ViewRef:vr) never fails {
 // as a claim assigned later is. A POINTER binding holds addresses, D-286's plain
 // party, and freezes nothing.
 func:prescan_view_parties = NIL(Alias->:x, StmtId:sid, int32:holder) never fails {
+    StmtNode:sn = raw ast_stmt(x.ast, sid);
+    ExprId:dinit0 = raw stmt_decl_init(x.ast, sn);
+    int32:hty0 = 0i32;
+    if (!(raw expr_is_none(dinit0))) { hty0 = raw exprtypes_get(x.etypes, dinit0); }
+    drop chain_view_parties(x, raw escape_view_ref_first(x.esc, sid.index), holder, raw escape_holder_is_pointer(x.esc, sid.index), hty0,
+                            raw stmt_decl_type(sn), 0i32);
+    pass NIL;
+};
+
+// ONE CHAIN'S PARTIES (DEF-604: a local's, a parameter's and a `for` binding's, by one reader), the holder's type given: `hty` the value
+// type (0 when the declaration carries no initialiser), `dtn` the declared type's node.
+func:chain_view_parties = NIL(Alias->:x, int32:first, int32:holder, bool:ptr_holder, int32:hty, TypeId:dtn, int32:skip) never fails {
     if (holder == 0i32) { pass NIL; }
-    bool:ptr_holder = raw escape_holder_is_pointer(x.esc, sid.index);
     // THE HOLDER'S VALUE TYPE, read off its declaration's initialiser (0 when the
     // declaration carries none: the type-keyed readings below then close to the
     // syntactic one), and a POINTER holder's pointee type.
-    int32:hty = 0i32;
     int32:pte = 0i32;
-    ExprId:dinit = raw stmt_decl_init(x.ast, raw ast_stmt(x.ast, sid));
-    if (!(raw expr_is_none(dinit))) { hty = raw exprtypes_get(x.etypes, dinit); }
     if (ptr_holder && (hty != 0i32) && ((raw type_kind(x.types, hty)) == (raw TY_POINTER()))) { pte = raw type_elem(x.types, hty); }
-    int32:i = raw escape_view_ref_first(x.esc, sid.index);
+    int32:i = first;
     while (i >= 0i32) decreases i + 1i32 {
         ViewRef:vr = raw escape_view_ref(x.esc, i);
         i = raw escape_view_ref_next(x.esc, i);
-        if (vr.root == 0i32) { continue; }
+        // AN ADDRESS OR A PASSED VALUE ROOTED AT THE BINDING ITSELF (`skip`, a parameter's or a `for` binding's own symbol) is its own
+        // value: `@l.v` handed to a callee puts one on a pointer parameter's chain, and raised it froze `l` against itself (token.npk:129,
+        // the self-compile). A VIEW rooted at it stays a party, as before this row (`d.cur` viewing `d.text`: view_freeze.npk:165).
+        if ((vr.root == 0i32) || ((vr.root == skip) && ((vr.kind == (raw REF_ADDR())) || (vr.kind == (raw REF_PASS()))))) { continue; }
         ExprId:place = ExprId{ index: vr.place };
         // AN ADDRESS INTO A `List` ELEMENT THE VALUE CARRIES (DEF-307, landing 165)
         // freezes the `List` as a bare `@l[i]` does (DEF-304): the address kept in
@@ -788,9 +790,9 @@ func:prescan_view_parties = NIL(Alias->:x, StmtId:sid, int32:holder) never fails
         // DEF-584: the holder's two questions, asked of a pointer parameter's pointee (`int64->:e = raw fp(hp);`, `PE:pe = PE{ p: raw first(lp), z: 0i64 };`). The party is
         // rooted at the parameter, as `@hp.l[0i64]`'s is; a copy of the parameter (`H->:q = hp;`) answers NO by its type and stays no party.
         int32:ppt = raw passed_pointee(x, vr);
-        if ((ppt != 0i32) && (hty != 0i32) && (raw type_holds_elem_pointer(x, hty, ppt, 8i32)) && (raw type_heap_holds(x, ppt, 0i32, false, 8i32))) {
+        if ((ppt != 0i32) && (hty != 0i32) && (raw type_holds_elem_pointer(x, hty, is (vr.xc == (0i32 - 2i32)) : 0i32 : ppt, 8i32, vr.xc)) && ((vr.xc == (0i32 - 2i32)) || (raw type_heap_holds(x, ppt, 0i32, false, 8i32)))) {
             if (!(raw pre_has_elem_party(x, holder, place))) {
-                drop list_push(@x.pre, Party{ site: place, kind: raw PARTY_ELEM_ADDR(), root: vr.root, holder: holder, place: place, view_kind: 0i32, root_ptr: true, path: vr.path });
+                drop list_push(@x.pre, Party{ site: place, kind: raw PARTY_ELEM_ADDR(), root: vr.root, holder: holder, place: place, view_kind: is (vr.xc == (0i32 - 2i32)) : (0i32 - 2i32) : 0i32, root_ptr: true, path: vr.path });
             }
             continue;
         }
@@ -798,13 +800,13 @@ func:prescan_view_parties = NIL(Alias->:x, StmtId:sid, int32:holder) never fails
             bool:elem = raw place_is_list_element(x, place);
             if ((!elem) && ptr_holder && (pte != 0i32)) {
                 int32:pt = raw exprtypes_get(x.etypes, place);
-                if ((pt != 0i32) && (raw type_holds_elem_pointer(x, hty, pt, 8i32))) { elem = true; }   // DEF-575: the pointer leaf's answer (`pt != pte` over a `List`)
+                if ((pt != 0i32) && (raw type_holds_elem_pointer(x, hty, is (vr.xc == (0i32 - 2i32)) : 0i32 : pt, 8i32, vr.xc)) && ((!(vr.xc == (0i32 - 2i32))) || (raw type_heap_holds(x, pt, 0i32, false, 8i32)))) { elem = true; }   // DEF-575: the pointer leaf's answer (`pt != pte` over a `List`)
             }
             if ((!elem) && (!ptr_holder) && (hty != 0i32)) {
                 int32:pt = raw exprtypes_get(x.etypes, place);
                 // DEF-575: a place that IS a `List` or HOLDS one (`PE{ p: raw fp(@h), z: 0i64 }`). A place that holds none has no element to point into, whatever the holder is: an enum
                 // with payloads or a `dyn` answers YES by itself, and `EP:e = EP.A(@a);` over a struct of a lock and an `int32` freezes nothing (`type_heap_holds` with no pointee: is a `List` under it?).
-                if ((pt != 0i32) && (raw type_holds_elem_pointer(x, hty, pt, 8i32)) && (raw type_heap_holds(x, pt, 0i32, false, 8i32))) { elem = true; }
+                if ((pt != 0i32) && (raw type_holds_elem_pointer(x, hty, is (vr.xc == (0i32 - 2i32)) : 0i32 : pt, 8i32, vr.xc)) && (raw type_heap_holds(x, pt, 0i32, false, 8i32))) { elem = true; }
             }
             if (!elem) {
                 // A PLAIN ADDRESS A VALUE CARRIES INTO ITS HOLDER (DEF-413's holder faces, landing 176): a call's result
@@ -818,8 +820,8 @@ func:prescan_view_parties = NIL(Alias->:x, StmtId:sid, int32:holder) never fails
                 bool:can_hold = ptr_holder;
                 if (!can_hold) {
                     int32:dt = hty;
-                    if (dt == 0i32) { dt = raw resolve_type(x.tr, raw stmt_decl_type(raw ast_stmt(x.ast, sid)), x.scope); }
-                    can_hold = raw type_holds_elem_pointer(x, dt, 0i32, 8i32);   // `lt` 0: ANY pointer counts
+                    if (dt == 0i32) { dt = raw resolve_type(x.tr, dtn, x.scope); }
+                    can_hold = raw type_holds_elem_pointer(x, dt, 0i32, 8i32, 0i32);   // `lt` 0: ANY pointer counts
                 }
                 if (can_hold && (!(raw pre_has_party(x, holder, place)))) {
                     drop list_push(@x.pre, Party{ site: place, kind: raw PARTY_PLAIN(), root: vr.root, holder: holder,
@@ -829,7 +831,7 @@ func:prescan_view_parties = NIL(Alias->:x, StmtId:sid, int32:holder) never fails
             }
             if (raw pre_has_elem_party(x, holder, place)) { continue; }
             drop list_push(@x.pre, Party{ site: place, kind: raw PARTY_ELEM_ADDR(), root: vr.root, holder: holder,
-                                          place: place, view_kind: 0i32, root_ptr: raw root_ident_is_pointer(x, place),
+                                          place: place, view_kind: is (vr.xc == (0i32 - 2i32)) : (0i32 - 2i32) : 0i32, root_ptr: raw root_ident_is_pointer(x, place),
                                           path: vr.path });
             continue;
         }
@@ -1329,6 +1331,7 @@ func:party_word = string(Alias->:x, Party:p) never fails {
         pass "the view of";
     }
     if (p.kind == (raw PARTY_ELEM_ADDR())) {
+        if (p.view_kind == (0i32 - 2i32)) { pass "the pointer a cast retyped (DEF-585: it is taken to point into any `List` under its place)"; }
         if (raw place_is_list_element(x, p.place)) { pass "the plain address into a `List` element"; }
         pass "the pointer into an element of the `List` (a call's result, by its provenance)";
     }
@@ -1872,7 +1875,7 @@ func:ptr_ref_is_target = bool(Alias->:x, ViewRef:vr, int32:pty, int32:pte) never
     // target of every pointee -- `escape_any_pointer_link`, the three readers' one predicate.
     // DEF-590: the link is asked by the place's type OR by what the value was READ as (`H->:k = q.a =>! H->;` over an `any->` member: `za1k`, `za3k`; the place an
     // `any->` parameter and the read an `H->` carried on as an `H2->`: `za9k`)
-    if ((raw escape_any_pointer_link(x.esc, pt, pte)) || ((vr.read > 0i32) && (raw escape_any_pointer_link(x.esc, vr.read, pte)))) { pass ((vr.kind == (raw REF_ADDR())) || (vr.kind == (raw REF_PASS()))); }
+    if ((vr.xc == (0i32 - 2i32)) || (raw escape_any_pointer_link(x.esc, pt, pte)) || ((vr.read > 0i32) && (raw escape_any_pointer_link(x.esc, vr.read, pte)))) { pass ((vr.kind == (raw REF_ADDR())) || (vr.kind == (raw REF_PASS()))); }
     // WHAT A CALL'S RESULT REACHES (DEF-426, landing 177c): a call handed `@h` may hand back what `h` holds, so the address counts where its pointee's type holds the
     // pointer's target (`get(@holder)`), by type, as the rest of this question is. A result carried from a pointer parameter (`REF_PASS`) is that parameter's pointee's twin.
     if (vr.kind == (raw REF_ADDR())) { pass ((pt == pte) || (raw escape_type_holds(x.esc, pt, pte, 8i32))); }
@@ -1884,6 +1887,21 @@ func:ptr_ref_is_target = bool(Alias->:x, ViewRef:vr, int32:pty, int32:pte) never
     // says (`zb4k`, `zb5k`), so nothing this reader refused is accepted.
     if (vr.kind == (raw REF_PASS())) { pass (raw pass_type_is_target(x, pt, pty, pte)) || ((vr.read > 0i32) && (raw pass_type_is_target(x, vr.read, pty, pte))); }
     pass false;
+};
+
+// IS A TARGET THE POINTEE ITSELF, so a write's steps below the pointer are its steps (DEF-591, landing 177d2b4, row 6)? An address whose place, down its path, IS
+// the pointee type (`s = @h.l`), or a carried value that is the pointer (`k = q`; `k = hp.lp`, read as the pointer's type). A target taken because it HOLDS the
+// pointee type is a target WHOLE (DEF-330's closed direction): a getter's `pass @w.l` reaches the caller as `h`, and the steps composed onto it named
+// `h.items[…]`, disjoint from `@h.l[0]` (`xu12l`, `xu12r`: 236 at -O0 and -O2, the detector 97). Its price: a getter of a disjoint `List` field grown under an
+// element address of the other is refused (`pr1_ok`).
+func:target_is_pointee = bool(Alias->:x, ViewRef:vr, ExprId:pe) never fails {
+    int32:pty = raw exprtypes_get(x.etypes, raw peel_ptr_casts(x, pe));
+    // A POINTEE THAT HOLDS ITS OWN TYPE UNDER A `List` (a tree: `T = { List<T>:kids; List<int64>:vals; }`; 177d2b4 row 8, hole 1): a ref of type `T` may be the
+    // pointee or any `T` below it (`kid(@root)` passes `@((<-t).kids[0i64])`), so it is the target WHOLE (`rt1`, `rt2`, `rt4`, `mr1`, `mr2`, `rd2`).
+    if (raw type_heap_holds(x, raw type_elem(x.types, pty), raw type_elem(x.types, pty), false, 8i32)) { pass false; }
+    int32:et = raw escape_path_end_type(x.esc, raw exprtypes_get(x.etypes, ExprId{ index: vr.place }), vr.path);
+    if (vr.kind == (raw REF_ADDR())) { pass (!(vr.xc == (0i32 - 2i32))) && ((et != 0i32) && (et == (raw type_elem(x.types, pty)))); }
+    pass ((vr.kind == (raw REF_PASS())) && (!(vr.xc == (0i32 - 2i32))) && (((et != 0i32) && (et == pty)) || ((vr.read > 0i32) && (vr.read == pty))));
 };
 
 // THE STEPS of a target ref, root-outward (its place's steps, an `@place` peeled,
@@ -1945,28 +1963,47 @@ func:peel_ptr_casts = ExprId(Alias->:x, ExprId:e) never fails {
 };
 
 // WHAT AN ADDRESS HANDED TO A CALL HOLDS (DEF-426), read off the holder's refs when its own type is no target: `get(@box)`, `box` holding `@h`, reaches `h`.
-func:targets_held = NIL(Alias->:x, int32:rr, int32:from, int32:pty, int32:pte, int32:fuel, List<ViewRef>->:out) decreases fuel never fails {
-    if ((fuel <= 0i32) || (rr == 0i32)) { pass NIL; }
+// ITS END REFUSES, AND IT READS A HOLDER ONCE (DEF-430, landing 177d2b4): past its fuel it answered "nothing more". It shared `pointer_targets_of`'s,
+// less one, so a target 8 holders deep, or fewer under a chain of pointers, went unchecked (`hn_08`, `mg_m1_h8_p8`, `mc_k8`, `h6_nested_9`, 83). Its fuel
+// is its own 16 now: below a pointer level it walks the pointer locals and then the holders, P - 1 + H of them, which is 15 at most inside 8 pointers
+// and 8 holders, so the end refuses at 17. It refuses at `at`, the place `pointer_targets_of`'s caller is checking, and only where the holder has a ref: that is the
+// loop's own condition, so a holder with nothing to read loses nothing at the end. It reads a holder once per (holder, the holder it was reached from) in one `pointer_targets_of` call
+// (`seen`): unremembered, it made M^fuel visits under M pointer fields to one holder (`g_m8_h08_p1`, past 120 s). A later visit with the same pair would
+// push into the same `out` with the same skips, and one with more fuel than the first loses nothing: the first read every ref or met the end, which refused.
+func:targets_held = NIL(Alias->:x, Span:at, int32:rr, int32:from, int32:pty, int32:pte, int32:fuel, List<ViewRef>->:out, List<int64>->:seen) decreases fuel never fails {
+    if (rr == 0i32) { pass NIL; }
+    int64:key = ((rr => int64) << 32i64) | (from => int64);
+    for (int64:si in 0i64...seen.count) { if ((<-seen)[si] == key) { pass NIL; } }
+    drop list_push(seen, key);
     Symbol:rsy = raw symtab_get(x.tab, rr);
-    if (rsy.origin_kind != (raw SYM_STMT())) { pass NIL; }
-    int32:e3 = raw escape_view_ref_first(x.esc, rsy.origin);
+    int32:e3 = 0i32 - 1i32;
+    if (rsy.origin_kind == (raw SYM_STMT())) { e3 = raw escape_view_ref_first(x.esc, rsy.origin); }
+    else {   // a PARAMETER holder: its chain holds what the body assigned it (W1), read as a local's
+        if (!(raw sym_is_param(x.esc, rr))) { pass NIL; }
+        e3 = raw escape_param_view_ref_first(x.esc, rsy.origin);
+    }
+    if ((fuel <= 0i32) && (e3 >= 0i32)) { drop alias_err(x, raw BORROW_TOO_DEEP(), "checking this needs what a pointer points at, and that is held through more holders than the aliasing analysis will follow (DEF-430), so this cannot be checked against the views and loans of it -- hold the target nearer, or bind a nearer holder to a local and go through that", at); pass NIL; }
     while (e3 >= 0i32) decreases e3 + 1i32 {
         ViewRef:vr3 = raw escape_view_ref(x.esc, e3);
         e3 = raw escape_view_ref_next(x.esc, e3);
         if ((vr3.root == 0i32) || (vr3.root == rr) || (vr3.root == from)) { continue; }
         if (raw ptr_ref_is_target(x, vr3, pty, pte)) { drop list_push(out, vr3); continue; }
-        if (vr3.kind == (raw REF_ADDR())) { drop targets_held(x, vr3.root, rr, pty, pte, fuel - 1i32, out); }
+        if (vr3.kind == (raw REF_ADDR())) { drop targets_held(x, at, vr3.root, rr, pty, pte, fuel - 1i32, out, seen); }
     }
     pass NIL;
 };
-func:sourced_targets = NIL(Alias->:x, ExprId:pe, int32:pty, int32:pte, List<ViewRef>->:out) never fails {
+// `skip`: a root whose refs are not targets here (the pointer's own, on a parameter's road), or -1.
+func:sourced_targets = NIL(Alias->:x, ExprId:pe, int32:pty, int32:pte, int32:skip, List<ViewRef>->:out) never fails {
     List<ViewRef>:lrefs = raw list_init::<ViewRef>(4i64);
     drop escape_value_views(x.esc, pe, @lrefs);
-    for (int64:li in 0i64...lrefs.count) { if (raw ptr_ref_is_target(x, lrefs[li], pty, pte)) { drop list_push(out, lrefs[li]); } }
+    for (int64:li in 0i64...lrefs.count) { if ((lrefs[li].root != skip) && (raw ptr_ref_is_target(x, lrefs[li], pty, pte))) { drop list_push(out, lrefs[li]); } }
     pass NIL;
 };
-func:pointer_targets_of = NIL(Alias->:x, ExprId:pe_in, int32:fuel, List<ViewRef>->:out) decreases fuel never fails {
-    if (fuel <= 0i32) { pass NIL; }
+// ITS END REFUSES (DEF-430, landing 177d2b4): past 8 pointers it answered "no target" (`x5_chain_09`, 83). It refuses at `at`, the place its
+// caller is checking (a write or a handing-on through a pointer, a write by name against a view taken through one, or a lend's own pointer),
+// as `targets_held` does: where the caller then refuses that place itself, the two reports share a span and D-240's pass keeps the caller's.
+func:pointer_targets_of = NIL(Alias->:x, Span:at, ExprId:pe_in, int32:fuel, List<ViewRef>->:out) decreases fuel never fails {
+    if (fuel <= 0i32) { drop alias_err(x, raw BORROW_TOO_DEEP(), "checking this needs what a pointer points at, and that pointer is reached through more pointers than the aliasing analysis will follow (DEF-430), so this cannot be checked against the views and loans of what it points at -- bind a nearer pointer to a local, and go through that", at); pass NIL; }
     ExprId:pe = raw peel_ptr_casts(x, pe_in);   // DEF-343: the pointer under its casts
     if (raw expr_is_none(pe)) { pass NIL; }
     int32:r = raw place_root_symbol(x, pe);
@@ -1976,14 +2013,19 @@ func:pointer_targets_of = NIL(Alias->:x, ExprId:pe_in, int32:fuel, List<ViewRef>
     if (pty == 0i32) { pass NIL; }
     int32:pte = raw type_elem(x.types, pty);
     if (sy.origin_kind != (raw SYM_STMT())) {   // a local's chain holds where it points
-        if (raw sym_is_sourced(x.esc, r)) { drop sourced_targets(x, pe, pty, pte, out); }
+        // A PARAMETER ASSIGNED IN THE BODY points where its chain says (DEF-587's `zq17w`: `p2 = hq; … growh(p2)`), read as a
+        // `for` binding's value is: its REF_PASS and its chain (W1's refs), each filtered as a target by type.
+        // ... skipping the parameter's own root, as a local's road does: the place check judges what is rooted there (`x7r1`).
+        if (raw sym_is_sourced(x.esc, r)) { drop sourced_targets(x, pe, pty, pte, 0i32 - 1i32, out); }
+        else { if (raw sym_is_param(x.esc, r)) { drop sourced_targets(x, pe, pty, pte, r, out); } }
         pass NIL;
     }
+    List<int64>:seen = raw list_init::<int64>(8i64);   // the holders `targets_held` has read under this call, by (holder, from)
     ExprId:inner = raw ptr_inner_base(x, pe);
     if (!(raw expr_is_none(inner))) {
         // reached through a pointer: resolve it, then each pointee's chain
         List<ViewRef>:innertgts = raw list_init::<ViewRef>(4i64);
-        drop pointer_targets_of(x, inner, fuel - 1i32, @innertgts);
+        drop pointer_targets_of(x, at, inner, fuel - 1i32, @innertgts);
         for (int64:ii in 0i64...innertgts.count) {
             int32:rr = innertgts[ii].root;
             if (rr == 0i32) { continue; }
@@ -1992,7 +2034,7 @@ func:pointer_targets_of = NIL(Alias->:x, ExprId:pe_in, int32:fuel, List<ViewRef>
             // reaches is somewhere under `q`, which only `q` names in this frame. The inner target stands for it, whole (`zt1`, `zt2`, `zt4`).
             if (rsy.origin_kind != (raw SYM_STMT())) {
                 drop list_push(out, innertgts[ii]);
-                if (raw sym_is_sourced(x.esc, rr)) { drop sourced_targets(x, ExprId{ index: innertgts[ii].place }, pty, pte, out); }
+                if ((raw sym_is_sourced(x.esc, rr)) || (raw sym_is_param(x.esc, rr))) { drop sourced_targets(x, ExprId{ index: innertgts[ii].place }, pty, pte, 0i32 - 1i32, out); }
                 continue;
             }
             int32:e2 = raw escape_view_ref_first(x.esc, rsy.origin);
@@ -2001,7 +2043,7 @@ func:pointer_targets_of = NIL(Alias->:x, ExprId:pe_in, int32:fuel, List<ViewRef>
                 e2 = raw escape_view_ref_next(x.esc, e2);
                 if (vr2.root == 0i32) { continue; }
                 if (vr2.root == rr) { continue; }
-                drop targets_held(x, vr2.root, rr, pty, pte, fuel - 1i32, out);   // DEF-426's hop, through a pointer as off a name (`qp.q`, `h1`, 83)
+                drop targets_held(x, at, vr2.root, rr, pty, pte, 16i32, out, @seen);   // DEF-426's hop, through a pointer as off a name (`qp.q`, `h1`, 83)
                 if (!(raw ptr_ref_is_target(x, vr2, pty, pte))) { continue; }
                 drop list_push(out, vr2);
             }
@@ -2014,7 +2056,7 @@ func:pointer_targets_of = NIL(Alias->:x, ExprId:pe_in, int32:fuel, List<ViewRef>
         e = raw escape_view_ref_next(x.esc, e);
         if (vr.root == 0i32) { continue; }
         if (vr.root == r) { continue; }
-        drop targets_held(x, vr.root, r, pty, pte, fuel - 1i32, out);
+        drop targets_held(x, at, vr.root, r, pty, pte, 16i32, out, @seen);
         if (!(raw ptr_ref_is_target(x, vr, pty, pte))) { continue; }
         drop list_push(out, vr);
     }
@@ -2085,7 +2127,7 @@ func:check_pointer_targets = bool(Alias->:x, ExprId:place, List<Step>:ap, int32:
                 ViewRef:cvr = ctg[ci];
                 List<Step>:ctp = raw list_init::<Step>(8i64);
                 if (!(raw ptr_target_steps(x, cvr, @ctp))) { continue; }
-                if (!erase) { for (int64:ck in 0i64...ap.count) { drop list_push(@ctp, ap[ck]); } }
+                if ((!erase) && (raw target_is_pointee(x, cvr, place))) { for (int64:ck in 0i64...ap.count) { drop list_push(@ctp, ap[ck]); } }   // else WHOLE (DEF-591)
                 if (raw check_view_parties_at(x, cvr, ctp, 0i32, 0i32, raw expr_none(), akind, at, mode)) { pass true; }
                 if (raw check_pointer_view_parties(x, cvr.root, ctp, akind, at, 0i32)) { pass true; }
             }
@@ -2103,13 +2145,13 @@ func:check_pointer_targets = bool(Alias->:x, ExprId:place, List<Step>:ap, int32:
     if (!(raw path_steps(x, pe, raw expr_none(), @pre))) { pass false; }
     if (pre.count > ap.count) { pass false; }
     List<ViewRef>:tgts = raw list_init::<ViewRef>(4i64);
-    drop pointer_targets_of(x, pe, 8i32, @tgts);
+    drop pointer_targets_of(x, at, pe, 8i32, @tgts);
     if (raw pointee_is_any(x, pe)) { erase = true; }
     for (int64:i in 0i64...tgts.count) {
         ViewRef:vr = tgts[i];
         List<Step>:tp = raw list_init::<Step>(8i64);
         if (!(raw ptr_target_steps(x, vr, @tp))) { continue; }
-        if (!erase) { for (int64:k in pre.count...ap.count) { drop list_push(@tp, ap[k]); } }
+        if ((!erase) && (raw target_is_pointee(x, vr, pe))) { for (int64:k in pre.count...ap.count) { drop list_push(@tp, ap[k]); } }   // else WHOLE (DEF-591)
         if (raw check_view_parties_at(x, vr, tp, 0i32, own_r, raw expr_none(), akind, at, mode)) { pass true; }
         if (raw check_pointer_view_parties(x, vr.root, tp, akind, at, r)) { pass true; }
     }
@@ -2149,7 +2191,7 @@ func:check_pointer_view_parties = bool(Alias->:x, int32:root, List<Step>:ap, int
         if (!(raw path_steps(x, pe, raw expr_none(), @pre))) { continue; }
         if (pre.count > pp.count) { continue; }
         List<ViewRef>:tgts = raw list_init::<ViewRef>(4i64);
-        drop pointer_targets_of(x, pe, 8i32, @tgts);
+        drop pointer_targets_of(x, at, pe, 8i32, @tgts);
         for (int64:j in 0i64...tgts.count) {
             ViewRef:vr = tgts[j];
             if (vr.root != root) { continue; }
@@ -2312,8 +2354,8 @@ func:push_value_view_parties = NIL(Alias->:x, ExprId:id, bool:frozen) never fail
         ViewRef:vr = refs[i];
         if (vr.root == 0i32) { continue; }
         int32:ppt = raw passed_pointee(x, vr);   // DEF-584: a pointer PARAMETER the call was handed, and a result that may point into a `List` under its pointee (`rd2(raw first(lp), raw grow(lp))`)
-        if ((ppt != 0i32) && (frozen || ((raw type_holds_elem_pointer(x, raw exprtypes_get(x.etypes, id), ppt, 8i32)) && (raw type_heap_holds(x, ppt, 0i32, false, 8i32))))) {
-            drop list_push(@x.live, Party{ site: id, kind: raw PARTY_ELEM_ADDR(), root: vr.root, holder: 0i32 - 1i32, place: ExprId{ index: vr.place }, view_kind: 0i32, root_ptr: true, path: vr.path });
+        if ((ppt != 0i32) && (frozen || ((raw type_holds_elem_pointer(x, raw exprtypes_get(x.etypes, id), is (vr.xc == (0i32 - 2i32)) : 0i32 : ppt, 8i32, vr.xc)) && ((vr.xc == (0i32 - 2i32)) || (raw type_heap_holds(x, ppt, 0i32, false, 8i32)))))) {
+            drop list_push(@x.live, Party{ site: id, kind: raw PARTY_ELEM_ADDR(), root: vr.root, holder: 0i32 - 1i32, place: ExprId{ index: vr.place }, view_kind: is (vr.xc == (0i32 - 2i32)) : (0i32 - 2i32) : 0i32, root_ptr: true, path: vr.path });
             continue;
         }
         if (vr.kind == (raw REF_ADDR())) {   // a plain address the call RETURNED (`keepp(@h)`): an ADDRESS party to the end of the full expression (DEF-410 (b)'s gap, the keepp cells)
@@ -2321,9 +2363,9 @@ func:push_value_view_parties = NIL(Alias->:x, ExprId:id, bool:frozen) never fail
             ExprId:apl = ExprId{ index: vr.place };
             int32:apt = raw exprtypes_get(x.etypes, apl);
             int32:rty = raw exprtypes_get(x.etypes, id);
-            bool:elem = frozen || (raw place_is_list_element(x, apl)) || ((raw type_holds_elem_pointer(x, rty, apt, 8i32)) && (raw type_heap_holds(x, apt, 0i32, false, 8i32)));   // the holder's answer, and a `List` under the place
+            bool:elem = frozen || (raw place_is_list_element(x, apl)) || ((raw type_holds_elem_pointer(x, rty, is (vr.xc == (0i32 - 2i32)) : 0i32 : apt, 8i32, vr.xc)) && (raw type_heap_holds(x, apt, 0i32, false, 8i32)));   // the holder's answer, and a `List` under the place
             drop list_push(@x.live, Party{ site: id, kind: is (elem) : (raw PARTY_ELEM_ADDR()) : (raw PARTY_ADDR()), root: vr.root, holder: 0i32 - 1i32, place: apl,
-                                           view_kind: 0i32, root_ptr: elem && (raw root_ident_is_pointer(x, apl)), path: vr.path });
+                                           view_kind: is (elem && (vr.xc == (0i32 - 2i32))) : (0i32 - 2i32) : 0i32, root_ptr: elem && (raw root_ident_is_pointer(x, apl)), path: vr.path });
             continue;
         }
         if ((vr.kind != (raw VIEW_DIRECT())) && (vr.kind != (raw VIEW_LAUNDERED()))) { continue; }
@@ -2530,20 +2572,34 @@ func:frame_pop = NIL(Alias->:x) never fails {
 // both legs, the bytes reused). Pushed straight into the live set inside the
 // loop's own frame, never into the pre-scan's: `alias_fn` makes every pre-scanned
 // party whose holder is a declaration live at the function's entry.
+// (DEF-604) The parties are `decl_chain_parties`', raised in the pre-scan's list and moved from it to the live set here.
 func:push_loop_binding_parties = NIL(Alias->:x, DeclId:bind) never fails {
-    int32:bsym = raw decl_symbol_of(x, bind.index);
-    if (bsym == 0i32) { pass NIL; }
-    int32:e = raw escape_param_view_ref_first(x.esc, bind.index);
-    while (e >= 0i32) decreases e + 1i32 {
-        ViewRef:vr = raw escape_view_ref(x.esc, e);
-        e = raw escape_view_ref_next(x.esc, e);
-        if (vr.root == 0i32) { continue; }
-        if ((vr.kind != (raw VIEW_DIRECT())) && (vr.kind != (raw VIEW_LAUNDERED()))) { continue; }
-        ExprId:place = ExprId{ index: vr.place };
-        drop list_push(@x.live, Party{ site: place, kind: raw PARTY_VIEW(), root: vr.root, holder: bsym,
-                                       place: place, view_kind: vr.kind, root_ptr: raw root_ident_is_pointer(x, place),
-                                       path: vr.path });
-    }
+    int64:mark = x.pre.count;
+    drop decl_chain_parties(x, bind);
+    int64:top = x.pre.count;
+    for (int64:i in mark...top) { drop list_push(@x.live, x.pre[i]); }
+    drop list_truncate(@x.pre, mark);
+    pass NIL;
+};
+
+// THE PARTIES A PARAMETER'S OR A `for` BINDING'S CHAIN HOLDS (DEF-587, DEF-604): what `chain_view_parties` raises for a local holder
+// of the same DECLARED type. Not a pointer holder: such a chain also holds what was stored INTO the pointee (`record_view_refs_at_place`),
+// whose views are parties whatever the binding's type, as they were before this row. Until this row the two readers raised the views
+// alone, so a pointer the binding was assigned (`e = raw fp(hp)`, `p = raw fp(hq)` in a `for` body) froze nothing (`xh6`, `f6`: 236).
+// The declared type is resolved as the signature is (`fn_type`): in the binding's own scope, with the function's own generics bound and
+// `Self` the abstract one (a trait default body's), so a name the typer resolved resolves again and nothing is reported twice.
+func:decl_chain_parties = NIL(Alias->:x, DeclId:did) never fails {
+    int32:sym = raw decl_symbol_of(x, did.index);
+    if (sym == 0i32) { pass NIL; }
+    GenericScope:gs = x.tr.generics;
+    int32:ss = x.tr.self_type;
+    IdSpan:w = raw decl_generic_window(x.ast, raw ast_decl(x.ast, DeclId{ index: x.esc.cur_fn }));
+    x.tr.generics = GenericScope{ params_start: w.start, params_count: w.count, args_start: 0i32, args_count: 0i32 };
+    x.tr.self_type = raw tt_self(x.types);
+    int32:ht = raw resolve_type(x.tr, raw param_type(raw ast_decl(x.ast, did)), (raw symtab_get(x.tab, sym)).scope);
+    x.tr.generics = gs;
+    x.tr.self_type = ss;
+    drop chain_view_parties(x, raw escape_param_view_ref_first(x.esc, did.index), sym, false, ht, raw type_none(), sym);
     pass NIL;
 };
 
@@ -2778,6 +2834,10 @@ func:admit_value = NIL(Alias->:x, ExprId:site, int32:kind, int32:holder) never f
     if (kind == (raw PARTY_EXCLUSIVE())) { akind = raw ACC_EXCLUSIVE(); }
     if ((kind != (raw PARTY_PLAIN())) && (kind != (raw PARTY_ELEM_ADDR()))) {
         if ((raw place_root_symbol(x, place)) == 0i32) {
+            // A PLACE PAST THE ESCAPE WALK'S HOPS (DEF-430; landing 177d2b4, row 4) has a root, 64 or more casts and dereferences
+            // down, that this walk ran out before. While the escape walk reports, asking it here gives its end's report (BORROW-007),
+            // so a claim of it is refused once, in words true of it (D-240); otherwise this refusal stands.
+            if ((x.esc.reporting) && ((raw esc_place_root(x.esc, place)).exhausted)) { pass NIL; }
             drop alias_err(x, raw BORROW_CLAIM_POSITION(),
                 "a `$$i`/`$$m` claim needs a place with a named root (D-286): a call's result or a dereference at the bottom names no binding whose accesses could be checked -- bind the value first, or spell `@`",
                 n.span);
@@ -3359,7 +3419,7 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
         if (rxt != 0i32) { if ((raw type_kind(x.types, rxt)) == (raw TY_POINTER())) { recv_is_ptr = true; } }
         if (ptr_recv && (!recv_is_ptr)) { drop push_addr_party(x, recv, recv); }
         if (!(raw is_place_chain(x, recv))) { drop push_call_view_party(x, recv); }   // a literal receiver holds its `@` for the arguments (`W{ ptr: @h }.mv(K)`, 60 on 175 and 176b)
-        if ((rxt != 0i32) && ((ptr_recv && (!recv_is_ptr)) || (raw type_holds_elem_pointer(x, rxt, 0i32, 8i32)))) {
+        if ((rxt != 0i32) && ((ptr_recv && (!recv_is_ptr)) || (raw type_holds_elem_pointer(x, rxt, 0i32, 8i32, 0i32)))) {
             drop target_handed(x, recv, (raw ast_expr(x.ast, recv)).span, 0i32 - 1i32, true, 8i32);
         }
     }
@@ -3686,12 +3746,12 @@ func:lend_through_pointer = NIL(Alias->:x, ExprId:id, ExprId:a, ExprNode:an, int
     if (addr) {
         ExprId:pb = raw ptr_last_base(x, raw expr_operand(an));
         if (raw expr_is_none(pb)) { pass NIL; }
-        drop pointer_targets_of(x, pb, 8i32, @tg);
+        drop pointer_targets_of(x, (raw ast_expr(x.ast, pb)).span, pb, 8i32, @tg);
     } else {
         if ((raw place_root_symbol(x, a)) == 0i32) {
             drop escape_pointer_targets(x.esc, a, @tg);
         } else {
-            drop pointer_targets_of(x, a, 8i32, @tg);
+            drop pointer_targets_of(x, (raw ast_expr(x.ast, a)).span, a, 8i32, @tg);
         }
     }
     for (int64:k in 0i64...tg.count) {
@@ -3888,7 +3948,7 @@ func:rejudge_holder = NIL(Alias->:x, ExprId:a, int64:d0) never fails {
     if (!seen) { pass NIL; }
     int32:t = raw exprtypes_get(x.etypes, a);
     if ((t != 0i32) && ((raw type_kind(x.types, t)) == (raw TY_POINTER()))) { t = raw type_elem(x.types, t); }
-    if ((t != 0i32) && (!(raw type_holds_elem_pointer(x, t, 0i32, 8i32)))) { pass NIL; }   // a type this pass cannot read is judged, not skipped (landing 177b: the fail-open flipped; 177a's sweep met no such site)
+    if ((t != 0i32) && (!(raw type_holds_elem_pointer(x, t, 0i32, 8i32, 0i32)))) { pass NIL; }   // a type this pass cannot read is judged, not skipped (landing 177b: the fail-open flipped; 177a's sweep met no such site)
     ExprNode:an = raw ast_expr(x.ast, a);
     int32:hr = raw place_root_symbol(x, is (an.kind == ExprKind.ExprAddressOfExpr) : (raw expr_operand(an)) : a);
     for (int64:i in 0i64...x.live.count) {
@@ -3945,7 +4005,7 @@ func:push_call_view_party_in = NIL(Alias->:x, ExprId:a, ExprId:site, int32:fuel)
         }
         pass NIL;
     }
-    if (raw type_holds_elem_pointer(x, raw exprtypes_get(x.etypes, a), 0i32, 8i32)) {
+    if (raw type_holds_elem_pointer(x, raw exprtypes_get(x.etypes, a), 0i32, 8i32, 0i32)) {
         drop target_handed(x, a, n.span, 0i32 - 1i32, true, 8i32);
     }
     ExprId:vp = raw escape_view_place(x.esc, n);

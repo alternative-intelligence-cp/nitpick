@@ -2264,16 +2264,18 @@ func:emit_site_tables = NIL(IrWriter->:w) never fails {
     // the byte constants first
     int32:i = 0i32;
     while (i < n) decreases n - i {
-        string->:sp2 = @w.site_paths[(w.site_keep[i => int64] => int64) - 1i64];   // no claim: `w` is handed on while it lives (D-286)
+        // AN INDEX, NOT A VIEW (DEF-591, landing 177d2b4, row 6): `es` is what `irw_sink(w)` returns, and its summary names no field, so a
+        // write through it is a write of all of `w`, which a held `@w.site_paths[…]` would meet (BORROW-015). Each read names the path.
+        int64:k2 = (w.site_keep[i => int64] => int64) - 1i64;
         drop irw_write(w, "@npk.sitep.");
         drop irw_write(w, int_to_string((i + 1i32) => int64));
         drop irw_write(w, " = internal constant [");
-        drop irw_write(w, int_to_string(sp2.len));
+        drop irw_write(w, int_to_string(w.site_paths[k2].len));
         drop irw_write(w, " x i8] c\"");
         Sink->:es = raw irw_sink(w);
         int64:bj = 0i64;
-        while (bj < sp2.len) decreases sp2.len - bj {
-            drop esc_byte_into(es, sp2.ptr[bj] => uint8);
+        while (bj < w.site_paths[k2].len) decreases w.site_paths[k2].len - bj {
+            drop esc_byte_into(es, w.site_paths[k2].ptr[bj] => uint8);
             bj = bj + 1i64;
         }
         drop irw_write(w, "\"");

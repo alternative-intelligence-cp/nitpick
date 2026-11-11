@@ -264,6 +264,11 @@ pub func:front_run_dump = int32(Front->:f, string:root, bool:no_wildx, bool:dump
     f.dump_refs = dump_refs;
     f.dump_reach = dump_reach;
     int32:rc = raw front_run_passes(f, root);
+    // ONE MISTAKE, ONE REPORT (D-240): a BORROW-007 lying inside another error is that error's mistake said again; the list is final here
+    // for every program the front half refuses (nothing is reported after it but on a clean list), and before `rehome_derived` moves a span.
+    drop diaglist_drop_inside(@f.diags, raw BORROW_TOO_DEEP(), "");
+    // (b)'s BORROW-009 (DEF-633) at a store the base already refuses is that report's mistake said again (D-240, landing 177d2b4).
+    drop diaglist_drop_inside(@f.diags, raw BORROW_UNTRACKED(), raw pick_store_text());
     f.no_wildx = no_wildx;
     drop rehome_derived(@f.g);
     if (rc == 0i32) {

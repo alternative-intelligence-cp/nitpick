@@ -1,0 +1,828 @@
+// expect-exit: 0
+mod:retyped_pointer_freeze_ok;
+// THE RIGHT CONTROLS OF DEF-585's FACES (landing 177d2b4, row 7): each fault of `retyped_pointer_freeze.npk` without its replace or growth;
+// `zx1fc`/`zx1ic`, DEF-350's controls; `cx1_ok`, a crossing beside a `wild` slot of another pointee; and the models of the compiler's two
+// sites the coarse answer refused before it was ruled for a pointee change only: `s1m_ok` (npkc.npk's stdout write of the IR) and `s2m_ok`
+// (emit_program.npk's resolver crossing). Each exits 67 at -O0, -O2 and under the detector, on 58cab5a and here.
+error:E5;
+struct:H_xd1c_callee_retypes = { List<int64>:l; int64:k; };
+func:mk_xd1c_callee_retypes = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_xd1c_callee_retypes = H_xd1c_callee_retypes() never fails { pass H_xd1c_callee_retypes{ l: raw mk_xd1c_callee_retypes(), k: 2i64 }; };
+func:grow_xd1c_callee_retypes = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_xd1c_callee_retypes = int64(H_xd1c_callee_retypes->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_xd1c_callee_retypes = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_xd1c_callee_retypes = int64->(H_xd1c_callee_retypes->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp_xd1c_callee_retypes = int64->(H_xd1c_callee_retypes->:w) never fails { pass @w.k; };
+func:getl_xd1c_callee_retypes = List<int64>->(H_xd1c_callee_retypes->:w) never fails { pass @w.l; };
+func:idp_xd1c_callee_retypes = int64->(int64->:q) never fails { pass q; };
+func:rd2_xd1c_callee_retypes = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE_xd1c_callee_retypes = { int64->:p; int64:z; };
+func:fu_xd1c_callee_retypes = uint8->(H_xd1c_callee_retypes->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+func:f_xd1c_callee_retypes = int64(int64:n) never fails {
+    H_xd1c_callee_retypes:h = raw mkh_xd1c_callee_retypes();
+    uint8->:e = raw fu_xd1c_callee_retypes(@h);
+    pass ((<-e) => int64) + 6i64;
+};
+func:cell_main_xd1c_callee_retypes = int32() never fails { pass (((raw f_xd1c_callee_retypes(1i64)) + 60i64) =>! int32); };
+struct:H_xd2c_caller_retypes = { List<int64>:l; int64:k; };
+func:mk_xd2c_caller_retypes = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_xd2c_caller_retypes = H_xd2c_caller_retypes() never fails { pass H_xd2c_caller_retypes{ l: raw mk_xd2c_caller_retypes(), k: 2i64 }; };
+func:grow_xd2c_caller_retypes = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_xd2c_caller_retypes = int64(H_xd2c_caller_retypes->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_xd2c_caller_retypes = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_xd2c_caller_retypes = int64->(H_xd2c_caller_retypes->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp_xd2c_caller_retypes = int64->(H_xd2c_caller_retypes->:w) never fails { pass @w.k; };
+func:getl_xd2c_caller_retypes = List<int64>->(H_xd2c_caller_retypes->:w) never fails { pass @w.l; };
+func:idp_xd2c_caller_retypes = int64->(int64->:q) never fails { pass q; };
+func:rd2_xd2c_caller_retypes = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE_xd2c_caller_retypes = { int64->:p; int64:z; };
+func:f_xd2c_caller_retypes = int64(int64:n) never fails {
+    H_xd2c_caller_retypes:h = raw mkh_xd2c_caller_retypes();
+    uint8->:e = ((raw fp_xd2c_caller_retypes(@h)) =>! any->) =>! uint8->;
+    pass ((<-e) => int64) + 6i64;
+};
+func:cell_main_xd2c_caller_retypes = int32() never fails { pass (((raw f_xd2c_caller_retypes(1i64)) + 60i64) =>! int32); };
+struct:H_xw5c_wild_field_literal_crossed = { List<int64>:l; int64:k; };
+func:mk_xw5c_wild_field_literal_crossed = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_xw5c_wild_field_literal_crossed = H_xw5c_wild_field_literal_crossed() never fails { pass H_xw5c_wild_field_literal_crossed{ l: raw mk_xw5c_wild_field_literal_crossed(), k: 2i64 }; };
+func:grow_xw5c_wild_field_literal_crossed = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_xw5c_wild_field_literal_crossed = int64(H_xw5c_wild_field_literal_crossed->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_xw5c_wild_field_literal_crossed = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_xw5c_wild_field_literal_crossed = int64->(H_xw5c_wild_field_literal_crossed->:q) never fails { pass @((<-q).l[0i64]); };
+func:kp_xw5c_wild_field_literal_crossed = int64->(H_xw5c_wild_field_literal_crossed->:w) never fails { pass @w.k; };
+func:getl_xw5c_wild_field_literal_crossed = List<int64>->(H_xw5c_wild_field_literal_crossed->:w) never fails { pass @w.l; };
+func:idp_xw5c_wild_field_literal_crossed = int64->(int64->:q) never fails { pass q; };
+func:rd2_xw5c_wild_field_literal_crossed = int64(int64->:e, int64:z) never fails { pass <-e; };
+struct:PE_xw5c_wild_field_literal_crossed = { int64->:p; int64:z; };
+struct:SW_xw5c_wild_field_literal_crossed = { wild int64->:p; int64:z; };
+func:f_xw5c_wild_field_literal_crossed = int64(int64:n) never fails {
+    H_xw5c_wild_field_literal_crossed:h = raw mkh_xw5c_wild_field_literal_crossed();
+    SW_xw5c_wild_field_literal_crossed:sw = SW_xw5c_wild_field_literal_crossed{ p: (raw fp_xw5c_wild_field_literal_crossed(@h)) =>! wild int64->, z: 0i64 };
+    pass (<-sw.p) + 6i64;
+};
+func:cell_main_xw5c_wild_field_literal_crossed = int32() never fails { pass (((raw f_xw5c_wild_field_literal_crossed(1i64)) + 60i64) =>! int32); };
+struct:K_zx1fc_laundered_out_of_binding_ok = { int64:k; };
+struct:H_zx1fc_laundered_out_of_binding_ok = { List<int64>:l; int64:k; K_zx1fc_laundered_out_of_binding_ok:kk; };
+struct:H2_zx1fc_laundered_out_of_binding_ok = { H_zx1fc_laundered_out_of_binding_ok:inner; int64:z; };
+struct:HP_zx1fc_laundered_out_of_binding_ok = { H_zx1fc_laundered_out_of_binding_ok->:lp; int64:z; };
+struct:W_zx1fc_laundered_out_of_binding_ok = { H_zx1fc_laundered_out_of_binding_ok->:hp; int64:z; };
+struct:S_zx1fc_laundered_out_of_binding_ok = { int64:a; int64:b; };
+struct:PE_zx1fc_laundered_out_of_binding_ok = { int64->:p; int64:z; };
+enum:EK_zx1fc_laundered_out_of_binding_ok = { A(int64->); Z; };
+func:rdk_zx1fc_laundered_out_of_binding_ok = int64(EK_zx1fc_laundered_out_of_binding_ok:e) never fails { int64:v = 0i64; pick (e) { (EK_zx1fc_laundered_out_of_binding_ok.A(q)) { v = <-q; }, (EK_zx1fc_laundered_out_of_binding_ok.Z) { v = 0i64; } } pass v; };
+func:mk_zx1fc_laundered_out_of_binding_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_zx1fc_laundered_out_of_binding_ok = H_zx1fc_laundered_out_of_binding_ok() never fails { pass H_zx1fc_laundered_out_of_binding_ok{ l: raw mk_zx1fc_laundered_out_of_binding_ok(), k: 2i64, kk: K_zx1fc_laundered_out_of_binding_ok{ k: 3i64 } }; };
+func:growh_zx1fc_laundered_out_of_binding_ok = int64(H_zx1fc_laundered_out_of_binding_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_zx1fc_laundered_out_of_binding_ok = int64->(H_zx1fc_laundered_out_of_binding_ok->:q) never fails { pass @((<-q).l[0i64]); };
+func:fpl_zx1fc_laundered_out_of_binding_ok = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fa_zx1fc_laundered_out_of_binding_ok = int64->(S_zx1fc_laundered_out_of_binding_ok->:q) never fails { pass @((<-q).a); };
+func:idp_zx1fc_laundered_out_of_binding_ok = int64->(int64->:q) never fails { pass q; };
+func:idh_zx1fc_laundered_out_of_binding_ok = H_zx1fc_laundered_out_of_binding_ok->(H_zx1fc_laundered_out_of_binding_ok->:q) never fails { pass q; };
+func:fp2_zx1fc_laundered_out_of_binding_ok = int64->(int64:v, H_zx1fc_laundered_out_of_binding_ok->:q) never fails { pass @((<-q).l[0i64]); };
+func:fp2b_zx1fc_laundered_out_of_binding_ok = int64->(H_zx1fc_laundered_out_of_binding_ok->:q, int64:v) never fails { pass @((<-q).l[0i64]); };
+func:rd2_zx1fc_laundered_out_of_binding_ok = int64(int64->:e, int64:z) never fails { pass <-e; };
+impl:H_zx1fc_laundered_out_of_binding_ok = { func:first = int64->(H_zx1fc_laundered_out_of_binding_ok->:self) never fails { pass @((<-self).l[0i64]); }; };
+impl:K_zx1fc_laundered_out_of_binding_ok = { func:sel_zx1fc_laundered_out_of_binding_ok = int64->(K_zx1fc_laundered_out_of_binding_ok:self, H_zx1fc_laundered_out_of_binding_ok->:q) never fails { pass @((<-q).l[0i64]); }; };
+struct:X_zx1fc_laundered_out_of_binding_ok = { int64->:p; int64:z; };
+struct:XA_zx1fc_laundered_out_of_binding_ok = { X_zx1fc_laundered_out_of_binding_ok[1]:xs; int64:z; };
+func:conv_zx1fc_laundered_out_of_binding_ok = H_zx1fc_laundered_out_of_binding_ok->(X_zx1fc_laundered_out_of_binding_ok:x) never fails { pass (x.p =>! any->) =>! H_zx1fc_laundered_out_of_binding_ok->; };
+func:sel_zx1fc_laundered_out_of_binding_ok = H_zx1fc_laundered_out_of_binding_ok->(X_zx1fc_laundered_out_of_binding_ok:x, H_zx1fc_laundered_out_of_binding_ok->:d, int64:n) never fails { if (n > 5i64) { pass (x.p =>! any->) =>! H_zx1fc_laundered_out_of_binding_ok->; } pass d; };
+func:g_zx1fc_laundered_out_of_binding_ok = int64(XA_zx1fc_laundered_out_of_binding_ok->:q, H_zx1fc_laundered_out_of_binding_ok->:hz, H_zx1fc_laundered_out_of_binding_ok->:hy, int64:n) never fails {
+    int64->:e = raw fp_zx1fc_laundered_out_of_binding_ok(hz);
+    for (X_zx1fc_laundered_out_of_binding_ok:m in q.xs) {
+        H_zx1fc_laundered_out_of_binding_ok->:hp = raw conv_zx1fc_laundered_out_of_binding_ok(m);
+        e = raw fp_zx1fc_laundered_out_of_binding_ok(hp);
+    }
+    pass (<-e) + 6i64;
+};
+func:f_zx1fc_laundered_out_of_binding_ok = int64(int64:n) never fails {
+    H_zx1fc_laundered_out_of_binding_ok:hy = raw mkh_zx1fc_laundered_out_of_binding_ok();
+    H_zx1fc_laundered_out_of_binding_ok:hz = raw mkh_zx1fc_laundered_out_of_binding_ok();
+    H_zx1fc_laundered_out_of_binding_ok:h0 = raw mkh_zx1fc_laundered_out_of_binding_ok();
+    H_zx1fc_laundered_out_of_binding_ok:h1 = raw mkh_zx1fc_laundered_out_of_binding_ok();
+    XA_zx1fc_laundered_out_of_binding_ok:xa = XA_zx1fc_laundered_out_of_binding_ok{ xs: [X_zx1fc_laundered_out_of_binding_ok{ p: ((@h0) =>! any->) =>! int64->, z: 0i64 }], z: 0i64 };
+    pass raw g_zx1fc_laundered_out_of_binding_ok(@xa, @hz, @hy, n);
+};
+func:cell_main_zx1fc_laundered_out_of_binding_ok = int32() never fails { pass (((raw f_zx1fc_laundered_out_of_binding_ok(1i64)) + 60i64) =>! int32); };
+struct:K_zx1ic_laundered_out_of_binding_ok = { int64:k; };
+struct:H_zx1ic_laundered_out_of_binding_ok = { List<int64>:l; int64:k; K_zx1ic_laundered_out_of_binding_ok:kk; };
+struct:H2_zx1ic_laundered_out_of_binding_ok = { H_zx1ic_laundered_out_of_binding_ok:inner; int64:z; };
+struct:HP_zx1ic_laundered_out_of_binding_ok = { H_zx1ic_laundered_out_of_binding_ok->:lp; int64:z; };
+struct:W_zx1ic_laundered_out_of_binding_ok = { H_zx1ic_laundered_out_of_binding_ok->:hp; int64:z; };
+struct:S_zx1ic_laundered_out_of_binding_ok = { int64:a; int64:b; };
+struct:PE_zx1ic_laundered_out_of_binding_ok = { int64->:p; int64:z; };
+enum:EK_zx1ic_laundered_out_of_binding_ok = { A(int64->); Z; };
+func:rdk_zx1ic_laundered_out_of_binding_ok = int64(EK_zx1ic_laundered_out_of_binding_ok:e) never fails { int64:v = 0i64; pick (e) { (EK_zx1ic_laundered_out_of_binding_ok.A(q)) { v = <-q; }, (EK_zx1ic_laundered_out_of_binding_ok.Z) { v = 0i64; } } pass v; };
+func:mk_zx1ic_laundered_out_of_binding_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_zx1ic_laundered_out_of_binding_ok = H_zx1ic_laundered_out_of_binding_ok() never fails { pass H_zx1ic_laundered_out_of_binding_ok{ l: raw mk_zx1ic_laundered_out_of_binding_ok(), k: 2i64, kk: K_zx1ic_laundered_out_of_binding_ok{ k: 3i64 } }; };
+func:growh_zx1ic_laundered_out_of_binding_ok = int64(H_zx1ic_laundered_out_of_binding_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_zx1ic_laundered_out_of_binding_ok = int64->(H_zx1ic_laundered_out_of_binding_ok->:q) never fails { pass @((<-q).l[0i64]); };
+func:fpl_zx1ic_laundered_out_of_binding_ok = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fa_zx1ic_laundered_out_of_binding_ok = int64->(S_zx1ic_laundered_out_of_binding_ok->:q) never fails { pass @((<-q).a); };
+func:idp_zx1ic_laundered_out_of_binding_ok = int64->(int64->:q) never fails { pass q; };
+func:idh_zx1ic_laundered_out_of_binding_ok = H_zx1ic_laundered_out_of_binding_ok->(H_zx1ic_laundered_out_of_binding_ok->:q) never fails { pass q; };
+func:fp2_zx1ic_laundered_out_of_binding_ok = int64->(int64:v, H_zx1ic_laundered_out_of_binding_ok->:q) never fails { pass @((<-q).l[0i64]); };
+func:fp2b_zx1ic_laundered_out_of_binding_ok = int64->(H_zx1ic_laundered_out_of_binding_ok->:q, int64:v) never fails { pass @((<-q).l[0i64]); };
+func:rd2_zx1ic_laundered_out_of_binding_ok = int64(int64->:e, int64:z) never fails { pass <-e; };
+impl:H_zx1ic_laundered_out_of_binding_ok = { func:first = int64->(H_zx1ic_laundered_out_of_binding_ok->:self) never fails { pass @((<-self).l[0i64]); }; };
+impl:K_zx1ic_laundered_out_of_binding_ok = { func:sel_zx1ic_laundered_out_of_binding_ok = int64->(K_zx1ic_laundered_out_of_binding_ok:self, H_zx1ic_laundered_out_of_binding_ok->:q) never fails { pass @((<-q).l[0i64]); }; };
+struct:X_zx1ic_laundered_out_of_binding_ok = { int64->:p; int64:z; };
+struct:XA_zx1ic_laundered_out_of_binding_ok = { X_zx1ic_laundered_out_of_binding_ok[1]:xs; int64:z; };
+func:conv_zx1ic_laundered_out_of_binding_ok = H_zx1ic_laundered_out_of_binding_ok->(X_zx1ic_laundered_out_of_binding_ok:x) never fails { pass (x.p =>! any->) =>! H_zx1ic_laundered_out_of_binding_ok->; };
+func:sel_zx1ic_laundered_out_of_binding_ok = H_zx1ic_laundered_out_of_binding_ok->(X_zx1ic_laundered_out_of_binding_ok:x, H_zx1ic_laundered_out_of_binding_ok->:d, int64:n) never fails { if (n > 5i64) { pass (x.p =>! any->) =>! H_zx1ic_laundered_out_of_binding_ok->; } pass d; };
+func:g_zx1ic_laundered_out_of_binding_ok = int64(XA_zx1ic_laundered_out_of_binding_ok->:q, H_zx1ic_laundered_out_of_binding_ok->:hz, H_zx1ic_laundered_out_of_binding_ok->:hy, int64:n) never fails {
+    int64->:e = raw fp_zx1ic_laundered_out_of_binding_ok(hz);
+    {
+        H_zx1ic_laundered_out_of_binding_ok->:hp = raw conv_zx1ic_laundered_out_of_binding_ok(q.xs[0i64]);
+        e = raw fp_zx1ic_laundered_out_of_binding_ok(hp);
+    }
+    pass (<-e) + 6i64;
+};
+func:f_zx1ic_laundered_out_of_binding_ok = int64(int64:n) never fails {
+    H_zx1ic_laundered_out_of_binding_ok:hy = raw mkh_zx1ic_laundered_out_of_binding_ok();
+    H_zx1ic_laundered_out_of_binding_ok:hz = raw mkh_zx1ic_laundered_out_of_binding_ok();
+    H_zx1ic_laundered_out_of_binding_ok:h0 = raw mkh_zx1ic_laundered_out_of_binding_ok();
+    H_zx1ic_laundered_out_of_binding_ok:h1 = raw mkh_zx1ic_laundered_out_of_binding_ok();
+    XA_zx1ic_laundered_out_of_binding_ok:xa = XA_zx1ic_laundered_out_of_binding_ok{ xs: [X_zx1ic_laundered_out_of_binding_ok{ p: ((@h0) =>! any->) =>! int64->, z: 0i64 }], z: 0i64 };
+    pass raw g_zx1ic_laundered_out_of_binding_ok(@xa, @hz, @hy, n);
+};
+func:cell_main_zx1ic_laundered_out_of_binding_ok = int32() never fails { pass (((raw f_zx1ic_laundered_out_of_binding_ok(1i64)) + 60i64) =>! int32); };
+struct:H_a1c_aggregate_literal_retyped = { List<int64>:l; int64:k; };
+func:mk_a1c_aggregate_literal_retyped = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_a1c_aggregate_literal_retyped = H_a1c_aggregate_literal_retyped() never fails { pass H_a1c_aggregate_literal_retyped{ l: raw mk_a1c_aggregate_literal_retyped(), k: 2i64 }; };
+func:grow_a1c_aggregate_literal_retyped = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_a1c_aggregate_literal_retyped = int64(H_a1c_aggregate_literal_retyped->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_a1c_aggregate_literal_retyped = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_a1c_aggregate_literal_retyped = int64->(H_a1c_aggregate_literal_retyped->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp_a1c_aggregate_literal_retyped = int64->(int64->:q) never fails { pass q; };
+func:rd2_a1c_aggregate_literal_retyped = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idany_a1c_aggregate_literal_retyped = any->(any->:q) never fails { pass q; };
+func:idu_a1c_aggregate_literal_retyped = uint8->(uint8->:q) never fails { pass q; };
+func:rdu_a1c_aggregate_literal_retyped = int64(uint8->:e, int64:z) never fails { pass ((<-e) => int64) + 6i64; };
+func:fu_a1c_aggregate_literal_retyped = uint8->(H_a1c_aggregate_literal_retyped->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+struct:P1_a1c_aggregate_literal_retyped = { int64:a; };
+struct:PU_a1c_aggregate_literal_retyped = { uint8->:p; int64:z; };
+struct:SW_a1c_aggregate_literal_retyped = { wild int64->:p; int64:z; };
+struct:SWp_a1c_aggregate_literal_retyped = { int64->:p; int64:z; };
+struct:S3_a1c_aggregate_literal_retyped = { List<int64>:l; wild int64->:p; int64:k; };
+func:f_a1c_aggregate_literal_retyped = int64(int64:n) never fails {
+    H_a1c_aggregate_literal_retyped:h = raw mkh_a1c_aggregate_literal_retyped();
+    PU_a1c_aggregate_literal_retyped:pu = PU_a1c_aggregate_literal_retyped{ p: raw fu_a1c_aggregate_literal_retyped(@h), z: 0i64 };
+    pass ((<-pu.p) => int64) + 6i64;
+};
+func:cell_main_a1c_aggregate_literal_retyped = int32() never fails { pass (((raw f_a1c_aggregate_literal_retyped(1i64)) + 60i64) =>! int32); };
+struct:H_a2c_aggregate_by_second_call = { List<int64>:l; int64:k; };
+func:mk_a2c_aggregate_by_second_call = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_a2c_aggregate_by_second_call = H_a2c_aggregate_by_second_call() never fails { pass H_a2c_aggregate_by_second_call{ l: raw mk_a2c_aggregate_by_second_call(), k: 2i64 }; };
+func:grow_a2c_aggregate_by_second_call = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_a2c_aggregate_by_second_call = int64(H_a2c_aggregate_by_second_call->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_a2c_aggregate_by_second_call = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_a2c_aggregate_by_second_call = int64->(H_a2c_aggregate_by_second_call->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp_a2c_aggregate_by_second_call = int64->(int64->:q) never fails { pass q; };
+func:rd2_a2c_aggregate_by_second_call = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idany_a2c_aggregate_by_second_call = any->(any->:q) never fails { pass q; };
+func:idu_a2c_aggregate_by_second_call = uint8->(uint8->:q) never fails { pass q; };
+func:rdu_a2c_aggregate_by_second_call = int64(uint8->:e, int64:z) never fails { pass ((<-e) => int64) + 6i64; };
+func:fu_a2c_aggregate_by_second_call = uint8->(H_a2c_aggregate_by_second_call->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+struct:P1_a2c_aggregate_by_second_call = { int64:a; };
+struct:PU_a2c_aggregate_by_second_call = { uint8->:p; int64:z; };
+struct:SW_a2c_aggregate_by_second_call = { wild int64->:p; int64:z; };
+struct:SWp_a2c_aggregate_by_second_call = { int64->:p; int64:z; };
+struct:S3_a2c_aggregate_by_second_call = { List<int64>:l; wild int64->:p; int64:k; };
+func:mkpu_a2c_aggregate_by_second_call = PU_a2c_aggregate_by_second_call(uint8->:p) never fails { pass PU_a2c_aggregate_by_second_call{ p: p, z: 0i64 }; };
+func:mkpuh_a2c_aggregate_by_second_call = PU_a2c_aggregate_by_second_call(H_a2c_aggregate_by_second_call->:q) never fails { pass PU_a2c_aggregate_by_second_call{ p: raw fu_a2c_aggregate_by_second_call(q), z: 0i64 }; };
+func:f_a2c_aggregate_by_second_call = int64(int64:n) never fails {
+    H_a2c_aggregate_by_second_call:h = raw mkh_a2c_aggregate_by_second_call();
+    PU_a2c_aggregate_by_second_call:pu = raw mkpu_a2c_aggregate_by_second_call(raw fu_a2c_aggregate_by_second_call(@h));
+    pass ((<-pu.p) => int64) + 6i64;
+};
+func:cell_main_a2c_aggregate_by_second_call = int32() never fails { pass (((raw f_a2c_aggregate_by_second_call(1i64)) + 60i64) =>! int32); };
+struct:H_a3c_aggregate_made_by_callee = { List<int64>:l; int64:k; };
+func:mk_a3c_aggregate_made_by_callee = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_a3c_aggregate_made_by_callee = H_a3c_aggregate_made_by_callee() never fails { pass H_a3c_aggregate_made_by_callee{ l: raw mk_a3c_aggregate_made_by_callee(), k: 2i64 }; };
+func:grow_a3c_aggregate_made_by_callee = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_a3c_aggregate_made_by_callee = int64(H_a3c_aggregate_made_by_callee->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_a3c_aggregate_made_by_callee = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_a3c_aggregate_made_by_callee = int64->(H_a3c_aggregate_made_by_callee->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp_a3c_aggregate_made_by_callee = int64->(int64->:q) never fails { pass q; };
+func:rd2_a3c_aggregate_made_by_callee = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idany_a3c_aggregate_made_by_callee = any->(any->:q) never fails { pass q; };
+func:idu_a3c_aggregate_made_by_callee = uint8->(uint8->:q) never fails { pass q; };
+func:rdu_a3c_aggregate_made_by_callee = int64(uint8->:e, int64:z) never fails { pass ((<-e) => int64) + 6i64; };
+func:fu_a3c_aggregate_made_by_callee = uint8->(H_a3c_aggregate_made_by_callee->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+struct:P1_a3c_aggregate_made_by_callee = { int64:a; };
+struct:PU_a3c_aggregate_made_by_callee = { uint8->:p; int64:z; };
+struct:SW_a3c_aggregate_made_by_callee = { wild int64->:p; int64:z; };
+struct:SWp_a3c_aggregate_made_by_callee = { int64->:p; int64:z; };
+struct:S3_a3c_aggregate_made_by_callee = { List<int64>:l; wild int64->:p; int64:k; };
+func:mkpu_a3c_aggregate_made_by_callee = PU_a3c_aggregate_made_by_callee(uint8->:p) never fails { pass PU_a3c_aggregate_made_by_callee{ p: p, z: 0i64 }; };
+func:mkpuh_a3c_aggregate_made_by_callee = PU_a3c_aggregate_made_by_callee(H_a3c_aggregate_made_by_callee->:q) never fails { pass PU_a3c_aggregate_made_by_callee{ p: raw fu_a3c_aggregate_made_by_callee(q), z: 0i64 }; };
+func:f_a3c_aggregate_made_by_callee = int64(int64:n) never fails {
+    H_a3c_aggregate_made_by_callee:h = raw mkh_a3c_aggregate_made_by_callee();
+    PU_a3c_aggregate_made_by_callee:pu = raw mkpuh_a3c_aggregate_made_by_callee(@h);
+    pass ((<-pu.p) => int64) + 6i64;
+};
+func:cell_main_a3c_aggregate_made_by_callee = int32() never fails { pass (((raw f_a3c_aggregate_made_by_callee(1i64)) + 60i64) =>! int32); };
+struct:H_c1hc_caller_named_any_held = { List<int64>:l; int64:k; };
+func:mk_c1hc_caller_named_any_held = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_c1hc_caller_named_any_held = H_c1hc_caller_named_any_held() never fails { pass H_c1hc_caller_named_any_held{ l: raw mk_c1hc_caller_named_any_held(), k: 2i64 }; };
+func:grow_c1hc_caller_named_any_held = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_c1hc_caller_named_any_held = int64(H_c1hc_caller_named_any_held->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_c1hc_caller_named_any_held = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_c1hc_caller_named_any_held = int64->(H_c1hc_caller_named_any_held->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp_c1hc_caller_named_any_held = int64->(int64->:q) never fails { pass q; };
+func:rd2_c1hc_caller_named_any_held = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idany_c1hc_caller_named_any_held = any->(any->:q) never fails { pass q; };
+func:idu_c1hc_caller_named_any_held = uint8->(uint8->:q) never fails { pass q; };
+func:rdu_c1hc_caller_named_any_held = int64(uint8->:e, int64:z) never fails { pass ((<-e) => int64) + 6i64; };
+func:fu_c1hc_caller_named_any_held = uint8->(H_c1hc_caller_named_any_held->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+struct:P1_c1hc_caller_named_any_held = { int64:a; };
+struct:PU_c1hc_caller_named_any_held = { uint8->:p; int64:z; };
+struct:SW_c1hc_caller_named_any_held = { wild int64->:p; int64:z; };
+struct:SWp_c1hc_caller_named_any_held = { int64->:p; int64:z; };
+struct:S3_c1hc_caller_named_any_held = { List<int64>:l; wild int64->:p; int64:k; };
+func:f_c1hc_caller_named_any_held = int64(int64:n) never fails {
+    H_c1hc_caller_named_any_held:h = raw mkh_c1hc_caller_named_any_held();
+    any->:ap = (raw fp_c1hc_caller_named_any_held(@h)) =>! any->;
+    uint8->:e = ap =>! uint8->;
+    pass ((<-e) => int64) + 6i64;
+};
+func:cell_main_c1hc_caller_named_any_held = int32() never fails { pass (((raw f_c1hc_caller_named_any_held(1i64)) + 60i64) =>! int32); };
+struct:H_c2c_caller_any_through_call = { List<int64>:l; int64:k; };
+func:mk_c2c_caller_any_through_call = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_c2c_caller_any_through_call = H_c2c_caller_any_through_call() never fails { pass H_c2c_caller_any_through_call{ l: raw mk_c2c_caller_any_through_call(), k: 2i64 }; };
+func:grow_c2c_caller_any_through_call = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_c2c_caller_any_through_call = int64(H_c2c_caller_any_through_call->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_c2c_caller_any_through_call = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_c2c_caller_any_through_call = int64->(H_c2c_caller_any_through_call->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp_c2c_caller_any_through_call = int64->(int64->:q) never fails { pass q; };
+func:rd2_c2c_caller_any_through_call = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idany_c2c_caller_any_through_call = any->(any->:q) never fails { pass q; };
+func:idu_c2c_caller_any_through_call = uint8->(uint8->:q) never fails { pass q; };
+func:rdu_c2c_caller_any_through_call = int64(uint8->:e, int64:z) never fails { pass ((<-e) => int64) + 6i64; };
+func:fu_c2c_caller_any_through_call = uint8->(H_c2c_caller_any_through_call->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+struct:P1_c2c_caller_any_through_call = { int64:a; };
+struct:PU_c2c_caller_any_through_call = { uint8->:p; int64:z; };
+struct:SW_c2c_caller_any_through_call = { wild int64->:p; int64:z; };
+struct:SWp_c2c_caller_any_through_call = { int64->:p; int64:z; };
+struct:S3_c2c_caller_any_through_call = { List<int64>:l; wild int64->:p; int64:k; };
+func:f_c2c_caller_any_through_call = int64(int64:n) never fails {
+    H_c2c_caller_any_through_call:h = raw mkh_c2c_caller_any_through_call();
+    uint8->:e = (raw idany_c2c_caller_any_through_call((raw fp_c2c_caller_any_through_call(@h)) =>! any->)) =>! uint8->;
+    pass ((<-e) => int64) + 6i64;
+};
+func:cell_main_c2c_caller_any_through_call = int32() never fails { pass (((raw f_c2c_caller_any_through_call(1i64)) + 60i64) =>! int32); };
+struct:H_c3c_caller_struct_no_list = { List<int64>:l; int64:k; };
+func:mk_c3c_caller_struct_no_list = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_c3c_caller_struct_no_list = H_c3c_caller_struct_no_list() never fails { pass H_c3c_caller_struct_no_list{ l: raw mk_c3c_caller_struct_no_list(), k: 2i64 }; };
+func:grow_c3c_caller_struct_no_list = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_c3c_caller_struct_no_list = int64(H_c3c_caller_struct_no_list->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_c3c_caller_struct_no_list = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_c3c_caller_struct_no_list = int64->(H_c3c_caller_struct_no_list->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp_c3c_caller_struct_no_list = int64->(int64->:q) never fails { pass q; };
+func:rd2_c3c_caller_struct_no_list = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idany_c3c_caller_struct_no_list = any->(any->:q) never fails { pass q; };
+func:idu_c3c_caller_struct_no_list = uint8->(uint8->:q) never fails { pass q; };
+func:rdu_c3c_caller_struct_no_list = int64(uint8->:e, int64:z) never fails { pass ((<-e) => int64) + 6i64; };
+func:fu_c3c_caller_struct_no_list = uint8->(H_c3c_caller_struct_no_list->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+struct:P1_c3c_caller_struct_no_list = { int64:a; };
+struct:PU_c3c_caller_struct_no_list = { uint8->:p; int64:z; };
+struct:SW_c3c_caller_struct_no_list = { wild int64->:p; int64:z; };
+struct:SWp_c3c_caller_struct_no_list = { int64->:p; int64:z; };
+struct:S3_c3c_caller_struct_no_list = { List<int64>:l; wild int64->:p; int64:k; };
+func:f_c3c_caller_struct_no_list = int64(int64:n) never fails {
+    H_c3c_caller_struct_no_list:h = raw mkh_c3c_caller_struct_no_list();
+    P1_c3c_caller_struct_no_list->:e = ((raw fp_c3c_caller_struct_no_list(@h)) =>! any->) =>! P1_c3c_caller_struct_no_list->;
+    pass e.a + 6i64;
+};
+func:cell_main_c3c_caller_struct_no_list = int32() never fails { pass (((raw f_c3c_caller_struct_no_list(1i64)) + 60i64) =>! int32); };
+struct:H_c4c_caller_to_place_type = { List<int64>:l; int64:k; };
+func:mk_c4c_caller_to_place_type = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_c4c_caller_to_place_type = H_c4c_caller_to_place_type() never fails { pass H_c4c_caller_to_place_type{ l: raw mk_c4c_caller_to_place_type(), k: 2i64 }; };
+func:grow_c4c_caller_to_place_type = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_c4c_caller_to_place_type = int64(H_c4c_caller_to_place_type->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_c4c_caller_to_place_type = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_c4c_caller_to_place_type = int64->(H_c4c_caller_to_place_type->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp_c4c_caller_to_place_type = int64->(int64->:q) never fails { pass q; };
+func:rd2_c4c_caller_to_place_type = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idany_c4c_caller_to_place_type = any->(any->:q) never fails { pass q; };
+func:idu_c4c_caller_to_place_type = uint8->(uint8->:q) never fails { pass q; };
+func:rdu_c4c_caller_to_place_type = int64(uint8->:e, int64:z) never fails { pass ((<-e) => int64) + 6i64; };
+func:fu_c4c_caller_to_place_type = uint8->(H_c4c_caller_to_place_type->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+struct:P1_c4c_caller_to_place_type = { int64:a; };
+struct:PU_c4c_caller_to_place_type = { uint8->:p; int64:z; };
+struct:SW_c4c_caller_to_place_type = { wild int64->:p; int64:z; };
+struct:SWp_c4c_caller_to_place_type = { int64->:p; int64:z; };
+struct:S3_c4c_caller_to_place_type = { List<int64>:l; wild int64->:p; int64:k; };
+func:f_c4c_caller_to_place_type = int64(int64:n) never fails {
+    H_c4c_caller_to_place_type:h = raw mkh_c4c_caller_to_place_type();
+    H_c4c_caller_to_place_type->:e = ((raw fp_c4c_caller_to_place_type(@h)) =>! any->) =>! H_c4c_caller_to_place_type->;
+    pass (<-((e =>! any->) =>! int64->)) + 6i64;
+};
+func:cell_main_c4c_caller_to_place_type = int32() never fails { pass (((raw f_c4c_caller_to_place_type(1i64)) + 60i64) =>! int32); };
+struct:H_e1c_callee_named_any = { List<int64>:l; int64:k; };
+func:mk_e1c_callee_named_any = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_e1c_callee_named_any = H_e1c_callee_named_any() never fails { pass H_e1c_callee_named_any{ l: raw mk_e1c_callee_named_any(), k: 2i64 }; };
+func:grow_e1c_callee_named_any = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_e1c_callee_named_any = int64(H_e1c_callee_named_any->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_e1c_callee_named_any = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_e1c_callee_named_any = int64->(H_e1c_callee_named_any->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp_e1c_callee_named_any = int64->(int64->:q) never fails { pass q; };
+func:rd2_e1c_callee_named_any = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idany_e1c_callee_named_any = any->(any->:q) never fails { pass q; };
+func:idu_e1c_callee_named_any = uint8->(uint8->:q) never fails { pass q; };
+func:rdu_e1c_callee_named_any = int64(uint8->:e, int64:z) never fails { pass ((<-e) => int64) + 6i64; };
+func:fu_e1c_callee_named_any = uint8->(H_e1c_callee_named_any->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+struct:P1_e1c_callee_named_any = { int64:a; };
+struct:PU_e1c_callee_named_any = { uint8->:p; int64:z; };
+struct:SW_e1c_callee_named_any = { wild int64->:p; int64:z; };
+struct:SWp_e1c_callee_named_any = { int64->:p; int64:z; };
+struct:S3_e1c_callee_named_any = { List<int64>:l; wild int64->:p; int64:k; };
+func:fu2_e1c_callee_named_any = uint8->(H_e1c_callee_named_any->:q) never fails { any->:a = (@((<-q).l[0i64])) =>! any->; pass a =>! uint8->; };
+func:f_e1c_callee_named_any = int64(int64:n) never fails {
+    H_e1c_callee_named_any:h = raw mkh_e1c_callee_named_any();
+    uint8->:e = raw fu2_e1c_callee_named_any(@h);
+    pass ((<-e) => int64) + 6i64;
+};
+func:cell_main_e1c_callee_named_any = int32() never fails { pass (((raw f_e1c_callee_named_any(1i64)) + 60i64) =>! int32); };
+struct:H_e2c_callee_any_through_call = { List<int64>:l; int64:k; };
+func:mk_e2c_callee_any_through_call = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_e2c_callee_any_through_call = H_e2c_callee_any_through_call() never fails { pass H_e2c_callee_any_through_call{ l: raw mk_e2c_callee_any_through_call(), k: 2i64 }; };
+func:grow_e2c_callee_any_through_call = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_e2c_callee_any_through_call = int64(H_e2c_callee_any_through_call->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_e2c_callee_any_through_call = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_e2c_callee_any_through_call = int64->(H_e2c_callee_any_through_call->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp_e2c_callee_any_through_call = int64->(int64->:q) never fails { pass q; };
+func:rd2_e2c_callee_any_through_call = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idany_e2c_callee_any_through_call = any->(any->:q) never fails { pass q; };
+func:idu_e2c_callee_any_through_call = uint8->(uint8->:q) never fails { pass q; };
+func:rdu_e2c_callee_any_through_call = int64(uint8->:e, int64:z) never fails { pass ((<-e) => int64) + 6i64; };
+func:fu_e2c_callee_any_through_call = uint8->(H_e2c_callee_any_through_call->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+struct:P1_e2c_callee_any_through_call = { int64:a; };
+struct:PU_e2c_callee_any_through_call = { uint8->:p; int64:z; };
+struct:SW_e2c_callee_any_through_call = { wild int64->:p; int64:z; };
+struct:SWp_e2c_callee_any_through_call = { int64->:p; int64:z; };
+struct:S3_e2c_callee_any_through_call = { List<int64>:l; wild int64->:p; int64:k; };
+func:fu3_e2c_callee_any_through_call = uint8->(H_e2c_callee_any_through_call->:q) never fails { pass (raw idany_e2c_callee_any_through_call((@((<-q).l[0i64])) =>! any->)) =>! uint8->; };
+func:f_e2c_callee_any_through_call = int64(int64:n) never fails {
+    H_e2c_callee_any_through_call:h = raw mkh_e2c_callee_any_through_call();
+    uint8->:e = raw fu3_e2c_callee_any_through_call(@h);
+    pass ((<-e) => int64) + 6i64;
+};
+func:cell_main_e2c_callee_any_through_call = int32() never fails { pass (((raw f_e2c_callee_any_through_call(1i64)) + 60i64) =>! int32); };
+struct:H_e4c_callee_to_place_type = { List<int64>:l; int64:k; };
+func:mk_e4c_callee_to_place_type = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_e4c_callee_to_place_type = H_e4c_callee_to_place_type() never fails { pass H_e4c_callee_to_place_type{ l: raw mk_e4c_callee_to_place_type(), k: 2i64 }; };
+func:grow_e4c_callee_to_place_type = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_e4c_callee_to_place_type = int64(H_e4c_callee_to_place_type->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_e4c_callee_to_place_type = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_e4c_callee_to_place_type = int64->(H_e4c_callee_to_place_type->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp_e4c_callee_to_place_type = int64->(int64->:q) never fails { pass q; };
+func:rd2_e4c_callee_to_place_type = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idany_e4c_callee_to_place_type = any->(any->:q) never fails { pass q; };
+func:idu_e4c_callee_to_place_type = uint8->(uint8->:q) never fails { pass q; };
+func:rdu_e4c_callee_to_place_type = int64(uint8->:e, int64:z) never fails { pass ((<-e) => int64) + 6i64; };
+func:fu_e4c_callee_to_place_type = uint8->(H_e4c_callee_to_place_type->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+struct:P1_e4c_callee_to_place_type = { int64:a; };
+struct:PU_e4c_callee_to_place_type = { uint8->:p; int64:z; };
+struct:SW_e4c_callee_to_place_type = { wild int64->:p; int64:z; };
+struct:SWp_e4c_callee_to_place_type = { int64->:p; int64:z; };
+struct:S3_e4c_callee_to_place_type = { List<int64>:l; wild int64->:p; int64:k; };
+func:fuH_e4c_callee_to_place_type = H_e4c_callee_to_place_type->(H_e4c_callee_to_place_type->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! H_e4c_callee_to_place_type->; };
+func:f_e4c_callee_to_place_type = int64(int64:n) never fails {
+    H_e4c_callee_to_place_type:h = raw mkh_e4c_callee_to_place_type();
+    H_e4c_callee_to_place_type->:e = raw fuH_e4c_callee_to_place_type(@h);
+    pass (<-((e =>! any->) =>! int64->)) + 6i64;
+};
+func:cell_main_e4c_callee_to_place_type = int32() never fails { pass (((raw f_e4c_callee_to_place_type(1i64)) + 60i64) =>! int32); };
+struct:H_g1c_target_retyped = { List<int64>:l; int64:k; };
+func:mk_g1c_target_retyped = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_g1c_target_retyped = H_g1c_target_retyped() never fails { pass H_g1c_target_retyped{ l: raw mk_g1c_target_retyped(), k: 2i64 }; };
+func:grow_g1c_target_retyped = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_g1c_target_retyped = int64(H_g1c_target_retyped->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_g1c_target_retyped = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_g1c_target_retyped = int64->(H_g1c_target_retyped->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp_g1c_target_retyped = int64->(int64->:q) never fails { pass q; };
+func:rd2_g1c_target_retyped = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idany_g1c_target_retyped = any->(any->:q) never fails { pass q; };
+func:idu_g1c_target_retyped = uint8->(uint8->:q) never fails { pass q; };
+func:rdu_g1c_target_retyped = int64(uint8->:e, int64:z) never fails { pass ((<-e) => int64) + 6i64; };
+func:fu_g1c_target_retyped = uint8->(H_g1c_target_retyped->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+struct:P1_g1c_target_retyped = { int64:a; };
+struct:PU_g1c_target_retyped = { uint8->:p; int64:z; };
+struct:SW_g1c_target_retyped = { wild int64->:p; int64:z; };
+struct:SWp_g1c_target_retyped = { int64->:p; int64:z; };
+struct:S3_g1c_target_retyped = { List<int64>:l; wild int64->:p; int64:k; };
+func:f_g1c_target_retyped = int64(int64:n) never fails {
+    H_g1c_target_retyped:h = raw mkh_g1c_target_retyped();
+    <-(raw fu_g1c_target_retyped(@h)) = 7u8;
+    pass 7i64;
+};
+func:cell_main_g1c_target_retyped = int32() never fails { pass (((raw f_g1c_target_retyped(1i64)) + 60i64) =>! int32); };
+struct:H_k1c_caller_cast_in_second_call = { List<int64>:l; int64:k; };
+func:mk_k1c_caller_cast_in_second_call = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_k1c_caller_cast_in_second_call = H_k1c_caller_cast_in_second_call() never fails { pass H_k1c_caller_cast_in_second_call{ l: raw mk_k1c_caller_cast_in_second_call(), k: 2i64 }; };
+func:grow_k1c_caller_cast_in_second_call = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_k1c_caller_cast_in_second_call = int64(H_k1c_caller_cast_in_second_call->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_k1c_caller_cast_in_second_call = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_k1c_caller_cast_in_second_call = int64->(H_k1c_caller_cast_in_second_call->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp_k1c_caller_cast_in_second_call = int64->(int64->:q) never fails { pass q; };
+func:rd2_k1c_caller_cast_in_second_call = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idany_k1c_caller_cast_in_second_call = any->(any->:q) never fails { pass q; };
+func:idu_k1c_caller_cast_in_second_call = uint8->(uint8->:q) never fails { pass q; };
+func:rdu_k1c_caller_cast_in_second_call = int64(uint8->:e, int64:z) never fails { pass ((<-e) => int64) + 6i64; };
+func:fu_k1c_caller_cast_in_second_call = uint8->(H_k1c_caller_cast_in_second_call->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+struct:P1_k1c_caller_cast_in_second_call = { int64:a; };
+struct:PU_k1c_caller_cast_in_second_call = { uint8->:p; int64:z; };
+struct:SW_k1c_caller_cast_in_second_call = { wild int64->:p; int64:z; };
+struct:SWp_k1c_caller_cast_in_second_call = { int64->:p; int64:z; };
+struct:S3_k1c_caller_cast_in_second_call = { List<int64>:l; wild int64->:p; int64:k; };
+func:f_k1c_caller_cast_in_second_call = int64(int64:n) never fails {
+    H_k1c_caller_cast_in_second_call:h = raw mkh_k1c_caller_cast_in_second_call();
+    uint8->:e = raw idu_k1c_caller_cast_in_second_call(((raw fp_k1c_caller_cast_in_second_call(@h)) =>! any->) =>! uint8->);
+    pass ((<-e) => int64) + 6i64;
+};
+func:cell_main_k1c_caller_cast_in_second_call = int32() never fails { pass (((raw f_k1c_caller_cast_in_second_call(1i64)) + 60i64) =>! int32); };
+struct:H_k2c_second_call_over_retyping_callee = { List<int64>:l; int64:k; };
+func:mk_k2c_second_call_over_retyping_callee = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_k2c_second_call_over_retyping_callee = H_k2c_second_call_over_retyping_callee() never fails { pass H_k2c_second_call_over_retyping_callee{ l: raw mk_k2c_second_call_over_retyping_callee(), k: 2i64 }; };
+func:grow_k2c_second_call_over_retyping_callee = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_k2c_second_call_over_retyping_callee = int64(H_k2c_second_call_over_retyping_callee->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_k2c_second_call_over_retyping_callee = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_k2c_second_call_over_retyping_callee = int64->(H_k2c_second_call_over_retyping_callee->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp_k2c_second_call_over_retyping_callee = int64->(int64->:q) never fails { pass q; };
+func:rd2_k2c_second_call_over_retyping_callee = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idany_k2c_second_call_over_retyping_callee = any->(any->:q) never fails { pass q; };
+func:idu_k2c_second_call_over_retyping_callee = uint8->(uint8->:q) never fails { pass q; };
+func:rdu_k2c_second_call_over_retyping_callee = int64(uint8->:e, int64:z) never fails { pass ((<-e) => int64) + 6i64; };
+func:fu_k2c_second_call_over_retyping_callee = uint8->(H_k2c_second_call_over_retyping_callee->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+struct:P1_k2c_second_call_over_retyping_callee = { int64:a; };
+struct:PU_k2c_second_call_over_retyping_callee = { uint8->:p; int64:z; };
+struct:SW_k2c_second_call_over_retyping_callee = { wild int64->:p; int64:z; };
+struct:SWp_k2c_second_call_over_retyping_callee = { int64->:p; int64:z; };
+struct:S3_k2c_second_call_over_retyping_callee = { List<int64>:l; wild int64->:p; int64:k; };
+func:f_k2c_second_call_over_retyping_callee = int64(int64:n) never fails {
+    H_k2c_second_call_over_retyping_callee:h = raw mkh_k2c_second_call_over_retyping_callee();
+    uint8->:e = raw idu_k2c_second_call_over_retyping_callee(raw fu_k2c_second_call_over_retyping_callee(@h));
+    pass ((<-e) => int64) + 6i64;
+};
+func:cell_main_k2c_second_call_over_retyping_callee = int32() never fails { pass (((raw f_k2c_second_call_over_retyping_callee(1i64)) + 60i64) =>! int32); };
+struct:H_k3c_callee_carries_retyped = { List<int64>:l; int64:k; };
+func:mk_k3c_callee_carries_retyped = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_k3c_callee_carries_retyped = H_k3c_callee_carries_retyped() never fails { pass H_k3c_callee_carries_retyped{ l: raw mk_k3c_callee_carries_retyped(), k: 2i64 }; };
+func:grow_k3c_callee_carries_retyped = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_k3c_callee_carries_retyped = int64(H_k3c_callee_carries_retyped->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_k3c_callee_carries_retyped = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_k3c_callee_carries_retyped = int64->(H_k3c_callee_carries_retyped->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp_k3c_callee_carries_retyped = int64->(int64->:q) never fails { pass q; };
+func:rd2_k3c_callee_carries_retyped = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idany_k3c_callee_carries_retyped = any->(any->:q) never fails { pass q; };
+func:idu_k3c_callee_carries_retyped = uint8->(uint8->:q) never fails { pass q; };
+func:rdu_k3c_callee_carries_retyped = int64(uint8->:e, int64:z) never fails { pass ((<-e) => int64) + 6i64; };
+func:fu_k3c_callee_carries_retyped = uint8->(H_k3c_callee_carries_retyped->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+struct:P1_k3c_callee_carries_retyped = { int64:a; };
+struct:PU_k3c_callee_carries_retyped = { uint8->:p; int64:z; };
+struct:SW_k3c_callee_carries_retyped = { wild int64->:p; int64:z; };
+struct:SWp_k3c_callee_carries_retyped = { int64->:p; int64:z; };
+struct:S3_k3c_callee_carries_retyped = { List<int64>:l; wild int64->:p; int64:k; };
+func:fu4_k3c_callee_carries_retyped = uint8->(H_k3c_callee_carries_retyped->:q) never fails { pass raw idu_k3c_callee_carries_retyped(raw fu_k3c_callee_carries_retyped(q)); };
+func:f_k3c_callee_carries_retyped = int64(int64:n) never fails {
+    H_k3c_callee_carries_retyped:h = raw mkh_k3c_callee_carries_retyped();
+    uint8->:e = raw fu4_k3c_callee_carries_retyped(@h);
+    pass ((<-e) => int64) + 6i64;
+};
+func:cell_main_k3c_callee_carries_retyped = int32() never fails { pass (((raw f_k3c_callee_carries_retyped(1i64)) + 60i64) =>! int32); };
+struct:H_p1c_param_caller_retypes = { List<int64>:l; int64:k; };
+func:mk_p1c_param_caller_retypes = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_p1c_param_caller_retypes = H_p1c_param_caller_retypes() never fails { pass H_p1c_param_caller_retypes{ l: raw mk_p1c_param_caller_retypes(), k: 2i64 }; };
+func:grow_p1c_param_caller_retypes = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_p1c_param_caller_retypes = int64(H_p1c_param_caller_retypes->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_p1c_param_caller_retypes = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_p1c_param_caller_retypes = int64->(H_p1c_param_caller_retypes->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp_p1c_param_caller_retypes = int64->(int64->:q) never fails { pass q; };
+func:rd2_p1c_param_caller_retypes = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idany_p1c_param_caller_retypes = any->(any->:q) never fails { pass q; };
+func:idu_p1c_param_caller_retypes = uint8->(uint8->:q) never fails { pass q; };
+func:rdu_p1c_param_caller_retypes = int64(uint8->:e, int64:z) never fails { pass ((<-e) => int64) + 6i64; };
+func:fu_p1c_param_caller_retypes = uint8->(H_p1c_param_caller_retypes->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+struct:P1_p1c_param_caller_retypes = { int64:a; };
+struct:PU_p1c_param_caller_retypes = { uint8->:p; int64:z; };
+struct:SW_p1c_param_caller_retypes = { wild int64->:p; int64:z; };
+struct:SWp_p1c_param_caller_retypes = { int64->:p; int64:z; };
+struct:S3_p1c_param_caller_retypes = { List<int64>:l; wild int64->:p; int64:k; };
+func:g_p1c_param_caller_retypes = int64(H_p1c_param_caller_retypes->:hp) never fails { uint8->:e = ((raw fp_p1c_param_caller_retypes(hp)) =>! any->) =>! uint8->; pass ((<-e) => int64) + 6i64; };
+func:f_p1c_param_caller_retypes = int64(int64:n) never fails {
+    H_p1c_param_caller_retypes:h = raw mkh_p1c_param_caller_retypes();
+    pass raw g_p1c_param_caller_retypes(@h);
+};
+func:cell_main_p1c_param_caller_retypes = int32() never fails { pass (((raw f_p1c_param_caller_retypes(1i64)) + 60i64) =>! int32); };
+struct:H_p2c_param_callee_retypes = { List<int64>:l; int64:k; };
+func:mk_p2c_param_callee_retypes = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_p2c_param_callee_retypes = H_p2c_param_callee_retypes() never fails { pass H_p2c_param_callee_retypes{ l: raw mk_p2c_param_callee_retypes(), k: 2i64 }; };
+func:grow_p2c_param_callee_retypes = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_p2c_param_callee_retypes = int64(H_p2c_param_callee_retypes->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_p2c_param_callee_retypes = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_p2c_param_callee_retypes = int64->(H_p2c_param_callee_retypes->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp_p2c_param_callee_retypes = int64->(int64->:q) never fails { pass q; };
+func:rd2_p2c_param_callee_retypes = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idany_p2c_param_callee_retypes = any->(any->:q) never fails { pass q; };
+func:idu_p2c_param_callee_retypes = uint8->(uint8->:q) never fails { pass q; };
+func:rdu_p2c_param_callee_retypes = int64(uint8->:e, int64:z) never fails { pass ((<-e) => int64) + 6i64; };
+func:fu_p2c_param_callee_retypes = uint8->(H_p2c_param_callee_retypes->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+struct:P1_p2c_param_callee_retypes = { int64:a; };
+struct:PU_p2c_param_callee_retypes = { uint8->:p; int64:z; };
+struct:SW_p2c_param_callee_retypes = { wild int64->:p; int64:z; };
+struct:SWp_p2c_param_callee_retypes = { int64->:p; int64:z; };
+struct:S3_p2c_param_callee_retypes = { List<int64>:l; wild int64->:p; int64:k; };
+func:g_p2c_param_callee_retypes = int64(H_p2c_param_callee_retypes->:hp) never fails { uint8->:e = raw fu_p2c_param_callee_retypes(hp); pass ((<-e) => int64) + 6i64; };
+func:f_p2c_param_callee_retypes = int64(int64:n) never fails {
+    H_p2c_param_callee_retypes:h = raw mkh_p2c_param_callee_retypes();
+    pass raw g_p2c_param_callee_retypes(@h);
+};
+func:cell_main_p2c_param_callee_retypes = int32() never fails { pass (((raw f_p2c_param_callee_retypes(1i64)) + 60i64) =>! int32); };
+struct:H_v1c_temporary_retyped = { List<int64>:l; int64:k; };
+func:mk_v1c_temporary_retyped = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_v1c_temporary_retyped = H_v1c_temporary_retyped() never fails { pass H_v1c_temporary_retyped{ l: raw mk_v1c_temporary_retyped(), k: 2i64 }; };
+func:grow_v1c_temporary_retyped = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_v1c_temporary_retyped = int64(H_v1c_temporary_retyped->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_v1c_temporary_retyped = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_v1c_temporary_retyped = int64->(H_v1c_temporary_retyped->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp_v1c_temporary_retyped = int64->(int64->:q) never fails { pass q; };
+func:rd2_v1c_temporary_retyped = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idany_v1c_temporary_retyped = any->(any->:q) never fails { pass q; };
+func:idu_v1c_temporary_retyped = uint8->(uint8->:q) never fails { pass q; };
+func:rdu_v1c_temporary_retyped = int64(uint8->:e, int64:z) never fails { pass ((<-e) => int64) + 6i64; };
+func:fu_v1c_temporary_retyped = uint8->(H_v1c_temporary_retyped->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+struct:P1_v1c_temporary_retyped = { int64:a; };
+struct:PU_v1c_temporary_retyped = { uint8->:p; int64:z; };
+struct:SW_v1c_temporary_retyped = { wild int64->:p; int64:z; };
+struct:SWp_v1c_temporary_retyped = { int64->:p; int64:z; };
+struct:S3_v1c_temporary_retyped = { List<int64>:l; wild int64->:p; int64:k; };
+func:f_v1c_temporary_retyped = int64(int64:n) never fails {
+    H_v1c_temporary_retyped:h = raw mkh_v1c_temporary_retyped();
+    pass raw rdu_v1c_temporary_retyped(raw fu_v1c_temporary_retyped(@h), 7i64);
+};
+func:cell_main_v1c_temporary_retyped = int32() never fails { pass (((raw f_v1c_temporary_retyped(1i64)) + 60i64) =>! int32); };
+struct:H_w1c_caller_wild_field_via_any = { List<int64>:l; int64:k; };
+func:mk_w1c_caller_wild_field_via_any = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_w1c_caller_wild_field_via_any = H_w1c_caller_wild_field_via_any() never fails { pass H_w1c_caller_wild_field_via_any{ l: raw mk_w1c_caller_wild_field_via_any(), k: 2i64 }; };
+func:grow_w1c_caller_wild_field_via_any = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_w1c_caller_wild_field_via_any = int64(H_w1c_caller_wild_field_via_any->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_w1c_caller_wild_field_via_any = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_w1c_caller_wild_field_via_any = int64->(H_w1c_caller_wild_field_via_any->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp_w1c_caller_wild_field_via_any = int64->(int64->:q) never fails { pass q; };
+func:rd2_w1c_caller_wild_field_via_any = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idany_w1c_caller_wild_field_via_any = any->(any->:q) never fails { pass q; };
+func:idu_w1c_caller_wild_field_via_any = uint8->(uint8->:q) never fails { pass q; };
+func:rdu_w1c_caller_wild_field_via_any = int64(uint8->:e, int64:z) never fails { pass ((<-e) => int64) + 6i64; };
+func:fu_w1c_caller_wild_field_via_any = uint8->(H_w1c_caller_wild_field_via_any->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+struct:P1_w1c_caller_wild_field_via_any = { int64:a; };
+struct:PU_w1c_caller_wild_field_via_any = { uint8->:p; int64:z; };
+struct:SW_w1c_caller_wild_field_via_any = { wild int64->:p; int64:z; };
+struct:SWp_w1c_caller_wild_field_via_any = { int64->:p; int64:z; };
+struct:S3_w1c_caller_wild_field_via_any = { List<int64>:l; wild int64->:p; int64:k; };
+func:f_w1c_caller_wild_field_via_any = int64(int64:n) never fails {
+    H_w1c_caller_wild_field_via_any:h = raw mkh_w1c_caller_wild_field_via_any();
+    SW_w1c_caller_wild_field_via_any:sw = SW_w1c_caller_wild_field_via_any{ p: ((raw fp_w1c_caller_wild_field_via_any(@h)) =>! any->) =>! wild int64->, z: 0i64 };
+    pass (<-sw.p) + 6i64;
+};
+func:cell_main_w1c_caller_wild_field_via_any = int32() never fails { pass (((raw f_w1c_caller_wild_field_via_any(1i64)) + 60i64) =>! int32); };
+struct:H_w4c_caller_wild_field_assigned = { List<int64>:l; int64:k; };
+func:mk_w4c_caller_wild_field_assigned = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_w4c_caller_wild_field_assigned = H_w4c_caller_wild_field_assigned() never fails { pass H_w4c_caller_wild_field_assigned{ l: raw mk_w4c_caller_wild_field_assigned(), k: 2i64 }; };
+func:grow_w4c_caller_wild_field_assigned = int64(List<int64>->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(p, 1i64); } pass 7i64; };
+func:growh_w4c_caller_wild_field_assigned = int64(H_w4c_caller_wild_field_assigned->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:first_w4c_caller_wild_field_assigned = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
+func:fp_w4c_caller_wild_field_assigned = int64->(H_w4c_caller_wild_field_assigned->:q) never fails { pass @((<-q).l[0i64]); };
+func:idp_w4c_caller_wild_field_assigned = int64->(int64->:q) never fails { pass q; };
+func:rd2_w4c_caller_wild_field_assigned = int64(int64->:e, int64:z) never fails { pass <-e; };
+func:idany_w4c_caller_wild_field_assigned = any->(any->:q) never fails { pass q; };
+func:idu_w4c_caller_wild_field_assigned = uint8->(uint8->:q) never fails { pass q; };
+func:rdu_w4c_caller_wild_field_assigned = int64(uint8->:e, int64:z) never fails { pass ((<-e) => int64) + 6i64; };
+func:fu_w4c_caller_wild_field_assigned = uint8->(H_w4c_caller_wild_field_assigned->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! uint8->; };
+struct:P1_w4c_caller_wild_field_assigned = { int64:a; };
+struct:PU_w4c_caller_wild_field_assigned = { uint8->:p; int64:z; };
+struct:SW_w4c_caller_wild_field_assigned = { wild int64->:p; int64:z; };
+struct:SWp_w4c_caller_wild_field_assigned = { int64->:p; int64:z; };
+struct:S3_w4c_caller_wild_field_assigned = { List<int64>:l; wild int64->:p; int64:k; };
+func:f_w4c_caller_wild_field_assigned = int64(int64:n) never fails {
+    H_w4c_caller_wild_field_assigned:h = raw mkh_w4c_caller_wild_field_assigned();
+    SW_w4c_caller_wild_field_assigned:sw = SW_w4c_caller_wild_field_assigned{ p: NULL, z: 0i64 };
+    sw.p = (raw fp_w4c_caller_wild_field_assigned(@h)) =>! wild int64->;
+    pass (<-sw.p) + 6i64;
+};
+func:cell_main_w4c_caller_wild_field_assigned = int32() never fails { pass (((raw f_w4c_caller_wild_field_assigned(1i64)) + 60i64) =>! int32); };
+struct:H_cc2c_flag_two_levels_plain_first = { List<int64>:l; int64:k; };
+func:mk_cc2c_flag_two_levels_plain_first = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_cc2c_flag_two_levels_plain_first = H_cc2c_flag_two_levels_plain_first() never fails { pass H_cc2c_flag_two_levels_plain_first{ l: raw mk_cc2c_flag_two_levels_plain_first(), k: 2i64 }; };
+func:idH_cc2c_flag_two_levels_plain_first = H_cc2c_flag_two_levels_plain_first->(H_cc2c_flag_two_levels_plain_first->:q) never fails { pass q; };
+func:f_cc2c_flag_two_levels_plain_first = int64(int64:n) never fails {
+    H_cc2c_flag_two_levels_plain_first:h = raw mkh_cc2c_flag_two_levels_plain_first();
+    H_cc2c_flag_two_levels_plain_first->:e = is (n > 100i64) : (raw idH_cc2c_flag_two_levels_plain_first(@h)) : (raw g1_cc2c_flag_two_levels_plain_first(@h, n));
+    pass (<-((e =>! any->) =>! int64->)) + 6i64;
+};
+func:g1_cc2c_flag_two_levels_plain_first = H_cc2c_flag_two_levels_plain_first->(H_cc2c_flag_two_levels_plain_first->:q, int64:n) never fails { pass is (n > 100i64) : q : (raw g2_cc2c_flag_two_levels_plain_first(q, n)); };
+func:g2_cc2c_flag_two_levels_plain_first = H_cc2c_flag_two_levels_plain_first->(H_cc2c_flag_two_levels_plain_first->:q, int64:n) never fails { pass is (n > 100i64) : q : (raw h3_cc2c_flag_two_levels_plain_first(q)); };
+func:h3_cc2c_flag_two_levels_plain_first = H_cc2c_flag_two_levels_plain_first->(H_cc2c_flag_two_levels_plain_first->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! H_cc2c_flag_two_levels_plain_first->; };
+func:cell_main_cc2c_flag_two_levels_plain_first = int32() never fails { pass (((raw f_cc2c_flag_two_levels_plain_first(1i64)) + 60i64) =>! int32); };
+struct:H_cc12c_flag_12_levels_after_caller = { List<int64>:l; int64:k; };
+func:mk_cc12c_flag_12_levels_after_caller = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_cc12c_flag_12_levels_after_caller = H_cc12c_flag_12_levels_after_caller() never fails { pass H_cc12c_flag_12_levels_after_caller{ l: raw mk_cc12c_flag_12_levels_after_caller(), k: 2i64 }; };
+func:idH_cc12c_flag_12_levels_after_caller = H_cc12c_flag_12_levels_after_caller->(H_cc12c_flag_12_levels_after_caller->:q) never fails { pass q; };
+func:f_cc12c_flag_12_levels_after_caller = int64(int64:n) never fails {
+    H_cc12c_flag_12_levels_after_caller:h = raw mkh_cc12c_flag_12_levels_after_caller();
+    H_cc12c_flag_12_levels_after_caller->:e = raw g0_cc12c_flag_12_levels_after_caller(@h, n);
+    pass (<-((e =>! any->) =>! int64->)) + 6i64;
+};
+func:g0_cc12c_flag_12_levels_after_caller = H_cc12c_flag_12_levels_after_caller->(H_cc12c_flag_12_levels_after_caller->:q, int64:n) never fails { pass is (n > 100i64) : q : (raw g1_cc12c_flag_12_levels_after_caller(q, n)); };
+func:g1_cc12c_flag_12_levels_after_caller = H_cc12c_flag_12_levels_after_caller->(H_cc12c_flag_12_levels_after_caller->:q, int64:n) never fails { pass is (n > 100i64) : q : (raw g2_cc12c_flag_12_levels_after_caller(q, n)); };
+func:g2_cc12c_flag_12_levels_after_caller = H_cc12c_flag_12_levels_after_caller->(H_cc12c_flag_12_levels_after_caller->:q, int64:n) never fails { pass is (n > 100i64) : q : (raw g3_cc12c_flag_12_levels_after_caller(q, n)); };
+func:g3_cc12c_flag_12_levels_after_caller = H_cc12c_flag_12_levels_after_caller->(H_cc12c_flag_12_levels_after_caller->:q, int64:n) never fails { pass is (n > 100i64) : q : (raw g4_cc12c_flag_12_levels_after_caller(q, n)); };
+func:g4_cc12c_flag_12_levels_after_caller = H_cc12c_flag_12_levels_after_caller->(H_cc12c_flag_12_levels_after_caller->:q, int64:n) never fails { pass is (n > 100i64) : q : (raw g5_cc12c_flag_12_levels_after_caller(q, n)); };
+func:g5_cc12c_flag_12_levels_after_caller = H_cc12c_flag_12_levels_after_caller->(H_cc12c_flag_12_levels_after_caller->:q, int64:n) never fails { pass is (n > 100i64) : q : (raw g6_cc12c_flag_12_levels_after_caller(q, n)); };
+func:g6_cc12c_flag_12_levels_after_caller = H_cc12c_flag_12_levels_after_caller->(H_cc12c_flag_12_levels_after_caller->:q, int64:n) never fails { pass is (n > 100i64) : q : (raw g7_cc12c_flag_12_levels_after_caller(q, n)); };
+func:g7_cc12c_flag_12_levels_after_caller = H_cc12c_flag_12_levels_after_caller->(H_cc12c_flag_12_levels_after_caller->:q, int64:n) never fails { pass is (n > 100i64) : q : (raw g8_cc12c_flag_12_levels_after_caller(q, n)); };
+func:g8_cc12c_flag_12_levels_after_caller = H_cc12c_flag_12_levels_after_caller->(H_cc12c_flag_12_levels_after_caller->:q, int64:n) never fails { pass is (n > 100i64) : q : (raw g9_cc12c_flag_12_levels_after_caller(q, n)); };
+func:g9_cc12c_flag_12_levels_after_caller = H_cc12c_flag_12_levels_after_caller->(H_cc12c_flag_12_levels_after_caller->:q, int64:n) never fails { pass is (n > 100i64) : q : (raw g10_cc12c_flag_12_levels_after_caller(q, n)); };
+func:g10_cc12c_flag_12_levels_after_caller = H_cc12c_flag_12_levels_after_caller->(H_cc12c_flag_12_levels_after_caller->:q, int64:n) never fails { pass is (n > 100i64) : q : (raw g11_cc12c_flag_12_levels_after_caller(q, n)); };
+func:g11_cc12c_flag_12_levels_after_caller = H_cc12c_flag_12_levels_after_caller->(H_cc12c_flag_12_levels_after_caller->:q, int64:n) never fails { pass is (n > 100i64) : q : (raw h3_cc12c_flag_12_levels_after_caller(q)); };
+func:h3_cc12c_flag_12_levels_after_caller = H_cc12c_flag_12_levels_after_caller->(H_cc12c_flag_12_levels_after_caller->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! H_cc12c_flag_12_levels_after_caller->; };
+func:cell_main_cc12c_flag_12_levels_after_caller = int32() never fails { pass (((raw f_cc12c_flag_12_levels_after_caller(1i64)) + 60i64) =>! int32); };
+struct:H_cy1c_flag_call_cycle = { List<int64>:l; int64:k_cy1c_flag_call_cycle; };
+func:mk_cy1c_flag_call_cycle = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_cy1c_flag_call_cycle = H_cy1c_flag_call_cycle() never fails { pass H_cy1c_flag_call_cycle{ l: raw mk_cy1c_flag_call_cycle(), k_cy1c_flag_call_cycle: 2i64 }; };
+func:idH_cy1c_flag_call_cycle = H_cy1c_flag_call_cycle->(H_cy1c_flag_call_cycle->:q) never fails { pass q; };
+func:f_cy1c_flag_call_cycle = int64(int64:n) never fails {
+    H_cy1c_flag_call_cycle:h = raw mkh_cy1c_flag_call_cycle();
+    H_cy1c_flag_call_cycle->:e = raw g_cy1c_flag_call_cycle(@h, 3i64);
+    pass (<-((e =>! any->) =>! int64->)) + 6i64;
+};
+func:g_cy1c_flag_call_cycle = H_cy1c_flag_call_cycle->(H_cy1c_flag_call_cycle->:q, int64:d) decreases d never fails { pass is (d <= 0i64) : q : (raw k_cy1c_flag_call_cycle(q, d - 1i64)); };
+func:k_cy1c_flag_call_cycle = H_cy1c_flag_call_cycle->(H_cy1c_flag_call_cycle->:q, int64:d) decreases d never fails { if (d <= 1i64) { pass ((@((<-q).l[0i64])) =>! any->) =>! H_cy1c_flag_call_cycle->; } pass raw g_cy1c_flag_call_cycle(q, d - 1i64); };
+func:cell_main_cy1c_flag_call_cycle = int32() never fails { pass (((raw f_cy1c_flag_call_cycle(1i64)) + 60i64) =>! int32); };
+struct:H_jn1c_two_crossings_int32_first = { List<int64>:l; int64:k; };
+struct:HJ_jn1c_two_crossings_int32_first = { List<int64>:l; int32:k32; int64:k; };
+func:mk_jn1c_two_crossings_int32_first = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_jn1c_two_crossings_int32_first = H_jn1c_two_crossings_int32_first() never fails { pass H_jn1c_two_crossings_int32_first{ l: raw mk_jn1c_two_crossings_int32_first(), k: 2i64 }; };
+func:mkhj_jn1c_two_crossings_int32_first = HJ_jn1c_two_crossings_int32_first() never fails { pass HJ_jn1c_two_crossings_int32_first{ l: raw mk_jn1c_two_crossings_int32_first(), k32: 3i32, k: 2i64 }; };
+func:fp_jn1c_two_crossings_int32_first = int64->(H_jn1c_two_crossings_int32_first->:q) never fails { pass @((<-q).l[0i64]); };
+struct:SW2_jn1c_two_crossings_int32_first = { wild int32->:b; wild int64->:a; int64:z; };
+func:g_jn1c_two_crossings_int32_first = SW2_jn1c_two_crossings_int32_first(HJ_jn1c_two_crossings_int32_first->:q) never fails { pass SW2_jn1c_two_crossings_int32_first{ b: (@((<-q).k32)) =>! wild int32->, a: (@((<-q).l[0i64])) =>! wild int64->, z: 0i64 }; };
+func:f_jn1c_two_crossings_int32_first = int64(int64:n) never fails {
+    HJ_jn1c_two_crossings_int32_first:h = raw mkhj_jn1c_two_crossings_int32_first(); SW2_jn1c_two_crossings_int32_first:s = raw g_jn1c_two_crossings_int32_first(@h); pass (<-s.a) + 6i64;
+};
+func:cell_main_jn1c_two_crossings_int32_first = int32() never fails { pass (((raw f_jn1c_two_crossings_int32_first(1i64)) + 60i64) =>! int32); };
+struct:H_jn2c_two_crossings_int64_first = { List<int64>:l; int64:k; };
+struct:HJ_jn2c_two_crossings_int64_first = { List<int64>:l; int32:k32; int64:k; };
+func:mk_jn2c_two_crossings_int64_first = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_jn2c_two_crossings_int64_first = H_jn2c_two_crossings_int64_first() never fails { pass H_jn2c_two_crossings_int64_first{ l: raw mk_jn2c_two_crossings_int64_first(), k: 2i64 }; };
+func:mkhj_jn2c_two_crossings_int64_first = HJ_jn2c_two_crossings_int64_first() never fails { pass HJ_jn2c_two_crossings_int64_first{ l: raw mk_jn2c_two_crossings_int64_first(), k32: 3i32, k: 2i64 }; };
+func:fp_jn2c_two_crossings_int64_first = int64->(H_jn2c_two_crossings_int64_first->:q) never fails { pass @((<-q).l[0i64]); };
+struct:SW2_jn2c_two_crossings_int64_first = { wild int32->:b; wild int64->:a; int64:z; };
+func:g_jn2c_two_crossings_int64_first = SW2_jn2c_two_crossings_int64_first(HJ_jn2c_two_crossings_int64_first->:q) never fails { pass SW2_jn2c_two_crossings_int64_first{ a: (@((<-q).l[0i64])) =>! wild int64->, b: (@((<-q).k32)) =>! wild int32->, z: 0i64 }; };
+func:f_jn2c_two_crossings_int64_first = int64(int64:n) never fails {
+    HJ_jn2c_two_crossings_int64_first:h = raw mkhj_jn2c_two_crossings_int64_first(); SW2_jn2c_two_crossings_int64_first:s = raw g_jn2c_two_crossings_int64_first(@h); pass (<-s.a) + 6i64;
+};
+func:cell_main_jn2c_two_crossings_int64_first = int32() never fails { pass (((raw f_jn2c_two_crossings_int64_first(1i64)) + 60i64) =>! int32); };
+struct:H_ab1c_retyped_absorbs_crossing = { List<int64>:l; int64:k; };
+struct:HJ_ab1c_retyped_absorbs_crossing = { List<int64>:l; int32:k32; int64:k; };
+func:mk_ab1c_retyped_absorbs_crossing = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_ab1c_retyped_absorbs_crossing = H_ab1c_retyped_absorbs_crossing() never fails { pass H_ab1c_retyped_absorbs_crossing{ l: raw mk_ab1c_retyped_absorbs_crossing(), k: 2i64 }; };
+func:mkhj_ab1c_retyped_absorbs_crossing = HJ_ab1c_retyped_absorbs_crossing() never fails { pass HJ_ab1c_retyped_absorbs_crossing{ l: raw mk_ab1c_retyped_absorbs_crossing(), k32: 3i32, k: 2i64 }; };
+func:fp_ab1c_retyped_absorbs_crossing = int64->(H_ab1c_retyped_absorbs_crossing->:q) never fails { pass @((<-q).l[0i64]); };
+struct:RU_ab1c_retyped_absorbs_crossing = { uint8->:e; wild int32->:w; int64:z; };
+func:gab_ab1c_retyped_absorbs_crossing = RU_ab1c_retyped_absorbs_crossing(HJ_ab1c_retyped_absorbs_crossing->:q) never fails { pass RU_ab1c_retyped_absorbs_crossing{ e: ((@((<-q).l[0i64])) =>! any->) =>! uint8->, w: (@((<-q).k32)) =>! wild int32->, z: 0i64 }; };
+func:f_ab1c_retyped_absorbs_crossing = int64(int64:n) never fails {
+    HJ_ab1c_retyped_absorbs_crossing:h = raw mkhj_ab1c_retyped_absorbs_crossing(); RU_ab1c_retyped_absorbs_crossing:r = raw gab_ab1c_retyped_absorbs_crossing(@h); pass ((<-r.e) => int64) + 6i64;
+};
+func:cell_main_ab1c_retyped_absorbs_crossing = int32() never fails { pass (((raw f_ab1c_retyped_absorbs_crossing(1i64)) + 60i64) =>! int32); };
+struct:H_fj1c_flag_retyped_then_plain = { List<int64>:l; int64:k; };
+struct:HJ_fj1c_flag_retyped_then_plain = { List<int64>:l; int32:k32; int64:k; };
+func:mk_fj1c_flag_retyped_then_plain = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_fj1c_flag_retyped_then_plain = H_fj1c_flag_retyped_then_plain() never fails { pass H_fj1c_flag_retyped_then_plain{ l: raw mk_fj1c_flag_retyped_then_plain(), k: 2i64 }; };
+func:mkhj_fj1c_flag_retyped_then_plain = HJ_fj1c_flag_retyped_then_plain() never fails { pass HJ_fj1c_flag_retyped_then_plain{ l: raw mk_fj1c_flag_retyped_then_plain(), k32: 3i32, k: 2i64 }; };
+func:fp_fj1c_flag_retyped_then_plain = int64->(H_fj1c_flag_retyped_then_plain->:q) never fails { pass @((<-q).l[0i64]); };
+func:h3_fj1c_flag_retyped_then_plain = H_fj1c_flag_retyped_then_plain->(H_fj1c_flag_retyped_then_plain->:q) never fails { pass ((@((<-q).l[0i64])) =>! any->) =>! H_fj1c_flag_retyped_then_plain->; };
+func:gfj_fj1c_flag_retyped_then_plain = H_fj1c_flag_retyped_then_plain->(H_fj1c_flag_retyped_then_plain->:q, int64:n) never fails { pass is (n < 100i64) : (raw h3_fj1c_flag_retyped_then_plain(q)) : q; };
+func:f_fj1c_flag_retyped_then_plain = int64(int64:n) never fails {
+    H_fj1c_flag_retyped_then_plain:h = raw mkh_fj1c_flag_retyped_then_plain(); H_fj1c_flag_retyped_then_plain->:e = raw gfj_fj1c_flag_retyped_then_plain(@h, n); pass (<-((e =>! any->) =>! int64->)) + 6i64;
+};
+func:cell_main_fj1c_flag_retyped_then_plain = int32() never fails { pass (((raw f_fj1c_flag_retyped_then_plain(1i64)) + 60i64) =>! int32); };
+struct:H_np1c_wild_struct_slot_crossed = { List<int64>:l; int64:k; };
+struct:HJ_np1c_wild_struct_slot_crossed = { List<int64>:l; int32:k32; int64:k; };
+func:mk_np1c_wild_struct_slot_crossed = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_np1c_wild_struct_slot_crossed = H_np1c_wild_struct_slot_crossed() never fails { pass H_np1c_wild_struct_slot_crossed{ l: raw mk_np1c_wild_struct_slot_crossed(), k: 2i64 }; };
+func:mkhj_np1c_wild_struct_slot_crossed = HJ_np1c_wild_struct_slot_crossed() never fails { pass HJ_np1c_wild_struct_slot_crossed{ l: raw mk_np1c_wild_struct_slot_crossed(), k32: 3i32, k: 2i64 }; };
+func:fp_np1c_wild_struct_slot_crossed = int64->(H_np1c_wild_struct_slot_crossed->:q) never fails { pass @((<-q).l[0i64]); };
+struct:IN_np1c_wild_struct_slot_crossed = { wild int64->:p; int64:z; };
+struct:OUT_np1c_wild_struct_slot_crossed = { wild IN_np1c_wild_struct_slot_crossed:inn; int64:z; };
+func:f_np1c_wild_struct_slot_crossed = int64(int64:n) never fails {
+    H_np1c_wild_struct_slot_crossed:h = raw mkh_np1c_wild_struct_slot_crossed(); OUT_np1c_wild_struct_slot_crossed:o = OUT_np1c_wild_struct_slot_crossed{ inn: IN_np1c_wild_struct_slot_crossed{ p: (raw fp_np1c_wild_struct_slot_crossed(@h)) =>! wild int64->, z: 0i64 }, z: 0i64 }; pass (<-o.inn.p) + 6i64;
+};
+func:cell_main_np1c_wild_struct_slot_crossed = int32() never fails { pass (((raw f_np1c_wild_struct_slot_crossed(1i64)) + 60i64) =>! int32); };
+struct:H_cx1_ok_crossing_beside_other_slot = { List<int64>:l; int64:k; };
+struct:HJ_cx1_ok_crossing_beside_other_slot = { List<int64>:l; int32:k32; int64:k; };
+func:mk_cx1_ok_crossing_beside_other_slot = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_cx1_ok_crossing_beside_other_slot = H_cx1_ok_crossing_beside_other_slot() never fails { pass H_cx1_ok_crossing_beside_other_slot{ l: raw mk_cx1_ok_crossing_beside_other_slot(), k: 2i64 }; };
+func:mkhj_cx1_ok_crossing_beside_other_slot = HJ_cx1_ok_crossing_beside_other_slot() never fails { pass HJ_cx1_ok_crossing_beside_other_slot{ l: raw mk_cx1_ok_crossing_beside_other_slot(), k32: 3i32, k: 2i64 }; };
+func:fp_cx1_ok_crossing_beside_other_slot = int64->(H_cx1_ok_crossing_beside_other_slot->:q) never fails { pass @((<-q).l[0i64]); };
+struct:C2_cx1_ok_crossing_beside_other_slot = { wild int64->:pi; wild int32->:other; int64:z; };
+func:fk32_cx1_ok_crossing_beside_other_slot = int32->(HJ_cx1_ok_crossing_beside_other_slot->:q) never fails { pass @((<-q).k32); };
+func:f_cx1_ok_crossing_beside_other_slot = int64(int64:n) never fails {
+    HJ_cx1_ok_crossing_beside_other_slot:h = raw mkhj_cx1_ok_crossing_beside_other_slot(); C2_cx1_ok_crossing_beside_other_slot:c = C2_cx1_ok_crossing_beside_other_slot{ pi: NULL, other: (raw fk32_cx1_ok_crossing_beside_other_slot(@h)) =>! wild int32->, z: 0i64 }; h = raw mkhj_cx1_ok_crossing_beside_other_slot(); pass ((<-c.other) => int64) + 4i64;
+};
+func:cell_main_cx1_ok_crossing_beside_other_slot = int32() never fails { pass (((raw f_cx1_ok_crossing_beside_other_slot(1i64)) + 60i64) =>! int32); };
+struct:H_s1m_ok_stdout_retyped_view = { List<int64>:l; int64:k; };
+struct:HJ_s1m_ok_stdout_retyped_view = { List<int64>:l; int32:k32; int64:k; };
+func:mk_s1m_ok_stdout_retyped_view = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_s1m_ok_stdout_retyped_view = H_s1m_ok_stdout_retyped_view() never fails { pass H_s1m_ok_stdout_retyped_view{ l: raw mk_s1m_ok_stdout_retyped_view(), k: 2i64 }; };
+func:mkhj_s1m_ok_stdout_retyped_view = HJ_s1m_ok_stdout_retyped_view() never fails { pass HJ_s1m_ok_stdout_retyped_view{ l: raw mk_s1m_ok_stdout_retyped_view(), k32: 3i32, k: 2i64 }; };
+func:fp_s1m_ok_stdout_retyped_view = int64->(H_s1m_ok_stdout_retyped_view->:q) never fails { pass @((<-q).l[0i64]); };
+struct:Sk_s1m_ok_stdout_retyped_view = { List<int8>:v; };
+struct:Wr_s1m_ok_stdout_retyped_view = { Sk_s1m_ok_stdout_retyped_view:out; int64:k; };
+func:sview_s1m_ok_stdout_retyped_view = string(Sk_s1m_ok_stdout_retyped_view->:out) never fails { pass string_from_bytes(out.v[0i64...out.v.count].ptr =>! wild int8->, out.v.count); };
+func:txt_s1m_ok_stdout_retyped_view = string(Wr_s1m_ok_stdout_retyped_view->:w) never fails { string:t = raw sview_s1m_ok_stdout_retyped_view(@w.out); t = string_concat(t, raw sview_s1m_ok_stdout_retyped_view(@w.out)); pass t; };
+func:wall_s1m_ok_stdout_retyped_view = NIL(fd:sink, wild int8->:p, int64:n) {
+    int64:off = 0i64;
+    while (off < n) unbounded {
+        Result<int64>:w = write(sink, @p[off], n - off);
+        if (w.is_error) { fail w.err; }
+        off = off + w.value;
+    }
+    pass NIL;
+};
+func:f_s1m_ok_stdout_retyped_view = int64(int64:n) never fails {
+    Wr_s1m_ok_stdout_retyped_view:w = Wr_s1m_ok_stdout_retyped_view{ out: Sk_s1m_ok_stdout_retyped_view{ v: raw list_init::<int8>(4i64) }, k: 0i64 }; drop list_push(@w.out.v, 10i8); string:ir = raw txt_s1m_ok_stdout_retyped_view(@w); Result<NIL>:pr = wall_s1m_ok_stdout_retyped_view(1i32 =>! fd, ir.ptr =>! wild int8->, ir.len); if (pr.is_error) { pass 0i64; } pass 7i64;
+};
+func:cell_main_s1m_ok_stdout_retyped_view = int32() never fails { pass (((raw f_s1m_ok_stdout_retyped_view(1i64)) + 60i64) =>! int32); };
+struct:H_s2m_ok_resolver_crossed_same_type = { List<int64>:l; int64:k; };
+struct:HJ_s2m_ok_resolver_crossed_same_type = { List<int64>:l; int32:k32; int64:k; };
+func:mk_s2m_ok_resolver_crossed_same_type = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_s2m_ok_resolver_crossed_same_type = H_s2m_ok_resolver_crossed_same_type() never fails { pass H_s2m_ok_resolver_crossed_same_type{ l: raw mk_s2m_ok_resolver_crossed_same_type(), k: 2i64 }; };
+func:mkhj_s2m_ok_resolver_crossed_same_type = HJ_s2m_ok_resolver_crossed_same_type() never fails { pass HJ_s2m_ok_resolver_crossed_same_type{ l: raw mk_s2m_ok_resolver_crossed_same_type(), k32: 3i32, k: 2i64 }; };
+func:fp_s2m_ok_resolver_crossed_same_type = int64->(H_s2m_ok_resolver_crossed_same_type->:q) never fails { pass @((<-q).l[0i64]); };
+struct:TR_s2m_ok_resolver_crossed_same_type = { List<int64>:kinds; int64:cnt; };
+struct:Ctx_s2m_ok_resolver_crossed_same_type = { wild int32->:m; wild TR_s2m_ok_resolver_crossed_same_type->:tr; int64:z; };
+func:setc_s2m_ok_resolver_crossed_same_type = NIL(Ctx_s2m_ok_resolver_crossed_same_type->:c, TR_s2m_ok_resolver_crossed_same_type->:t) never fails { c.tr = t =>! wild TR_s2m_ok_resolver_crossed_same_type->; pass NIL; };
+func:work_s2m_ok_resolver_crossed_same_type = int64(TR_s2m_ok_resolver_crossed_same_type->:t) never fails { drop list_push(@t.kinds, 3i64); pass 1i64; };
+func:f_s2m_ok_resolver_crossed_same_type = int64(int64:n) never fails {
+    TR_s2m_ok_resolver_crossed_same_type:t = TR_s2m_ok_resolver_crossed_same_type{ kinds: raw mk_s2m_ok_resolver_crossed_same_type(), cnt: 0i64 }; int32:mm = 0i32; Ctx_s2m_ok_resolver_crossed_same_type:c = Ctx_s2m_ok_resolver_crossed_same_type{ m: (@mm) =>! wild int32->, tr: NULL, z: 0i64 }; drop setc_s2m_ok_resolver_crossed_same_type(@c, @t); t.cnt = 5i64; discard(raw work_s2m_ok_resolver_crossed_same_type(@t)); pass (<-c.tr).cnt + 2i64;
+};
+func:cell_main_s2m_ok_resolver_crossed_same_type = int32() never fails { pass (((raw f_s2m_ok_resolver_crossed_same_type(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) {
+    if ((raw cell_main_xd1c_callee_retypes()) != 67i32) { exit 1i32; }
+    if ((raw cell_main_xd2c_caller_retypes()) != 67i32) { exit 2i32; }
+    if ((raw cell_main_xw5c_wild_field_literal_crossed()) != 67i32) { exit 3i32; }
+    if ((raw cell_main_zx1fc_laundered_out_of_binding_ok()) != 67i32) { exit 4i32; }
+    if ((raw cell_main_zx1ic_laundered_out_of_binding_ok()) != 67i32) { exit 5i32; }
+    if ((raw cell_main_a1c_aggregate_literal_retyped()) != 67i32) { exit 6i32; }
+    if ((raw cell_main_a2c_aggregate_by_second_call()) != 67i32) { exit 7i32; }
+    if ((raw cell_main_a3c_aggregate_made_by_callee()) != 67i32) { exit 8i32; }
+    if ((raw cell_main_c1hc_caller_named_any_held()) != 67i32) { exit 9i32; }
+    if ((raw cell_main_c2c_caller_any_through_call()) != 67i32) { exit 10i32; }
+    if ((raw cell_main_c3c_caller_struct_no_list()) != 67i32) { exit 11i32; }
+    if ((raw cell_main_c4c_caller_to_place_type()) != 67i32) { exit 12i32; }
+    if ((raw cell_main_e1c_callee_named_any()) != 67i32) { exit 13i32; }
+    if ((raw cell_main_e2c_callee_any_through_call()) != 67i32) { exit 14i32; }
+    if ((raw cell_main_e4c_callee_to_place_type()) != 67i32) { exit 15i32; }
+    if ((raw cell_main_g1c_target_retyped()) != 67i32) { exit 16i32; }
+    if ((raw cell_main_k1c_caller_cast_in_second_call()) != 67i32) { exit 17i32; }
+    if ((raw cell_main_k2c_second_call_over_retyping_callee()) != 67i32) { exit 18i32; }
+    if ((raw cell_main_k3c_callee_carries_retyped()) != 67i32) { exit 19i32; }
+    if ((raw cell_main_p1c_param_caller_retypes()) != 67i32) { exit 20i32; }
+    if ((raw cell_main_p2c_param_callee_retypes()) != 67i32) { exit 21i32; }
+    if ((raw cell_main_v1c_temporary_retyped()) != 67i32) { exit 22i32; }
+    if ((raw cell_main_w1c_caller_wild_field_via_any()) != 67i32) { exit 23i32; }
+    if ((raw cell_main_w4c_caller_wild_field_assigned()) != 67i32) { exit 24i32; }
+    if ((raw cell_main_cc2c_flag_two_levels_plain_first()) != 67i32) { exit 25i32; }
+    if ((raw cell_main_cc12c_flag_12_levels_after_caller()) != 67i32) { exit 26i32; }
+    if ((raw cell_main_cy1c_flag_call_cycle()) != 67i32) { exit 27i32; }
+    if ((raw cell_main_jn1c_two_crossings_int32_first()) != 67i32) { exit 28i32; }
+    if ((raw cell_main_jn2c_two_crossings_int64_first()) != 67i32) { exit 29i32; }
+    if ((raw cell_main_ab1c_retyped_absorbs_crossing()) != 67i32) { exit 30i32; }
+    if ((raw cell_main_fj1c_flag_retyped_then_plain()) != 67i32) { exit 31i32; }
+    if ((raw cell_main_np1c_wild_struct_slot_crossed()) != 67i32) { exit 32i32; }
+    if ((raw cell_main_cx1_ok_crossing_beside_other_slot()) != 67i32) { exit 33i32; }
+    if ((raw cell_main_s1m_ok_stdout_retyped_view()) != 67i32) { exit 34i32; }
+    if ((raw cell_main_s2m_ok_resolver_crossed_same_type()) != 67i32) { exit 35i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

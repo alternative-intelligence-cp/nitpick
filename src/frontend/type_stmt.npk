@@ -706,7 +706,8 @@ pub func:type_pick_rules = PickRules(ExprTyper->:e, ExprId:selid, int32:selt,
 func:check_arm_control = NIL(ExprTyper->:e, ExprId:selid, int32:start, int32:count) never fails {
     for (int32:i in 0i32...count) {
         StmtNode:arm = raw ast_stmt(e.ast, raw pick_arm_at(e.ast, start, i));
-        drop guard_move_of_binding(e, raw arm_guard(arm), selid, 64i32);
+        e.guard_deep_said = false;
+        drop guard_move_of_binding(e, raw arm_guard(arm), selid, raw AST_DEPTH_MAX());
         drop fall_targets_in(e, raw arm_body(arm), start, count, i, raw AST_DEPTH_MAX());
     }
     pass NIL;
@@ -717,7 +718,13 @@ func:check_arm_control = NIL(ExprTyper->:e, ExprId:selid, int32:start, int32:cou
 // descent is the AST's shape table, as the suspend analysis's guard walk is.
 func:guard_move_of_binding = NIL(ExprTyper->:e, ExprId:id, ExprId:selid, int32:fuel) never fails {
     if (raw expr_is_none(id)) { pass NIL; }
-    if (fuel <= 0i32) { pass NIL; }
+    // PAST THE FUEL IS CLOSED (DEF-430's class; DEF-487's form): a `move` the walk can't reach is a double free it can't
+    // rule out. The fuel is the tree's own bound, so no tree the parser or the expander builds gets here. One report per guard.
+    if (fuel <= 0i32) {
+        if (!e.guard_deep_said) { drop diaglist_push(e.diags, raw diag_error(raw TYPE_GUARD_MOVES_BINDING(), "this `where` guard nests deeper than the move check follows (DEF-430), so a `move` of the arm's own binding in it can't be ruled out -- decide in the guard with less nesting, and move in the body", (raw ast_expr(e.ast, id)).span)); }
+        e.guard_deep_said = true;
+        pass NIL;
+    }
     ExprNode:n = raw ast_expr(e.ast, id);
     if (n.kind == ExprKind.ExprMoveExpr) {
         int32:root = raw root_sym_through_views(e, raw expr_operand(n), 64i32);
@@ -801,8 +808,12 @@ func:guard_move_window = NIL(ExprTyper->:e, int32:start, int32:count, ExprId:sel
 // A statement inside a guard's value-`pick`: its expressions, then its children.
 func:stmt_moves_binding = NIL(ExprTyper->:e, StmtId:sid, ExprId:selid, int32:fuel) never fails {
     if (raw stmt_is_none(sid)) { pass NIL; }
-    if (fuel <= 0i32) { pass NIL; }
     StmtNode:s = raw ast_stmt(e.ast, sid);
+    if (fuel <= 0i32) {
+        if (!e.guard_deep_said) { drop diaglist_push(e.diags, raw diag_error(raw TYPE_GUARD_MOVES_BINDING(), "this statement in a `where` guard nests deeper than the move check follows (DEF-430), so a `move` of the arm's own binding in it can't be ruled out -- decide in the guard with less nesting, and move in the body", s.span)); }
+        e.guard_deep_said = true;
+        pass NIL;
+    }
     if (s.kind == StmtKind.StmtPickStmt) {
         drop guard_move_of_binding(e, raw pick_selector(s), selid, fuel - 1i32);
         int32:narms = raw pick_arm_count(s);
@@ -2792,10 +2803,16 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
 
     e.ptr_ok = target.index;   // `x.ptr = v` is TYPE-079's, below, one report (D-240)
     int32:want = raw type_of_expr(e, target);
-    if (!(raw require_place(e, target, s.span))) { pass NIL; }
+    // A TARGET PAST THE PLACE WALKS' REACH WAS REFUSED WHERE IT WAS TYPED (D-240; DEF-430's class, landing 177d2b4): a target
+    // whose `place_root` walk runs out is 64 or more storage steps deep, so `type_of_expr` refused it (TYPE-024) or typed it 0
+    // under an earlier report. The checks of the target's place below would read it again -- `require_place` as a second
+    // TYPE-024 of the same place, the `pure` check's walk, which runs out there, as a store into the caller's memory -- so
+    // they're skipped, and the value is still typed. A target that typed is asked as before.
+    bool:target_too_deep = (want == 0i32) && ((raw place_root(e.ast, target, raw BORROW_FUEL())).exhausted);
+    if ((!target_too_deep) && (!(raw require_place(e, target, s.span)))) { pass NIL; }
     // A WRITE INTO A VIEW OR A FROZEN SELECTOR (D-266, 1.5.2h): the compound
     // spelling routes through here too.
-    if (raw refuse_write_path(e, target, "assignment", s.span)) { pass NIL; }
+    if ((!target_too_deep) && (raw refuse_write_path(e, target, "assignment", s.span))) { pass NIL; }
     // A WRITE TO A `sealed` FIELD FROM OUTSIDE ITS MODULE, OR TO A CONTAINER'S
     // HEADER (D-313, TYPE-079) -- the compound spelling included. Asked only of
     // a target that typed: a `hidden` field in the path was reported at its
@@ -2807,7 +2824,7 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
     // through a pointer, a borrow, a slice, a handle — anything rooted
     // outside this frame — is the effect the caller can see. Asked after the
     // target is typed, so its parts' types are recorded.
-    if (e.fn_pure) {
+    if (e.fn_pure && (!target_too_deep)) {
         if (!(raw place_is_local(e, target, 64i32))) {
             discard(raw te_error(e, raw TYPE_PURE_RULES(),
                 "a `pure` body stores only into its own locals (D-221): this target reaches memory the caller can see — through a pointer, a borrow, a slice or a handle",

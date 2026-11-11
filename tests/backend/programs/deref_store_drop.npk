@@ -127,8 +127,11 @@ func:case_generic = int32() never fails {
 //    binding, a `#ptr_add` result, an `=>! wild` cast -- no drop at the store.
 //    A bogus header is planted first (ptr 4096, cap 7): a drop would free it
 //    and trap the run.
-func:plant = NIL(wild int8->:m) never fails {
-    wild int64->:w = m =>! wild int64->;
+//    DEF-639 (landing 177d2b4, row 7, Tue 2026-11-10): `plant` takes the cast as its argument. Its own
+//    `wild int64->:w = m =>! wild int64->;`, held across the store through `#ptr_add<int64>(w, 2i64)`, is
+//    refused by the retyped pointer's coarse view (DEF-585's), though nothing grows: it is `p639a` of
+//    `tests/analysis/rejection/retyped_pointer_freeze.npk`, and the cast comes back here when DEF-639 is lifted.
+func:plant = NIL(wild int64->:w) never fails {
     <-w = 4096i64;
     wild int64->:c = #ptr_add<int64>(w, 2i64);
     <-c = 7i64;
@@ -137,15 +140,15 @@ func:plant = NIL(wild int8->:m) never fails {
 func:case_wild = int32() never fails {
     wild int8->:m = alloc(#size_of<string>());
     defer { dalloc(m); }
-    drop plant(m);
+    drop plant(m =>! wild int64->);
     wild string->:ws = m =>! wild string->;
     (<-ws) = raw mk();                       // over the bogus header: no drop
     string:s1 = move(<-ws);
-    drop plant(m);
+    drop plant(m =>! wild int64->);
     wild string->:e = #ptr_add<string>(ws, 0i64);
     (<-e) = raw sn();                        // through `#ptr_add`: no drop
     string:s2 = move(<-e);
-    drop plant(m);
+    drop plant(m =>! wild int64->);
     (<-(m =>! wild string->)) = raw nw();    // through the cast itself: no drop
     string:s3 = move(<-ws);
     if ((raw obs_s(s1)) != 21i32) { pass 12i32; }

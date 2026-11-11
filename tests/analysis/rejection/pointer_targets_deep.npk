@@ -1,0 +1,112 @@
+// expect-error: NITPICK-BORROW-007
+// expect-error-at: 31:437
+// expect-error: NITPICK-BORROW-007
+// expect-error-at: 66:966
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 87:923
+// expect-error: NITPICK-BORROW-007
+// expect-error-at: 88:399
+// expect-error: NITPICK-BORROW-007
+// expect-error-at: 91:511
+// expect-error: NITPICK-BORROW-007
+// expect-error-at: 92:399
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 92:465
+mod:pointer_targets_deep;
+// A POINTER'S TARGETS PAST THE WALKS' REACH ARE REFUSED (DEF-430's own walks, landing 177d2b4). `pointer_targets_of` resolves a pointer through
+// the pointers below it, one fuel each (8), and `targets_held` reads what a holder holds, holder by holder (its own 16, counting the pointer
+// locals below a pointer level and then the holders). Each answered "nothing more" at its end, so a write through the pointer freed a string
+// under a by-value copy that read it after: `pt_chain_9` (9 pointers), `th_nest_17` (17 holders), `th_mix_10_8` (10 holders of 2 fields under
+// 8 pointers: 7 pointer locals and 10 holders), `wn_9` (a view of `s` taken through 9 pointers, `s` written by its own name), each 83 and 97
+// under the freed-heap detector on 000c645; `ln_9` (a spawn lent `s`'s arena through 9 pointers, `s` assigned over) was accepted there, where 8
+// is BORROW-016. Each end refuses now, BORROW-007, at the place its caller is checking: the write through the pointer (`pt_chain_9`,
+// `th_nest_17`), the write by name (`wn_9`), the spawn's pointer (`ln_9`). Where the caller refuses that place itself, its report is the one
+// (`th_mix_10_8`: BORROW-015 at the write, D-240). `sl_9` has two mistakes on one line, and two reports: the end's, and BORROW-015 at the write
+// of `t`, which doesn't hold it. The controls one under each end are `pointer_targets_deep_ok.npk`.
+error:E5;
+func:mk = string() never fails { pass string_concat("ab", "cde"); };
+func:midv = int64(string:v, string->:q) never fails { <-q = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(v)[0i64] => int64) - 90i64; };
+struct:F1_pt_chain_9 = { string->:f0; };
+func:from1_pt_chain_9 = string->(F1_pt_chain_9->:x) never fails { pass x.f0; };
+func:cell_main_pt_chain_9 = int32() never fails { string:s = raw mk(); string:t = raw mk(); F1_pt_chain_9:x1 = F1_pt_chain_9{ f0: @s }; string->:p1 = raw from1_pt_chain_9(@x1); string->->:p2 = @p1; string->->->:p3 = @p2; string->->->->:p4 = @p3; string->->->->->:p5 = @p4; string->->->->->->:p6 = @p5; string->->->->->->->:p7 = @p6; string->->->->->->->->:p8 = @p7; string->->->->->->->->->:p9 = @p8; fixed uint8[]:v = string_bytes(s); <-(<-(<-(<-(<-(<-(<-(<-(<-p9)))))))) = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (((v[0i64] => int64) - 90i64 + 60i64) =>! int32); };
+struct:F1_th_nest_17 = { string->:f0; };
+func:from1_th_nest_17 = string->(F1_th_nest_17->:x) never fails { pass x.f0; };
+struct:F2_th_nest_17 = { F1_th_nest_17->:f0; };
+func:from2_th_nest_17 = string->(F2_th_nest_17->:x) never fails { pass raw from1_th_nest_17(x.f0); };
+struct:F3_th_nest_17 = { F2_th_nest_17->:f0; };
+func:from3_th_nest_17 = string->(F3_th_nest_17->:x) never fails { pass raw from2_th_nest_17(x.f0); };
+struct:F4_th_nest_17 = { F3_th_nest_17->:f0; };
+func:from4_th_nest_17 = string->(F4_th_nest_17->:x) never fails { pass raw from3_th_nest_17(x.f0); };
+struct:F5_th_nest_17 = { F4_th_nest_17->:f0; };
+func:from5_th_nest_17 = string->(F5_th_nest_17->:x) never fails { pass raw from4_th_nest_17(x.f0); };
+struct:F6_th_nest_17 = { F5_th_nest_17->:f0; };
+func:from6_th_nest_17 = string->(F6_th_nest_17->:x) never fails { pass raw from5_th_nest_17(x.f0); };
+struct:F7_th_nest_17 = { F6_th_nest_17->:f0; };
+func:from7_th_nest_17 = string->(F7_th_nest_17->:x) never fails { pass raw from6_th_nest_17(x.f0); };
+struct:F8_th_nest_17 = { F7_th_nest_17->:f0; };
+func:from8_th_nest_17 = string->(F8_th_nest_17->:x) never fails { pass raw from7_th_nest_17(x.f0); };
+struct:F9_th_nest_17 = { F8_th_nest_17->:f0; };
+func:from9_th_nest_17 = string->(F9_th_nest_17->:x) never fails { pass raw from8_th_nest_17(x.f0); };
+struct:F10_th_nest_17 = { F9_th_nest_17->:f0; };
+func:from10_th_nest_17 = string->(F10_th_nest_17->:x) never fails { pass raw from9_th_nest_17(x.f0); };
+struct:F11_th_nest_17 = { F10_th_nest_17->:f0; };
+func:from11_th_nest_17 = string->(F11_th_nest_17->:x) never fails { pass raw from10_th_nest_17(x.f0); };
+struct:F12_th_nest_17 = { F11_th_nest_17->:f0; };
+func:from12_th_nest_17 = string->(F12_th_nest_17->:x) never fails { pass raw from11_th_nest_17(x.f0); };
+struct:F13_th_nest_17 = { F12_th_nest_17->:f0; };
+func:from13_th_nest_17 = string->(F13_th_nest_17->:x) never fails { pass raw from12_th_nest_17(x.f0); };
+struct:F14_th_nest_17 = { F13_th_nest_17->:f0; };
+func:from14_th_nest_17 = string->(F14_th_nest_17->:x) never fails { pass raw from13_th_nest_17(x.f0); };
+struct:F15_th_nest_17 = { F14_th_nest_17->:f0; };
+func:from15_th_nest_17 = string->(F15_th_nest_17->:x) never fails { pass raw from14_th_nest_17(x.f0); };
+struct:F16_th_nest_17 = { F15_th_nest_17->:f0; };
+func:from16_th_nest_17 = string->(F16_th_nest_17->:x) never fails { pass raw from15_th_nest_17(x.f0); };
+struct:F17_th_nest_17 = { F16_th_nest_17->:f0; };
+func:from17_th_nest_17 = string->(F17_th_nest_17->:x) never fails { pass raw from16_th_nest_17(x.f0); };
+func:cell_main_th_nest_17 = int32() never fails { string:s = raw mk(); string:t = raw mk(); F1_th_nest_17:x1 = F1_th_nest_17{ f0: @s }; F2_th_nest_17:x2 = F2_th_nest_17{ f0: @x1 }; F3_th_nest_17:x3 = F3_th_nest_17{ f0: @x2 }; F4_th_nest_17:x4 = F4_th_nest_17{ f0: @x3 }; F5_th_nest_17:x5 = F5_th_nest_17{ f0: @x4 }; F6_th_nest_17:x6 = F6_th_nest_17{ f0: @x5 }; F7_th_nest_17:x7 = F7_th_nest_17{ f0: @x6 }; F8_th_nest_17:x8 = F8_th_nest_17{ f0: @x7 }; F9_th_nest_17:x9 = F9_th_nest_17{ f0: @x8 }; F10_th_nest_17:x10 = F10_th_nest_17{ f0: @x9 }; F11_th_nest_17:x11 = F11_th_nest_17{ f0: @x10 }; F12_th_nest_17:x12 = F12_th_nest_17{ f0: @x11 }; F13_th_nest_17:x13 = F13_th_nest_17{ f0: @x12 }; F14_th_nest_17:x14 = F14_th_nest_17{ f0: @x13 }; F15_th_nest_17:x15 = F15_th_nest_17{ f0: @x14 }; F16_th_nest_17:x16 = F16_th_nest_17{ f0: @x15 }; F17_th_nest_17:x17 = F17_th_nest_17{ f0: @x16 }; string->:p1 = raw from17_th_nest_17(@x17); fixed uint8[]:v = string_bytes(s); <-p1 = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (((v[0i64] => int64) - 90i64 + 60i64) =>! int32); };
+struct:F1_th_mix_10_8 = { string->:f0; string->:f1; };
+func:from1_th_mix_10_8 = string->(F1_th_mix_10_8->:x) never fails { pass x.f0; };
+struct:F2_th_mix_10_8 = { F1_th_mix_10_8->:f0; F1_th_mix_10_8->:f1; };
+func:from2_th_mix_10_8 = string->(F2_th_mix_10_8->:x) never fails { pass raw from1_th_mix_10_8(x.f0); };
+struct:F3_th_mix_10_8 = { F2_th_mix_10_8->:f0; F2_th_mix_10_8->:f1; };
+func:from3_th_mix_10_8 = string->(F3_th_mix_10_8->:x) never fails { pass raw from2_th_mix_10_8(x.f0); };
+struct:F4_th_mix_10_8 = { F3_th_mix_10_8->:f0; F3_th_mix_10_8->:f1; };
+func:from4_th_mix_10_8 = string->(F4_th_mix_10_8->:x) never fails { pass raw from3_th_mix_10_8(x.f0); };
+struct:F5_th_mix_10_8 = { F4_th_mix_10_8->:f0; F4_th_mix_10_8->:f1; };
+func:from5_th_mix_10_8 = string->(F5_th_mix_10_8->:x) never fails { pass raw from4_th_mix_10_8(x.f0); };
+struct:F6_th_mix_10_8 = { F5_th_mix_10_8->:f0; F5_th_mix_10_8->:f1; };
+func:from6_th_mix_10_8 = string->(F6_th_mix_10_8->:x) never fails { pass raw from5_th_mix_10_8(x.f0); };
+struct:F7_th_mix_10_8 = { F6_th_mix_10_8->:f0; F6_th_mix_10_8->:f1; };
+func:from7_th_mix_10_8 = string->(F7_th_mix_10_8->:x) never fails { pass raw from6_th_mix_10_8(x.f0); };
+struct:F8_th_mix_10_8 = { F7_th_mix_10_8->:f0; F7_th_mix_10_8->:f1; };
+func:from8_th_mix_10_8 = string->(F8_th_mix_10_8->:x) never fails { pass raw from7_th_mix_10_8(x.f0); };
+struct:F9_th_mix_10_8 = { F8_th_mix_10_8->:f0; F8_th_mix_10_8->:f1; };
+func:from9_th_mix_10_8 = string->(F9_th_mix_10_8->:x) never fails { pass raw from8_th_mix_10_8(x.f0); };
+struct:F10_th_mix_10_8 = { F9_th_mix_10_8->:f0; F9_th_mix_10_8->:f1; };
+func:from10_th_mix_10_8 = string->(F10_th_mix_10_8->:x) never fails { pass raw from9_th_mix_10_8(x.f0); };
+func:cell_main_th_mix_10_8 = int32() never fails { string:s = raw mk(); string:t = raw mk(); F1_th_mix_10_8:x1 = F1_th_mix_10_8{ f0: @s, f1: @s }; F2_th_mix_10_8:x2 = F2_th_mix_10_8{ f0: @x1, f1: @x1 }; F3_th_mix_10_8:x3 = F3_th_mix_10_8{ f0: @x2, f1: @x2 }; F4_th_mix_10_8:x4 = F4_th_mix_10_8{ f0: @x3, f1: @x3 }; F5_th_mix_10_8:x5 = F5_th_mix_10_8{ f0: @x4, f1: @x4 }; F6_th_mix_10_8:x6 = F6_th_mix_10_8{ f0: @x5, f1: @x5 }; F7_th_mix_10_8:x7 = F7_th_mix_10_8{ f0: @x6, f1: @x6 }; F8_th_mix_10_8:x8 = F8_th_mix_10_8{ f0: @x7, f1: @x7 }; F9_th_mix_10_8:x9 = F9_th_mix_10_8{ f0: @x8, f1: @x8 }; F10_th_mix_10_8:x10 = F10_th_mix_10_8{ f0: @x9, f1: @x9 }; string->:p1 = raw from10_th_mix_10_8(@x10); string->->:p2 = @p1; string->->->:p3 = @p2; string->->->->:p4 = @p3; string->->->->->:p5 = @p4; string->->->->->->:p6 = @p5; string->->->->->->->:p7 = @p6; string->->->->->->->->:p8 = @p7; fixed uint8[]:v = string_bytes(s); <-(<-(<-(<-(<-(<-(<-(<-p8))))))) = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (((v[0i64] => int64) - 90i64 + 60i64) =>! int32); };
+func:cell_main_wn_9 = int32() never fails { string:s = raw mk(); string:t = raw mk(); string->:p1 = @s; string->->:p2 = @p1; string->->->:p3 = @p2; string->->->->:p4 = @p3; string->->->->->:p5 = @p4; string->->->->->->:p6 = @p5; string->->->->->->->:p7 = @p6; string->->->->->->->->:p8 = @p7; string->->->->->->->->->:p9 = @p8; fixed uint8[]:v = string_bytes(<-(<-(<-(<-(<-(<-(<-(<-(<-p9))))))))); s = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (((v[0i64] => int64) - 90i64 + 60i64) =>! int32); };
+fixed Duration:J2_ln_9 = Duration{ ns: 2000000000i64 };
+thread async func:filler_ln_9 = NIL(shared_arena<int64>->:a) joins J2_ln_9 { await sleep(raw duration_ms(10i64)) ?| NIL; Handle<int64>:h = a.alloc(424242i64); int64:g = a.get(h) ?! E5; if (g != 424242i64) { fail E5; } pass NIL; };
+async func:cell_main_ln_9 = NIL() { shared_arena<int64>:s = shared_arena_make(8i64); shared_arena<int64>:t = shared_arena_make(8i64); shared_arena<int64>->:q1 = @s; shared_arena<int64>->->:q2 = @q1; shared_arena<int64>->->->:q3 = @q2; shared_arena<int64>->->->->:q4 = @q3; shared_arena<int64>->->->->->:q5 = @q4; shared_arena<int64>->->->->->->:q6 = @q5; shared_arena<int64>->->->->->->->:q7 = @q6; shared_arena<int64>->->->->->->->->:q8 = @q7; shared_arena<int64>->->->->->->->->->:q9 = @q8; drop filler_ln_9(<-(<-(<-(<-(<-(<-(<-(<-q9)))))))); s = shared_arena_make(4i64); pass NIL; };
+func:cell_main_sl_9 = int32() never fails { string:s = raw mk(); string:t = raw mk(); string->:p1 = @s; string->->:p2 = @p1; string->->->:p3 = @p2; string->->->->:p4 = @p3; string->->->->->:p5 = @p4; string->->->->->->:p6 = @p5; string->->->->->->->:p7 = @p6; string->->->->->->->->:p8 = @p7; string->->->->->->->->->:p9 = @p8; fixed uint8[]:v = string_bytes(s); fixed uint8[]:w = string_bytes(t); <-(<-(<-(<-(<-(<-(<-(<-(<-p9)))))))) = string_concat("wx", "yz"); t = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (((v[0i64] => int64) + (w[0i64] => int64) - 194i64 + 67i64) =>! int32); };
+func:main = int32(cstring[]:_~argv) { exit (raw cell_main_pt_chain_9()); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (StaleHandle)      { exit 88i32; },
+        (DeadlineExceeded) { exit 89i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

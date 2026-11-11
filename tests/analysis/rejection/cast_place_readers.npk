@@ -1,49 +1,51 @@
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 112:7
+// expect-error-at: 116:7
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 120:21
+// expect-error-at: 124:21
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 130:6
+// expect-error-at: 134:6
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 140:6
+// expect-error-at: 144:6
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 151:8
+// expect-error-at: 155:8
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 161:13
+// expect-error-at: 165:13
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 173:8
+// expect-error-at: 177:8
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 185:10
+// expect-error-at: 189:10
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 194:13
+// expect-error-at: 198:13
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 203:13
+// expect-error-at: 207:13
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 212:23
+// expect-error-at: 216:23
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 222:15
+// expect-error-at: 226:15
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 230:19
+// expect-error-at: 234:19
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 240:14
+// expect-error-at: 244:14
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 250:15
+// expect-error-at: 254:15
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 262:15
+// expect-error-at: 266:15
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 272:16
+// expect-error-at: 276:16
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 282:15
+// expect-error-at: 286:15
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 291:16
+// expect-error-at: 295:16
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 302:15
+// expect-error-at: 306:15
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 311:16
+// expect-error-at: 315:16
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 322:19
+// expect-error-at: 326:19
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 334:13
+// expect-error-at: 326:44
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 338:13
 //
 // DEF-343 (landing 167): THE ALIAS PASS'S PLACE READERS STEP A CAST AS THEY STEP A DEREFERENCE. Until
 // this landing `path_steps`, `is_place_chain`, `place_root_symbol`, `root_ident_is_pointer`,
@@ -84,6 +86,8 @@
 //   on landing 166 by D-286's plain-address party and SILENT on build 14 -- the regression management's
 //   review of build 14 (fb0f3d3) caught; it is the one site landing 166's checker reports on this file.
 mod:cast_place_readers;
+// DEF-641 (LOW, landing 177d2b4, row 7, Tue 2026-11-10): face 22's write through the retyped pointer the getter hands back is reported
+// twice with one code and one sentence, at `@h` (the getter's pass-through write) and at the member it writes; one mistake twice, kept.
 
 struct:H2 = { string:o; int64:k; };
 func:wr = NIL(H2->:p) never fails { p.o = string_concat("x", "y"); pass NIL; };

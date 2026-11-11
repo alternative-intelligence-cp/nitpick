@@ -371,59 +371,6 @@ func:f = int64(int64:n) never fails {
 };
 pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
 };
-mod:r_cpick_keep_impl_i_ok = {
-error:E5_r_cpick_keep_impl_i_ok;
-struct:H = { List<int64>:l; string:s; int64:k; };
-struct:PE = { int64->:p; int64:z; };
-struct:VW = { fixed uint8[]:b; int64:z; };
-enum:EH = { A(H); Z; };
-func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
-func:mks = string() never fails { pass string_concat("A", ""); };
-func:mkh = H() never fails { pass H{ l: raw mk(), s: raw mks(), k: 1i64 }; };
-func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
-impl:H = {
-    func:mp = int64->(H->:self) never fails { pass @((<-self).l[0i64]); };
-    func:ms = H->(H->:self) never fails { pass self; };
-    func:mk = int64->(H->:self) never fails { pass @((<-self).k); };
-    func:msl = int64[](H->:self) never fails { pass (<-self).l[0i64...1i64]; };
-    func:mv = fixed uint8[](H->:self) never fails { pass string_bytes((<-self).s); };
-    func:keep = NIL(H->:self, H->->:o) never fails { <-o = self; pass NIL; };
-    func:keepp = NIL(H->:self, int64->->:o) never fails { <-o = raw fp(self); pass NIL; };
-};
-func:fmp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
-func:fms = H->(H->:q) never fails { pass q; };
-func:fmk = int64->(H->:q) never fails { pass @((<-q).k); };
-func:fmsl = int64[](H->:q) never fails { pass (<-q).l[0i64...1i64]; };
-func:fmv = fixed uint8[](H->:q) never fails { pass string_bytes((<-q).s); };
-func:fkeep = NIL(H->:q, H->->:o) never fails { <-o = q; pass NIL; };
-func:fkeepp = NIL(H->:q, int64->->:o) never fails { <-o = raw fp(q); pass NIL; };
-impl:PE = {
-    func:mp = int64->(PE->:self) never fails { pass self.p; };
-    func:mk = int64->(PE->:self) never fails { pass @((<-self).z); };
-    func:keep = NIL(PE->:self, PE->->:o) never fails { <-o = self; pass NIL; };
-    func:keepp = NIL(PE->:self, int64->->:o) never fails { <-o = self.p; pass NIL; };
-};
-func:gmp = int64->(PE->:q) never fails { pass (<-q).p; };
-func:gmk = int64->(PE->:q) never fails { pass @((<-q).z); };
-func:gkeep = NIL(PE->:q, PE->->:o) never fails { <-o = q; pass NIL; };
-func:gkeepp = NIL(PE->:q, int64->->:o) never fails { <-o = (<-q).p; pass NIL; };
-func:g = int64(H->:hp, int64:n) never fails {
-    int64:one = 1i64;
-    int64[1]:arr0 = [1i64];
-    string:s0 = raw mks();
-    PE:pe0 = PE{ p: @one, z: 1i64 };
-    int64:r = 0i64;
-    EH:eh = EH.A(raw mkh());
-    pick (move(eh)) { (EH.A(b)) { H->:e = hp; drop b.keep(@e); r = (<-e).l[0i64]; }, (EH.Z) { } }
-    pass r + 6i64;
-};
-func:f = int64(int64:n) never fails {
-    H:h0 = raw mkh();
-    pass raw g(@h0, n);
-};
-pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
-};
 mod:r_cpick_keepp_impl_i_ok = {
 error:E5_r_cpick_keepp_impl_i_ok;
 struct:H = { List<int64>:l; string:s; int64:k; };
@@ -1514,7 +1461,6 @@ func:main = int32(cstring[]:argv) {
     if ((raw r_call_ms_impl_i_ok.cell_main(argv.len)) != 67i32) { exit 104i32; }
     if ((raw r_call_msl_impl_i_ok.cell_main(argv.len)) != 67i32) { exit 105i32; }
     if ((raw r_call_mvs_impl_i_ok.cell_main(argv.len)) != 67i32) { exit 106i32; }
-    if ((raw r_cpick_keep_impl_i_ok.cell_main(argv.len)) != 67i32) { exit 107i32; }
     if ((raw r_cpick_keepp_impl_i_ok.cell_main(argv.len)) != 67i32) { exit 108i32; }
     if ((raw r_cpick_mk_impl_i_ok.cell_main(argv.len)) != 67i32) { exit 109i32; }
     if ((raw r_cpick_mp_impl_i_ok.cell_main(argv.len)) != 67i32) { exit 110i32; }
@@ -1562,7 +1508,6 @@ func:failsafe = int32(Error:e) {
         (ptr_receiver_implicit_address_ok.E5_r_call_ms_impl_i_ok) { exit 75i32; },
         (ptr_receiver_implicit_address_ok.E5_r_call_msl_impl_i_ok) { exit 75i32; },
         (ptr_receiver_implicit_address_ok.E5_r_call_mvs_impl_i_ok) { exit 75i32; },
-        (ptr_receiver_implicit_address_ok.E5_r_cpick_keep_impl_i_ok) { exit 75i32; },
         (ptr_receiver_implicit_address_ok.E5_r_cpick_keepp_impl_i_ok) { exit 75i32; },
         (ptr_receiver_implicit_address_ok.E5_r_cpick_mk_impl_i_ok) { exit 75i32; },
         (ptr_receiver_implicit_address_ok.E5_r_cpick_mp_impl_i_ok) { exit 75i32; },
@@ -1589,3 +1534,4 @@ func:failsafe = int32(Error:e) {
     }
     exit 9i32;
 };
+// 2026-11-10 (landing 177d2b4, row 5): `r_cpick_keep_impl_i_ok` moved to `ptr_receiver_implicit_address.npk`: its subject, a store through a consuming `pick` binding's receiver, is refused by DEF-633's (b), the closed refusal (BORROW-009; management_31, 01:07). Its exit number isn't reused.

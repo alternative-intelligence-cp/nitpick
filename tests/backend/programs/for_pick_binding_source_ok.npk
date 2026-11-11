@@ -573,22 +573,6 @@ func:g = int32[](int32[][]:ps) { for (int32[]:q in ps) { return Result{value: q}
 pub func:f = int32() { List<int32>:l = raw mkl(); int32[][1]:arr = [l[0i64...1i64]]; int32[]:r = g(arr[0i64...1i64]) ?! E5_v_o7_result_literal_ok; int32:got = r[0i64]; pass got; };
 pub func:cell_main = int32() { int32:v = f() ?! E5_v_o7_result_literal_ok; pass v; };
 };
-mod:v_o8_move_binding_written_ok = {
-error:E5_v_o8_move_binding_written_ok;
-func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
-enum:EV = { A(int32[]); Z; };
-struct:SV = { int32[]:s; };
-struct:HS = { int32[][]:ps; };
-struct:HE = { EV:e; };
-enum:EE = { W(EV); Z; };
-enum:EO = { A(string, int32[]); Z; };
-func:idss = int32[][](int32[][]:a) never fails { pass a; };
-func:ide = EV(EV:a) never fails { pass a; };
-func:ids = int32[](int32[]:a) never fails { pass a; };
-func:nov = int32[]() never fails { #unreachable(); };
-func:g = int32[](move EO:e, int32[]:o) never fails { pick (move(e)) { (EO.A(t, s)) { s = o; pass s; }, (EO.Z) { #unreachable(); } } #unreachable(); };
-pub func:f = int32() never fails { List<int32>:l = raw mkl(); EO:e = EO.A("t", l[0i64...1i64]); int32[]:r = raw g(move(e), l[0i64...1i64]); int32:got = r[0i64]; pass got; };
-};
 mod:v_n1_variadic_ok = {
 error:E5_v_n1_variadic_ok;
 func:mkl = List<int32>() never fails { List<int32>:n = raw list_init::<int32>(4i64); drop list_push(@n, 7i32); pass move(n); };
@@ -877,7 +861,6 @@ async func:main = int32(cstring[]:_~argv) {
     if ((raw v_o5_range_of_binding_ok.f()) != 7i32) { exit 132i32; }
     if ((raw v_o6_pick_range_of_binding_ok.f()) != 7i32) { exit 133i32; }
     { int32:v = v_o7_result_literal_ok.cell_main() ?! Bad; if (v != 7i32) { exit 134i32; } }
-    if ((raw v_o8_move_binding_written_ok.f()) != 7i32) { exit 135i32; }
     if ((raw v_n1_variadic_ok.f()) != 7i32) { exit 136i32; }
     if ((raw v_n1b_variadic_for_ok.f()) != 7i32) { exit 137i32; }
     if ((raw v_n1c_variadic_second_ok.f()) != 7i32) { exit 138i32; }
@@ -925,3 +908,4 @@ func:failsafe = int32(Error:e) {
     }
     exit 9i32;
 };
+// 2026-11-10 (landing 177d2b4, row 5): `v_o8_move_binding_written_ok` moved to `for_pick_binding_source.npk`: its subject, a store into a consuming `pick` binding, is refused there by DEF-633's (b), the closed refusal (BORROW-009; management_31, 01:07). Its exit number, 135, isn't reused.

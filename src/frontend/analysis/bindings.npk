@@ -1874,8 +1874,8 @@ func:assign_expr = NIL(Assign->:x, AssignState:st, ExprId:id, int32:depth) never
                 arenaish = true;
             }
             if (arenaish) {
-                string:mname = raw intern_get(x.interns, n.payload =>! int32);
-                if (raw string_eq(mname, "destroy")) {
+                // Compared, not held: a view of `x.interns` held across the call below, which is handed `x`, is BORROW-015 (D-004 rule A).
+                if (raw string_eq(raw intern_get(x.interns, n.payload =>! int32), "destroy")) {
                     drop invalidate_place(x, st, recv, true);
                 }
             }

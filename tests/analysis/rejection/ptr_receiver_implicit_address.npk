@@ -1,77 +1,81 @@
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 136:36
+// expect-error-at: 140:36
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 187:37
+// expect-error-at: 191:37
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 238:24
+// expect-error-at: 242:24
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 289:24
+// expect-error-at: 293:24
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 340:24
+// expect-error-at: 344:24
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 391:24
+// expect-error-at: 395:24
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 442:24
+// expect-error-at: 446:24
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 494:47
+// expect-error-at: 498:47
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 498:48
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 546:48
+// expect-error-at: 550:48
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 598:35
+// expect-error-at: 602:35
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 650:35
+// expect-error-at: 654:35
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 702:35
+// expect-error-at: 706:35
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 754:35
+// expect-error-at: 758:35
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 806:35
+// expect-error-at: 810:35
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 857:66
+// expect-error-at: 861:66
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 908:67
+// expect-error-at: 912:67
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 959:54
+// expect-error-at: 963:54
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1010:54
+// expect-error-at: 1014:54
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1061:54
+// expect-error-at: 1065:54
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1112:54
+// expect-error-at: 1116:54
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1163:54
+// expect-error-at: 1167:54
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1201:42
+// expect-error-at: 1205:42
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1241:30
+// expect-error-at: 1245:30
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1280:42
+// expect-error-at: 1284:42
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1320:41
+// expect-error-at: 1324:41
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1362:51
+// expect-error-at: 1366:51
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1404:30
+// expect-error-at: 1408:30
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1445:30
+// expect-error-at: 1449:30
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1479:25
+// expect-error-at: 1483:25
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1511:25
+// expect-error-at: 1515:25
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1545:31
+// expect-error-at: 1549:31
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1579:44
+// expect-error-at: 1583:44
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1612:34
+// expect-error-at: 1616:34
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1646:47
+// expect-error-at: 1650:47
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1680:43
+// expect-error-at: 1684:43
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1714:29
+// expect-error-at: 1718:29
 // expect-error: NITPICK-BORROW-002
-// expect-error-at: 1748:45
+// expect-error-at: 1752:45
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 1807:60
 mod:ptr_receiver_implicit_address;
 // A POINTER-RECEIVER METHOD'S IMPLICIT `@recv` IS THE `@recv` IT STANDS FOR (DEF-621, DEF-622, landing 177d2b3). `h1.mp()` with `mp = int64->(H->:self)`
 // hands the callee `@h1` exactly as `fmp(@h1)` does, and the explicit spelling has been refused (BORROW-002, D-004 rule 3, DEF-42) wherever its value or its
@@ -1754,3 +1758,59 @@ func:f = int64(int64:n) never fails {
     pass raw g(@h0, n);
 };
 };
+// Re-expected 2026-11-10 (landing 177d2b4, row 5): the store through the consuming `pick` binding's receiver (`b.keep(@e)`) is BORROW-009, DEF-633's (b), the closed refusal (management_31, 01:07).
+// 2026-11-10 (landing 177d2b4, row 5): `r_cpick_keep_impl_i_ok`, moved here from `ptr_receiver_implicit_address_ok.npk`: `b.keep(@e)` stores through the consuming `pick` binding's receiver, BORROW-009, DEF-633's (b) (management_31, 01:07).
+mod:r_cpick_keep_impl_i_ok = {
+error:E5_r_cpick_keep_impl_i_ok;
+struct:H = { List<int64>:l; string:s; int64:k; };
+struct:PE = { int64->:p; int64:z; };
+struct:VW = { fixed uint8[]:b; int64:z; };
+enum:EH = { A(H); Z; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mks = string() never fails { pass string_concat("A", ""); };
+func:mkh = H() never fails { pass H{ l: raw mk(), s: raw mks(), k: 1i64 }; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+impl:H = {
+    func:mp = int64->(H->:self) never fails { pass @((<-self).l[0i64]); };
+    func:ms = H->(H->:self) never fails { pass self; };
+    func:mk = int64->(H->:self) never fails { pass @((<-self).k); };
+    func:msl = int64[](H->:self) never fails { pass (<-self).l[0i64...1i64]; };
+    func:mv = fixed uint8[](H->:self) never fails { pass string_bytes((<-self).s); };
+    func:keep = NIL(H->:self, H->->:o) never fails { <-o = self; pass NIL; };
+    func:keepp = NIL(H->:self, int64->->:o) never fails { <-o = raw fp(self); pass NIL; };
+};
+func:fmp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:fms = H->(H->:q) never fails { pass q; };
+func:fmk = int64->(H->:q) never fails { pass @((<-q).k); };
+func:fmsl = int64[](H->:q) never fails { pass (<-q).l[0i64...1i64]; };
+func:fmv = fixed uint8[](H->:q) never fails { pass string_bytes((<-q).s); };
+func:fkeep = NIL(H->:q, H->->:o) never fails { <-o = q; pass NIL; };
+func:fkeepp = NIL(H->:q, int64->->:o) never fails { <-o = raw fp(q); pass NIL; };
+impl:PE = {
+    func:mp = int64->(PE->:self) never fails { pass self.p; };
+    func:mk = int64->(PE->:self) never fails { pass @((<-self).z); };
+    func:keep = NIL(PE->:self, PE->->:o) never fails { <-o = self; pass NIL; };
+    func:keepp = NIL(PE->:self, int64->->:o) never fails { <-o = self.p; pass NIL; };
+};
+func:gmp = int64->(PE->:q) never fails { pass (<-q).p; };
+func:gmk = int64->(PE->:q) never fails { pass @((<-q).z); };
+func:gkeep = NIL(PE->:q, PE->->:o) never fails { <-o = q; pass NIL; };
+func:gkeepp = NIL(PE->:q, int64->->:o) never fails { <-o = (<-q).p; pass NIL; };
+func:g = int64(H->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64[1]:arr0 = [1i64];
+    string:s0 = raw mks();
+    PE:pe0 = PE{ p: @one, z: 1i64 };
+    int64:r = 0i64;
+    EH:eh = EH.A(raw mkh());
+    pick (move(eh)) { (EH.A(b)) { H->:e = hp; drop b.keep(@e); r = (<-e).l[0i64]; }, (EH.Z) { } }
+    pass r + 6i64;
+};
+func:f = int64(int64:n) never fails {
+    H:h0 = raw mkh();
+    pass raw g(@h0, n);
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+// (the header re-written for the module moved in, 2026-11-10)

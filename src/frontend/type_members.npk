@@ -2787,6 +2787,10 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
             if ((raw type_kind(e.types, rxt)) == (raw TY_POINTER())) { rx_is_ptr = true; }
         }
         if (!rx_is_ptr) {
+            // A RECEIVER TOO DEEP TO READ NEVER GETS HERE (DEF-430's receiver road, landing 177d2b4). Every question below walks the
+            // receiver with a fuel of 64 and answers "nothing to refuse" at its end. A receiver 64 or more storage steps deep is
+            // refused TYPE-024 where `type_of_expr` types it, above, and `recv` 0 returns before this road, so each walk here meets
+            // a receiver of 63 steps or fewer.
             // A `fixed` BINDING HAS NO ADDRESS EITHER (D-287, 1.5.5 step 1):
             // the same implicit address, the same question.
             if (raw place_fixed(e, raw expr_operand(n), 64i32)) {

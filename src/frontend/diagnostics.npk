@@ -183,6 +183,30 @@ pub func:diaglist_rehome = NIL(DiagList->:list, int64:i, Span:at,
     pass NIL;
 };
 
+// ONE MISTAKE, ONE REPORT, WHERE THE LIST IS FINAL (D-240; DEF-430's walks, landing 177d2b4). A report of `code` whose span lies inside an error
+// of another code goes, and the error holding it stays: that one found the conflict at the write or the call, and says what it is. A walk's
+// end reports at the place its caller is checking, before the caller has found the conflict there (it reads the walk's answer first), so the
+// end can't see that report; here both have. A refused program stays refused, since only an error of another code holds one, and that error
+// isn't dropped. Each report is moved down once, as `diaglist_sort` moves; one that goes is dropped with `cur`. `text`: only a report with
+// that message goes ("" any), so one rule's report can go while its code's others stay (DEF-633's (b), landing 177d2b4).
+pub func:diaglist_drop_inside = NIL(DiagList->:list, string:code, string:text) never fails {
+    int64:w = 0i64;
+    for (int64:i in 0i64...list.count) {
+        bool:keep = true;
+        {
+            Diagnostic->:e = (@list.items[i]) =>! Diagnostic->;   // `@`, as in `diaglist_has` (DEF-484); the view ends before the move below
+            for (int64:j in 0i64...list.count) {
+                Diagnostic->:c = (@list.items[j]) =>! Diagnostic->;   // read only below `w` (kept, moved down) or above `i` (not reached yet)
+                if (((j < w) || (j > i)) && (raw string_eq(e.code, code)) && ((text.len == 0i64) || (raw string_eq(e.message, text))) && (c.severity == 2i32) && !(raw string_eq(c.code, e.code)) && (c.span.file == e.span.file) && (c.span.offset <= e.span.offset) && ((c.span.offset + c.span.len) >= (e.span.offset + e.span.len))) { keep = false; }
+            }
+        }
+        Diagnostic:cur = move(list.items[i]);
+        if (keep) { list.items[w] = move(cur); w = w + 1i64; }
+    }
+    list.count = w;
+    pass NIL;
+};
+
 pub func:diaglist_has_errors = bool(DiagList->:list) never fails {
     int64:i = 0i64;
     while (i < list.count) decreases list.count - i {

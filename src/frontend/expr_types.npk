@@ -515,6 +515,30 @@ pub func:place_root = PlaceRoot(Ast->:ast, ExprId:id, int32:fuel) never fails {
     pass PlaceRoot{ id: cur, exhausted: true };
 };
 
+// HOW MANY STORAGE STEPS RUN DOWN FROM THIS NODE, counted to `fuel` (DEF-430's class, fail-closed): a field (`.f`), an
+// index's base (`[i]` and `[lo...hi]`) and a dereference (`<-`); anything else ends the count. `place_root` steps fields and
+// indexes alone, and `place_fixed`, `place_limited`, `place_lent_owning`, `place_is_view` and `refuse_frozen`'s root walk
+// step what it steps or less, so a node that counts under `BORROW_FUEL` here runs none of them out. `type_of_expr` refuses a
+// node whose count reaches the fuel. A `?.`, a cast or an unwrap is no storage step: counting them refused right value
+// chains (`chain_deep_nav`, `chain_deep_rest`). On the `for` and lending-`pick` roads, whose walk (`is_place_chain`) also
+// steps casts, a cast-padded place meets BORROW-009 first; no other road was measured so.
+pub func:place_path_steps = int32(Ast->:ast, ExprId:id, int32:fuel) never fails {
+    ExprId:cur = id;
+    int32:k = 0i32;
+    while (k < fuel) decreases fuel - k {
+        if (raw expr_is_none(cur)) { pass k; }
+        ExprNode:n = raw ast_expr(ast, cur);
+        if (n.kind == ExprKind.ExprIndexExpr) {
+            cur = raw expr_lhs(n);
+        } else {
+            if (!((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprDerefExpr))) { pass k; }
+            cur = raw expr_operand(n);
+        }
+        k = k + 1i32;
+    }
+    pass k;
+};
+
 // Does this expression EVALUATE TO a borrow, from its shape alone?
 //
 // EXHAUSTION ANSWERS `true`, WHICH IS THE SAFE DIRECTION AND IS NOT WHAT THIS USED

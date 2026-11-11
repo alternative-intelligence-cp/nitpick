@@ -5748,7 +5748,7 @@ func:collect_assigned = NIL(Encoder->:e, StmtId:sid, List<int32>->:out, List<int
     List<int32>:xs = raw list_init::<int32>(4i64);
     drop stmt_expr_ids(e.ast, s, @xs);
     for (int64:xi in 0i64...xs.count) {
-        drop collect_assigned_expr(e, ExprId{ index: xs[xi] }, out, roots, 64i32);
+        drop collect_assigned_expr(e, ExprId{ index: xs[xi] }, out, roots, raw AST_DEPTH_MAX());
     }
     if (s.kind == StmtKind.StmtAssignStmt) {
         ExprNode:t = raw ast_expr(e.ast, raw stmt_target(s));
@@ -5799,7 +5799,12 @@ func:collect_assigned = NIL(Encoder->:e, StmtId:sid, List<int32>->:out, List<int
 // `move` out of a place vacates it (S-26): its root goes to `roots` (D-317).
 func:collect_assigned_expr = NIL(Encoder->:e, ExprId:id, List<int32>->:out, List<int32>->:roots, int32:fuel) never fails {
     if (raw expr_is_none(id)) { pass NIL; }
-    if (fuel <= 0i32) { pass NIL; }
+    // PAST THE FUEL IS CLOSED (DEF-430's class): a write the walk can't reach is havoced all the same -- every name the
+    // encoder binds, whole and as an aggregate. The fuel is the tree's own bound, so no parsed tree gets here.
+    if (fuel <= 0i32) {
+        for (int64:fi in 0i64...e.binds.count) { drop list_push(out, e.binds[fi].name); drop list_push(roots, e.binds[fi].name); }
+        pass NIL;
+    }
     ExprNode:n = raw ast_expr(e.ast, id);
     if (n.kind == ExprKind.ExprPickExpr) {
         for (int32:a in 0i32...n.c) {
