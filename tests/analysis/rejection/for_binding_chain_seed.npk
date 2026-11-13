@@ -1,0 +1,541 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 85:27
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 115:56
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 145:56
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 175:56
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 205:58
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 235:56
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 265:56
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 295:58
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 325:60
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 355:60
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 385:60
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 415:60
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 445:58
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 468:129
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 491:110
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 514:81
+mod:for_binding_chain_seed;
+// 2026-11-12 (landing 177d2b5, row 2: `fn1`'s seed). A `for` BINDING OVER AN ARRAY OR A SLICE HOLDS WHAT ITS SOURCE'S ELEMENTS HOLD, before the body stores anything
+// into it. Its own chain is written at the `for` with the refs a read of it by its name carries, so the store's walk finds where a pointer the binding was never
+// assigned points, and the growth after the store is refused (BORROW-015). One cell a face, its names suffixed with the cell's: each is accepted by row 1's commit
+// (9a0c382), by main (169d6d4) and by 177d2b3's main, and reads freed memory there (236 at -O0 and -O2, 97 under the detector). Each face's local twin
+// (`SQN:b = sa[0i64];`) is refused by every build, and each face's right control is in `for_binding_chain_seed_ok.npk`.
+// DEF-604's `fn1` (nitpick-compiler_99's cell of 177d2b4's row 9; `for (SQ:b in sa) { (<-(b.q)).lp = hq; }`, the member holds a caller's pointer from the array).
+// TEN CELLS OF ITS FRAME (nitpick-compiler_106's probes; management_38's ruling "Row 2's item 1 is ruled" of Thu 11-12 01:19 EST, item 2, for the first nine, and its
+// "Addendum to row 2's item 1" of Thu 11-12 01:38 EST, item 1, for the tenth): `fa_arr` (a local array), `fa_fld` (an array in a struct's field), `fa_ptr` (pointer
+// elements), `fa_nest` (two loops), `fa_met` (the store by a pointer-receiver method), `fa_two` (two elements, the store under an `if`), `fa_late` and `fa_latep`
+// (the source is given its pointer AFTER the `for`, inside an outer loop), `fa_late3` and `fa_slpp0` (both below).
+// THE ROW'S PRICES, FIVE RIGHT PROGRAMS REFUSED. Each runs 67 on every build before this row, and each is refused at parity with its local twin, which every build
+// refuses. For the first two the reason is that the analysis doesn't count a loop's trips, and each one's control without the growth is accepted (`fa_late2c_ok`,
+// `fa_slppc_ok`). For the other three "the reasons are flow, path and D-286's claim, and none is a trip count" (the 01:58 ruling, item 5, named below).
+// `fa_late2` (2026-11-12; the 01:19 ruling, item 3): `fa_late3` with TWO trips of its outer loop, where `fa_late3` has three. Two trips never store behind `mp0`;
+// the third trip is the fault `fa_late3`.
+// `fa_slpp` (2026-11-12; the 01:38 addendum, item 1): a local array `[mp0]` whose one element a first `for`, over a slice parameter, overwrites (`la[0i64] = p;`)
+// before a second `for` over the array stores through it. With one element in the slice the store never lands behind `mp0`; with the slice EMPTY it does, and that
+// is the fault `fa_slpp0`.
+// THREE MORE OF `fa_late2`'s CLASS (Ailp-team_110's cells, from its fresh attack on row 2, as it wrote them). Each holds `fn1`'s `for` with its store, and no fault.
+// Their local twins are refused by every build, so the `_ok` file holds no cell of theirs.
+// `rp_repoint_ok` (2026-11-12; management_38's ruling "Row 2's fresh attack is ruled" of Thu 11-12 01:58 EST, item 5; flow): the member is written back
+// (`m0.lp = h0p;`) after the callee's store and before the view is taken.
+// `rp_other_ok` (2026-11-12; the 01:58 ruling, item 5; path): the array has two elements, and the store runs only for the one with `z == 2i64`, which holds the
+// other pointer, so `m0` is never written.
+// `rp_before_ok` (2026-11-12; the 01:58 ruling, item 5; D-286's claim): the growth runs BEFORE the view is taken.
+error:E5;
+struct:K_fn1 = { int64:k; };
+struct:H_fn1 = { List<int64>:l; int64:k; K_fn1:kk; };
+func:mk_fn1 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_fn1 = H_fn1() never fails { pass H_fn1{ l: raw mk_fn1(), k: 2i64, kk: K_fn1{ k: 3i64 } }; };
+func:growh_fn1 = int64(H_fn1->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_fn1 = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_fn1 = int64->(H_fn1->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_fn1 = H_fn1->(H_fn1->:q) never fails { pass q; };
+func:getl_fn1 = List<int64>->(H_fn1->:w) never fails { pass @w.l; };
+func:setb_fn1 = NIL(SQ_fn1->:d, HPO_fn1->:v) never fails { (<-d).q = v; pass NIL; };
+struct:HPO_fn1 = { H_fn1->:lp; List<int64>:own; };
+struct:SQ_fn1 = { HPO_fn1->:q; int64:z; };
+enum:ESQ_fn1 = { A(SQ_fn1); Z; };
+func:g2_fn1 = int64(HPO_fn1->:mp0, H_fn1->:hq, H_fn1->:hz, H_fn1->:h0p) never fails {
+    int64->:e = raw fp_fn1(hz);
+    HPO_fn1:mloc = HPO_fn1{ lp: h0p, own: raw mk_fn1() };
+    SQ_fn1[1]:sa = [SQ_fn1{ q: mp0, z: 1i64 }];
+    for (SQ_fn1:b in sa) { (<-(b.q)).lp = hq; }
+    pass 0i64;
+};
+func:g_fn1 = int64(H_fn1->:h0p, H_fn1->:hq, H_fn1->:hz, int64:n) never fails {
+    HPO_fn1:m0 = HPO_fn1{ lp: h0p, own: raw mk_fn1() };
+    int64->:e = raw fp_fn1(hz);
+    discard(raw g2_fn1(@m0, hq, hz, h0p));
+    e = raw fp_fn1(m0.lp);
+    discard(raw growh_fn1(hq));
+    pass (<-e) + 6i64;
+};
+func:f_fn1 = int64(int64:n) never fails {
+    H_fn1:hz = raw mkh_fn1(); H_fn1:h0 = raw mkh_fn1(); H_fn1:h2 = raw mkh_fn1();
+    pass raw g_fn1(@h0, @h2, @hz, n);
+};
+func:cell_main_fn1 = int32() never fails { pass (((raw f_fn1(1i64)) + 60i64) =>! int32); };
+struct:K_fa_arr = { int64:k; };
+struct:H_fa_arr = { List<int64>:l; int64:k; K_fa_arr:kk; };
+func:mk_fa_arr = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_fa_arr = H_fa_arr() never fails { pass H_fa_arr{ l: raw mk_fa_arr(), k: 2i64, kk: K_fa_arr{ k: 3i64 } }; };
+func:growh_fa_arr = int64(H_fa_arr->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_fa_arr = int64->(H_fa_arr->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPZ_fa_arr = { H_fa_arr->:lp; int64:z; };
+struct:SQN_fa_arr = { HPZ_fa_arr->:q; int64:z; };
+struct:SQZ_fa_arr = { HPZ_fa_arr->:q; HPZ_fa_arr:h; };
+struct:SQ2_fa_arr = { SQZ_fa_arr:iv; int64:z; };
+struct:SQA_fa_arr = { SQN_fa_arr[1]:arr; int64:z; };
+struct:SQS_fa_arr = { SQN_fa_arr[]:sl; int64:z; };
+func:setlp_fa_arr = int64(HPZ_fa_arr->:m, H_fa_arr->:v) never fails { (<-m).lp = v; pass 0i64; };
+impl:HPZ_fa_arr = { func:setl = int64(HPZ_fa_arr->:self, H_fa_arr->:v) never fails { self.lp = v; pass 0i64; }; };
+func:g2_fa_arr = int64(HPZ_fa_arr->:mp0, H_fa_arr->:hq) never fails {
+    SQN_fa_arr[1]:sa = [SQN_fa_arr{ q: mp0, z: 1i64 }]; for (SQN_fa_arr:b in sa) { (<-(b.q)).lp = hq; }
+    pass 0i64;
+};
+func:g_fa_arr = int64(H_fa_arr->:h0p, H_fa_arr->:hq, H_fa_arr->:hz, H_fa_arr->:hy, int64:n) never fails {
+    HPZ_fa_arr:m0 = HPZ_fa_arr{ lp: h0p, z: 1i64 };
+    int64->:e = raw fp_fa_arr(hz);
+    discard(raw g2_fa_arr(@m0, hq));
+    e = raw fp_fa_arr(m0.lp); discard(raw growh_fa_arr(hq));
+    pass (<-e) + 6i64;
+};
+func:f_fa_arr = int64(int64:n) never fails {
+    H_fa_arr:hz = raw mkh_fa_arr(); H_fa_arr:h0 = raw mkh_fa_arr(); H_fa_arr:h2 = raw mkh_fa_arr(); H_fa_arr:hy = raw mkh_fa_arr();
+    pass raw g_fa_arr(@h0, @h2, @hz, @hy, n);
+};
+func:cell_main_fa_arr = int32() never fails { pass (((raw f_fa_arr(1i64)) + 60i64) =>! int32); };
+struct:K_fa_fld = { int64:k; };
+struct:H_fa_fld = { List<int64>:l; int64:k; K_fa_fld:kk; };
+func:mk_fa_fld = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_fa_fld = H_fa_fld() never fails { pass H_fa_fld{ l: raw mk_fa_fld(), k: 2i64, kk: K_fa_fld{ k: 3i64 } }; };
+func:growh_fa_fld = int64(H_fa_fld->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_fa_fld = int64->(H_fa_fld->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPZ_fa_fld = { H_fa_fld->:lp; int64:z; };
+struct:SQN_fa_fld = { HPZ_fa_fld->:q; int64:z; };
+struct:SQZ_fa_fld = { HPZ_fa_fld->:q; HPZ_fa_fld:h; };
+struct:SQ2_fa_fld = { SQZ_fa_fld:iv; int64:z; };
+struct:SQA_fa_fld = { SQN_fa_fld[1]:arr; int64:z; };
+struct:SQS_fa_fld = { SQN_fa_fld[]:sl; int64:z; };
+func:setlp_fa_fld = int64(HPZ_fa_fld->:m, H_fa_fld->:v) never fails { (<-m).lp = v; pass 0i64; };
+impl:HPZ_fa_fld = { func:setl = int64(HPZ_fa_fld->:self, H_fa_fld->:v) never fails { self.lp = v; pass 0i64; }; };
+func:g2_fa_fld = int64(HPZ_fa_fld->:mp0, H_fa_fld->:hq) never fails {
+    SQA_fa_fld:w = SQA_fa_fld{ arr: [SQN_fa_fld{ q: mp0, z: 1i64 }], z: 1i64 }; for (SQN_fa_fld:b in w.arr) { (<-(b.q)).lp = hq; }
+    pass 0i64;
+};
+func:g_fa_fld = int64(H_fa_fld->:h0p, H_fa_fld->:hq, H_fa_fld->:hz, H_fa_fld->:hy, int64:n) never fails {
+    HPZ_fa_fld:m0 = HPZ_fa_fld{ lp: h0p, z: 1i64 };
+    int64->:e = raw fp_fa_fld(hz);
+    discard(raw g2_fa_fld(@m0, hq));
+    e = raw fp_fa_fld(m0.lp); discard(raw growh_fa_fld(hq));
+    pass (<-e) + 6i64;
+};
+func:f_fa_fld = int64(int64:n) never fails {
+    H_fa_fld:hz = raw mkh_fa_fld(); H_fa_fld:h0 = raw mkh_fa_fld(); H_fa_fld:h2 = raw mkh_fa_fld(); H_fa_fld:hy = raw mkh_fa_fld();
+    pass raw g_fa_fld(@h0, @h2, @hz, @hy, n);
+};
+func:cell_main_fa_fld = int32() never fails { pass (((raw f_fa_fld(1i64)) + 60i64) =>! int32); };
+struct:K_fa_ptr = { int64:k; };
+struct:H_fa_ptr = { List<int64>:l; int64:k; K_fa_ptr:kk; };
+func:mk_fa_ptr = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_fa_ptr = H_fa_ptr() never fails { pass H_fa_ptr{ l: raw mk_fa_ptr(), k: 2i64, kk: K_fa_ptr{ k: 3i64 } }; };
+func:growh_fa_ptr = int64(H_fa_ptr->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_fa_ptr = int64->(H_fa_ptr->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPZ_fa_ptr = { H_fa_ptr->:lp; int64:z; };
+struct:SQN_fa_ptr = { HPZ_fa_ptr->:q; int64:z; };
+struct:SQZ_fa_ptr = { HPZ_fa_ptr->:q; HPZ_fa_ptr:h; };
+struct:SQ2_fa_ptr = { SQZ_fa_ptr:iv; int64:z; };
+struct:SQA_fa_ptr = { SQN_fa_ptr[1]:arr; int64:z; };
+struct:SQS_fa_ptr = { SQN_fa_ptr[]:sl; int64:z; };
+func:setlp_fa_ptr = int64(HPZ_fa_ptr->:m, H_fa_ptr->:v) never fails { (<-m).lp = v; pass 0i64; };
+impl:HPZ_fa_ptr = { func:setl = int64(HPZ_fa_ptr->:self, H_fa_ptr->:v) never fails { self.lp = v; pass 0i64; }; };
+func:g2_fa_ptr = int64(HPZ_fa_ptr->:mp0, H_fa_ptr->:hq) never fails {
+    HPZ_fa_ptr->[1]:pa = [mp0]; for (HPZ_fa_ptr->:p in pa) { (<-p).lp = hq; }
+    pass 0i64;
+};
+func:g_fa_ptr = int64(H_fa_ptr->:h0p, H_fa_ptr->:hq, H_fa_ptr->:hz, H_fa_ptr->:hy, int64:n) never fails {
+    HPZ_fa_ptr:m0 = HPZ_fa_ptr{ lp: h0p, z: 1i64 };
+    int64->:e = raw fp_fa_ptr(hz);
+    discard(raw g2_fa_ptr(@m0, hq));
+    e = raw fp_fa_ptr(m0.lp); discard(raw growh_fa_ptr(hq));
+    pass (<-e) + 6i64;
+};
+func:f_fa_ptr = int64(int64:n) never fails {
+    H_fa_ptr:hz = raw mkh_fa_ptr(); H_fa_ptr:h0 = raw mkh_fa_ptr(); H_fa_ptr:h2 = raw mkh_fa_ptr(); H_fa_ptr:hy = raw mkh_fa_ptr();
+    pass raw g_fa_ptr(@h0, @h2, @hz, @hy, n);
+};
+func:cell_main_fa_ptr = int32() never fails { pass (((raw f_fa_ptr(1i64)) + 60i64) =>! int32); };
+struct:K_fa_nest = { int64:k; };
+struct:H_fa_nest = { List<int64>:l; int64:k; K_fa_nest:kk; };
+func:mk_fa_nest = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_fa_nest = H_fa_nest() never fails { pass H_fa_nest{ l: raw mk_fa_nest(), k: 2i64, kk: K_fa_nest{ k: 3i64 } }; };
+func:growh_fa_nest = int64(H_fa_nest->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_fa_nest = int64->(H_fa_nest->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPZ_fa_nest = { H_fa_nest->:lp; int64:z; };
+struct:SQN_fa_nest = { HPZ_fa_nest->:q; int64:z; };
+struct:SQZ_fa_nest = { HPZ_fa_nest->:q; HPZ_fa_nest:h; };
+struct:SQ2_fa_nest = { SQZ_fa_nest:iv; int64:z; };
+struct:SQA_fa_nest = { SQN_fa_nest[1]:arr; int64:z; };
+struct:SQS_fa_nest = { SQN_fa_nest[]:sl; int64:z; };
+func:setlp_fa_nest = int64(HPZ_fa_nest->:m, H_fa_nest->:v) never fails { (<-m).lp = v; pass 0i64; };
+impl:HPZ_fa_nest = { func:setl = int64(HPZ_fa_nest->:self, H_fa_nest->:v) never fails { self.lp = v; pass 0i64; }; };
+func:g2_fa_nest = int64(HPZ_fa_nest->:mp0, H_fa_nest->:hq) never fails {
+    SQA_fa_nest[1]:oa = [SQA_fa_nest{ arr: [SQN_fa_nest{ q: mp0, z: 1i64 }], z: 1i64 }]; for (SQA_fa_nest:o in oa) { for (SQN_fa_nest:b in o.arr) { (<-(b.q)).lp = hq; } }
+    pass 0i64;
+};
+func:g_fa_nest = int64(H_fa_nest->:h0p, H_fa_nest->:hq, H_fa_nest->:hz, H_fa_nest->:hy, int64:n) never fails {
+    HPZ_fa_nest:m0 = HPZ_fa_nest{ lp: h0p, z: 1i64 };
+    int64->:e = raw fp_fa_nest(hz);
+    discard(raw g2_fa_nest(@m0, hq));
+    e = raw fp_fa_nest(m0.lp); discard(raw growh_fa_nest(hq));
+    pass (<-e) + 6i64;
+};
+func:f_fa_nest = int64(int64:n) never fails {
+    H_fa_nest:hz = raw mkh_fa_nest(); H_fa_nest:h0 = raw mkh_fa_nest(); H_fa_nest:h2 = raw mkh_fa_nest(); H_fa_nest:hy = raw mkh_fa_nest();
+    pass raw g_fa_nest(@h0, @h2, @hz, @hy, n);
+};
+func:cell_main_fa_nest = int32() never fails { pass (((raw f_fa_nest(1i64)) + 60i64) =>! int32); };
+struct:K_fa_met = { int64:k; };
+struct:H_fa_met = { List<int64>:l; int64:k; K_fa_met:kk; };
+func:mk_fa_met = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_fa_met = H_fa_met() never fails { pass H_fa_met{ l: raw mk_fa_met(), k: 2i64, kk: K_fa_met{ k: 3i64 } }; };
+func:growh_fa_met = int64(H_fa_met->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_fa_met = int64->(H_fa_met->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPZ_fa_met = { H_fa_met->:lp; int64:z; };
+struct:SQN_fa_met = { HPZ_fa_met->:q; int64:z; };
+struct:SQZ_fa_met = { HPZ_fa_met->:q; HPZ_fa_met:h; };
+struct:SQ2_fa_met = { SQZ_fa_met:iv; int64:z; };
+struct:SQA_fa_met = { SQN_fa_met[1]:arr; int64:z; };
+struct:SQS_fa_met = { SQN_fa_met[]:sl; int64:z; };
+func:setlp_fa_met = int64(HPZ_fa_met->:m, H_fa_met->:v) never fails { (<-m).lp = v; pass 0i64; };
+impl:HPZ_fa_met = { func:setl = int64(HPZ_fa_met->:self, H_fa_met->:v) never fails { self.lp = v; pass 0i64; }; };
+func:g2_fa_met = int64(HPZ_fa_met->:mp0, H_fa_met->:hq) never fails {
+    SQN_fa_met[1]:sa = [SQN_fa_met{ q: mp0, z: 1i64 }]; for (SQN_fa_met:b in sa) { discard(raw (<-(b.q)).setl(hq)); }
+    pass 0i64;
+};
+func:g_fa_met = int64(H_fa_met->:h0p, H_fa_met->:hq, H_fa_met->:hz, H_fa_met->:hy, int64:n) never fails {
+    HPZ_fa_met:m0 = HPZ_fa_met{ lp: h0p, z: 1i64 };
+    int64->:e = raw fp_fa_met(hz);
+    discard(raw g2_fa_met(@m0, hq));
+    e = raw fp_fa_met(m0.lp); discard(raw growh_fa_met(hq));
+    pass (<-e) + 6i64;
+};
+func:f_fa_met = int64(int64:n) never fails {
+    H_fa_met:hz = raw mkh_fa_met(); H_fa_met:h0 = raw mkh_fa_met(); H_fa_met:h2 = raw mkh_fa_met(); H_fa_met:hy = raw mkh_fa_met();
+    pass raw g_fa_met(@h0, @h2, @hz, @hy, n);
+};
+func:cell_main_fa_met = int32() never fails { pass (((raw f_fa_met(1i64)) + 60i64) =>! int32); };
+struct:K_fa_two = { int64:k; };
+struct:H_fa_two = { List<int64>:l; int64:k; K_fa_two:kk; };
+func:mk_fa_two = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_fa_two = H_fa_two() never fails { pass H_fa_two{ l: raw mk_fa_two(), k: 2i64, kk: K_fa_two{ k: 3i64 } }; };
+func:growh_fa_two = int64(H_fa_two->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_fa_two = int64->(H_fa_two->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPZ_fa_two = { H_fa_two->:lp; int64:z; };
+struct:SQN_fa_two = { HPZ_fa_two->:q; int64:z; };
+struct:SQZ_fa_two = { HPZ_fa_two->:q; HPZ_fa_two:h; };
+struct:SQ2_fa_two = { SQZ_fa_two:iv; int64:z; };
+struct:SQA_fa_two = { SQN_fa_two[1]:arr; int64:z; };
+struct:SQS_fa_two = { SQN_fa_two[]:sl; int64:z; };
+func:setlp_fa_two = int64(HPZ_fa_two->:m, H_fa_two->:v) never fails { (<-m).lp = v; pass 0i64; };
+impl:HPZ_fa_two = { func:setl = int64(HPZ_fa_two->:self, H_fa_two->:v) never fails { self.lp = v; pass 0i64; }; };
+func:g2_fa_two = int64(HPZ_fa_two->:mp0, HPZ_fa_two->:mp1, H_fa_two->:hq) never fails {
+    SQN_fa_two[2]:sa = [SQN_fa_two{ q: mp1, z: 1i64 }, SQN_fa_two{ q: mp0, z: 2i64 }]; for (SQN_fa_two:b in sa) { if (b.z == 2i64) { (<-(b.q)).lp = hq; } }
+    pass 0i64;
+};
+func:g_fa_two = int64(H_fa_two->:h0p, H_fa_two->:hq, H_fa_two->:hz, H_fa_two->:hy, int64:n) never fails {
+    HPZ_fa_two:m0 = HPZ_fa_two{ lp: h0p, z: 1i64 };
+    int64->:e = raw fp_fa_two(hz);
+    HPZ_fa_two:m9 = HPZ_fa_two{ lp: hy, z: 1i64 }; discard(raw g2_fa_two(@m0, @m9, hq));
+    e = raw fp_fa_two(m0.lp); discard(raw growh_fa_two(hq));
+    pass (<-e) + 6i64;
+};
+func:f_fa_two = int64(int64:n) never fails {
+    H_fa_two:hz = raw mkh_fa_two(); H_fa_two:h0 = raw mkh_fa_two(); H_fa_two:h2 = raw mkh_fa_two(); H_fa_two:hy = raw mkh_fa_two();
+    pass raw g_fa_two(@h0, @h2, @hz, @hy, n);
+};
+func:cell_main_fa_two = int32() never fails { pass (((raw f_fa_two(1i64)) + 60i64) =>! int32); };
+struct:K_fa_late = { int64:k; };
+struct:H_fa_late = { List<int64>:l; int64:k; K_fa_late:kk; };
+func:mk_fa_late = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_fa_late = H_fa_late() never fails { pass H_fa_late{ l: raw mk_fa_late(), k: 2i64, kk: K_fa_late{ k: 3i64 } }; };
+func:growh_fa_late = int64(H_fa_late->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_fa_late = int64->(H_fa_late->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPZ_fa_late = { H_fa_late->:lp; int64:z; };
+struct:SQN_fa_late = { HPZ_fa_late->:q; int64:z; };
+struct:SQZ_fa_late = { HPZ_fa_late->:q; HPZ_fa_late:h; };
+struct:SQ2_fa_late = { SQZ_fa_late:iv; int64:z; };
+struct:SQA_fa_late = { SQN_fa_late[1]:arr; int64:z; };
+struct:SQS_fa_late = { SQN_fa_late[]:sl; int64:z; };
+func:setlp_fa_late = int64(HPZ_fa_late->:m, H_fa_late->:v) never fails { (<-m).lp = v; pass 0i64; };
+impl:HPZ_fa_late = { func:setl = int64(HPZ_fa_late->:self, H_fa_late->:v) never fails { self.lp = v; pass 0i64; }; };
+func:g2_fa_late = int64(HPZ_fa_late->:mp0, HPZ_fa_late->:mp1, H_fa_late->:hq) never fails {
+    SQN_fa_late[1]:sa = [SQN_fa_late{ q: mp1, z: 1i64 }]; loop(0i64, 2i64, 1i64) { for (SQN_fa_late:b in sa) { (<-(b.q)).lp = hq; } sa[0i64].q = mp0; }
+    pass 0i64;
+};
+func:g_fa_late = int64(H_fa_late->:h0p, H_fa_late->:hq, H_fa_late->:hz, H_fa_late->:hy, int64:n) never fails {
+    HPZ_fa_late:m0 = HPZ_fa_late{ lp: h0p, z: 1i64 };
+    int64->:e = raw fp_fa_late(hz);
+    HPZ_fa_late:m9 = HPZ_fa_late{ lp: hy, z: 1i64 }; discard(raw g2_fa_late(@m0, @m9, hq));
+    e = raw fp_fa_late(m0.lp); discard(raw growh_fa_late(hq));
+    pass (<-e) + 6i64;
+};
+func:f_fa_late = int64(int64:n) never fails {
+    H_fa_late:hz = raw mkh_fa_late(); H_fa_late:h0 = raw mkh_fa_late(); H_fa_late:h2 = raw mkh_fa_late(); H_fa_late:hy = raw mkh_fa_late();
+    pass raw g_fa_late(@h0, @h2, @hz, @hy, n);
+};
+func:cell_main_fa_late = int32() never fails { pass (((raw f_fa_late(1i64)) + 60i64) =>! int32); };
+struct:K_fa_latep = { int64:k; };
+struct:H_fa_latep = { List<int64>:l; int64:k; K_fa_latep:kk; };
+func:mk_fa_latep = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_fa_latep = H_fa_latep() never fails { pass H_fa_latep{ l: raw mk_fa_latep(), k: 2i64, kk: K_fa_latep{ k: 3i64 } }; };
+func:growh_fa_latep = int64(H_fa_latep->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_fa_latep = int64->(H_fa_latep->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPZ_fa_latep = { H_fa_latep->:lp; int64:z; };
+struct:SQN_fa_latep = { HPZ_fa_latep->:q; int64:z; };
+struct:SQZ_fa_latep = { HPZ_fa_latep->:q; HPZ_fa_latep:h; };
+struct:SQ2_fa_latep = { SQZ_fa_latep:iv; int64:z; };
+struct:SQA_fa_latep = { SQN_fa_latep[1]:arr; int64:z; };
+struct:SQS_fa_latep = { SQN_fa_latep[]:sl; int64:z; };
+func:setlp_fa_latep = int64(HPZ_fa_latep->:m, H_fa_latep->:v) never fails { (<-m).lp = v; pass 0i64; };
+impl:HPZ_fa_latep = { func:setl = int64(HPZ_fa_latep->:self, H_fa_latep->:v) never fails { self.lp = v; pass 0i64; }; };
+func:g2_fa_latep = int64(HPZ_fa_latep->:mp0, HPZ_fa_latep->:mp1, H_fa_latep->:hq) never fails {
+    HPZ_fa_latep->[1]:pa = [mp1]; loop(0i64, 2i64, 1i64) { for (HPZ_fa_latep->:p in pa) { (<-p).lp = hq; } pa[0i64] = mp0; }
+    pass 0i64;
+};
+func:g_fa_latep = int64(H_fa_latep->:h0p, H_fa_latep->:hq, H_fa_latep->:hz, H_fa_latep->:hy, int64:n) never fails {
+    HPZ_fa_latep:m0 = HPZ_fa_latep{ lp: h0p, z: 1i64 };
+    int64->:e = raw fp_fa_latep(hz);
+    HPZ_fa_latep:m9 = HPZ_fa_latep{ lp: hy, z: 1i64 }; discard(raw g2_fa_latep(@m0, @m9, hq));
+    e = raw fp_fa_latep(m0.lp); discard(raw growh_fa_latep(hq));
+    pass (<-e) + 6i64;
+};
+func:f_fa_latep = int64(int64:n) never fails {
+    H_fa_latep:hz = raw mkh_fa_latep(); H_fa_latep:h0 = raw mkh_fa_latep(); H_fa_latep:h2 = raw mkh_fa_latep(); H_fa_latep:hy = raw mkh_fa_latep();
+    pass raw g_fa_latep(@h0, @h2, @hz, @hy, n);
+};
+func:cell_main_fa_latep = int32() never fails { pass (((raw f_fa_latep(1i64)) + 60i64) =>! int32); };
+struct:K_fa_late3 = { int64:k; };
+struct:H_fa_late3 = { List<int64>:l; int64:k; K_fa_late3:kk; };
+func:mk_fa_late3 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_fa_late3 = H_fa_late3() never fails { pass H_fa_late3{ l: raw mk_fa_late3(), k: 2i64, kk: K_fa_late3{ k: 3i64 } }; };
+func:growh_fa_late3 = int64(H_fa_late3->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_fa_late3 = int64->(H_fa_late3->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPZ_fa_late3 = { H_fa_late3->:lp; int64:z; };
+struct:SQN_fa_late3 = { HPZ_fa_late3->:q; int64:z; };
+struct:SQZ_fa_late3 = { HPZ_fa_late3->:q; HPZ_fa_late3:h; };
+struct:SQ2_fa_late3 = { SQZ_fa_late3:iv; int64:z; };
+struct:SQA_fa_late3 = { SQN_fa_late3[1]:arr; int64:z; };
+struct:SQS_fa_late3 = { SQN_fa_late3[]:sl; int64:z; };
+func:setlp_fa_late3 = int64(HPZ_fa_late3->:m, H_fa_late3->:v) never fails { (<-m).lp = v; pass 0i64; };
+impl:HPZ_fa_late3 = { func:setl = int64(HPZ_fa_late3->:self, H_fa_late3->:v) never fails { self.lp = v; pass 0i64; }; };
+func:g2_fa_late3 = int64(HPZ_fa_late3->:mp0, HPZ_fa_late3->:mp1, H_fa_late3->:hq) never fails {
+    SQN_fa_late3[1]:sa = [SQN_fa_late3{ q: mp1, z: 1i64 }]; SQN_fa_late3[1]:sb = [SQN_fa_late3{ q: mp1, z: 1i64 }]; loop(0i64, 3i64, 1i64) { for (SQN_fa_late3:b in sa) { (<-(b.q)).lp = hq; } sa = sb; sb[0i64].q = mp0; }
+    pass 0i64;
+};
+func:g_fa_late3 = int64(H_fa_late3->:h0p, H_fa_late3->:hq, H_fa_late3->:hz, H_fa_late3->:hy, int64:n) never fails {
+    HPZ_fa_late3:m0 = HPZ_fa_late3{ lp: h0p, z: 1i64 };
+    int64->:e = raw fp_fa_late3(hz);
+    HPZ_fa_late3:m9 = HPZ_fa_late3{ lp: hy, z: 1i64 }; discard(raw g2_fa_late3(@m0, @m9, hq));
+    e = raw fp_fa_late3(m0.lp); discard(raw growh_fa_late3(hq));
+    pass (<-e) + 6i64;
+};
+func:f_fa_late3 = int64(int64:n) never fails {
+    H_fa_late3:hz = raw mkh_fa_late3(); H_fa_late3:h0 = raw mkh_fa_late3(); H_fa_late3:h2 = raw mkh_fa_late3(); H_fa_late3:hy = raw mkh_fa_late3();
+    pass raw g_fa_late3(@h0, @h2, @hz, @hy, n);
+};
+func:cell_main_fa_late3 = int32() never fails { pass (((raw f_fa_late3(1i64)) + 60i64) =>! int32); };
+struct:K_fa_late2 = { int64:k; };
+struct:H_fa_late2 = { List<int64>:l; int64:k; K_fa_late2:kk; };
+func:mk_fa_late2 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_fa_late2 = H_fa_late2() never fails { pass H_fa_late2{ l: raw mk_fa_late2(), k: 2i64, kk: K_fa_late2{ k: 3i64 } }; };
+func:growh_fa_late2 = int64(H_fa_late2->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_fa_late2 = int64->(H_fa_late2->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPZ_fa_late2 = { H_fa_late2->:lp; int64:z; };
+struct:SQN_fa_late2 = { HPZ_fa_late2->:q; int64:z; };
+struct:SQZ_fa_late2 = { HPZ_fa_late2->:q; HPZ_fa_late2:h; };
+struct:SQ2_fa_late2 = { SQZ_fa_late2:iv; int64:z; };
+struct:SQA_fa_late2 = { SQN_fa_late2[1]:arr; int64:z; };
+struct:SQS_fa_late2 = { SQN_fa_late2[]:sl; int64:z; };
+func:setlp_fa_late2 = int64(HPZ_fa_late2->:m, H_fa_late2->:v) never fails { (<-m).lp = v; pass 0i64; };
+impl:HPZ_fa_late2 = { func:setl = int64(HPZ_fa_late2->:self, H_fa_late2->:v) never fails { self.lp = v; pass 0i64; }; };
+func:g2_fa_late2 = int64(HPZ_fa_late2->:mp0, HPZ_fa_late2->:mp1, H_fa_late2->:hq) never fails {
+    SQN_fa_late2[1]:sa = [SQN_fa_late2{ q: mp1, z: 1i64 }]; SQN_fa_late2[1]:sb = [SQN_fa_late2{ q: mp1, z: 1i64 }]; loop(0i64, 2i64, 1i64) { for (SQN_fa_late2:b in sa) { (<-(b.q)).lp = hq; } sa = sb; sb[0i64].q = mp0; }
+    pass 0i64;
+};
+func:g_fa_late2 = int64(H_fa_late2->:h0p, H_fa_late2->:hq, H_fa_late2->:hz, H_fa_late2->:hy, int64:n) never fails {
+    HPZ_fa_late2:m0 = HPZ_fa_late2{ lp: h0p, z: 1i64 };
+    int64->:e = raw fp_fa_late2(hz);
+    HPZ_fa_late2:m9 = HPZ_fa_late2{ lp: hy, z: 1i64 }; discard(raw g2_fa_late2(@m0, @m9, hq));
+    e = raw fp_fa_late2(m0.lp); discard(raw growh_fa_late2(hq));
+    pass (<-e) + 6i64;
+};
+func:f_fa_late2 = int64(int64:n) never fails {
+    H_fa_late2:hz = raw mkh_fa_late2(); H_fa_late2:h0 = raw mkh_fa_late2(); H_fa_late2:h2 = raw mkh_fa_late2(); H_fa_late2:hy = raw mkh_fa_late2();
+    pass raw g_fa_late2(@h0, @h2, @hz, @hy, n);
+};
+func:cell_main_fa_late2 = int32() never fails { pass (((raw f_fa_late2(1i64)) + 60i64) =>! int32); };
+struct:K_fa_slpp0 = { int64:k; };
+struct:H_fa_slpp0 = { List<int64>:l; int64:k; K_fa_slpp0:kk; };
+func:mk_fa_slpp0 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_fa_slpp0 = H_fa_slpp0() never fails { pass H_fa_slpp0{ l: raw mk_fa_slpp0(), k: 2i64, kk: K_fa_slpp0{ k: 3i64 } }; };
+func:growh_fa_slpp0 = int64(H_fa_slpp0->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_fa_slpp0 = int64->(H_fa_slpp0->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPZ_fa_slpp0 = { H_fa_slpp0->:lp; int64:z; };
+struct:SQN_fa_slpp0 = { HPZ_fa_slpp0->:q; int64:z; };
+struct:SQZ_fa_slpp0 = { HPZ_fa_slpp0->:q; HPZ_fa_slpp0:h; };
+struct:SQ2_fa_slpp0 = { SQZ_fa_slpp0:iv; int64:z; };
+struct:SQA_fa_slpp0 = { SQN_fa_slpp0[1]:arr; int64:z; };
+struct:SQS_fa_slpp0 = { SQN_fa_slpp0[]:sl; int64:z; };
+func:setlp_fa_slpp0 = int64(HPZ_fa_slpp0->:m, H_fa_slpp0->:v) never fails { (<-m).lp = v; pass 0i64; };
+impl:HPZ_fa_slpp0 = { func:setl = int64(HPZ_fa_slpp0->:self, H_fa_slpp0->:v) never fails { self.lp = v; pass 0i64; }; };
+func:g2_fa_slpp0 = int64(HPZ_fa_slpp0->:mp0, H_fa_slpp0->:hq, HPZ_fa_slpp0->[]:pps) never fails {
+    HPZ_fa_slpp0->[1]:la = [mp0]; for (HPZ_fa_slpp0->:p in pps) { la[0i64] = p; } for (HPZ_fa_slpp0->:r in la) { (<-r).lp = hq; }
+    pass 0i64;
+};
+func:g_fa_slpp0 = int64(H_fa_slpp0->:h0p, H_fa_slpp0->:hq, H_fa_slpp0->:hz, H_fa_slpp0->:hy, int64:n) never fails {
+    HPZ_fa_slpp0:m0 = HPZ_fa_slpp0{ lp: h0p, z: 1i64 };
+    int64->:e = raw fp_fa_slpp0(hz);
+    HPZ_fa_slpp0:m9 = HPZ_fa_slpp0{ lp: hy, z: 1i64 }; HPZ_fa_slpp0->[1]:ca = [@m9]; discard(raw g2_fa_slpp0(@m0, hq, ca[0i64...0i64]));
+    e = raw fp_fa_slpp0(m0.lp); discard(raw growh_fa_slpp0(hq));
+    pass (<-e) + 6i64;
+};
+func:f_fa_slpp0 = int64(int64:n) never fails {
+    H_fa_slpp0:hz = raw mkh_fa_slpp0(); H_fa_slpp0:h0 = raw mkh_fa_slpp0(); H_fa_slpp0:h2 = raw mkh_fa_slpp0(); H_fa_slpp0:hy = raw mkh_fa_slpp0();
+    pass raw g_fa_slpp0(@h0, @h2, @hz, @hy, n);
+};
+func:cell_main_fa_slpp0 = int32() never fails { pass (((raw f_fa_slpp0(1i64)) + 60i64) =>! int32); };
+struct:K_fa_slpp = { int64:k; };
+struct:H_fa_slpp = { List<int64>:l; int64:k; K_fa_slpp:kk; };
+func:mk_fa_slpp = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_fa_slpp = H_fa_slpp() never fails { pass H_fa_slpp{ l: raw mk_fa_slpp(), k: 2i64, kk: K_fa_slpp{ k: 3i64 } }; };
+func:growh_fa_slpp = int64(H_fa_slpp->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_fa_slpp = int64->(H_fa_slpp->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPZ_fa_slpp = { H_fa_slpp->:lp; int64:z; };
+struct:SQN_fa_slpp = { HPZ_fa_slpp->:q; int64:z; };
+struct:SQZ_fa_slpp = { HPZ_fa_slpp->:q; HPZ_fa_slpp:h; };
+struct:SQ2_fa_slpp = { SQZ_fa_slpp:iv; int64:z; };
+struct:SQA_fa_slpp = { SQN_fa_slpp[1]:arr; int64:z; };
+struct:SQS_fa_slpp = { SQN_fa_slpp[]:sl; int64:z; };
+func:setlp_fa_slpp = int64(HPZ_fa_slpp->:m, H_fa_slpp->:v) never fails { (<-m).lp = v; pass 0i64; };
+impl:HPZ_fa_slpp = { func:setl = int64(HPZ_fa_slpp->:self, H_fa_slpp->:v) never fails { self.lp = v; pass 0i64; }; };
+func:g2_fa_slpp = int64(HPZ_fa_slpp->:mp0, H_fa_slpp->:hq, HPZ_fa_slpp->[]:pps) never fails {
+    HPZ_fa_slpp->[1]:la = [mp0]; for (HPZ_fa_slpp->:p in pps) { la[0i64] = p; } for (HPZ_fa_slpp->:r in la) { (<-r).lp = hq; }
+    pass 0i64;
+};
+func:g_fa_slpp = int64(H_fa_slpp->:h0p, H_fa_slpp->:hq, H_fa_slpp->:hz, H_fa_slpp->:hy, int64:n) never fails {
+    HPZ_fa_slpp:m0 = HPZ_fa_slpp{ lp: h0p, z: 1i64 };
+    int64->:e = raw fp_fa_slpp(hz);
+    HPZ_fa_slpp:m9 = HPZ_fa_slpp{ lp: hy, z: 1i64 }; HPZ_fa_slpp->[1]:ca = [@m9]; discard(raw g2_fa_slpp(@m0, hq, ca[0i64...1i64]));
+    e = raw fp_fa_slpp(m0.lp); discard(raw growh_fa_slpp(hq));
+    pass (<-e) + 6i64;
+};
+func:f_fa_slpp = int64(int64:n) never fails {
+    H_fa_slpp:hz = raw mkh_fa_slpp(); H_fa_slpp:h0 = raw mkh_fa_slpp(); H_fa_slpp:h2 = raw mkh_fa_slpp(); H_fa_slpp:hy = raw mkh_fa_slpp();
+    pass raw g_fa_slpp(@h0, @h2, @hz, @hy, n);
+};
+func:cell_main_fa_slpp = int32() never fails { pass (((raw f_fa_slpp(1i64)) + 60i64) =>! int32); };
+struct:K_rp_repoint_ok = { int64:k; };
+struct:H_rp_repoint_ok = { List<int64>:l; int64:k; K_rp_repoint_ok:kk; };
+func:mk_rp_repoint_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_rp_repoint_ok = H_rp_repoint_ok() never fails { pass H_rp_repoint_ok{ l: raw mk_rp_repoint_ok(), k: 2i64, kk: K_rp_repoint_ok{ k: 3i64 } }; };
+func:growh_rp_repoint_ok = int64(H_rp_repoint_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_rp_repoint_ok = int64->(H_rp_repoint_ok->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPZ_rp_repoint_ok = { H_rp_repoint_ok->:lp; int64:z; };
+struct:SQN_rp_repoint_ok = { HPZ_rp_repoint_ok->:q; int64:z; };
+func:g2_rp_repoint_ok = int64(HPZ_rp_repoint_ok->:mp0, HPZ_rp_repoint_ok->:mz, H_rp_repoint_ok->:hq) never fails {
+    SQN_rp_repoint_ok[1]:sa = [SQN_rp_repoint_ok{ q: mp0, z: 1i64 }]; for (SQN_rp_repoint_ok:b in sa) { (<-(b.q)).lp = hq; }
+    pass 0i64;
+};
+func:g_rp_repoint_ok = int64(H_rp_repoint_ok->:h0p, H_rp_repoint_ok->:hq, H_rp_repoint_ok->:hz, int64:n) never fails {
+    HPZ_rp_repoint_ok:m0 = HPZ_rp_repoint_ok{ lp: h0p, z: 1i64 }; HPZ_rp_repoint_ok:mz0 = HPZ_rp_repoint_ok{ lp: h0p, z: 1i64 };
+    int64->:e = raw fp_rp_repoint_ok(hz);
+    discard(raw g2_rp_repoint_ok(@m0, @mz0, hq)); m0.lp = h0p; e = raw fp_rp_repoint_ok(m0.lp); discard(raw growh_rp_repoint_ok(hq));
+    pass (<-e) + 6i64;
+};
+func:f_rp_repoint_ok = int64(int64:n) never fails {
+    H_rp_repoint_ok:hz = raw mkh_rp_repoint_ok(); H_rp_repoint_ok:h0 = raw mkh_rp_repoint_ok(); H_rp_repoint_ok:h2 = raw mkh_rp_repoint_ok();
+    pass raw g_rp_repoint_ok(@h0, @h2, @hz, n);
+};
+func:cell_main_rp_repoint_ok = int32() never fails { pass (((raw f_rp_repoint_ok(1i64)) + 60i64) =>! int32); };
+struct:K_rp_other_ok = { int64:k; };
+struct:H_rp_other_ok = { List<int64>:l; int64:k; K_rp_other_ok:kk; };
+func:mk_rp_other_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_rp_other_ok = H_rp_other_ok() never fails { pass H_rp_other_ok{ l: raw mk_rp_other_ok(), k: 2i64, kk: K_rp_other_ok{ k: 3i64 } }; };
+func:growh_rp_other_ok = int64(H_rp_other_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_rp_other_ok = int64->(H_rp_other_ok->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPZ_rp_other_ok = { H_rp_other_ok->:lp; int64:z; };
+struct:SQN_rp_other_ok = { HPZ_rp_other_ok->:q; int64:z; };
+func:g2_rp_other_ok = int64(HPZ_rp_other_ok->:mp0, HPZ_rp_other_ok->:mz, H_rp_other_ok->:hq) never fails {
+    SQN_rp_other_ok[2]:sa = [SQN_rp_other_ok{ q: mp0, z: 1i64 }, SQN_rp_other_ok{ q: mz, z: 2i64 }]; for (SQN_rp_other_ok:b in sa) { if (b.z == 2i64) { (<-(b.q)).lp = hq; } }
+    pass 0i64;
+};
+func:g_rp_other_ok = int64(H_rp_other_ok->:h0p, H_rp_other_ok->:hq, H_rp_other_ok->:hz, int64:n) never fails {
+    HPZ_rp_other_ok:m0 = HPZ_rp_other_ok{ lp: h0p, z: 1i64 }; HPZ_rp_other_ok:mz0 = HPZ_rp_other_ok{ lp: h0p, z: 1i64 };
+    int64->:e = raw fp_rp_other_ok(hz);
+    discard(raw g2_rp_other_ok(@m0, @mz0, hq)); e = raw fp_rp_other_ok(m0.lp); discard(raw growh_rp_other_ok(hq));
+    pass (<-e) + 6i64;
+};
+func:f_rp_other_ok = int64(int64:n) never fails {
+    H_rp_other_ok:hz = raw mkh_rp_other_ok(); H_rp_other_ok:h0 = raw mkh_rp_other_ok(); H_rp_other_ok:h2 = raw mkh_rp_other_ok();
+    pass raw g_rp_other_ok(@h0, @h2, @hz, n);
+};
+func:cell_main_rp_other_ok = int32() never fails { pass (((raw f_rp_other_ok(1i64)) + 60i64) =>! int32); };
+struct:K_rp_before_ok = { int64:k; };
+struct:H_rp_before_ok = { List<int64>:l; int64:k; K_rp_before_ok:kk; };
+func:mk_rp_before_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_rp_before_ok = H_rp_before_ok() never fails { pass H_rp_before_ok{ l: raw mk_rp_before_ok(), k: 2i64, kk: K_rp_before_ok{ k: 3i64 } }; };
+func:growh_rp_before_ok = int64(H_rp_before_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_rp_before_ok = int64->(H_rp_before_ok->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPZ_rp_before_ok = { H_rp_before_ok->:lp; int64:z; };
+struct:SQN_rp_before_ok = { HPZ_rp_before_ok->:q; int64:z; };
+func:g2_rp_before_ok = int64(HPZ_rp_before_ok->:mp0, HPZ_rp_before_ok->:mz, H_rp_before_ok->:hq) never fails {
+    SQN_rp_before_ok[1]:sa = [SQN_rp_before_ok{ q: mp0, z: 1i64 }]; for (SQN_rp_before_ok:b in sa) { (<-(b.q)).lp = hq; }
+    pass 0i64;
+};
+func:g_rp_before_ok = int64(H_rp_before_ok->:h0p, H_rp_before_ok->:hq, H_rp_before_ok->:hz, int64:n) never fails {
+    HPZ_rp_before_ok:m0 = HPZ_rp_before_ok{ lp: h0p, z: 1i64 }; HPZ_rp_before_ok:mz0 = HPZ_rp_before_ok{ lp: h0p, z: 1i64 };
+    int64->:e = raw fp_rp_before_ok(hz);
+    discard(raw g2_rp_before_ok(@m0, @mz0, hq)); discard(raw growh_rp_before_ok(hq)); e = raw fp_rp_before_ok(m0.lp);
+    pass (<-e) + 6i64;
+};
+func:f_rp_before_ok = int64(int64:n) never fails {
+    H_rp_before_ok:hz = raw mkh_rp_before_ok(); H_rp_before_ok:h0 = raw mkh_rp_before_ok(); H_rp_before_ok:h2 = raw mkh_rp_before_ok();
+    pass raw g_rp_before_ok(@h0, @h2, @hz, n);
+};
+func:cell_main_rp_before_ok = int32() never fails { pass (((raw f_rp_before_ok(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

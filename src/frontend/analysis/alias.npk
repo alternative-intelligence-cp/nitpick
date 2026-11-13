@@ -1962,11 +1962,11 @@ func:peel_ptr_casts = ExprId(Alias->:x, ExprId:e) never fails {
     pass cur;
 };
 
-// WHAT AN ADDRESS HANDED TO A CALL HOLDS (DEF-426), read off the holder's refs when its own type is no target: `get(@box)`, `box` holding `@h`, reaches `h`.
-// ITS END REFUSES, AND IT READS A HOLDER ONCE (DEF-430, landing 177d2b4): past its fuel it answered "nothing more". It shared `pointer_targets_of`'s,
-// less one, so a target 8 holders deep, or fewer under a chain of pointers, went unchecked (`hn_08`, `mg_m1_h8_p8`, `mc_k8`, `h6_nested_9`, 83). Its fuel
-// is its own 16 now: below a pointer level it walks the pointer locals and then the holders, P - 1 + H of them, which is 15 at most inside 8 pointers
-// and 8 holders, so the end refuses at 17. It refuses at `at`, the place `pointer_targets_of`'s caller is checking, and only where the holder has a ref: that is the
+// WHAT AN ADDRESS HANDED TO A CALL HOLDS (DEF-426), read off the holder's refs: `get(@box)`, `box` holding `@h`, reaches `h`. A HOLDER THAT IS A TARGET IS READ TOO (DEF-661, 177d2b5's
+// row 5): it may hold the pointee type and a pointer to other storage of that type (`z_sl`, `z_ar`). ITS END REFUSES, AND IT READS A HOLDER ONCE (DEF-430, landing 177d2b4): past its
+// fuel it answered "nothing more". It shared `pointer_targets_of`'s, less one, so a target 8 holders deep, or fewer under a chain of pointers, went unchecked (`hn_08`, `mg_m1_h8_p8`,
+// `mc_k8`, `h6_nested_9`, 83). Its fuel is its own 16 now: below a pointer level it walks the pointer locals and then the holders, P - 1 + H of them, which is 15 at most inside 8
+// pointers and 8 holders, so the end refuses at 17. It refuses at `at`, the place `pointer_targets_of`'s caller is checking, and only where the holder has a ref: that is the
 // loop's own condition, so a holder with nothing to read loses nothing at the end. It reads a holder once per (holder, the holder it was reached from) in one `pointer_targets_of` call
 // (`seen`): unremembered, it made M^fuel visits under M pointer fields to one holder (`g_m8_h08_p1`, past 120 s). A later visit with the same pair would
 // push into the same `out` with the same skips, and one with more fuel than the first loses nothing: the first read every ref or met the end, which refused.
@@ -1987,7 +1987,7 @@ func:targets_held = NIL(Alias->:x, Span:at, int32:rr, int32:from, int32:pty, int
         ViewRef:vr3 = raw escape_view_ref(x.esc, e3);
         e3 = raw escape_view_ref_next(x.esc, e3);
         if ((vr3.root == 0i32) || (vr3.root == rr) || (vr3.root == from)) { continue; }
-        if (raw ptr_ref_is_target(x, vr3, pty, pte)) { drop list_push(out, vr3); continue; }
+        if (raw ptr_ref_is_target(x, vr3, pty, pte)) { drop list_push(out, vr3); }
         if (vr3.kind == (raw REF_ADDR())) { drop targets_held(x, at, vr3.root, rr, pty, pte, fuel - 1i32, out, seen); }
     }
     pass NIL;

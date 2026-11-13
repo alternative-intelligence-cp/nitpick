@@ -1805,15 +1805,15 @@ func:record_refs_through_indirection = NIL(Escape->:x, ExprId:dest, List<ViewRef
     if (raw expr_is_none(rid)) { pass NIL; }
     ExprNode:rn = raw ast_expr(x.ast, rid);
     if (rn.a == 0i32) { pass NIL; }
-    Symbol:sy = raw symtab_get(x.tab, rn.a);
     // A LOCAL's chain is the borrows its value carries -- where a pointer or a
-    // slice points, which frame storage a struct's pointer field names. A
-    // parameter's chain means something else (the views stored INTO its pointee,
-    // `record_view_refs_at_place`'s key), so the walk reads locals alone, as the
-    // loop it replaces did.
-    if (sy.origin_kind != (raw SYM_STMT())) { pass NIL; }
+    // slice points, which frame storage a struct's pointer field names. A POINTER
+    // or SLICE parameter's chain means something else (the views stored INTO its
+    // pointee, `record_view_refs_at_place`'s key), so the walk reads no such chain:
+    // `walk_chain_key` below names the roots it reads (177d2b5 row 1).
     int32:rt = raw exprtypes_get(x.etypes, rid);
     if (rt == 0i32) { pass NIL; }
+    int32:key = raw walk_chain_key(x, rn.a, rt);   // (B) re-based
+    if (key == (0i32 - 1i32)) { pass NIL; }
     int32:rk = raw type_kind(x.types, rt);
     ExprNode:dn = raw ast_expr(x.ast, dest);
     bool:bare = (dn.kind == ExprKind.ExprIdentifierExpr);
@@ -1850,8 +1850,41 @@ func:record_refs_through_indirection = NIL(Escape->:x, ExprId:dest, List<ViewRef
     bool:old_matrix = ((!call) && (rk == (raw TY_POINTER())) && (refs.count > 0i64));
     if ((ind == 0i32) && (!old_matrix)) { pass NIL; }
     List<int32>:seen = raw list_init::<int32>(4i64);
-    drop rrti_chain(x, sy.origin, ind, old_matrix, refs, dest, @seen, raw BORROW_FUEL());
+    drop rrti_chain(x, key, ind, old_matrix, refs, dest, @seen, raw BORROW_FUEL());
     pass NIL;
+};
+
+// (B) re-based (177d2b5): THE CHAIN THE STORE'S WALK READS for the root `sym`, whose own type is `rt` -- `escape_add_view_ref`'s key: a local's declaring
+// statement; a `for` binding's or a by-value parameter's declaration, spelled -(decl + 1), whose chain holds what the body stored into it as a local's does
+// (`b.q = @mloc`, `s.q = @mloc`); -1 for anything else: a pointer or a slice parameter's chain is the views stored INTO its pointee, and no walk reads it.
+func:walk_chain_key = int32(Escape->:x, int32:sym, int32:rt) never fails {
+    if (sym == 0i32) { pass (0i32 - 1i32); }
+    Symbol:sy = raw symtab_get(x.tab, sym);
+    if (sy.origin_kind == (raw SYM_STMT())) { pass sy.origin; }
+    if (rt == 0i32) { pass (0i32 - 1i32); }
+    int32:rk = raw type_kind(x.types, rt);
+    if (raw symbol_is_loop_binding(x, sy)) { pass (raw frame_owned_key(x, sym)); }
+    if ((raw symbol_is_param(x, sy)) && (rk != (raw TY_POINTER())) && (rk != (raw TY_SLICE()))) { pass (raw frame_owned_key(x, sym)); }
+    pass (0i32 - 1i32);
+};
+
+// (B): the same for a chain ref's root. A STATEMENT LOCAL KEEPS ITS STATEMENT'S ORIGIN, read off `pr.root` as every walk read it before (the ruling's
+// condition: additive by construction); any other root is typed by the ref's own place, and answers only where that place is rooted at it.
+func:walk_chain_key_of_ref = int32(Escape->:x, ViewRef:pr) never fails {
+    if (pr.root == 0i32) { pass (0i32 - 1i32); }
+    Symbol:sy = raw symtab_get(x.tab, pr.root);
+    if (sy.origin_kind == (raw SYM_STMT())) { pass sy.origin; }
+    ExprId:rid = raw root_ident_id(x, ExprId{ index: pr.place });
+    if (raw expr_is_none(rid)) { pass (0i32 - 1i32); }
+    ExprNode:rn = raw ast_expr(x.ast, rid);
+    if (rn.a != pr.root) { pass (0i32 - 1i32); }
+    pass (raw walk_chain_key(x, pr.root, raw exprtypes_get(x.etypes, rid)));
+};
+
+// (B): a chain's first ref by its key -- a statement, or a declaration spelled -(decl + 1).
+func:walk_chain_first = int32(Escape->:x, int32:key) never fails {
+    if (key >= 0i32) { pass (raw escape_view_ref_first(x, key)); }
+    pass (raw escape_param_view_ref_first(x, (0i32 - key) - 1i32));
 };
 
 // ONE BINDING'S CHAIN, read for the indirection `ind`'s targets (the walk above). A TARGET THAT IS ITSELF A POINTER LOCAL is walked too, at the pointee's own
@@ -1870,7 +1903,7 @@ func:rrti_chain = NIL(Escape->:x, int32:origin, int32:ind, bool:old_matrix, List
     int32:ik = 0i32;
     int32:pte = 0i32;
     if (ind != 0i32) { ik = raw type_kind(x.types, ind); pte = raw type_elem(x.types, ind); }
-    int32:e = raw escape_view_ref_first(x, origin);
+    int32:e = raw walk_chain_first(x, origin);
     while (e >= 0i32) decreases e + 1i32 {
         ViewRef:pr = raw escape_view_ref(x, e);
         e = raw escape_view_ref_next(x, e);
@@ -1919,7 +1952,10 @@ func:rrti_chain = NIL(Escape->:x, int32:origin, int32:ind, bool:old_matrix, List
         }
         if (target) {
             if (!(raw pick_store_refused(x, pr.root, refs.count, dest))) { drop record_refs_at_target(x, pr, refs); }   // DEF-633
-            if (((raw type_kind(x.types, pte)) == (raw TY_POINTER())) && ((raw symtab_get(x.tab, pr.root)).origin_kind == (raw SYM_STMT()))) { drop rrti_chain(x, (raw symtab_get(x.tab, pr.root)).origin, pte, false, refs, dest, seen, fuel - 1i32); }   // row 8, hole 4
+            if ((raw type_kind(x.types, pte)) == (raw TY_POINTER())) {   // row 8, hole 4; (B): a `for` binding or a by-value parameter as the target is walked as a local is
+                int32:ck = raw walk_chain_key_of_ref(x, pr);
+                if (ck != (0i32 - 1i32)) { drop rrti_chain(x, ck, pte, false, refs, dest, seen, fuel - 1i32); }
+            }
             continue;
         }
         // not a target: the old loop's record into the matrix alone (additive)
@@ -2323,7 +2359,7 @@ pub func:escape_type_holds = bool(Escape->:x, int32:t, int32:want, int32:fuel) d
     // one, and a pointer `fp` took before it read freed heap (`zq_a_gV`, `zq_e_gV`, `zr_f_gV`, `zr_i_gV`, `zr_j_gV`), where every concrete twin is BORROW-015.
     if ((fuel <= 0i32) || (raw escape_type_open(x, t))) { pass true; }
     int32:k = raw type_kind(x.types, t);
-    if ((k == (raw TY_ARRAY())) || (k == (raw TY_OPTIONAL()))) { pass (raw escape_type_holds(x, raw type_elem(x.types, t), want, fuel - 1i32)); }
+    if ((k == (raw TY_ARRAY())) || (k == (raw TY_OPTIONAL())) || (k == (raw TY_SLICE()))) { pass (raw escape_type_holds(x, raw type_elem(x.types, t), want, fuel - 1i32)); }   // a slice holds its element type behind its pointer, as a `List` does
     if (k == (raw TY_ENUM())) { pass (raw enum_has_payload(x.ast, x.types, t)); }   // a payload may be `want`: the closed direction, as the fuel's end (R12)
     if (k != (raw TY_STRUCT())) { pass false; }
     if (raw type_is_list(x.tr, t)) { pass (raw escape_type_holds(x, raw list_elem_type(x.tr, t), want, fuel - 1i32)); }
@@ -2984,6 +3020,44 @@ func:record_mut_of_place = NIL(Escape->:x, ExprId:place, int32:sub) never fails 
 // `@p.q`/`$$m p.q` argument, a pointer VALUE `p.q`, the implicit `@recv` -- each
 // composed with the callee's written paths for that position (the whole place
 // for an unknown callee; nothing for a callee that writes nothing through it).
+// A HEADER'S OWN POINTER, through any cast (DEF-591): a member read off a string, cstring, slice, buffer or `List`, itself or through one pointer -- `l.ptr`,
+// `s.v[lo...hi].ptr =>! wild int8->`, the prelude's `l.items =>! wild int8->`. A user struct's pointer field is not one.
+func:arg_is_header_ptr = bool(Escape->:x, ExprId:a) never fails {
+    ExprId:u = a;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        ExprNode:cn = raw ast_expr(x.ast, u);
+        if ((cn.kind != ExprKind.ExprCastExpr) && (cn.kind != ExprKind.ExprUncheckedCastExpr)) { break; }
+        u = raw expr_operand(cn);
+    }
+    ExprNode:pn = raw ast_expr(x.ast, u);
+    if (pn.kind != ExprKind.ExprMemberAccessExpr) { pass false; }
+    int32:ot = raw exprtypes_get(x.etypes, raw expr_operand(pn));
+    if ((ot != 0i32) && ((raw type_kind(x.types, ot)) == (raw TY_POINTER()))) { ot = raw type_elem(x.types, ot); }
+    if (ot == 0i32) { pass false; }
+    int32:ok = raw type_kind(x.types, ot);
+    pass ((ok == (raw TY_STRING())) || (ok == (raw TY_CSTRING())) || (ok == (raw TY_SLICE())) || (ok == (raw TY_BUFFER())) || ((ok == (raw TY_STRUCT())) && (raw type_is_list(x.tr, ot))));
+};
+
+// A HEADER'S OWN POINTER IS EXEMPT ONLY AT A CALL THAT NAMES A BUILTIN OR AN EXTERN (DEF-654; 177d2b5's row 4): a bare builtin's call, or one resolved to a
+// `DeclExternFn`. A function value, a callback and a user function's variadic position are `escape_mut_first`'s -2 too, and what runs there may write through the pointer.
+func:escape_call_named_unknown = bool(Escape->:x, ExprId:call) never fails {
+    if (raw expr_is_none(call)) { pass false; }
+    ExprNode:cn = raw ast_expr(x.ast, call);
+    if ((raw bare_builtin_name(x, cn)).len > 0i64) { pass true; }
+    int32:c = raw exprtypes_call_to(x.etypes, call);
+    if (c <= 0i32) { c = raw exprtypes_callee(x.etypes, call); }
+    if ((c <= 0i32) || (c >= x.decl_count)) { pass false; }
+    DeclNode:d = raw ast_decl(x.ast, DeclId{ index: c });
+    pass (d.kind == DeclKind.DeclExternFn);
+};
+
+// A SLICE TARGET IS WRITTEN AT ITS ELEMENTS (DEF-654, DEF-591's slice holder; 177d2b5's row 4): `R`, every element it views (`target_whole_path`); the empty path names the binding.
+func:escape_slice_run_sub = int32(Escape->:x, int32:place) never fails {
+    int32:pt = raw exprtypes_get(x.etypes, ExprId{ index: place });
+    if ((pt != 0i32) && ((raw type_kind(x.types, pt)) == (raw TY_SLICE()))) { pass (raw path_intern(x, string_concat("R", ""))); }
+    pass 0i32;
+};
+
 func:record_mut_of_call = NIL(Escape->:x, ExprId:call, ExprId:recv, bool:auto_ref, int32:start,
                               int32:count) never fails {
     if (raw call_is_builtin_method(x, call)) { pass NIL; }
@@ -3008,15 +3082,33 @@ func:record_mut_of_call = NIL(Escape->:x, ExprId:call, ExprId:recv, bool:auto_re
             // A SLICE NO PLACE NAMES (DEF-301, landing 159): a call's result, a
             // ternary -- the callee writes the storage its value views.
             if ((!aj_auto) && (raw escape_is_unnamed_slice(x, aj))) { drop record_mut_of_slice_targets(x, aj); }
-            // A POINTER WITH NO PLACE, of any kind (DEF-591, landing 177d2b4, rows 6 and 8; DEF-643): `growh(raw idh(q))` and `growh(is c : q : q)` recorded nothing,
-            // so the caller's `fp(hp)` read freed heap after `growi(hp)` (`zn11i`, `dq1`, `dq15`). Resolved by rule A (`escape_pointer_targets`), a target is written
-            // WHOLE where its path ends at the pointer's type or its pointee's. A header's `.ptr` handed to a builtin (`intern_get`'s `string_from_bytes`) ends at neither: no write.
+            // A POINTER WITH NO PLACE, of any kind (DEF-591, landing 177d2b4, rows 6 and 8, and 177d2b5, row 4; DEF-643): `growh(raw idh(q))` and `growh(is c : q : q)` recorded nothing, so the caller's `fp(hp)` read freed heap after `growi(hp)` (`zn11i`, `dq1`, `dq15`). Resolved by rule A (`escape_pointer_targets`), a
+            // target is written WHOLE where its path ends at the pointer's type or its pointee's (a slice target, here and below, at its elements: `escape_slice_run_sub`). At neither end (a getter's `pass @w.l;`, row 4): a header's own `.ptr` handed to a call that names a builtin or an extern (`intern_get`'s
+            // `string_from_bytes`) writes nothing, and so does a pointer neither crossed nor retyped whose pointee type the target can't hold; else a declared struct is written BY FIELD (each field that holds the pointee type), and any other holder, or a crossed or retyped pointer's, WHOLE (its claimed type is no evidence).
             if ((!aj_auto) && ((raw type_kind(x.types, raw exprtypes_get(x.etypes, aj))) == (raw TY_POINTER()))) {
                 List<ViewRef>:ptg = raw list_init::<ViewRef>(4i64);
                 drop escape_pointer_targets(x, aj, @ptg);
                 for (int64:pi in 0i64...ptg.count) {
                     int32:pet = raw escape_path_end_type(x, raw exprtypes_get(x.etypes, ExprId{ index: ptg[pi].place }), ptg[pi].path);
-                    if ((pet != 0i32) && ((pet == (raw exprtypes_get(x.etypes, aj))) || (pet == (raw type_elem(x.types, raw exprtypes_get(x.etypes, aj)))))) { drop record_mut_of_place(x, ExprId{ index: ptg[pi].place }, 0i32); }
+                    // ... OR HOLDS THE POINTEE (DEF-591's getter road): `getl`'s `pass @w.l;` hands back an address INSIDE its parameter's pointee, so the target's path ends at the holder `H`, which is neither. The summary doesn't say which part, so the pointer is taken BY ITS TYPE, as
+                    // pointing at a part of its pointee's type: each FIELD of the holder that is or holds that type is written (`t1`, `t3`, `t5`, `t6`, and wherever the pointer was kept since: `t1s`, `t1a`, `t1d`), a slice field among them, which holds through its run (`i_hsgv`), and a
+                    // field that can't hold it is not (`irw_write`'s `Sink` under a held `@w.site_paths[…]`). A pointer VALUE read out of a field (`pass w.lp;`) is taken by its type too, wherever it points: DEF-655's price. A holder with no fields to name (a `List`, an array, an open type, a
+                    // pointer below the place) is written whole, and so is the target of a pointer crossed or retyped on its road (`xc`), whose type says nothing; the write isn't followed past a pointer below the place (DEF-348's class). A header's own pointer is asked first: only at a call that
+                    // names a builtin or an extern (`list_reserve` handing `ralloc` its `l.items`) do the two exact ends stand alone; any other callee's write through a header's pointer, a function value's and a user function's variadic position's included, is written where it points (DEF-654).
+                    int32:peh = is ((raw type_kind(x.types, pet)) == (raw TY_POINTER())) : (raw type_elem(x.types, pet)) : pet;
+                    int32:ajp = raw type_elem(x.types, raw exprtypes_get(x.etypes, aj));
+                    if ((pet != 0i32) && ((pet == (raw exprtypes_get(x.etypes, aj))) || (pet == ajp))) { drop record_mut_of_place(x, ExprId{ index: ptg[pi].place }, raw escape_slice_run_sub(x, ptg[pi].place)); continue; }
+                    if ((pet == 0i32) || ((first == (0i32 - 2i32)) && (raw escape_call_named_unknown(x, call)) && (raw arg_is_header_ptr(x, aj))) || ((ptg[pi].xc == 0i32) && (!(raw escape_type_holds(x, peh, ajp, 8i32))))) { continue; }
+                    int32:hsd = raw type_decl(x.types, peh);
+                    if (((raw type_kind(x.types, peh)) != (raw TY_STRUCT())) || (raw type_is_list(x.tr, peh)) || (raw escape_type_open(x, peh)) || (hsd < 0i32) || (hsd >= (raw ast_decl_count(x.ast)))
+                        || ((peh != pet) && (ptg[pi].path != 0i32)) || (ptg[pi].xc != 0i32)) { drop record_mut_of_place(x, ExprId{ index: ptg[pi].place }, raw escape_slice_run_sub(x, ptg[pi].place)); continue; }
+                    DeclNode:hd = raw ast_decl(x.ast, DeclId{ index: hsd });
+                    for (int32:hmi in 0i32...(raw item_member_count(x.ast, hd))) {
+                        DeclNode:hm = raw ast_decl(x.ast, raw item_member(x.ast, hd, hmi));
+                        if ((hm.kind == DeclKind.DeclFieldDecl) && (raw escape_type_holds(x, raw struct_member_type(x.tr, peh, hm, 0i32), ajp, 8i32))) {
+                            drop record_mut_of_place(x, ExprId{ index: ptg[pi].place }, raw path_join(x, ptg[pi].path, raw path_intern(x, string_concat("f", int_to_string((raw decl_name(hm)) => int64)))));
+                        }
+                    }
                 }
             }
             continue;
@@ -3612,7 +3704,7 @@ func:collect_view_refs = NIL(Escape->:x, ExprId:id, int32:depth, List<ViewRef>->
     if (n.kind == ExprKind.ExprCallExpr) {
         if ((raw bare_builtin_name(x, n)).len > 0i64) {
             ExprId:vpb = raw view_place(x, n);
-            if (raw expr_is_none(vpb)) { pass NIL; }
+            if (raw expr_is_none(vpb)) { drop collect_view_refs(x, raw builtin_dest_arg(x, n), d, out); pass NIL; }   // DEF-646
             drop push_view_ref(x, vpb, raw VIEW_DIRECT(), out);
             drop collect_view_refs(x, vpb, d, out);
             pass NIL;
@@ -4207,6 +4299,16 @@ func:escape_stmt = NIL(Escape->:x, StmtId:id) never fails {
                 "a borrow of this frame cannot be iterated over: a `for` binding has no borrow state of its own in the escape analysis, so a borrow of this frame reaching one could not be followed",
                 fnode.span);
         }
+        // THE BINDING IS A BIT COPY OF AN ELEMENT (`fn1`): before the body stores anything into it, it holds what the source's elements hold. A read of it by its
+        // name carries the source's refs (`push_source_refs`); its own CHAIN, which the store's walk reads, held only what the body stored, so a store through a
+        // pointer the binding was never assigned (`for (SQ:b in sa) { (<-(b.q)).lp = hq; }`) found no target. Seeded here with the refs the name's read carries.
+        int32:fst = raw exprtypes_get(x.etypes, fit);
+        if ((fst != 0i32) && (((raw type_kind(x.types, fst)) == (raw TY_ARRAY())) || ((raw type_kind(x.types, fst)) == (raw TY_SLICE())))) {
+            List<ViewRef>:fsr = raw list_init::<ViewRef>(4i64);
+            drop push_source_refs(x, fit.index, raw ESCAPE_DEPTH(), @fsr);
+            drop mark_read_t(x, raw type_elem(x.types, fst), fst, @fsr, 0i64);
+            for (int64:fsi in 0i64...fsr.count) { drop escape_add_view_ref(x, (0i32 - (raw stmt_for_binding(s)).index) - 1i32, fsr[fsi]); }
+        }
         drop escape_stmt(x, raw stmt_for_body(x.ast, s));
         pass NIL;
     }
@@ -4390,7 +4492,7 @@ func:borrows_all_rooted_at = bool(Escape->:x, ExprId:id, int32:sym,
         // is rooted, and an owned result carries nothing.
         if ((raw bare_builtin_name(x, n)).len > 0i64) {
             ExprId:vpb = raw view_place(x, n);
-            if (raw expr_is_none(vpb)) { pass true; }
+            if (raw expr_is_none(vpb)) { pass (raw borrows_all_rooted_at(x, raw builtin_dest_arg(x, n), sym, d)); }   // DEF-646: the destination alone
             if (raw view_is_frame_borrow(x, vpb)) { pass (raw root_is(x, raw view_root_ident(x, vpb), sym)); }
             pass (raw borrows_all_rooted_at(x, vpb, sym, d));
         }
@@ -4502,7 +4604,7 @@ func:borrows_only_param_rooted = bool(Escape->:x, ExprId:id, int32:depth) never 
         // result carries nothing.
         if ((raw bare_builtin_name(x, n)).len > 0i64) {
             ExprId:vpb = raw view_place(x, n);
-            if (raw expr_is_none(vpb)) { pass true; }
+            if (raw expr_is_none(vpb)) { pass (raw borrows_only_param_rooted(x, raw builtin_dest_arg(x, n), d)); }   // DEF-646: the destination alone
             if (raw view_is_frame_borrow(x, vpb)) { pass (raw view_root_is_param(x, n, vpb)); }
             pass (raw borrows_only_param_rooted(x, vpb, d));
         }
@@ -4633,6 +4735,17 @@ func:bare_builtin_name = string(Escape->:x, ExprNode:n) never fails {
     if (cn.kind != ExprKind.ExprIdentifierExpr) { pass ""; }
     if (cn.a != 0i32) { pass ""; }
     pass (raw intern_get(x.tr.interns, cn.payload =>! int32));
+};
+
+// THE `mcpy` FAMILY HANDS BACK ITS DESTINATION (DEF-646): `mcpy`, `mmov` and `memset` return their first argument, as `wild_places.npk`'s door and
+// the typer's `builtin_answers_by_arg` answer it. The result's refs and roots are its destination's; its verdict is rule A's over every argument,
+// unless the destination is a parameter's alone (the second look, at the verdict's line). The destination argument of such a call, or none.
+func:builtin_dest_arg = ExprId(Escape->:x, ExprNode:n) never fails {
+    string:bn = raw bare_builtin_name(x, n);
+    if ((!(raw string_eq(bn, "mcpy"))) && (!(raw string_eq(bn, "mmov"))) && (!(raw string_eq(bn, "memset")))) { pass (raw expr_none()); }
+    int32:gc = raw expr_generic_count(n);
+    if ((raw expr_list_count(n)) <= gc) { pass (raw expr_none()); }
+    pass ExprId{ index: raw ast_id_at(x.ast, (raw expr_list_start(n)) + gc, 0i32) };
 };
 
 // The place a view-maker views, or none: the `Views` argument of a bare
@@ -5155,14 +5268,19 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
     // The holder's pointer-ness (`vr_ptr`) is not set: the binding is a struct,
     // an array or a `List`, whatever the field's own type (`field_store_root`).
     int32:fsym = raw field_store_root(x, tgt);
-    if (fsym != 0i32) {
-        List<ViewRef>:fr = raw list_init::<ViewRef>(4i64);
-        drop collect_view_refs(x, val, raw ESCAPE_DEPTH(), @fr);
-        if (fr.count > 0i64) { drop record_view_refs_at_place(x, tgt, @fr); }
-    }
+    // (177d2b5 row 1) A `for` BINDING'S FIELD RECORDS ITS STORE ONLY WHERE THE STORE STANDS: the refusal at this function's end (177d2b4 row 9) is the one
+    // report of a borrow stored there (D-240), and the store's walk reads a `for` binding's chain now, so a refused store left on it was followed on: a second
+    // report at the growth after it, at the caller's call, or at a `pick` binding it reached. The two exits where the store stands record it (below).
+    bool:loop_fld = (fsym != 0i32) && (raw symbol_is_loop_binding(x, raw symtab_get(x.tab, fsym)));
+    List<ViewRef>:fr = raw list_init::<ViewRef>(4i64);
+    if (fsym != 0i32) { drop collect_view_refs(x, val, raw ESCAPE_DEPTH(), @fr); }
+    if ((fr.count > 0i64) && (!loop_fld)) { drop record_view_refs_at_place(x, tgt, @fr); }
 
     if (!(raw verdict_borrowy(x, val,
-              raw escape_expr(x, val, raw ESCAPE_DEPTH())))) { pass NIL; }
+              raw escape_expr(x, val, raw ESCAPE_DEPTH())))) {
+        if (loop_fld && (fr.count > 0i64)) { drop record_view_refs_at_place(x, tgt, @fr); }
+        pass NIL;
+    }
 
     // SELF-WIRING IS PERMITTED (0.8.1): storing into a field of `X` a value
     // built from borrows that are themselves rooted at `X` — the pipeline's
@@ -5190,6 +5308,7 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
                 // a copy of it into an outer holder. Measured first: the exemption
                 // fires at one site of the three trees, a test's local never handed
                 // up, and the mark moves no site.
+                if (loop_fld && (fr.count > 0i64)) { drop record_view_refs_at_place(x, tgt, @fr); }
                 drop escape_mark_place(x, tgt);
                 pass NIL;
             }
@@ -5260,8 +5379,7 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
     // own, `refs_root_loop_binding`, while the predicates read the binding as a
     // parameter; the guard is gone with the misreading.)
     // (177d2b4 row 9) A BORROW STORED INTO A `for` BINDING's FIELD keeps the refusal below, as before row 5, whatever it is rooted at: the store's walk
-    // reads no `for` binding's chain, so a store through the field was recorded nowhere and the freed read compiled (`fb1` `b.q = @mloc`, `kq2` `b.q = @(<-np1)`: 236).
-    bool:loop_fld = (fsym != 0i32) && (raw symbol_is_loop_binding(x, raw symtab_get(x.tab, fsym)));
+    // then read no `for` binding's chain (`fb1` `b.q = @mloc`, `kq2` `b.q = @(<-np1)`: 236). Since 177d2b5's row 1 it reads one, and the refusal stays: lifting it is a relaxation not taken.
     if ((fsym != 0i32) && (!loop_fld)) {
         if (!(raw borrows_only_param_rooted(x, val, raw ESCAPE_DEPTH()))) {
             Symbol:fs = raw symtab_get(x.tab, fsym);
@@ -5970,7 +6088,7 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
         // copy, and rule A would have called it a borrow.
         if ((raw bare_builtin_name(x, n)).len > 0i64) {
             ExprId:vp = raw view_place(x, n);
-            if (raw expr_is_none(vp)) { pass false; }
+            if (raw expr_is_none(vp)) { pass (ra && (!(raw expr_is_none(raw builtin_dest_arg(x, n)))) && (!(raw borrows_only_param_rooted(x, raw builtin_dest_arg(x, n), d)))); }   // DEF-646: the family keeps rule A's verdict unless its destination is a parameter's alone
             pass (raw view_verdict(x, vp, n.span));
         }
         pass ra;

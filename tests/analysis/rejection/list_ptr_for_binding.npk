@@ -377,7 +377,7 @@ mod:list_ptr_for_binding;
 // for the same read by index (`zn3i`), through a by-value parameter (`zn3v`), through a pointer parameter (`zn2c`) and in one frame (`zn2l`), each refused before this row.
 // `zu3c` (DEF-605, open): a pointer parameter stored into a member of the binding THROUGH THE BINDING'S ADDRESS, a view through that parameter, and the growth through the
 // binding's OTHER member, of another type. The write's reader walks the pointer expression, so the member read gives the stored pointer the member's type. ITS TWINS ARE
-// ACCEPTED: over a local copy of the element (`zu3l`) and over a by-value parameter (`zu3v`) the same program runs right, in `list_ptr_for_binding_ok.npk`.
+// ACCEPTED over a local copy of the element (`zu3l`): the same program runs right, in `list_ptr_for_binding_ok.npk`. Over a by-value parameter (`zu3v`) it is REFUSED, below, since 177d2b4's row 5: a right program refused by DEF-647's misreading of the parameter's road (corrected 2026-11-11, landing 177d2b5 row 1; this line said both twins were accepted).
 // `zn3l` (a local copy of the element, two types) is DEF-590's price, refused since that row and named here: its direct spellings are `zn3i`, `zn3v` and `zn2l`.
 // `zn4c` (the `pick` binding's twin of `zn3c`) is refused on every build by the selector's freeze.
 // TWO CELLS ARE REFUSED BY ANOTHER RULE, ON EVERY BUILD, AND STAND HERE AS TRIPWIRES. A pointer rooted at a `for` binding is resolved without DEF-426's hop (what an address
@@ -8374,7 +8374,7 @@ func:f = int64(int64:n) never fails {
 };
 };
 // Re-expected 2026-11-10 (landing 177d2b4, row 5): `zh9n_addr_of_param_element` and `zm2a_binding_assigned_frame_address` each gain the parameter road's true BORROW-015 (DEF-604/DEF-587 with W1, R and the push), the pairs ruled to stand (management_31: `zm2a` in the first finish brief's item 4, `zh9n` at 00:17).
-// 2026-11-10 (landing 177d2b4, row 5): `zu3v_stored_other_type_value_param_ok`, moved here from `list_ptr_for_binding_ok.npk`: BORROW-015 by D-004 rule A on the parameter road, parity with the local road (management_31, 01:17).
+// 2026-11-10 (landing 177d2b4, row 5): `zu3v_stored_other_type_value_param_ok`, moved here from `list_ptr_for_binding_ok.npk`: BORROW-015 by D-004 rule A on the parameter road, parity with the local road (management_31, 01:17). 2026-11-11 (landing 177d2b5, row 1), CORRECTED: the refusal is DEF-647's misreading, not parity -- the parameter's road reads the pointer stored in one member at the other member's type; the local twin (`zu3l` in `list_ptr_for_binding_ok.npk`) is accepted and runs right on every build (management_37's ruling of 2026-11-11 23:15, "Addendum: the fresh attack finds the row's own fault", item 3). A right program refused, failing closed, until DEF-647's direction lands.
 mod:zu3v_stored_other_type_value_param_ok = {
 error:E5_zu3v_stored_other_type_value_param_ok;
 struct:K = { int64:k; };
