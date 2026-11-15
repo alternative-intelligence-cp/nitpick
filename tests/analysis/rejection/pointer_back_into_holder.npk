@@ -1,0 +1,419 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 80:31
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 101:32
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 123:46
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 145:33
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 166:31
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 182:35
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 199:36
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 215:46
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 231:35
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 247:46
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 263:47
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 280:35
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 296:37
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 313:46
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 329:46
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 345:6
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 361:31
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 378:10
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 395:6
+mod:pointer_back_into_holder;
+// 2026-11-13 (landing 177d2b6, row 2: DEF-663 and DEF-665, A+B). A POINTER MEMBER THAT POINTS BACK INTO ITS OWN HOLDER, OR INTO THE HOLDER IT WAS REACHED FROM,
+// IS FOLLOWED TO WHAT IT POINTS AT. `targets_held` and `pointer_targets_of`'s two loops skipped a ref rooted at the holder itself, or at the holder the walk came
+// from, before the target test, so `s.p = @s.own` or `s.back = @q.own` added nothing to what the pointer reaches: a `List` grown through the pointer while a
+// pointer into the member was held, then that pointer read, read freed heap (DEF-663). `check_pointer_view_parties` skipped a view party rooted at the write's
+// own root, so a view or a pointer taken through `s.p` into `s.own` was never checked against a write of `s.own` by name (DEF-665). A+B tests such a ref as a
+// target at all three sites and skips it only for the hop, and drops the view side's skip, so the party is re-rooted at the pointer's target by the loop below it.
+// One cell a face, its names suffixed with the cell's. Each face is accepted by row 1 (23eba2f), main (8a2b40b), 169d6d4 and b510126 (177d2b3), and reads
+// freed memory there (236 at -O0 and -O2 on roads 0 to 2, or 140 for the two string views below, and 97 under the detector). Each face's right control is
+// in `pointer_back_into_holder_ok.npk`, but `c2_backv`'s and `c2_backpl`'s, which the cells don't have. The row closes 19 faces and refuses no right program.
+// DEF-663's nine (Ailp-team_114's attack on 177d2b5's row 5; management_41's ruling of Thu 11-12 15:42:18 EST and management_42's of 15:53:31 and 16:08:01):
+// `c1_back`, `c2_backt`, `c2_backpl` (`s.back = @q.own`, `q` the holder `s` was reached from, handed back by a getter), `c2_backv` (the view through the getter's
+// pointer, the growth by name), `c2_self` (`s.inn.p = @s.own`, handed back by a getter), `c10_nmself`, `c10_inself` (`s.p = @s.own`, grown through `s.p` or
+// `bp.p`, one frame, no getter), `c11_selfw2` (pushed through `@s.p.l` inline) and `c13_selfar` (`s.p = @s.ar[0i64]`): BORROW-015 at the growth.
+// DEF-665's `c11_selfv`: `int64->:e = @((<-(s.p)).l[0i64]);`, then `s.own.l` pushed by name: BORROW-015 at the push.
+// The seven boundary forms (Ailp-team_120, 177d2b6's planning): `d1_lst` (a `List<int64>->` member into a `List` member), `d3_inn` (a nested struct's pointer),
+// `d4_arr` (an array of holders, one element's pointer into its sibling), BORROW-015 at the growth; `v1_inn`, `v3_arr` (the same two through the view side),
+// `v4_whole` (`s.own = …` by name) and `v5_call` (`growh(@s.own)`), BORROW-015 at the write.
+// DEF-665's view form (this row's, nitpick-compiler_120: its mutant that restored the skip for a view party alone survived the 17 above): `vw_self`, with
+// `s.p = @s.own`, holds `fixed uint8[]:vw = string_bytes((<-(s.p)).s);` and assigns `s.own.s` by name, and `vw_selfw` assigns `s.own` whole: BORROW-015 at
+// the write.
+// DEF-418'S OPEN FACES BESIDE THESE, NOT CLOSED BY THIS ROW (F on every build; management_42's ruling of Fri 11-13 02:57:34 EST: "the two roots can be one
+// argument and a pointer member of its pointee"): `d5_ptrp` and `v6_ptrp`, the holder handed by pointer to a callee (`h(@s)`) that holds `@sp.own.l[0i64]` and
+// grows through `sp.p`, or holds `@((<-(sp.p)).l[0i64])` and pushes `@sp.own.l`. Named here; an accepted cell has no site.
+error:E5;
+struct:K_c1_back = { int64:k; };
+func:mk_c1_back = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
+struct:HL_c1_back = { List<int64>:l; int64:k; };
+func:mkh_c1_back = HL_c1_back() never fails { pass HL_c1_back{ l: raw mk_c1_back(), k: 1i64 }; };
+func:growh_c1_back = int64(HL_c1_back->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:S_c1_back = { HL_c1_back->:back; int64:z; };
+struct:Sub_c1_back = { S_c1_back->:sp; int64:z; };
+struct:Q_c1_back = { Sub_c1_back:sub; HL_c1_back:own; };
+func:get_c1_back = HL_c1_back->(Sub_c1_back->:sb) never fails { pass (<-(sb.sp)).back; };
+func:g_c1_back = int64(int64:n) never fails {
+    HL_c1_back:d = raw mkh_c1_back();
+    S_c1_back:s = S_c1_back{ back: @d, z: 1i64 };
+    Q_c1_back:q = Q_c1_back{ sub: Sub_c1_back{ sp: @s, z: 1i64 }, own: raw mkh_c1_back() };
+    s.back = @q.own;
+    HL_c1_back->:hp = raw get_c1_back(@q.sub);
+    int64->:e = @q.own.l[0i64];
+    discard(raw growh_c1_back(hp));
+    pass (<-e) + 6i64;
+};
+func:f_c1_back = int64(int64:n) never fails { pass raw g_c1_back(n); };
+func:cell_main_c1_back = int32() never fails { pass (((raw f_c1_back(1i64)) + 60i64) =>! int32); };
+struct:K_c2_backt = { int64:k; };
+func:mk_c2_backt = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
+struct:HL_c2_backt = { List<int64>:l; int64:k; };
+func:mkh_c2_backt = HL_c2_backt() never fails { pass HL_c2_backt{ l: raw mk_c2_backt(), k: 1i64 }; };
+func:growh_c2_backt = int64(HL_c2_backt->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:S_c2_backt = { HL_c2_backt:mine; HL_c2_backt->:back; };
+struct:Sub_c2_backt = { S_c2_backt->:sp; int64:z; };
+struct:Q_c2_backt = { Sub_c2_backt:sub; HL_c2_backt:own; };
+func:get_c2_backt = HL_c2_backt->(Sub_c2_backt->:sb) never fails { pass (<-(sb.sp)).back; };
+func:g_c2_backt = int64(int64:n) never fails {
+    HL_c2_backt:d = raw mkh_c2_backt();
+    S_c2_backt:s = S_c2_backt{ mine: raw mkh_c2_backt(), back: @d };
+    Q_c2_backt:q = Q_c2_backt{ sub: Sub_c2_backt{ sp: @s, z: 1i64 }, own: raw mkh_c2_backt() };
+    s.back = @q.own;
+    HL_c2_backt->:hp = raw get_c2_backt(@q.sub);
+    int64->:e = @q.own.l[0i64];
+    discard(raw growh_c2_backt(hp));
+    pass (<-e) + 6i64;
+};
+func:f_c2_backt = int64(int64:n) never fails { pass raw g_c2_backt(n); };
+func:cell_main_c2_backt = int32() never fails { pass (((raw f_c2_backt(1i64)) + 60i64) =>! int32); };
+struct:K_c2_backv = { int64:k; };
+func:mk_c2_backv = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
+struct:HL_c2_backv = { List<int64>:l; int64:k; };
+func:mkh_c2_backv = HL_c2_backv() never fails { pass HL_c2_backv{ l: raw mk_c2_backv(), k: 1i64 }; };
+func:growh_c2_backv = int64(HL_c2_backv->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:S_c2_backv = { HL_c2_backv->:back; int64:z; };
+struct:Sub_c2_backv = { S_c2_backv->:sp; int64:z; };
+struct:Q_c2_backv = { Sub_c2_backv:sub; HL_c2_backv:own; };
+func:get_c2_backv = HL_c2_backv->(Sub_c2_backv->:sb) never fails { pass (<-(sb.sp)).back; };
+func:growq_c2_backv = int64(Q_c2_backv->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.own.l, 1i64); } pass 7i64; };
+func:g_c2_backv = int64(int64:n) never fails {
+    HL_c2_backv:d = raw mkh_c2_backv();
+    S_c2_backv:s = S_c2_backv{ back: @d, z: 1i64 };
+    Q_c2_backv:q = Q_c2_backv{ sub: Sub_c2_backv{ sp: @s, z: 1i64 }, own: raw mkh_c2_backv() };
+    s.back = @q.own;
+    HL_c2_backv->:hp = raw get_c2_backv(@q.sub);
+    int64->:e = @hp.l[0i64];
+    loop(0i64, 64i64, 1i64) { drop list_push(@q.own.l, 1i64); }
+    pass (<-e) + 6i64;
+};
+func:f_c2_backv = int64(int64:n) never fails { pass raw g_c2_backv(n); };
+func:cell_main_c2_backv = int32() never fails { pass (((raw f_c2_backv(1i64)) + 60i64) =>! int32); };
+struct:K_c2_backpl = { int64:k; };
+func:mk_c2_backpl = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
+struct:HL_c2_backpl = { List<int64>:l; int64:k; };
+func:mkh_c2_backpl = HL_c2_backpl() never fails { pass HL_c2_backpl{ l: raw mk_c2_backpl(), k: 1i64 }; };
+func:growh_c2_backpl = int64(HL_c2_backpl->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:S_c2_backpl = { HL_c2_backpl->:back; int64:z; };
+struct:Sub_c2_backpl = { S_c2_backpl->:sp; int64:z; };
+struct:Q_c2_backpl = { Sub_c2_backpl:sub; HL_c2_backpl:own; };
+func:get_c2_backpl = HL_c2_backpl->(Sub_c2_backpl->:sb) never fails { pass (<-(sb.sp)).back; };
+func:g_c2_backpl = int64(int64:n) never fails {
+    HL_c2_backpl:d = raw mkh_c2_backpl();
+    S_c2_backpl:s = S_c2_backpl{ back: @d, z: 1i64 };
+    Q_c2_backpl:q = Q_c2_backpl{ sub: Sub_c2_backpl{ sp: @s, z: 1i64 }, own: raw mkh_c2_backpl() };
+    s.back = @q.own;
+    Sub_c2_backpl->:sbp = @q.sub;
+    HL_c2_backpl->:hp = raw get_c2_backpl(sbp);
+    int64->:e = @q.own.l[0i64];
+    discard(raw growh_c2_backpl(hp));
+    pass (<-e) + 6i64;
+};
+func:f_c2_backpl = int64(int64:n) never fails { pass raw g_c2_backpl(n); };
+func:cell_main_c2_backpl = int32() never fails { pass (((raw f_c2_backpl(1i64)) + 60i64) =>! int32); };
+struct:K_c2_self = { int64:k; };
+func:mk_c2_self = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
+struct:HL_c2_self = { List<int64>:l; int64:k; };
+func:mkh_c2_self = HL_c2_self() never fails { pass HL_c2_self{ l: raw mk_c2_self(), k: 1i64 }; };
+func:growh_c2_self = int64(HL_c2_self->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:In_c2_self = { HL_c2_self->:p; int64:z; };
+struct:S_c2_self = { In_c2_self:inn; HL_c2_self:own; };
+struct:Q_c2_self = { In_c2_self->:ip; int64:z; };
+func:get_c2_self = HL_c2_self->(Q_c2_self->:qq) never fails { pass (<-(qq.ip)).p; };
+func:g_c2_self = int64(int64:n) never fails {
+    HL_c2_self:d = raw mkh_c2_self();
+    S_c2_self:s = S_c2_self{ inn: In_c2_self{ p: @d, z: 1i64 }, own: raw mkh_c2_self() };
+    s.inn.p = @s.own;
+    Q_c2_self:q = Q_c2_self{ ip: @s.inn, z: 1i64 };
+    HL_c2_self->:hp = raw get_c2_self(@q);
+    int64->:e = @s.own.l[0i64];
+    discard(raw growh_c2_self(hp));
+    pass (<-e) + 6i64;
+};
+func:f_c2_self = int64(int64:n) never fails { pass raw g_c2_self(n); };
+func:cell_main_c2_self = int32() never fails { pass (((raw f_c2_self(1i64)) + 60i64) =>! int32); };
+struct:K_c10_nmself = { int64:k; };
+func:mk_c10_nmself = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
+struct:HL_c10_nmself = { List<int64>:l; int64:k; };
+func:mkh_c10_nmself = HL_c10_nmself() never fails { pass HL_c10_nmself{ l: raw mk_c10_nmself(), k: 1i64 }; };
+func:growh_c10_nmself = int64(HL_c10_nmself->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:S_c10_nmself = { HL_c10_nmself:own; HL_c10_nmself->:p; };
+func:g_c10_nmself = int64(int64:n) never fails {
+    HL_c10_nmself:d = raw mkh_c10_nmself();
+    S_c10_nmself:s = S_c10_nmself{ own: raw mkh_c10_nmself(), p: @d };
+    s.p = @s.own;
+    int64->:e = @s.own.l[0i64];
+    discard(raw growh_c10_nmself(s.p));
+    pass (<-e) + 6i64;
+};
+func:f_c10_nmself = int64(int64:n) never fails { pass raw g_c10_nmself(n); };
+func:cell_main_c10_nmself = int32() never fails { pass (((raw f_c10_nmself(1i64)) + 60i64) =>! int32); };
+struct:K_c10_inself = { int64:k; };
+func:mk_c10_inself = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
+struct:HL_c10_inself = { List<int64>:l; int64:k; };
+func:mkh_c10_inself = HL_c10_inself() never fails { pass HL_c10_inself{ l: raw mk_c10_inself(), k: 1i64 }; };
+func:growh_c10_inself = int64(HL_c10_inself->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:S_c10_inself = { HL_c10_inself:own; HL_c10_inself->:p; };
+func:g_c10_inself = int64(int64:n) never fails {
+    HL_c10_inself:d = raw mkh_c10_inself();
+    S_c10_inself:s = S_c10_inself{ own: raw mkh_c10_inself(), p: @d };
+    s.p = @s.own;
+    S_c10_inself->:bp = @s;
+    int64->:e = @s.own.l[0i64];
+    discard(raw growh_c10_inself(bp.p));
+    pass (<-e) + 6i64;
+};
+func:f_c10_inself = int64(int64:n) never fails { pass raw g_c10_inself(n); };
+func:cell_main_c10_inself = int32() never fails { pass (((raw f_c10_inself(1i64)) + 60i64) =>! int32); };
+struct:K_c11_selfw2 = { int64:k; };
+func:mk_c11_selfw2 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
+struct:HL_c11_selfw2 = { List<int64>:l; int64:k; };
+func:mkh_c11_selfw2 = HL_c11_selfw2() never fails { pass HL_c11_selfw2{ l: raw mk_c11_selfw2(), k: 1i64 }; };
+func:growh_c11_selfw2 = int64(HL_c11_selfw2->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:S_c11_selfw2 = { HL_c11_selfw2:own; HL_c11_selfw2->:p; };
+func:g_c11_selfw2 = int64(int64:n) never fails {
+    HL_c11_selfw2:d = raw mkh_c11_selfw2();
+    S_c11_selfw2:s = S_c11_selfw2{ own: raw mkh_c11_selfw2(), p: @d };
+    s.p = @s.own;
+    int64->:e = @s.own.l[0i64];
+    loop(0i64, 64i64, 1i64) { drop list_push(@s.p.l, 1i64); }
+    pass (<-e) + 6i64;
+};
+func:f_c11_selfw2 = int64(int64:n) never fails { pass raw g_c11_selfw2(n); };
+func:cell_main_c11_selfw2 = int32() never fails { pass (((raw f_c11_selfw2(1i64)) + 60i64) =>! int32); };
+struct:K_c13_selfar = { int64:k; };
+func:mk_c13_selfar = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
+struct:HL_c13_selfar = { List<int64>:l; int64:k; };
+func:mkh_c13_selfar = HL_c13_selfar() never fails { pass HL_c13_selfar{ l: raw mk_c13_selfar(), k: 1i64 }; };
+func:growh_c13_selfar = int64(HL_c13_selfar->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:S_c13_selfar = { HL_c13_selfar[1]:ar; HL_c13_selfar->:p; };
+func:g_c13_selfar = int64(int64:n) never fails {
+    HL_c13_selfar:d = raw mkh_c13_selfar();
+    S_c13_selfar:s = S_c13_selfar{ ar: [raw mkh_c13_selfar()], p: @d };
+    s.p = @s.ar[0i64];
+    int64->:e = @s.ar[0i64].l[0i64];
+    discard(raw growh_c13_selfar(s.p));
+    pass (<-e) + 6i64;
+};
+func:f_c13_selfar = int64(int64:n) never fails { pass raw g_c13_selfar(n); };
+func:cell_main_c13_selfar = int32() never fails { pass (((raw f_c13_selfar(1i64)) + 60i64) =>! int32); };
+struct:K_c11_selfv = { int64:k; };
+func:mk_c11_selfv = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
+struct:HL_c11_selfv = { List<int64>:l; int64:k; };
+func:mkh_c11_selfv = HL_c11_selfv() never fails { pass HL_c11_selfv{ l: raw mk_c11_selfv(), k: 1i64 }; };
+func:growh_c11_selfv = int64(HL_c11_selfv->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:S_c11_selfv = { HL_c11_selfv:own; HL_c11_selfv->:p; };
+func:g_c11_selfv = int64(int64:n) never fails {
+    HL_c11_selfv:d = raw mkh_c11_selfv();
+    S_c11_selfv:s = S_c11_selfv{ own: raw mkh_c11_selfv(), p: @d };
+    s.p = @s.own;
+    int64->:e = @((<-(s.p)).l[0i64]);
+    loop(0i64, 64i64, 1i64) { drop list_push(@s.own.l, 1i64); }
+    pass (<-e) + 6i64;
+};
+func:f_c11_selfv = int64(int64:n) never fails { pass raw g_c11_selfv(n); };
+func:cell_main_c11_selfv = int32() never fails { pass (((raw f_c11_selfv(1i64)) + 60i64) =>! int32); };
+struct:K_d1_lst = { int64:k; };
+func:mk_d1_lst = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
+struct:HL_d1_lst = { List<int64>:l; int64:k; };
+func:mkh_d1_lst = HL_d1_lst() never fails { pass HL_d1_lst{ l: raw mk_d1_lst(), k: 1i64 }; };
+func:growh_d1_lst = int64(HL_d1_lst->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:S_d1_lst = { List<int64>:own; List<int64>->:p; };
+func:g_d1_lst = int64(int64:n) never fails {
+    List<int64>:d = raw mk_d1_lst();
+    S_d1_lst:s = S_d1_lst{ own: raw mk_d1_lst(), p: @d };
+    s.p = @s.own;
+    int64->:e = @s.own[0i64];
+    loop(0i64, 64i64, 1i64) { drop list_push(s.p, 1i64); }
+    pass (<-e) + 6i64;
+};
+func:f_d1_lst = int64(int64:n) never fails { pass raw g_d1_lst(n); };
+func:cell_main_d1_lst = int32() never fails { pass (((raw f_d1_lst(1i64)) + 60i64) =>! int32); };
+struct:K_d3_inn = { int64:k; };
+func:mk_d3_inn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
+struct:HL_d3_inn = { List<int64>:l; int64:k; };
+func:mkh_d3_inn = HL_d3_inn() never fails { pass HL_d3_inn{ l: raw mk_d3_inn(), k: 1i64 }; };
+func:growh_d3_inn = int64(HL_d3_inn->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:In_d3_inn = { HL_d3_inn->:p; int64:z; };
+struct:S_d3_inn = { In_d3_inn:inn; HL_d3_inn:own; };
+func:g_d3_inn = int64(int64:n) never fails {
+    HL_d3_inn:d = raw mkh_d3_inn();
+    S_d3_inn:s = S_d3_inn{ inn: In_d3_inn{ p: @d, z: 1i64 }, own: raw mkh_d3_inn() };
+    s.inn.p = @s.own;
+    int64->:e = @s.own.l[0i64];
+    discard(raw growh_d3_inn(s.inn.p));
+    pass (<-e) + 6i64;
+};
+func:f_d3_inn = int64(int64:n) never fails { pass raw g_d3_inn(n); };
+func:cell_main_d3_inn = int32() never fails { pass (((raw f_d3_inn(1i64)) + 60i64) =>! int32); };
+struct:K_d4_arr = { int64:k; };
+func:mk_d4_arr = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
+struct:HL_d4_arr = { List<int64>:l; int64:k; };
+func:mkh_d4_arr = HL_d4_arr() never fails { pass HL_d4_arr{ l: raw mk_d4_arr(), k: 1i64 }; };
+func:growh_d4_arr = int64(HL_d4_arr->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:S_d4_arr = { HL_d4_arr:own; HL_d4_arr->:p; };
+func:g_d4_arr = int64(int64:n) never fails {
+    HL_d4_arr:d = raw mkh_d4_arr();
+    S_d4_arr[2]:a = [S_d4_arr{ own: raw mkh_d4_arr(), p: @d }, S_d4_arr{ own: raw mkh_d4_arr(), p: @d }];
+    a[0i64].p = @a[1i64].own;
+    int64->:e = @a[1i64].own.l[0i64];
+    discard(raw growh_d4_arr(a[0i64].p));
+    pass (<-e) + 6i64;
+};
+func:f_d4_arr = int64(int64:n) never fails { pass raw g_d4_arr(n); };
+func:cell_main_d4_arr = int32() never fails { pass (((raw f_d4_arr(1i64)) + 60i64) =>! int32); };
+struct:K_v1_inn = { int64:k; };
+func:mk_v1_inn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
+struct:HL_v1_inn = { List<int64>:l; int64:k; };
+func:mkh_v1_inn = HL_v1_inn() never fails { pass HL_v1_inn{ l: raw mk_v1_inn(), k: 1i64 }; };
+func:growh_v1_inn = int64(HL_v1_inn->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:In_v1_inn = { HL_v1_inn->:p; int64:z; };
+struct:S_v1_inn = { In_v1_inn:inn; HL_v1_inn:own; };
+func:g_v1_inn = int64(int64:n) never fails {
+    HL_v1_inn:d = raw mkh_v1_inn();
+    S_v1_inn:s = S_v1_inn{ inn: In_v1_inn{ p: @d, z: 1i64 }, own: raw mkh_v1_inn() };
+    s.inn.p = @s.own;
+    int64->:e = @((<-(s.inn.p)).l[0i64]);
+    loop(0i64, 64i64, 1i64) { drop list_push(@s.own.l, 1i64); }
+    pass (<-e) + 6i64;
+};
+func:f_v1_inn = int64(int64:n) never fails { pass raw g_v1_inn(n); };
+func:cell_main_v1_inn = int32() never fails { pass (((raw f_v1_inn(1i64)) + 60i64) =>! int32); };
+struct:K_v3_arr = { int64:k; };
+func:mk_v3_arr = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
+struct:HL_v3_arr = { List<int64>:l; int64:k; };
+func:mkh_v3_arr = HL_v3_arr() never fails { pass HL_v3_arr{ l: raw mk_v3_arr(), k: 1i64 }; };
+func:growh_v3_arr = int64(HL_v3_arr->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:S_v3_arr = { HL_v3_arr:own; HL_v3_arr->:p; };
+func:g_v3_arr = int64(int64:n) never fails {
+    HL_v3_arr:d = raw mkh_v3_arr();
+    S_v3_arr[2]:a = [S_v3_arr{ own: raw mkh_v3_arr(), p: @d }, S_v3_arr{ own: raw mkh_v3_arr(), p: @d }];
+    a[0i64].p = @a[1i64].own;
+    int64->:e = @((<-(a[0i64].p)).l[0i64]);
+    loop(0i64, 64i64, 1i64) { drop list_push(@a[1i64].own.l, 1i64); }
+    pass (<-e) + 6i64;
+};
+func:f_v3_arr = int64(int64:n) never fails { pass raw g_v3_arr(n); };
+func:cell_main_v3_arr = int32() never fails { pass (((raw f_v3_arr(1i64)) + 60i64) =>! int32); };
+struct:K_v4_whole = { int64:k; };
+func:mk_v4_whole = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
+struct:HL_v4_whole = { List<int64>:l; int64:k; };
+func:mkh_v4_whole = HL_v4_whole() never fails { pass HL_v4_whole{ l: raw mk_v4_whole(), k: 1i64 }; };
+func:growh_v4_whole = int64(HL_v4_whole->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:S_v4_whole = { HL_v4_whole:own; HL_v4_whole->:p; };
+func:g_v4_whole = int64(int64:n) never fails {
+    HL_v4_whole:d = raw mkh_v4_whole();
+    S_v4_whole:s = S_v4_whole{ own: raw mkh_v4_whole(), p: @d };
+    s.p = @s.own;
+    int64->:e = @((<-(s.p)).l[0i64]);
+    s.own = raw mkh_v4_whole();
+    pass (<-e) + 6i64;
+};
+func:f_v4_whole = int64(int64:n) never fails { pass raw g_v4_whole(n); };
+func:cell_main_v4_whole = int32() never fails { pass (((raw f_v4_whole(1i64)) + 60i64) =>! int32); };
+struct:K_v5_call = { int64:k; };
+func:mk_v5_call = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
+struct:HL_v5_call = { List<int64>:l; int64:k; };
+func:mkh_v5_call = HL_v5_call() never fails { pass HL_v5_call{ l: raw mk_v5_call(), k: 1i64 }; };
+func:growh_v5_call = int64(HL_v5_call->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:S_v5_call = { HL_v5_call:own; HL_v5_call->:p; };
+func:g_v5_call = int64(int64:n) never fails {
+    HL_v5_call:d = raw mkh_v5_call();
+    S_v5_call:s = S_v5_call{ own: raw mkh_v5_call(), p: @d };
+    s.p = @s.own;
+    int64->:e = @((<-(s.p)).l[0i64]);
+    discard(raw growh_v5_call(@s.own));
+    pass (<-e) + 6i64;
+};
+func:f_v5_call = int64(int64:n) never fails { pass raw g_v5_call(n); };
+func:cell_main_v5_call = int32() never fails { pass (((raw f_v5_call(1i64)) + 60i64) =>! int32); };
+struct:K_vw_self = { int64:k; };
+func:mk_vw_self = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
+struct:HL_vw_self = { List<int64>:l; int64:k; };
+func:mkh_vw_self = HL_vw_self() never fails { pass HL_vw_self{ l: raw mk_vw_self(), k: 1i64 }; };
+func:growh_vw_self = int64(HL_vw_self->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:HS_vw_self = { string:s; int64:k; };
+struct:S_vw_self = { HS_vw_self:own; HS_vw_self->:p; };
+func:g_vw_self = int64(int64:n) never fails {
+    HS_vw_self:d = HS_vw_self{ s: string_concat("ab", "cde"), k: 1i64 };
+    S_vw_self:s = S_vw_self{ own: HS_vw_self{ s: string_concat("ab", "cd"), k: 1i64 }, p: @d };
+    s.p = @s.own;
+    fixed uint8[]:vw = string_bytes((<-(s.p)).s);
+    s.own.s = string_concat("wx", "yz");
+    pass ((vw[0i64] => int64) - 97i64) + 7i64;
+};
+func:f_vw_self = int64(int64:n) never fails { pass raw g_vw_self(n); };
+func:cell_main_vw_self = int32() never fails { pass (((raw f_vw_self(1i64)) + 60i64) =>! int32); };
+struct:K_vw_selfw = { int64:k; };
+func:mk_vw_selfw = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
+struct:HL_vw_selfw = { List<int64>:l; int64:k; };
+func:mkh_vw_selfw = HL_vw_selfw() never fails { pass HL_vw_selfw{ l: raw mk_vw_selfw(), k: 1i64 }; };
+func:growh_vw_selfw = int64(HL_vw_selfw->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:HS_vw_selfw = { string:s; int64:k; };
+struct:S_vw_selfw = { HS_vw_selfw:own; HS_vw_selfw->:p; };
+func:g_vw_selfw = int64(int64:n) never fails {
+    HS_vw_selfw:d = HS_vw_selfw{ s: string_concat("ab", "cde"), k: 1i64 };
+    S_vw_selfw:s = S_vw_selfw{ own: HS_vw_selfw{ s: string_concat("ab", "cd"), k: 1i64 }, p: @d };
+    s.p = @s.own;
+    fixed uint8[]:vw = string_bytes((<-(s.p)).s);
+    s.own = HS_vw_selfw{ s: string_concat("wx", "yz"), k: 2i64 };
+    pass ((vw[0i64] => int64) - 97i64) + 7i64;
+};
+func:f_vw_selfw = int64(int64:n) never fails { pass raw g_vw_selfw(n); };
+func:cell_main_vw_selfw = int32() never fails { pass (((raw f_vw_selfw(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

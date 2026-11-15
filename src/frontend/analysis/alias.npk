@@ -590,7 +590,9 @@ func:write_into_elements = bool(Alias->:x, List<Step>:tp, int64:m) never fails {
 func:pre_has_party = bool(Alias->:x, int32:holder, ExprId:place) never fails {
     for (int64:i in 0i64...x.pre.count) {
         Party:pp = x.pre[i];
-        if ((pp.holder == holder) && (pp.place.index == place.index)) { pass true; }
+        // DEF-666 (177d2b6's fix row): a party a cast retyped (DEF-585's ELEM party, `view_kind` -2) is not the plain one -- the cast copy's ref lands first
+        // on the holder's chain, and counted here it dropped DEF-413's PLAIN party, so a `dalloc` of a `wild` member was judged against no party (`zl_d`)
+        if ((pp.holder == holder) && (pp.place.index == place.index) && (pp.view_kind != (0i32 - 2i32))) { pass true; }
     }
     pass false;
 };
@@ -808,7 +810,9 @@ func:chain_view_parties = NIL(Alias->:x, int32:first, int32:holder, bool:ptr_hol
                 // with payloads or a `dyn` answers YES by itself, and `EP:e = EP.A(@a);` over a struct of a lock and an `int32` freezes nothing (`type_heap_holds` with no pointee: is a `List` under it?).
                 if ((pt != 0i32) && (raw type_holds_elem_pointer(x, hty, is (vr.xc == (0i32 - 2i32)) : 0i32 : pt, 8i32, vr.xc)) && (raw type_heap_holds(x, pt, 0i32, false, 8i32))) { elem = true; }
             }
-            if (!elem) {
+            // DEF-666's DIRECT FORM (177d2b6's fix row): a retyped address is still the address -- DEF-413's PLAIN party stands beside the retyped ELEM one below, or
+            // a cast address stored with no plain ref of its place (`m.lp = (((@hl) =>! any->) =>! HS->); dalloc(hl.wm);`, `d6_dir`) is judged against no party
+            if ((!elem) || ((vr.xc == (0i32 - 2i32)) && (!(raw place_is_list_element(x, place))))) {
                 // A PLAIN ADDRESS A VALUE CARRIES INTO ITS HOLDER (DEF-413's holder faces, landing 176): a call's result
                 // (`H->:p = raw keepp(@h)`), a struct holding the address (`W{ ptr: @h }`, `w.ptr = @h`), a holder a callee
                 // stored into (`stash(@w, @h)`) -- each held `@h` past a `move(h.s)` and read the vacated field (k_callres,
@@ -827,7 +831,7 @@ func:chain_view_parties = NIL(Alias->:x, int32:first, int32:holder, bool:ptr_hol
                     drop list_push(@x.pre, Party{ site: place, kind: raw PARTY_PLAIN(), root: vr.root, holder: holder,
                                                   place: place, view_kind: 0i32, root_ptr: raw root_ident_is_pointer(x, place), path: vr.path });
                 }
-                continue;
+                if (!elem) { continue; }
             }
             if (raw pre_has_elem_party(x, holder, place)) { continue; }
             drop list_push(@x.pre, Party{ site: place, kind: raw PARTY_ELEM_ADDR(), root: vr.root, holder: holder,
@@ -1986,9 +1990,10 @@ func:targets_held = NIL(Alias->:x, Span:at, int32:rr, int32:from, int32:pty, int
     while (e3 >= 0i32) decreases e3 + 1i32 {
         ViewRef:vr3 = raw escape_view_ref(x.esc, e3);
         e3 = raw escape_view_ref_next(x.esc, e3);
-        if ((vr3.root == 0i32) || (vr3.root == rr) || (vr3.root == from)) { continue; }
+        if (vr3.root == 0i32) { continue; }
         if (raw ptr_ref_is_target(x, vr3, pty, pte)) { drop list_push(out, vr3); }
-        if (vr3.kind == (raw REF_ADDR())) { drop targets_held(x, at, vr3.root, rr, pty, pte, fuel - 1i32, out, seen); }
+        // A REF BACK INTO THE HOLDER, OR INTO THE ONE IT CAME FROM, IS A TARGET; IT IS NO HOP (DEF-663)
+        if ((vr3.kind == (raw REF_ADDR())) && (vr3.root != rr) && (vr3.root != from)) { drop targets_held(x, at, vr3.root, rr, pty, pte, fuel - 1i32, out, seen); }
     }
     pass NIL;
 };
@@ -2042,8 +2047,8 @@ func:pointer_targets_of = NIL(Alias->:x, Span:at, ExprId:pe_in, int32:fuel, List
                 ViewRef:vr2 = raw escape_view_ref(x.esc, e2);
                 e2 = raw escape_view_ref_next(x.esc, e2);
                 if (vr2.root == 0i32) { continue; }
-                if (vr2.root == rr) { continue; }
-                drop targets_held(x, at, vr2.root, rr, pty, pte, 16i32, out, @seen);   // DEF-426's hop, through a pointer as off a name (`qp.q`, `h1`, 83)
+                // DEF-426's hop, through a pointer as off a name (`qp.q`, `h1`, 83); a ref into the pointee's own holder is a target and no hop (DEF-663)
+                if (vr2.root != rr) { drop targets_held(x, at, vr2.root, rr, pty, pte, 16i32, out, @seen); }
                 if (!(raw ptr_ref_is_target(x, vr2, pty, pte))) { continue; }
                 drop list_push(out, vr2);
             }
@@ -2055,8 +2060,7 @@ func:pointer_targets_of = NIL(Alias->:x, Span:at, ExprId:pe_in, int32:fuel, List
         ViewRef:vr = raw escape_view_ref(x.esc, e);
         e = raw escape_view_ref_next(x.esc, e);
         if (vr.root == 0i32) { continue; }
-        if (vr.root == r) { continue; }
-        drop targets_held(x, at, vr.root, r, pty, pte, 16i32, out, @seen);
+        if (vr.root != r) { drop targets_held(x, at, vr.root, r, pty, pte, 16i32, out, @seen); }   // a ref into the pointer's own holder is a target and no hop (DEF-663)
         if (!(raw ptr_ref_is_target(x, vr, pty, pte))) { continue; }
         drop list_push(out, vr);
     }
@@ -2173,7 +2177,7 @@ func:check_pointer_view_parties = bool(Alias->:x, int32:root, List<Step>:ap, int
         Party:p = x.live[i];
         if (!(raw party_in_scope(x, p))) { continue; }
         if ((p.kind != (raw PARTY_VIEW())) && (p.kind != (raw PARTY_ELEM_ADDR())) && (p.kind != (raw PARTY_TARGET()))) { continue; }
-        if (p.root == root) { continue; }
+        // A PARTY AT THE WRITE'S OWN ROOT TAKEN THROUGH A POINTER INTO THAT ROOT is re-rooted below like any other (DEF-665)
         if ((skip != 0i32) && (p.root == skip)) { continue; }
         if (!(raw conflicts(p.kind, akind))) { continue; }
         List<Step>:pp = raw list_init::<Step>(8i64);

@@ -16,7 +16,7 @@ mod:pointer_returned_holder_ok;
 // `r2_ownlc_ok`, and `x_sidc_ok` (nitpick-compiler_113's, the exact end's).
 // DEF-654'S CONTROLS (nitpick-compiler_112's `o_hp` three and Ailp-team_112's): `o_hpsc_ok`, `o_hp2c_ok`, `o_hpg2c_ok`, `k_spptrc_ok`, `k_hsptrc_ok`,
 // `l_csptrc_ok`, `l_hsptrgc_ok`, `j_srngc_ok`, `f_rngc_ok`, `g_arngc_ok`, `g_lrngc_ok`, `j_arngwc_ok`, `j_rrc_ok`, `k_lcrngc_ok`, `k_nrngc_ok`, `n_bpushc_ok`,
-// `n_bpushac_ok`, `n_bpushhc_ok`, `n_bpushlc_ok`, `n_bpushpc_ok`, `n_bpushsc_ok`, `n_bresc_ok`, `u_dync_ok`, `u_genc_ok`, `u_fvc_ok`, `u_fvsc_ok`, `u_cbc_ok`,
+// `n_bpushac_ok`, `n_bpushhc_ok`, `n_bpushlc_ok`, `n_bpushpc_ok`, `n_bpushsc_ok`, `n_bresc_ok`, `u_dync_ok`, `u_genc_ok`, `u_fvc_ok`, `u_cbc_ok`,
 // `u_varc_ok`.
 // THE TWINS OF THE PRICES THE ATTACK FOUND (Ailp-team_112's; DEF-655 and DEF-656, LOW, OPEN), each accepted as its form in the rejection file should be:
 // `a_two_othi_ok`, `d_price2i_ok` (the address taken at the call), `m_sscali_ok`, `p_lki_ok` (the address taken by index), `s_extc_ok`, `s_extpc_ok` (the growth
@@ -29,6 +29,9 @@ mod:pointer_returned_holder_ok;
 //   `k_lsta_ok` (a `List<string>` element's: the compiler's own interned-text shape, a getter's view held across an adder that looks a text up and pushes);
 //   a pointer whose pointee type the holder doesn't hold writes nothing -- `k_nohold2_ok` (a pointer read out of a slice of pointers points at nothing in the
 //   slice's own run: the callee grows the `List` it points at, and the caller keeps a view of the run).
+// 2026-11-13 (landing 177d2b6, row 4: V+D; rulings l.9180 and management_44's Addendum 12 to l.9478). `u_fvsc_ok` is moved to
+// tests/analysis/rejection/store_through_pointer_value.npk as a PRICE: V refuses it (BORROW-009 at its `mid`'s call through the function value), at parity
+// with its by-name twin `k6_midn_ok`, which every build refuses. Its exit code, 83, is left unused.
 error:E5;
 struct:K_t1c_ok = { int64:k; };
 struct:H_t1c_ok = { List<int64>:l; int64:k; K_t1c_ok:kk; };
@@ -2156,32 +2159,6 @@ func:f_u_fvc_ok = int64(int64:n) never fails {
     pass raw g_u_fvc_ok(@h0, @h2, @hz, n);
 };
 func:cell_main_u_fvc_ok = int32() never fails { pass (((raw f_u_fvc_ok(1i64)) + 60i64) =>! int32); };
-struct:K_u_fvsc_ok = { int64:k; };
-struct:H_u_fvsc_ok = { List<int64>:l; int64:k; K_u_fvsc_ok:kk; };
-func:mk_u_fvsc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
-func:mkh_u_fvsc_ok = H_u_fvsc_ok() never fails { pass H_u_fvsc_ok{ l: raw mk_u_fvsc_ok(), k: 2i64, kk: K_u_fvsc_ok{ k: 3i64 } }; };
-func:growh_u_fvsc_ok = int64(H_u_fvsc_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:growl_u_fvsc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
-func:fp_u_fvsc_ok = int64->(H_u_fvsc_ok->:q) never fails { pass @((<-q).l[0i64]); };
-func:getl_u_fvsc_ok = List<int64>->(H_u_fvsc_ok->:w) never fails { pass @w.l; };
-struct:LA_u_fvsc_ok = { List<int64>:l; };
-struct:LB_u_fvsc_ok = { List<int64>:l; };
-struct:H6_u_fvsc_ok = { LA_u_fvsc_ok:a; LB_u_fvsc_ok:b; List<int8>:other; };
-func:mk6_u_fvsc_ok = H6_u_fvsc_ok() never fails { H6_u_fvsc_ok:t = H6_u_fvsc_ok{ a: LA_u_fvsc_ok{ l: raw mk_u_fvsc_ok() }, b: LB_u_fvsc_ok{ l: raw mk_u_fvsc_ok() }, other: raw list_init::<int8>(1i64) }; drop list_push(@t.other, 1i8); pass t; };
-struct:LC_u_fvsc_ok = { List<int64>:l; };
-func:growc_u_fvsc_ok = int64(LC_u_fvsc_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@p.l, 1i64); } pass 7i64; };
-func:getb_u_fvsc_ok = LB_u_fvsc_ok->(H6_u_fvsc_ok->:w) never fails { pass @w.b; };
-func:mid_u_fvsc_ok = int64(List<int64>[]:s) never fails { func int64(List<int64>->) never fails:gf = growl_u_fvsc_ok; pass raw gf((s.ptr) =>! List<int64>->); };
-func:g_u_fvsc_ok = int64(H_u_fvsc_ok->:h0p, H_u_fvsc_ok->:hq, H_u_fvsc_ok->:hz, int64:n) never fails {
-    List<int64>[2]:arr = [raw mk_u_fvsc_ok(), raw mk_u_fvsc_ok()];
-    int64->:e = @arr[0i64][0i64];
-    pass (<-e) + 6i64;
-};
-func:f_u_fvsc_ok = int64(int64:n) never fails {
-    H_u_fvsc_ok:hz = raw mkh_u_fvsc_ok(); H_u_fvsc_ok:h0 = raw mkh_u_fvsc_ok(); H_u_fvsc_ok:h2 = raw mkh_u_fvsc_ok();
-    pass raw g_u_fvsc_ok(@h0, @h2, @hz, n);
-};
-func:cell_main_u_fvsc_ok = int32() never fails { pass (((raw f_u_fvsc_ok(1i64)) + 60i64) =>! int32); };
 struct:K_u_cbc_ok = { int64:k; };
 struct:H_u_cbc_ok = { List<int64>:l; int64:k; K_u_cbc_ok:kk; };
 func:mk_u_cbc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
@@ -2603,7 +2580,6 @@ func:main = int32(cstring[]:argv) {
     if ((raw cell_main_u_dync_ok()) != 67i32) { exit 80i32; }
     if ((raw cell_main_u_genc_ok()) != 67i32) { exit 81i32; }
     if ((raw cell_main_u_fvc_ok()) != 67i32) { exit 82i32; }
-    if ((raw cell_main_u_fvsc_ok()) != 67i32) { exit 83i32; }
     if ((raw cell_main_u_cbc_ok()) != 67i32) { exit 84i32; }
     if ((raw cell_main_u_varc_ok()) != 67i32) { exit 85i32; }
     if ((raw cell_main_a_two_othi_ok()) != 67i32) { exit 86i32; }
