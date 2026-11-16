@@ -1,55 +1,57 @@
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 117:30
+// expect-error-at: 121:30
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 175:32
+// expect-error-at: 179:32
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 232:29
+// expect-error-at: 236:29
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 293:30
+// expect-error-at: 297:30
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 355:31
+// expect-error-at: 359:31
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 416:31
+// expect-error-at: 420:31
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 477:29
+// expect-error-at: 481:29
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 538:31
+// expect-error-at: 542:31
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 600:30
+// expect-error-at: 604:30
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 661:30
+// expect-error-at: 665:30
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 722:29
+// expect-error-at: 726:29
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 784:31
+// expect-error-at: 788:31
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 845:29
+// expect-error-at: 849:29
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 906:31
+// expect-error-at: 910:31
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 967:30
+// expect-error-at: 971:30
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 1028:31
+// expect-error-at: 1032:31
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 1089:29
+// expect-error-at: 1093:29
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 1150:30
+// expect-error-at: 1154:30
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 1211:30
+// expect-error-at: 1215:30
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 1272:30
+// expect-error-at: 1276:30
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 1333:31
+// expect-error-at: 1337:31
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 1394:31
+// expect-error-at: 1398:31
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 1439:29
+// expect-error-at: 1443:29
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 1484:30
+// expect-error-at: 1488:30
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 1545:31
+// expect-error-at: 1549:31
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 1603:30
+// expect-error-at: 1607:30
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 1624:105
 mod:store_param_read;
 // 2026-11-15 (landing 177d2b7, row 6: DEF-672, DEF-673). A PARAMETER'S VALUE READ OUT AS THE INDIRECTION'S TYPE IS A TARGET OF A STORE THAT CARRIES
 // REFS. `rrti_chain`'s matcher takes a chain ref as a target by its place's type, so a pointer parameter's value read out of a struct it points to
@@ -64,6 +66,8 @@ mod:store_param_read;
 // `u_rdn`, `u_rdpn`, `u_rdppn` (a read through a dereference). a145's three: `c4_pp`, and the aggregate read, `c4_agg` (`SQ:b = <-sp;`) and
 // `c4_inner` (`SQ:b = (<-rp).s;`); main refuses their direct twin `c4_aggd`.
 // THE ROW'S PRICE: `cp_two`, 67 on main, at parity with `cp_two_m` (management's ruling of 2026-11-15, rows 5-6, item 4).
+// 177d2b8 (the tests row, rulings l.12574): `mb_wfldb`, a parameter's value read at a `wild` place, refused by main where the caller stores a borrow
+// into the `wild` field (BORROW-011, D-223); the mutant `m6mb` exits 3 on it. Its right neighbour `mb_widx` is in `store_param_read_ok.npk`.
 error:E5;
 struct:K_c4_agg = { int64:k; };
 struct:H_c4_agg = { List<int64>:l; int64:k; K_c4_agg:kk; };
@@ -1608,6 +1612,20 @@ func:f_cp_two = int64(int64:n) never fails {
     pass raw g_cp_two(@h0, @h2, @hz, n);
 };
 func:cell_main_cp_two = int32() never fails { pass (((raw f_cp_two(1i64)) + 60i64) =>! int32); };
+struct:H_mb_wfldb = { List<int64>:l; int64:k; };
+struct:HPO_mb_wfldb = { H_mb_wfldb->:lp; List<int64>:own; };
+struct:SQ_mb_wfldb = { HPO_mb_wfldb->:q; int64:z; };
+struct:SQW_mb_wfldb = { wild HPO_mb_wfldb->:q; int64:z; };
+func:mk_mb_wfldb = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_mb_wfldb = H_mb_wfldb() never fails { pass H_mb_wfldb{ l: raw mk_mb_wfldb(), k: 2i64 }; };
+func:gk2_mb_wfldb = int64(SQW_mb_wfldb->:sp, H_mb_wfldb->:v) never fails { SQW_mb_wfldb:b = SQW_mb_wfldb{ q: sp.q, z: 1i64 }; (<-(b.q)).lp = v; pass 7i64; };
+func:g_mb_wfldb = int64(int64:n) {
+    H_mb_wfldb:h0 = raw mkh_mb_wfldb(); H_mb_wfldb:h2 = raw mkh_mb_wfldb();
+    HPO_mb_wfldb:m = HPO_mb_wfldb{ lp: @h0, own: raw mk_mb_wfldb() }; SQW_mb_wfldb:s = SQW_mb_wfldb{ q: @m, z: 1i64 };
+    int64:r = raw gk2_mb_wfldb(@s, @h2);
+    pass r;
+};
+func:cell_main_mb_wfldb = int32() never fails { pass (((g_mb_wfldb(1i64) ?! E5) + 60i64) =>! int32); };
 func:main = int32(cstring[]:argv) { exit 0i32; };
 func:failsafe = int32(Error:e) {
     pick (e) {

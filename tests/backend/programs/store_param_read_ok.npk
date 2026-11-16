@@ -3,6 +3,9 @@ mod:store_param_read_ok;
 // 2026-11-15 (landing 177d2b7, row 6: DEF-672, DEF-673). The right controls of `store_param_read.npk`, each 67 on main (78f9b3a) and on the row at
 // -O0, -O2 and under the detector: each face's `_ok` (the growth taken out), W1's `q_*_ok`, a145's `c4_*_ok`, and `c6_hvf_ok`, `c6_hvfb_ok`,
 // `c6_hvfd_ok`, the controls of the store through a by-value parameter's pointer member (`HPO->->:pp = @hv.q;`), whose faces are DEF-644's.
+// 177d2b8 (the tests row): `mu6x_ok` (rulings l.12105 item 5), which the mutant `m6cx` refuses: `b` copies `sp.q` beside `h2`, and the store through
+// `b.hn` carries `ip`'s ref; and `mb_widx` (l.12574), a parameter's value read at a `wild` place (`wild SQ->`), then a store through it, on which
+// the mutant `m6mb` exits 3.
 error:E5;
 struct:K_c4_agg_ok = { int64:k; };
 struct:H_c4_agg_ok = { List<int64>:l; int64:k; K_c4_agg_ok:kk; };
@@ -3423,6 +3426,43 @@ func:f_u_rdppn_ok = int64(int64:n) never fails {
     pass raw g_u_rdppn_ok(@h0, @h2, @hz, n);
 };
 func:cell_main_u_rdppn_ok = int32() never fails { pass (((raw f_u_rdppn_ok(1i64)) + 60i64) =>! int32); };
+struct:H_mu6x_ok = { int64:k; int64:z; };
+struct:HPO_mu6x_ok = { H_mu6x_ok->:lp; int64:z; };
+struct:HN_mu6x_ok = { int64->:p; int64:z; };
+struct:SQ_mu6x_ok = { HPO_mu6x_ok->:q; List<int64>:own; };
+struct:SB_mu6x_ok = { HPO_mu6x_ok->:q; HN_mu6x_ok->:hn; };
+func:f_mu6x_ok = int64(SQ_mu6x_ok->:sp, HN_mu6x_ok->:h2, int64->:ip) never fails {
+    SB_mu6x_ok:b = SB_mu6x_ok{ q: sp.q, hn: h2 };
+    (<-(b.hn)).p = ip;
+    pass 1i64;
+};
+func:g_mu6x_ok = int64(int64:n) {
+    H_mu6x_ok:hx = H_mu6x_ok{ k: 1i64, z: 0i64 };
+    HPO_mu6x_ok:po = HPO_mu6x_ok{ lp: @hx, z: 0i64 };
+    List<int64>:l0 = raw list_init::<int64>(2i64);
+    drop list_push(@l0, 3i64);
+    SQ_mu6x_ok:sq = SQ_mu6x_ok{ q: @po, own: move(l0) };
+    int64:kk = 2i64;
+    HN_mu6x_ok:hn = HN_mu6x_ok{ p: @kk, z: 0i64 };
+    int64->:e = @(sq.own[0i64]);
+    int64:r = raw f_mu6x_ok(@sq, @hn, @kk);
+    pass (<-e) + r + 3i64;
+};
+func:cell_main_mu6x_ok = int32() never fails { pass (((g_mu6x_ok(1i64) ?! E5) + 60i64) =>! int32); };
+struct:H_mb_widx = { List<int64>:l; int64:k; };
+struct:HPO_mb_widx = { H_mb_widx->:lp; List<int64>:own; };
+struct:SQ_mb_widx = { HPO_mb_widx->:q; int64:z; };
+struct:SQW_mb_widx = { wild HPO_mb_widx->:q; int64:z; };
+func:mk_mb_widx = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_mb_widx = H_mb_widx() never fails { pass H_mb_widx{ l: raw mk_mb_widx(), k: 2i64 }; };
+func:gk2_mb_widx = int64(wild SQ_mb_widx->:sp, H_mb_widx->:v) never fails { SQ_mb_widx:b = sp[0i64]; (<-(b.q)).lp = v; pass 7i64; };
+func:g_mb_widx = int64(int64:n) {
+    H_mb_widx:h0 = raw mkh_mb_widx(); H_mb_widx:h2 = raw mkh_mb_widx();
+    HPO_mb_widx:m = HPO_mb_widx{ lp: @h0, own: raw mk_mb_widx() }; SQ_mb_widx:s = SQ_mb_widx{ q: @m, z: 1i64 };
+    int64:r = raw gk2_mb_widx((@s) =>! wild SQ_mb_widx->, @h2);
+    pass r;
+};
+func:cell_main_mb_widx = int32() never fails { pass (((g_mb_widx(1i64) ?! E5) + 60i64) =>! int32); };
 func:main = int32(cstring[]:argv) {
     if ((raw cell_main_c4_agg_ok()) != 67i32) { exit 1i32; }
     if ((raw cell_main_c4_aggd_ok()) != 67i32) { exit 2i32; }
@@ -3483,6 +3523,8 @@ func:main = int32(cstring[]:argv) {
     if ((raw cell_main_u_rdn_ok()) != 67i32) { exit 57i32; }
     if ((raw cell_main_u_rdpn_ok()) != 67i32) { exit 58i32; }
     if ((raw cell_main_u_rdppn_ok()) != 67i32) { exit 59i32; }
+    if ((raw cell_main_mu6x_ok()) != 67i32) { exit 60i32; }
+    if ((raw cell_main_mb_widx()) != 67i32) { exit 61i32; }
     exit 0i32;
 };
 func:failsafe = int32(Error:e) {

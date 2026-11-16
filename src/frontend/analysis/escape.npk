@@ -1841,6 +1841,7 @@ func:record_refs_through_indirection = NIL(Escape->:x, ExprId:dest, List<ViewRef
             // conflicted with that store, `zt2gc`)
             List<ViewRef>:tg = raw list_init::<ViewRef>(4i64);
             drop escape_pointer_targets(x, sr.id, @tg);
+            bool:onp = false;
             for (int64:i in 0i64...tg.count) {
                 // (the CALLER's storage, as `record_refs_at_target` separates it: a parameter whose ref is a pointer, an Optional one's peeled -- `o ?? b`,
                 // `o ??! E5`; a by-value parameter's address is this frame's, `(<-(raw k0.tgt())).hp2 = d2` over `move T:k0`, `zbv_g`)
@@ -1848,8 +1849,27 @@ func:record_refs_through_indirection = NIL(Escape->:x, ExprId:dest, List<ViewRef
                 if ((pt != 0i32) && ((raw type_kind(x.types, pt)) == (raw TY_OPTIONAL()))) { pt = raw type_elem(x.types, pt); }
                 if (((raw param_index_of(x, tg[i].root)) >= 0i32) && (pt != 0i32) && ((raw type_kind(x.types, pt)) == (raw TY_POINTER()))) {
                     drop record_refs_into_pointer_value(x, sr.id, refs);
+                    onp = true;
                     break;
                 }
+            }
+            // (and EACH TARGET'S OWN ROAD, as a named root's store reads its root's (177d2b8): a store a hop below the value's own walks the target's chain
+            // for the destination's hops below it (`rrti_path`: `<-((<-(@s)).l) = v`, `dw_rl1`, `dw_rl`, `c1ls`; `(<-(<-(is c : @la : @lb))).lp = v` over
+            // `HPO->:la = a`, `c1ll`); a one-hop store with no pointer parameter among the targets lands its refs on each target of the indirection's own
+            // type, as `PW->:hp = @h; (<-hp).p = v` lands them on `h` -- the free through `h.p` reads them (DEF-660's `rw_*` family); a holder of it isn't
+            // taken (`(<-(raw s.tgt())).hp2 = d2` over a generic `T:s`, `zt2gc`))
+            List<int32>:hp = raw list_init::<int32>(4i64);
+            discard(raw path_indirections(x, dest, @hp));
+            List<int32>:sq = raw list_init::<int32>(4i64);
+            List<int32>:sqp = raw list_init::<int32>(4i64);
+            List<int32>:squ = raw list_init::<int32>(4i64);
+            for (int64:j in 0i64...tg.count) {
+                int32:tk = raw walk_chain_key_of_ref(x, tg[j]);
+                if ((hp.count >= 2i64) && (tk != (0i32 - 1i32))) { drop rrti_path(x, tk, @hp, hp.count - 2i64, 0i32, refs, dest, @sq, @sqp, @squ); }
+                // (a target with no chain to read -- a pointer or slice parameter's pointee reached by address, `@p.s` -- takes the refs itself, as `rrti_path`
+                // makes such a target take them above the last hop: `(<-((<-(is (k > 0i64) : @p.s : @p.s2)).q)).lp = v` over `SW->:p`, `a1_pa2`)
+                if ((hp.count >= 2i64) && (tk == (0i32 - 1i32)) && (!(raw pick_store_refused(x, tg[j].root, refs.count, dest)))) { drop record_refs_at_target(x, tg[j], refs); }
+                if ((!onp) && (hp.count == 1i64) && (raw rrti_is_target(x, tg[j], hp[0i64], false)) && (!(raw pick_store_refused(x, tg[j].root, refs.count, dest)))) { drop record_refs_at_target(x, tg[j], refs); }
             }
         }
         pass NIL;
@@ -4182,6 +4202,7 @@ func:collect_call_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, int32:start, 
     bool:ctor = raw call_is_enum_ctor(x, call);
     int64:o0 = out.count;
     for (int32:k in 0i32...total) {
+        int64:ok0 = out.count;   // DEF-674: argument k's refs begin here
         ExprId:a = recv;
         bool:a_auto = recv_auto;
         int32:a_thru = is (k < base) : (raw recv_auto_deref(x, call, recv)) : 0i32;
@@ -4199,9 +4220,50 @@ func:collect_call_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, int32:start, 
             }
         }
         if (raw sum_has(spass, k)) { drop arg_refs_pass(x, a, a_auto, a_thru, depth, out); }
+        // DEF-674 (177d2b7): A CALLEE NO SUMMARY NAMES (a function value, a `dyn` method) may hand back what it was given cast to another pointee, so a ref
+        // its result's type can't reach is marked as DEF-585 marks a named callee that retypes (`s.q = raw fv(@mb)` over `conv`, `HPO->(HPB->)`); one it
+        // reaches stays unmarked, so an identity's result (`idb`, `HPB->(HPB->)`, `q_min_fv_ok`) is no target of a sibling's store
+        if ((callee <= 0i32) && (!ctor)) { for (int64:oi in ok0...out.count) { if (!(raw escape_ref_fits_result(x, (<-out)[oi], raw exprtypes_get(x.etypes, call)))) { (<-out)[oi].xc = raw escape_xc_join((<-out)[oi].xc, 0i32 - 2i32); } } }
     }
     if ((callee > 0i32) && (x.retypes[callee => int64] != 0i32)) { for (int64:oi in o0...out.count) { (<-out)[oi].xc = raw escape_xc_join((<-out)[oi].xc, x.retypes[callee => int64]); } }   // DEF-585
     pass NIL;
+};
+
+// DEF-674 (177d2b7): DOES A POINTER OF THE CALL'S RESULT TYPE `rt` REACH REF `r` BY TYPE -- the ref's place (or its path's end) is the result's pointee
+// or holds it, a carried pointer's pointee likewise? A result of another kind reaches it only when it holds no pointer; an untyped one never (closed).
+func:escape_ref_fits_result = bool(Escape->:x, ViewRef:r, int32:rt0) never fails {
+    int32:rt = rt0;
+    for (int32:pk in 0i32...2i32) { if ((rt != 0i32) && (((raw type_kind(x.types, rt)) == (raw TY_RESULT())) || ((raw type_kind(x.types, rt)) == (raw TY_OPTIONAL())))) { rt = raw type_elem(x.types, rt); } }   // the value a `Result` or an Optional carries
+    if (rt == 0i32) { pass false; }
+    int32:pt = raw exprtypes_get(x.etypes, ExprId{ index: r.place });
+    int32:ht = raw escape_path_end_type(x, pt, r.path);
+    if (ht == 0i32) { ht = pt; }
+    if ((r.kind == (raw REF_PASS())) && (ht != 0i32) && ((raw type_kind(x.types, ht)) == (raw TY_POINTER()))) { ht = raw type_elem(x.types, ht); }
+    pass (raw escape_held_ptrs_fit(x, rt, ht, 8i32));
+};
+
+// DEF-674 (177d2b7, (g)): DOES EVERY POINTER A VALUE OF TYPE `t` HOLDS POINT AT `ht` OR AT WHAT `ht` HOLDS -- the result itself, a struct's field, an inline
+// array's, a `List`'s or an Optional's element (`SB(HPB->)`, `List<HPB->>`: `t3b`, `t3l`)? A type that holds none answers yes; a slice, an enum, `dyn`, an
+// open type and the fuel's end answer no (closed). A pointer's pointee is other storage, not walked.
+// 177d2b8 row 1 (`g_open`, `appc<T>`'s `T->` handed to `func HPO->(T->)`): `escape_type_holds` answers YES where it can't see -- an open type at any depth
+// (DEF-600), an enum's payload (R12), its fuel's end -- the closed direction for a holder and the open one for a fit. So its yes is trusted only where
+// the same walk says no to a type nothing is (2147483647); `ht` the result's very pointee (`T->(T->)`) fits whatever `T` is.
+func:escape_held_ptrs_fit = bool(Escape->:x, int32:t, int32:ht, int32:fuel) decreases fuel never fails {
+    if ((fuel <= 0i32) || (t == 0i32)) { pass false; }
+    int32:k = raw type_kind(x.types, t);
+    if (k == (raw TY_POINTER())) { pass ((ht != 0i32) && ((ht == (raw type_elem(x.types, t))) || ((!(raw escape_type_holds(x, ht, 2147483647i32, 8i32))) && (raw escape_type_holds(x, ht, raw type_elem(x.types, t), 8i32))))); }
+    if (!(raw type_holds_pointer(x.types, t, 8i32))) { pass true; }
+    if ((k == (raw TY_ARRAY())) || (k == (raw TY_OPTIONAL()))) { pass (raw escape_held_ptrs_fit(x, raw type_elem(x.types, t), ht, fuel - 1i32)); }
+    if ((k != (raw TY_STRUCT())) || (raw escape_type_open(x, t))) { pass false; }
+    if (raw type_is_list(x.tr, t)) { pass (raw escape_held_ptrs_fit(x, raw list_elem_type(x.tr, t), ht, fuel - 1i32)); }
+    int32:sdi = raw type_decl(x.types, t);
+    if ((sdi < 0i32) || (sdi >= (raw ast_decl_count(x.ast)))) { pass false; }
+    DeclNode:d = raw ast_decl(x.ast, DeclId{ index: sdi });
+    for (int32:mi in 0i32...(raw item_member_count(x.ast, d))) {
+        DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, mi));
+        if ((m.kind == DeclKind.DeclFieldDecl) && (!(raw escape_held_ptrs_fit(x, raw struct_member_type(x.tr, t, m, 0i32), ht, fuel - 1i32)))) { pass false; }
+    }
+    pass true;
 };
 
 // IS A METHOD CALL'S RECEIVER THE IMPLICIT `@recv` (the auto-ref the checker

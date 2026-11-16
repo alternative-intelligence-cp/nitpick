@@ -13,6 +13,8 @@ mod:free_container_storage_locals_ok;
 // a `List`'s element's pointer field into a block (`hi_lp_ok`), `hidden` fields in a block through a `wild` slice (`hi_hd_ok`), a `wild
 // string[2]` field's element under a `wild` slice of a block (`hi_sai`, beside `hi_lai`'s twin `hi_lai_ok`); a `for` binding over a
 // `wild SS[]` view of a block (`hl_fe2_ok`), which the block never drops. Each case returns its program's exit, 67 on main and on the row.
+// 177d2b8 (the tests row, rulings l.12380): `r1_e_hwbd`'s two `wild` controls, a `#wild_slice` over a `wild` block's pointer, bound first (`hw_wbind`)
+// or cast in place (`hw_wcast`), its `.ptr` freed by hand; each returns `n`, so its case gives 61.
 error:E5;
 // wa_as_c_ok
 func:g_wa_as_c_ok = int64(int64:n) {
@@ -780,6 +782,23 @@ func:g_hi_sai = int64(int64:n) {
     pass 7i64;
 };
 func:cell_main_hi_sai = int32() never fails { pass (((g_hi_sai(1i64) ?! E5) + 60i64) =>! int32); };
+// hw_wbind
+func:g_hw_wbind = int64(int64:n) {
+    wild int8->:blk = alloc(16i64);
+    wild int64->:w = blk =>! wild int64->;
+    int64[]:s = #wild_slice<int64>(w, 2i64);
+    dalloc((s.ptr) =>! wild any->);
+    pass n;
+};
+func:cell_main_hw_wbind = int32() never fails { pass (((g_hw_wbind(1i64) ?! E5) + 60i64) =>! int32); };
+// hw_wcast
+func:g_hw_wcast = int64(int64:n) {
+    wild int8->:blk = alloc(16i64);
+    int64[]:s = #wild_slice<int64>(blk =>! wild int64->, 2i64);
+    dalloc((s.ptr) =>! wild any->);
+    pass n;
+};
+func:cell_main_hw_wcast = int32() never fails { pass (((g_hw_wcast(1i64) ?! E5) + 60i64) =>! int32); };
 func:main = int32(cstring[]:argv) {
     if ((raw cell_main_wa_as_c_ok()) != 67i32) { exit 1i32; }
     if ((raw cell_main_wa_as_d_ok()) != 67i32) { exit 2i32; }
@@ -858,6 +877,8 @@ func:main = int32(cstring[]:argv) {
     if ((raw cell_main_hp_pt_ok()) != 67i32) { exit 75i32; }
     if ((raw cell_main_hi_lai_ok()) != 67i32) { exit 76i32; }
     if ((raw cell_main_hi_sai()) != 67i32) { exit 77i32; }
+    if ((raw cell_main_hw_wbind()) != 61i32) { exit 78i32; }
+    if ((raw cell_main_hw_wcast()) != 61i32) { exit 79i32; }
     wild_release_all();   // the cells' own `wild` blocks, live at `exit 0` by design (D-183), are released before it, or the exit is WildLeak
     exit 0i32;
 };

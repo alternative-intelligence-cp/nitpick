@@ -5,6 +5,8 @@ mod:free_container_storage_attack_ok;
 // row, at -O0 and -O2 and under the freed-heap detector. Among them the right programs K-a2 refused and this row's form lifts: seven or more copies, or a
 // ternary seven deep, each copy a step of the walk's own loop (`ch7_ok`, `ch8_ok`, `tn7_ok`, `fu_tn7_ok`, `fu_id7_ok`, `fu_id9_ok`).
 // One cell a case, its names suffixed with the cell's; `main` exits with the case's number when a case returns other than its exit on main.
+// 177d2b8 (the tests row, rulings l.12791): `fu_tn7_ok`'s second free names the block its seven-deep ternary left (`if (n > 90i64) { dalloc(ow0); }
+// else { dalloc(ow1); }`), so no road of the file frees a `wild` block twice; the ternary is as before.
 error:E5;
 struct:K_ch6_ok = { int64:k; };
 func:mk_ch6_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 1i64); drop list_push(@l, 2i64); pass l; };
@@ -1967,7 +1969,7 @@ func:g_fu_tn7_ok = int64(int64:n) never fails {
     wild int8->:ow0 = alloc(16i64);
     wild int8->:ow1 = alloc(16i64);
     dalloc((is (n > 96i64) : ow1 : (is (n > 95i64) : ow1 : (is (n > 94i64) : ow1 : (is (n > 93i64) : ow1 : (is (n > 92i64) : ow1 : (is (n > 91i64) : ow1 : (is (n > 90i64) : ow1 : ow0))))))));
-    dalloc(ow1);
+    if (n > 90i64) { dalloc(ow0); } else { dalloc(ow1); }
     pass (l[0i64]) + 6i64;
 };
 func:f_fu_tn7_ok = int64(int64:n) never fails { pass raw g_fu_tn7_ok(n); };

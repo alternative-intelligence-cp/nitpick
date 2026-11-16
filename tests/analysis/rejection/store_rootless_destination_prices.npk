@@ -1,0 +1,747 @@
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 85:11
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 100:6
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 101:11
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 118:73
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 135:46
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 153:11
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 170:11
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 186:11
+// expect-error: NITPICK-BORROW-011
+// expect-error-at: 203:11
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 224:29
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 248:32
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 269:30
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 295:30
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 321:31
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 347:31
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 375:34
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 398:34
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 421:35
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 444:35
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 468:34
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 492:35
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 509:37
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 524:11
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 544:51
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 574:72
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 604:29
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 634:50
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 662:51
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 690:69
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 715:9
+mod:store_rootless_destination_prices;
+// 2026-11-16 (landing 177d2b8, row 2: the rootless destination's other roads, S1bA). THE ROW'S PRICES (rulings l.13248 item 2): right programs main
+// runs to 67 that the row refuses, failing closed, each marked PRICE and pinned by its site, followed by its TWIN, which main (3159ab8) refuses at
+// the same site. They're one kind: the new arms write the target whole into the store's records or the callee's summary, so a view of another part of
+// the target is refused across it. AT PARITY, 14: S1's `rw_ls_ok`; the attack on S1's five (`gen_ow`, `pk_ok`, `pr_loop`, `pr_ow`, `pr_pv`); `pk2`'s
+// three, DEF-633's BORROW-009 at a `pick` binding (`pk2_c_ok`, `pk2_dd_ok`, `pk2_ok`); and `j2`'s five (`j2_pw_ok`, `j2_pww_ok`, `j2_ssl_ok`,
+// `j2_sslw_ok`, `j2_sub3_c`). Most twins name the selection through a pointer local; `pk_ok`'s and the `pr_` twins make the store by the target's
+// name. `pk2_c_okt` is made for this row by the cells' rule, the store spelled through a pointer local `t`. The `j2` cells' `_nm` forms, a plain
+// store through one target only, drop the second target, so they aren't twins (l.13248); they run 67 on main and here, in
+// tests/backend/programs/store_rootless_destination_faces_ok.npk. The faces are in store_rootless_destination_faces.npk. PINNED, refused by main and
+// here at the same site, for the row's mutants: `rw_mx_c`, a pointer parameter's target beside a local's address under one ternary, whose refs go
+// into the pointer's value alone (`onp`).
+error:E5;
+// PRICE: `gen_ow`, a right program main runs to 67, refused here at its store (one site); at parity. Its twin `gen_ow_tw` follows.
+// Ailp-team_156, item 2 price, a GENERIC `T`: pr_ow in a generic function: the stored `.ptr` overwritten by `zc` before `h.p` is freed. Right.
+struct:Bx_gen_ow<T> = { T:v; wild any->:p; };
+func:gs_gen_ow<T> = int64(move T:x, move T:y, int64:n) {
+    string:s = string_concat("ab", "cde");
+    wild int8->:zb = alloc(8i64);
+    wild int8->:zc = alloc(8i64);
+    Bx_gen_ow<T>:h = Bx_gen_ow{ v: move(x), p: zb =>! wild any-> };
+    Bx_gen_ow<T>:h2 = Bx_gen_ow{ v: move(y), p: zb =>! wild any-> };
+    (<-(is (n > 100i64) : @h2 : @h)).p = s.ptr =>! wild any->;
+    h.p = zc =>! wild any->;
+    dalloc(h.p);
+    dalloc(zb);
+    pass 7i64;
+};
+func:cell_main_gen_ow = int32() never fails { pass (((gs_gen_ow::<int64>(1i64, 2i64, 1i64) ?! E5) + 60i64) =>! int32); };
+// TWIN: `gen_ow_tw`, the ternary named through a pointer local `t`: main refuses it at the same site.
+// Ailp-team_156, gen_ow BY-NAME TWIN, a GENERIC `T`: pr_ow in a generic function: the stored `.ptr` overwritten by `zc` before `h.p` is freed. Right.
+struct:Bx_gen_ow_tw<T> = { T:v; wild any->:p; };
+func:gs_gen_ow_tw<T> = int64(move T:x, move T:y, int64:n) {
+    string:s = string_concat("ab", "cde");
+    wild int8->:zb = alloc(8i64);
+    wild int8->:zc = alloc(8i64);
+    Bx_gen_ow_tw<T>:h = Bx_gen_ow_tw{ v: move(x), p: zb =>! wild any-> };
+    Bx_gen_ow_tw<T>:h2 = Bx_gen_ow_tw{ v: move(y), p: zb =>! wild any-> };
+    Bx_gen_ow_tw<T>->:t = is (n > 100i64) : @h2 : @h; (<-t).p = s.ptr =>! wild any->;
+    h.p = zc =>! wild any->;
+    dalloc(h.p);
+    dalloc(zb);
+    pass 7i64;
+};
+func:cell_main_gen_ow_tw = int32() never fails { pass (((gs_gen_ow_tw::<int64>(1i64, 2i64, 1i64) ?! E5) + 60i64) =>! int32); };
+// PRICE: `pk_ok`, a right program main runs to 67, refused here at its store (one site); at parity. Its twin `pk_ok_nm` follows.
+// Ailp-team_156, item 2 price, P8a: a rootless one-hop store whose targets include a consuming `pick` BINDING (`@hb`, SYM_PAT) with refs: S1's
+// one-hop arm asks `pick_store_refused` (DEF-633). The arm taken is `@h` (n <= 100); `zb` is freed by its own name. Right.
+struct:PWO_pk_ok = { wild any->:p; List<int64>:own; int64:z; };
+enum:EP_pk_ok = { A(PWO_pk_ok); Z; };
+func:mk_pk_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:g_pk_ok = int64(int64:n) {
+    string:s = string_concat("ab", "cde");
+    wild int8->:zb = alloc(8i64);
+    PWO_pk_ok:h = PWO_pk_ok{ p: zb =>! wild any->, own: raw mk_pk_ok(), z: 0i64 };
+    EP_pk_ok:e = EP_pk_ok.A(PWO_pk_ok{ p: zb =>! wild any->, own: raw mk_pk_ok(), z: 0i64 });
+    int64:r = 0i64;
+    pick (move(e)) { (EP_pk_ok.A(hb)) { (<-(is (n > 100i64) : @hb : @h)).p = s.ptr =>! wild any->; r = 7i64; }, (EP_pk_ok.Z) { r = 1i64; } }
+    dalloc(zb);
+    pass r;
+};
+func:cell_main_pk_ok = int32() never fails { pass (((g_pk_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// TWIN: `pk_ok_nm`, the store made to the `pick` binding by its name (`hb.p`): main refuses it at the same site.
+// Ailp-team_156, pk_ok PLAIN BINDING-FIELD TWIN (`hb.p = …`), P8a: a rootless one-hop store whose targets include a consuming `pick` BINDING (`@hb`, SYM_PAT) with refs: S1's
+// one-hop arm asks `pick_store_refused` (DEF-633). The arm taken is `@h` (n <= 100); `zb` is freed by its own name. Right.
+struct:PWO_pk_ok_nm = { wild any->:p; List<int64>:own; int64:z; };
+enum:EP_pk_ok_nm = { A(PWO_pk_ok_nm); Z; };
+func:mk_pk_ok_nm = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:g_pk_ok_nm = int64(int64:n) {
+    string:s = string_concat("ab", "cde");
+    wild int8->:zb = alloc(8i64);
+    PWO_pk_ok_nm:h = PWO_pk_ok_nm{ p: zb =>! wild any->, own: raw mk_pk_ok_nm(), z: 0i64 };
+    EP_pk_ok_nm:e = EP_pk_ok_nm.A(PWO_pk_ok_nm{ p: zb =>! wild any->, own: raw mk_pk_ok_nm(), z: 0i64 });
+    int64:r = 0i64;
+    pick (move(e)) { (EP_pk_ok_nm.A(hb)) { hb.p = s.ptr =>! wild any->; r = 7i64; }, (EP_pk_ok_nm.Z) { r = 1i64; } }
+    dalloc(zb);
+    pass r;
+};
+func:cell_main_pk_ok_nm = int32() never fails { pass (((g_pk_ok_nm(1i64) ?! E5) + 60i64) =>! int32); };
+// PRICE: `pr_loop`, a right program main runs to 67, refused here at its store (one site); at parity. Its twin `pr_loop_nm` follows.
+// Ailp-team_156, item 2 price: a struct REUSED IN A LOOP: each trip stores its own string's `.ptr` through the ternary, then resets `h.p` to `zb`
+// before the string drops; after the loop `h.p` (zb) is freed. Right.
+struct:PW_pr_loop = { wild any->:p; int64:z; };
+func:g_pr_loop = int64(int64:n) {
+    wild int8->:zb = alloc(8i64);
+    PW_pr_loop:h = PW_pr_loop{ p: zb =>! wild any->, z: 0i64 };
+    PW_pr_loop:h2 = PW_pr_loop{ p: zb =>! wild any->, z: 0i64 };
+    loop(0i64, 3i64, 1i64) {
+        string:s = string_concat("ab", "cde");
+        (<-(is (n > 100i64) : @h2 : @h)).p = s.ptr =>! wild any->;
+        h.p = zb =>! wild any->;
+    }
+    dalloc(h.p);
+    pass 7i64;
+};
+func:cell_main_pr_loop = int32() never fails { pass (((g_pr_loop(1i64) ?! E5) + 60i64) =>! int32); };
+// TWIN: `pr_loop_nm`, the store made to the target by its name (`h.p`): main refuses it at the same site.
+// Ailp-team_156, pr_loop PLAIN FIELD TWIN: a struct REUSED IN A LOOP: each trip stores its own string's `.ptr` through the ternary, then resets `h.p` to `zb`
+// before the string drops; after the loop `h.p` (zb) is freed. Right.
+struct:PW_pr_loop_nm = { wild any->:p; int64:z; };
+func:g_pr_loop_nm = int64(int64:n) {
+    wild int8->:zb = alloc(8i64);
+    PW_pr_loop_nm:h = PW_pr_loop_nm{ p: zb =>! wild any->, z: 0i64 };
+    PW_pr_loop_nm:h2 = PW_pr_loop_nm{ p: zb =>! wild any->, z: 0i64 };
+    loop(0i64, 3i64, 1i64) {
+        string:s = string_concat("ab", "cde");
+        h.p = s.ptr =>! wild any->;
+        h.p = zb =>! wild any->;
+    }
+    dalloc(h.p);
+    pass 7i64;
+};
+func:cell_main_pr_loop_nm = int32() never fails { pass (((g_pr_loop_nm(1i64) ?! E5) + 60i64) =>! int32); };
+// PRICE: `pr_ow`, a right program main runs to 67, refused here at its store (one site); at parity. Its twin `pr_ow_nm` follows.
+// Ailp-team_156, item 2 price: a field OVERWRITTEN before the free. The string's `.ptr` stored through the ternary into `h`, then `h.p` set to `zc`
+// and freed: right (s's buffer is never freed by hand). S1 leaves s's refs on `h`'s chain (flow-insensitive).
+struct:PW_pr_ow = { wild any->:p; int64:z; };
+func:g_pr_ow = int64(int64:n) {
+    string:s = string_concat("ab", "cde");
+    wild int8->:zb = alloc(8i64);
+    wild int8->:zc = alloc(8i64);
+    PW_pr_ow:h = PW_pr_ow{ p: zb =>! wild any->, z: 0i64 };
+    PW_pr_ow:h2 = PW_pr_ow{ p: zb =>! wild any->, z: 0i64 };
+    (<-(is (n > 100i64) : @h2 : @h)).p = s.ptr =>! wild any->;
+    h.p = zc =>! wild any->;
+    dalloc(h.p);
+    dalloc(zb);
+    pass 7i64;
+};
+func:cell_main_pr_ow = int32() never fails { pass (((g_pr_ow(1i64) ?! E5) + 60i64) =>! int32); };
+// TWIN: `pr_ow_nm`, the store made to the target by its name (`h.p`): main refuses it at the same site.
+// Ailp-team_156, pr_ow PLAIN FIELD TWIN: a field OVERWRITTEN before the free. The string's `.ptr` stored through the ternary into `h`, then `h.p` set to `zc`
+// and freed: right (s's buffer is never freed by hand). S1 leaves s's refs on `h`'s chain (flow-insensitive).
+struct:PW_pr_ow_nm = { wild any->:p; int64:z; };
+func:g_pr_ow_nm = int64(int64:n) {
+    string:s = string_concat("ab", "cde");
+    wild int8->:zb = alloc(8i64);
+    wild int8->:zc = alloc(8i64);
+    PW_pr_ow_nm:h = PW_pr_ow_nm{ p: zb =>! wild any->, z: 0i64 };
+    PW_pr_ow_nm:h2 = PW_pr_ow_nm{ p: zb =>! wild any->, z: 0i64 };
+    h.p = s.ptr =>! wild any->;
+    h.p = zc =>! wild any->;
+    dalloc(h.p);
+    dalloc(zb);
+    pass 7i64;
+};
+func:cell_main_pr_ow_nm = int32() never fails { pass (((g_pr_ow_nm(1i64) ?! E5) + 60i64) =>! int32); };
+// PRICE: `pr_pv`, a right program main runs to 67, refused here at its store (one site); at parity. Its twin `pr_pv_nm` follows.
+// Ailp-team_156, item 2 price: a one-hop rootless store over a pointer parameter's pointee by ADDRESS beside a LOCAL (`@p.hh : @hl`) with refs:
+// S1's one-hop arm puts `v` into the matrix for `p`; the caller then holds a pointer into `h0`'s List (`w.hh2.lp`, never written) across `hq`'s
+// growth. Right: `w.hh2.lp` stays `h0p`.
+struct:H_pr_pv = { List<int64>:l; int64:k; };
+func:mk_pr_pv = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_pr_pv = H_pr_pv() never fails { pass H_pr_pv{ l: raw mk_pr_pv(), k: 2i64 }; };
+func:growh_pr_pv = int64(H_pr_pv->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_pr_pv = int64->(H_pr_pv->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_pr_pv = { H_pr_pv->:lp; int64:z; };
+struct:SW1_pr_pv = { HPO_pr_pv:hh; HPO_pr_pv:hh2; int64:z; };
+func:cpv_pr_pv = int64(SW1_pr_pv->:p, H_pr_pv->:v, int64:k) never fails { HPO_pr_pv:hl = HPO_pr_pv{ lp: v, z: 0i64 }; (<-(is (k > 0i64) : @p.hh : @hl)).lp = v; pass 7i64 + hl.z; };
+func:g_pr_pv = int64(H_pr_pv->:h0p, H_pr_pv->:hq, int64:n) never fails {
+    SW1_pr_pv:w = SW1_pr_pv{ hh: HPO_pr_pv{ lp: h0p, z: 0i64 }, hh2: HPO_pr_pv{ lp: h0p, z: 0i64 }, z: 0i64 };
+    discard(raw cpv_pr_pv(@w, hq, n));
+    int64->:e = raw fp_pr_pv(w.hh2.lp);
+    discard(raw growh_pr_pv(hq));
+    pass (<-e) + 6i64;
+};
+func:f_pr_pv = int64(int64:n) never fails {
+    H_pr_pv:h0 = raw mkh_pr_pv(); H_pr_pv:h2 = raw mkh_pr_pv();
+    pass raw g_pr_pv(@h0, @h2, n);
+};
+func:cell_main_pr_pv = int32() never fails { pass (((raw f_pr_pv(1i64)) + 60i64) =>! int32); };
+// TWIN: `pr_pv_nm`, the store made through the parameter's field by its name (`p.hh.lp`): main refuses it at the same site.
+// Ailp-team_156, pr_pv PLAIN TWIN `p.hh.lp = v`: a one-hop rootless store over a pointer parameter's pointee by ADDRESS beside a LOCAL (`@p.hh : @hl`) with refs:
+// S1's one-hop arm puts `v` into the matrix for `p`; the caller then holds a pointer into `h0`'s List (`w.hh2.lp`, never written) across `hq`'s
+// growth. Right: `w.hh2.lp` stays `h0p`.
+struct:H_pr_pv_nm = { List<int64>:l; int64:k; };
+func:mk_pr_pv_nm = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_pr_pv_nm = H_pr_pv_nm() never fails { pass H_pr_pv_nm{ l: raw mk_pr_pv_nm(), k: 2i64 }; };
+func:growh_pr_pv_nm = int64(H_pr_pv_nm->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_pr_pv_nm = int64->(H_pr_pv_nm->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_pr_pv_nm = { H_pr_pv_nm->:lp; int64:z; };
+struct:SW1_pr_pv_nm = { HPO_pr_pv_nm:hh; HPO_pr_pv_nm:hh2; int64:z; };
+func:cpv_pr_pv_nm = int64(SW1_pr_pv_nm->:p, H_pr_pv_nm->:v, int64:k) never fails { HPO_pr_pv_nm:hl = HPO_pr_pv_nm{ lp: v, z: 0i64 }; p.hh.lp = v; pass 7i64 + hl.z; };
+func:g_pr_pv_nm = int64(H_pr_pv_nm->:h0p, H_pr_pv_nm->:hq, int64:n) never fails {
+    SW1_pr_pv_nm:w = SW1_pr_pv_nm{ hh: HPO_pr_pv_nm{ lp: h0p, z: 0i64 }, hh2: HPO_pr_pv_nm{ lp: h0p, z: 0i64 }, z: 0i64 };
+    discard(raw cpv_pr_pv_nm(@w, hq, n));
+    int64->:e = raw fp_pr_pv_nm(w.hh2.lp);
+    discard(raw growh_pr_pv_nm(hq));
+    pass (<-e) + 6i64;
+};
+func:f_pr_pv_nm = int64(int64:n) never fails {
+    H_pr_pv_nm:h0 = raw mkh_pr_pv_nm(); H_pr_pv_nm:h2 = raw mkh_pr_pv_nm();
+    pass raw g_pr_pv_nm(@h0, @h2, n);
+};
+func:cell_main_pr_pv_nm = int32() never fails { pass (((raw f_pr_pv_nm(1i64)) + 60i64) =>! int32); };
+// PRICE: `j2_pw_ok`, a right program main runs to 67, refused here at its store (one site); at parity. Its twin `j2_pw_tw` follows.
+// Ailp-team_156 (job 2, S1bA hunt), P1c (N5): two-hop rootless store over `@p.s : @p.s2`; the caller hands on its own pointer parameter `pw` under a view of `pw.s.ya`. Right.
+struct:H_j2_pw_ok = { List<int64>:l; int64:k; };
+func:mk_j2_pw_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_j2_pw_ok = H_j2_pw_ok() never fails { pass H_j2_pw_ok{ l: raw mk_j2_pw_ok(), k: 2i64 }; };
+func:growh_j2_pw_ok = int64(H_j2_pw_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_j2_pw_ok = int64->(H_j2_pw_ok->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_j2_pw_ok = { H_j2_pw_ok->:lp; int64:z; };
+struct:SQ3_j2_pw_ok = { HPO_j2_pw_ok->:q; int64:z; int64[2]:ya; };
+struct:SW3_j2_pw_ok = { SQ3_j2_pw_ok:s; SQ3_j2_pw_ok:s2; int64:z; };
+func:cla_j2_pw_ok = int64(SW3_j2_pw_ok->:p, H_j2_pw_ok->:v, int64:k) never fails { (<-((<-(is (k > 0i64) : @p.s : @p.s2)).q)).lp = v; pass 7i64; };
+func:g2_j2_pw_ok = int64(SW3_j2_pw_ok->:pw, H_j2_pw_ok->:hq, int64:n) never fails {
+    int64[]:sv = pw.s.ya[0i64...2i64];
+    discard(raw cla_j2_pw_ok(pw, hq, n));
+    pass sv[0i64] + 7i64;
+};
+func:g_j2_pw_ok = int64(H_j2_pw_ok->:h0p, H_j2_pw_ok->:hq, int64:n) never fails {
+    HPO_j2_pw_ok:mo = HPO_j2_pw_ok{ lp: h0p, z: 0i64 };
+    SW3_j2_pw_ok:w = SW3_j2_pw_ok{ s: SQ3_j2_pw_ok{ q: @mo, z: 1i64, ya: [0i64, 0i64] }, s2: SQ3_j2_pw_ok{ q: @mo, z: 1i64, ya: [0i64, 0i64] }, z: 0i64 };
+    pass raw g2_j2_pw_ok(@w, hq, n);
+};
+func:f_j2_pw_ok = int64(int64:n) never fails {
+    H_j2_pw_ok:h0 = raw mkh_j2_pw_ok(); H_j2_pw_ok:h2 = raw mkh_j2_pw_ok();
+    pass raw g_j2_pw_ok(@h0, @h2, n);
+};
+func:cell_main_j2_pw_ok = int32() never fails { pass (((raw f_j2_pw_ok(1i64)) + 60i64) =>! int32); };
+// TWIN: `j2_pw_tw`, the ternary named through a pointer local `t`: main refuses it at the same site.
+// Ailp-team_156 (job 2, S1bA hunt), P1c's by-name twin.
+struct:H_j2_pw_tw = { List<int64>:l; int64:k; };
+func:mk_j2_pw_tw = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_j2_pw_tw = H_j2_pw_tw() never fails { pass H_j2_pw_tw{ l: raw mk_j2_pw_tw(), k: 2i64 }; };
+func:growh_j2_pw_tw = int64(H_j2_pw_tw->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_j2_pw_tw = int64->(H_j2_pw_tw->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_j2_pw_tw = { H_j2_pw_tw->:lp; int64:z; };
+struct:SQ3_j2_pw_tw = { HPO_j2_pw_tw->:q; int64:z; int64[2]:ya; };
+struct:SW3_j2_pw_tw = { SQ3_j2_pw_tw:s; SQ3_j2_pw_tw:s2; int64:z; };
+func:cla_j2_pw_tw = int64(SW3_j2_pw_tw->:p, H_j2_pw_tw->:v, int64:k) never fails { SQ3_j2_pw_tw->:t = is (k > 0i64) : @p.s : @p.s2; (<-((<-t).q)).lp = v; pass 7i64; };
+func:g2_j2_pw_tw = int64(SW3_j2_pw_tw->:pw, H_j2_pw_tw->:hq, int64:n) never fails {
+    int64[]:sv = pw.s.ya[0i64...2i64];
+    discard(raw cla_j2_pw_tw(pw, hq, n));
+    pass sv[0i64] + 7i64;
+};
+func:g_j2_pw_tw = int64(H_j2_pw_tw->:h0p, H_j2_pw_tw->:hq, int64:n) never fails {
+    HPO_j2_pw_tw:mo = HPO_j2_pw_tw{ lp: h0p, z: 0i64 };
+    SW3_j2_pw_tw:w = SW3_j2_pw_tw{ s: SQ3_j2_pw_tw{ q: @mo, z: 1i64, ya: [0i64, 0i64] }, s2: SQ3_j2_pw_tw{ q: @mo, z: 1i64, ya: [0i64, 0i64] }, z: 0i64 };
+    pass raw g2_j2_pw_tw(@w, hq, n);
+};
+func:f_j2_pw_tw = int64(int64:n) never fails {
+    H_j2_pw_tw:h0 = raw mkh_j2_pw_tw(); H_j2_pw_tw:h2 = raw mkh_j2_pw_tw();
+    pass raw g_j2_pw_tw(@h0, @h2, n);
+};
+func:cell_main_j2_pw_tw = int32() never fails { pass (((raw f_j2_pw_tw(1i64)) + 60i64) =>! int32); };
+// PRICE: `j2_pww_ok`, a right program main runs to 67, refused here at its store (one site); at parity. Its twin `j2_pww_tw` follows.
+// Ailp-team_156 (job 2, S1bA hunt), P2c (N5, the write alone) on P1c's caller.
+struct:H_j2_pww_ok = { List<int64>:l; int64:k; };
+func:mk_j2_pww_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_j2_pww_ok = H_j2_pww_ok() never fails { pass H_j2_pww_ok{ l: raw mk_j2_pww_ok(), k: 2i64 }; };
+func:growh_j2_pww_ok = int64(H_j2_pww_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_j2_pww_ok = int64->(H_j2_pww_ok->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_j2_pww_ok = { H_j2_pww_ok->:lp; int64:z; };
+struct:SQ3_j2_pww_ok = { HPO_j2_pww_ok->:q; int64:z; int64[2]:ya; };
+struct:SW3_j2_pww_ok = { SQ3_j2_pww_ok:s; SQ3_j2_pww_ok:s2; int64:z; };
+func:cla_j2_pww_ok = int64(SW3_j2_pww_ok->:p, H_j2_pww_ok->:v, int64:k) never fails { (<-((<-(is (k > 0i64) : @p.s : @p.s2)).q)).z = 5i64; pass 7i64; };
+func:g2_j2_pww_ok = int64(SW3_j2_pww_ok->:pw, H_j2_pww_ok->:hq, int64:n) never fails {
+    int64[]:sv = pw.s.ya[0i64...2i64];
+    discard(raw cla_j2_pww_ok(pw, hq, n));
+    pass sv[0i64] + 7i64;
+};
+func:g_j2_pww_ok = int64(H_j2_pww_ok->:h0p, H_j2_pww_ok->:hq, int64:n) never fails {
+    HPO_j2_pww_ok:mo = HPO_j2_pww_ok{ lp: h0p, z: 0i64 };
+    SW3_j2_pww_ok:w = SW3_j2_pww_ok{ s: SQ3_j2_pww_ok{ q: @mo, z: 1i64, ya: [0i64, 0i64] }, s2: SQ3_j2_pww_ok{ q: @mo, z: 1i64, ya: [0i64, 0i64] }, z: 0i64 };
+    pass raw g2_j2_pww_ok(@w, hq, n);
+};
+func:f_j2_pww_ok = int64(int64:n) never fails {
+    H_j2_pww_ok:h0 = raw mkh_j2_pww_ok(); H_j2_pww_ok:h2 = raw mkh_j2_pww_ok();
+    pass raw g_j2_pww_ok(@h0, @h2, n);
+};
+func:cell_main_j2_pww_ok = int32() never fails { pass (((raw f_j2_pww_ok(1i64)) + 60i64) =>! int32); };
+// TWIN: `j2_pww_tw`, the ternary named through a pointer local `t`: main refuses it at the same site.
+// Ailp-team_156 (job 2, S1bA hunt), P2c's by-name twin.
+struct:H_j2_pww_tw = { List<int64>:l; int64:k; };
+func:mk_j2_pww_tw = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_j2_pww_tw = H_j2_pww_tw() never fails { pass H_j2_pww_tw{ l: raw mk_j2_pww_tw(), k: 2i64 }; };
+func:growh_j2_pww_tw = int64(H_j2_pww_tw->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_j2_pww_tw = int64->(H_j2_pww_tw->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_j2_pww_tw = { H_j2_pww_tw->:lp; int64:z; };
+struct:SQ3_j2_pww_tw = { HPO_j2_pww_tw->:q; int64:z; int64[2]:ya; };
+struct:SW3_j2_pww_tw = { SQ3_j2_pww_tw:s; SQ3_j2_pww_tw:s2; int64:z; };
+func:cla_j2_pww_tw = int64(SW3_j2_pww_tw->:p, H_j2_pww_tw->:v, int64:k) never fails { SQ3_j2_pww_tw->:t = is (k > 0i64) : @p.s : @p.s2; (<-((<-t).q)).z = 5i64; pass 7i64; };
+func:g2_j2_pww_tw = int64(SW3_j2_pww_tw->:pw, H_j2_pww_tw->:hq, int64:n) never fails {
+    int64[]:sv = pw.s.ya[0i64...2i64];
+    discard(raw cla_j2_pww_tw(pw, hq, n));
+    pass sv[0i64] + 7i64;
+};
+func:g_j2_pww_tw = int64(H_j2_pww_tw->:h0p, H_j2_pww_tw->:hq, int64:n) never fails {
+    HPO_j2_pww_tw:mo = HPO_j2_pww_tw{ lp: h0p, z: 0i64 };
+    SW3_j2_pww_tw:w = SW3_j2_pww_tw{ s: SQ3_j2_pww_tw{ q: @mo, z: 1i64, ya: [0i64, 0i64] }, s2: SQ3_j2_pww_tw{ q: @mo, z: 1i64, ya: [0i64, 0i64] }, z: 0i64 };
+    pass raw g2_j2_pww_tw(@w, hq, n);
+};
+func:f_j2_pww_tw = int64(int64:n) never fails {
+    H_j2_pww_tw:h0 = raw mkh_j2_pww_tw(); H_j2_pww_tw:h2 = raw mkh_j2_pww_tw();
+    pass raw g_j2_pww_tw(@h0, @h2, n);
+};
+func:cell_main_j2_pww_tw = int32() never fails { pass (((raw f_j2_pww_tw(1i64)) + 60i64) =>! int32); };
+// PRICE: `j2_ssl_ok`, a right program main runs to 67, refused here at its store (one site); at parity. Its twin `j2_ssl_tw` follows.
+// Ailp-team_156 (job 2, S1bA hunt), P4b (N5, slice parameter): two-hop rootless store over `@sp[0i64] : @sp[1i64]`; the caller holds a view of `arr[1i64].ya`. Right.
+struct:H_j2_ssl_ok = { List<int64>:l; int64:k; };
+func:mk_j2_ssl_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_j2_ssl_ok = H_j2_ssl_ok() never fails { pass H_j2_ssl_ok{ l: raw mk_j2_ssl_ok(), k: 2i64 }; };
+func:growh_j2_ssl_ok = int64(H_j2_ssl_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_j2_ssl_ok = int64->(H_j2_ssl_ok->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_j2_ssl_ok = { H_j2_ssl_ok->:lp; int64:z; };
+struct:SQ3_j2_ssl_ok = { HPO_j2_ssl_ok->:q; int64:z; int64[2]:ya; };
+struct:SW3_j2_ssl_ok = { SQ3_j2_ssl_ok:s; SQ3_j2_ssl_ok:s2; int64:z; };
+func:cls_j2_ssl_ok = int64(SQ3_j2_ssl_ok[]:sp, H_j2_ssl_ok->:v, int64:k) never fails { (<-((<-(is (k > 0i64) : @sp[0i64] : @sp[1i64])).q)).lp = v; pass 7i64; };
+func:g_j2_ssl_ok = int64(H_j2_ssl_ok->:h0p, H_j2_ssl_ok->:hq, int64:n) never fails {
+    HPO_j2_ssl_ok:mo = HPO_j2_ssl_ok{ lp: h0p, z: 0i64 };
+    SQ3_j2_ssl_ok[2]:arr = [SQ3_j2_ssl_ok{ q: @mo, z: 1i64, ya: [0i64, 0i64] }, SQ3_j2_ssl_ok{ q: @mo, z: 1i64, ya: [0i64, 0i64] }];
+    int64[]:sv = arr[1i64].ya[0i64...2i64];
+    discard(raw cls_j2_ssl_ok(arr[0i64...2i64], hq, n));
+    pass sv[0i64] + 7i64;
+};
+func:f_j2_ssl_ok = int64(int64:n) never fails {
+    H_j2_ssl_ok:h0 = raw mkh_j2_ssl_ok(); H_j2_ssl_ok:h2 = raw mkh_j2_ssl_ok();
+    pass raw g_j2_ssl_ok(@h0, @h2, n);
+};
+func:cell_main_j2_ssl_ok = int32() never fails { pass (((raw f_j2_ssl_ok(1i64)) + 60i64) =>! int32); };
+// TWIN: `j2_ssl_tw`, the ternary named through a pointer local `t`: main refuses it at the same site.
+// Ailp-team_156 (job 2, S1bA hunt), P4b's by-name twin.
+struct:H_j2_ssl_tw = { List<int64>:l; int64:k; };
+func:mk_j2_ssl_tw = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_j2_ssl_tw = H_j2_ssl_tw() never fails { pass H_j2_ssl_tw{ l: raw mk_j2_ssl_tw(), k: 2i64 }; };
+func:growh_j2_ssl_tw = int64(H_j2_ssl_tw->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_j2_ssl_tw = int64->(H_j2_ssl_tw->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_j2_ssl_tw = { H_j2_ssl_tw->:lp; int64:z; };
+struct:SQ3_j2_ssl_tw = { HPO_j2_ssl_tw->:q; int64:z; int64[2]:ya; };
+struct:SW3_j2_ssl_tw = { SQ3_j2_ssl_tw:s; SQ3_j2_ssl_tw:s2; int64:z; };
+func:cls_j2_ssl_tw = int64(SQ3_j2_ssl_tw[]:sp, H_j2_ssl_tw->:v, int64:k) never fails { SQ3_j2_ssl_tw->:t = is (k > 0i64) : @sp[0i64] : @sp[1i64]; (<-((<-t).q)).lp = v; pass 7i64; };
+func:g_j2_ssl_tw = int64(H_j2_ssl_tw->:h0p, H_j2_ssl_tw->:hq, int64:n) never fails {
+    HPO_j2_ssl_tw:mo = HPO_j2_ssl_tw{ lp: h0p, z: 0i64 };
+    SQ3_j2_ssl_tw[2]:arr = [SQ3_j2_ssl_tw{ q: @mo, z: 1i64, ya: [0i64, 0i64] }, SQ3_j2_ssl_tw{ q: @mo, z: 1i64, ya: [0i64, 0i64] }];
+    int64[]:sv = arr[1i64].ya[0i64...2i64];
+    discard(raw cls_j2_ssl_tw(arr[0i64...2i64], hq, n));
+    pass sv[0i64] + 7i64;
+};
+func:f_j2_ssl_tw = int64(int64:n) never fails {
+    H_j2_ssl_tw:h0 = raw mkh_j2_ssl_tw(); H_j2_ssl_tw:h2 = raw mkh_j2_ssl_tw();
+    pass raw g_j2_ssl_tw(@h0, @h2, n);
+};
+func:cell_main_j2_ssl_tw = int32() never fails { pass (((raw f_j2_ssl_tw(1i64)) + 60i64) =>! int32); };
+// PRICE: `j2_sslw_ok`, a right program main runs to 67, refused here at its store (one site); at parity. Its twin `j2_sslw_tw` follows.
+// Ailp-team_156 (job 2, S1bA hunt), P4c (N5, the write alone, slice parameter): an int stored at two hops over `@sp[0i64] : @sp[1i64]`; the view of `arr[1i64].ya` held. Right.
+struct:H_j2_sslw_ok = { List<int64>:l; int64:k; };
+func:mk_j2_sslw_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_j2_sslw_ok = H_j2_sslw_ok() never fails { pass H_j2_sslw_ok{ l: raw mk_j2_sslw_ok(), k: 2i64 }; };
+func:growh_j2_sslw_ok = int64(H_j2_sslw_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_j2_sslw_ok = int64->(H_j2_sslw_ok->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_j2_sslw_ok = { H_j2_sslw_ok->:lp; int64:z; };
+struct:SQ3_j2_sslw_ok = { HPO_j2_sslw_ok->:q; int64:z; int64[2]:ya; };
+struct:SW3_j2_sslw_ok = { SQ3_j2_sslw_ok:s; SQ3_j2_sslw_ok:s2; int64:z; };
+func:cls_j2_sslw_ok = int64(SQ3_j2_sslw_ok[]:sp, H_j2_sslw_ok->:v, int64:k) never fails { (<-((<-(is (k > 0i64) : @sp[0i64] : @sp[1i64])).q)).z = 5i64; pass 7i64; };
+func:g_j2_sslw_ok = int64(H_j2_sslw_ok->:h0p, H_j2_sslw_ok->:hq, int64:n) never fails {
+    HPO_j2_sslw_ok:mo = HPO_j2_sslw_ok{ lp: h0p, z: 0i64 };
+    SQ3_j2_sslw_ok[2]:arr = [SQ3_j2_sslw_ok{ q: @mo, z: 1i64, ya: [0i64, 0i64] }, SQ3_j2_sslw_ok{ q: @mo, z: 1i64, ya: [0i64, 0i64] }];
+    int64[]:sv = arr[1i64].ya[0i64...2i64];
+    discard(raw cls_j2_sslw_ok(arr[0i64...2i64], hq, n));
+    pass sv[0i64] + 7i64;
+};
+func:f_j2_sslw_ok = int64(int64:n) never fails {
+    H_j2_sslw_ok:h0 = raw mkh_j2_sslw_ok(); H_j2_sslw_ok:h2 = raw mkh_j2_sslw_ok();
+    pass raw g_j2_sslw_ok(@h0, @h2, n);
+};
+func:cell_main_j2_sslw_ok = int32() never fails { pass (((raw f_j2_sslw_ok(1i64)) + 60i64) =>! int32); };
+// TWIN: `j2_sslw_tw`, the ternary named through a pointer local `t`: main refuses it at the same site.
+// Ailp-team_156 (job 2, S1bA hunt), P4c's by-name twin.
+struct:H_j2_sslw_tw = { List<int64>:l; int64:k; };
+func:mk_j2_sslw_tw = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_j2_sslw_tw = H_j2_sslw_tw() never fails { pass H_j2_sslw_tw{ l: raw mk_j2_sslw_tw(), k: 2i64 }; };
+func:growh_j2_sslw_tw = int64(H_j2_sslw_tw->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_j2_sslw_tw = int64->(H_j2_sslw_tw->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_j2_sslw_tw = { H_j2_sslw_tw->:lp; int64:z; };
+struct:SQ3_j2_sslw_tw = { HPO_j2_sslw_tw->:q; int64:z; int64[2]:ya; };
+struct:SW3_j2_sslw_tw = { SQ3_j2_sslw_tw:s; SQ3_j2_sslw_tw:s2; int64:z; };
+func:cls_j2_sslw_tw = int64(SQ3_j2_sslw_tw[]:sp, H_j2_sslw_tw->:v, int64:k) never fails { SQ3_j2_sslw_tw->:t = is (k > 0i64) : @sp[0i64] : @sp[1i64]; (<-((<-t).q)).z = 5i64; pass 7i64; };
+func:g_j2_sslw_tw = int64(H_j2_sslw_tw->:h0p, H_j2_sslw_tw->:hq, int64:n) never fails {
+    HPO_j2_sslw_tw:mo = HPO_j2_sslw_tw{ lp: h0p, z: 0i64 };
+    SQ3_j2_sslw_tw[2]:arr = [SQ3_j2_sslw_tw{ q: @mo, z: 1i64, ya: [0i64, 0i64] }, SQ3_j2_sslw_tw{ q: @mo, z: 1i64, ya: [0i64, 0i64] }];
+    int64[]:sv = arr[1i64].ya[0i64...2i64];
+    discard(raw cls_j2_sslw_tw(arr[0i64...2i64], hq, n));
+    pass sv[0i64] + 7i64;
+};
+func:f_j2_sslw_tw = int64(int64:n) never fails {
+    H_j2_sslw_tw:h0 = raw mkh_j2_sslw_tw(); H_j2_sslw_tw:h2 = raw mkh_j2_sslw_tw();
+    pass raw g_j2_sslw_tw(@h0, @h2, n);
+};
+func:cell_main_j2_sslw_tw = int32() never fails { pass (((raw f_j2_sslw_tw(1i64)) + 60i64) =>! int32); };
+// PRICE: `j2_sub3_c`, a right program main runs to 67, refused here at its store (one site); at parity. Its twin `j2_sub3_ct` follows.
+// Ailp-team_156 (job 2, S1bA hunt), R1c's control: the rootless store over `@sp[0i64]` alone, under `sv0` and `sv1`.
+struct:H_j2_sub3_c = { List<int64>:l; int64:k; };
+func:mk_j2_sub3_c = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_j2_sub3_c = H_j2_sub3_c() never fails { pass H_j2_sub3_c{ l: raw mk_j2_sub3_c(), k: 2i64 }; };
+func:growh_j2_sub3_c = int64(H_j2_sub3_c->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_j2_sub3_c = int64->(H_j2_sub3_c->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_j2_sub3_c = { H_j2_sub3_c->:lp; int64:z; };
+struct:SQ3_j2_sub3_c = { HPO_j2_sub3_c->:q; int64:z; int64[2]:ya; };
+struct:SW3_j2_sub3_c = { SQ3_j2_sub3_c:s; SQ3_j2_sub3_c:s2; int64:z; };
+func:cls_j2_sub3_c = int64(SQ3_j2_sub3_c[]:sp, H_j2_sub3_c->:v, int64:k) never fails { (<-((<-(is (k > 0i64) : @sp[0i64] : @sp[0i64])).q)).lp = v; pass 7i64; };
+func:g_j2_sub3_c = int64(H_j2_sub3_c->:h0p, H_j2_sub3_c->:hq, int64:n) never fails {
+    HPO_j2_sub3_c:mo = HPO_j2_sub3_c{ lp: h0p, z: 0i64 };
+    SQ3_j2_sub3_c[2]:arr = [SQ3_j2_sub3_c{ q: @mo, z: 1i64, ya: [0i64, 0i64] }, SQ3_j2_sub3_c{ q: @mo, z: 1i64, ya: [0i64, 0i64] }];
+    int64[]:sv0 = arr[0i64].ya[0i64...2i64];
+    int64[]:sv1 = arr[1i64].ya[0i64...2i64];
+    discard(raw cls_j2_sub3_c(arr[0i64...2i64], hq, n));
+    pass sv0[0i64] + sv1[0i64] + 7i64;
+};
+func:f_j2_sub3_c = int64(int64:n) never fails {
+    H_j2_sub3_c:h0 = raw mkh_j2_sub3_c(); H_j2_sub3_c:h2 = raw mkh_j2_sub3_c();
+    pass raw g_j2_sub3_c(@h0, @h2, n);
+};
+func:cell_main_j2_sub3_c = int32() never fails { pass (((raw f_j2_sub3_c(1i64)) + 60i64) =>! int32); };
+// TWIN: `j2_sub3_ct`, the ternary named through a pointer local `t`: main refuses it at the same site.
+// Ailp-team_156 (job 2, S1bA hunt), R1c's control's by-name twin: `SQ3_j2_sub3_ct->:t = is … : @sp[0i64] : @sp[0i64]; (<-((<-t).q)).lp = v;`, under `sv0` and `sv1`.
+struct:H_j2_sub3_ct = { List<int64>:l; int64:k; };
+func:mk_j2_sub3_ct = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_j2_sub3_ct = H_j2_sub3_ct() never fails { pass H_j2_sub3_ct{ l: raw mk_j2_sub3_ct(), k: 2i64 }; };
+func:growh_j2_sub3_ct = int64(H_j2_sub3_ct->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp_j2_sub3_ct = int64->(H_j2_sub3_ct->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_j2_sub3_ct = { H_j2_sub3_ct->:lp; int64:z; };
+struct:SQ3_j2_sub3_ct = { HPO_j2_sub3_ct->:q; int64:z; int64[2]:ya; };
+struct:SW3_j2_sub3_ct = { SQ3_j2_sub3_ct:s; SQ3_j2_sub3_ct:s2; int64:z; };
+func:cls_j2_sub3_ct = int64(SQ3_j2_sub3_ct[]:sp, H_j2_sub3_ct->:v, int64:k) never fails { SQ3_j2_sub3_ct->:t = is (k > 0i64) : @sp[0i64] : @sp[0i64]; (<-((<-t).q)).lp = v; pass 7i64; };
+func:g_j2_sub3_ct = int64(H_j2_sub3_ct->:h0p, H_j2_sub3_ct->:hq, int64:n) never fails {
+    HPO_j2_sub3_ct:mo = HPO_j2_sub3_ct{ lp: h0p, z: 0i64 };
+    SQ3_j2_sub3_ct[2]:arr = [SQ3_j2_sub3_ct{ q: @mo, z: 1i64, ya: [0i64, 0i64] }, SQ3_j2_sub3_ct{ q: @mo, z: 1i64, ya: [0i64, 0i64] }];
+    int64[]:sv0 = arr[0i64].ya[0i64...2i64];
+    int64[]:sv1 = arr[1i64].ya[0i64...2i64];
+    discard(raw cls_j2_sub3_ct(arr[0i64...2i64], hq, n));
+    pass sv0[0i64] + sv1[0i64] + 7i64;
+};
+func:f_j2_sub3_ct = int64(int64:n) never fails {
+    H_j2_sub3_ct:h0 = raw mkh_j2_sub3_ct(); H_j2_sub3_ct:h2 = raw mkh_j2_sub3_ct();
+    pass raw g_j2_sub3_ct(@h0, @h2, n);
+};
+func:cell_main_j2_sub3_ct = int32() never fails { pass (((raw f_j2_sub3_ct(1i64)) + 60i64) =>! int32); };
+// PRICE: `rw_ls_ok`, a right program main runs to 67, refused here at its store (one site); at parity. Its twin `rw_ls_pt_ok` follows.
+// seat S (Ailp-team_155), 177d2b8 Part S: rw_ls_c's store (a List element's `.ptr` through the ternary) with no free of it: zb freed by its own name.
+struct:PW_rw_ls_ok = { wild any->:p; int64:z; };
+func:g_rw_ls_ok = int64(int64:n) {
+    List<string>:l = raw list_init::<string>(2i64);
+    drop list_push(@l, string_concat("ab", "cde"));
+    wild int8->:zb = alloc(8i64);
+    PW_rw_ls_ok:h = PW_rw_ls_ok{ p: zb =>! wild any->, z: 0i64 };
+    PW_rw_ls_ok:h2 = PW_rw_ls_ok{ p: zb =>! wild any->, z: 0i64 };
+    (<-(is (n > 100i64) : @h2 : @h)).p = l[0i64].ptr =>! wild any->;
+    dalloc(zb);
+    pass 7i64;
+};
+func:cell_main_rw_ls_ok = int32() never fails { pass (((g_rw_ls_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// TWIN: `rw_ls_pt_ok`, the target `h` named through a pointer local (`PW->:hp = @h; (<-hp).p = ...`): main refuses it at the same site.
+// seat S (Ailp-team_155), 177d2b8 Part S: pointer-local twin of rw_ls_ok: `PW_rw_ls_pt_ok->:hp = @h; (<-hp).p = l[0i64].ptr =>! wild any->`, no free of it.
+struct:PW_rw_ls_pt_ok = { wild any->:p; int64:z; };
+func:g_rw_ls_pt_ok = int64(int64:n) {
+    List<string>:l = raw list_init::<string>(2i64);
+    drop list_push(@l, string_concat("ab", "cde"));
+    wild int8->:zb = alloc(8i64);
+    PW_rw_ls_pt_ok:h = PW_rw_ls_pt_ok{ p: zb =>! wild any->, z: 0i64 };
+    PW_rw_ls_pt_ok:h2 = PW_rw_ls_pt_ok{ p: zb =>! wild any->, z: 0i64 };
+    PW_rw_ls_pt_ok->:hp = @h;
+    (<-hp).p = l[0i64].ptr =>! wild any->;
+    dalloc(zb);
+    pass 7i64;
+};
+func:cell_main_rw_ls_pt_ok = int32() never fails { pass (((g_rw_ls_pt_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// PRICE: `pk2_c_ok`, a right program main runs to 67, refused here at its store (one site); at parity. Its twin `pk2_c_okt` follows.
+// seat S (Ailp-team_155), S1b: (P') right twin of pk2_c: the caller's own pointer `(<-c2).ep` stored, 67.
+struct:H_pk2_c_ok = { List<int64>:l; int64:k; };
+func:mk_pk2_c_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_pk2_c_ok = H_pk2_c_ok() never fails { pass H_pk2_c_ok{ l: raw mk_pk2_c_ok(), k: 2i64 }; };
+func:fp_pk2_c_ok = int64->(H_pk2_c_ok->:q) never fails { pass @((<-q).l[0i64]); };
+func:growh_pk2_c_ok = int64(H_pk2_c_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:HPE_pk2_c_ok = { int64->:ep; int64:z; };
+struct:SQ2_pk2_c_ok = { HPE_pk2_c_ok->:q; List<int64>:own; };
+enum:EO_pk2_c_ok = { A(SQ2_pk2_c_ok); Z; };
+func:g_pk2_c_ok = int64(H_pk2_c_ok->:hq, HPE_pk2_c_ok->:c1, HPE_pk2_c_ok->:c2, int64:n) never fails {
+    SQ2_pk2_c_ok:m2 = SQ2_pk2_c_ok{ q: c2, own: raw mk_pk2_c_ok() };
+    EO_pk2_c_ok:o = EO_pk2_c_ok.A(SQ2_pk2_c_ok{ q: c1, own: raw mk_pk2_c_ok() });
+    pick (move(o)) {
+        (EO_pk2_c_ok.A(m)) {
+            (<-((<-(is (n > 0i64) : @m : @m2)).q)).ep = (<-c2).ep;
+        },
+        (EO_pk2_c_ok.Z) { }
+    }
+    discard(raw growh_pk2_c_ok(hq));
+    pass (<-((<-c1).ep)) + 6i64;
+};
+func:f_pk2_c_ok = int64(int64:n) never fails {
+    H_pk2_c_ok:h = raw mkh_pk2_c_ok();
+    int64:z0 = 1i64;
+    HPE_pk2_c_ok:c1 = HPE_pk2_c_ok{ ep: @z0, z: 0i64 };
+    HPE_pk2_c_ok:c2 = HPE_pk2_c_ok{ ep: @z0, z: 0i64 };
+    pass raw g_pk2_c_ok(@h, @c1, @c2, n);
+};
+func:cell_main_pk2_c_ok = int32() never fails { pass (((raw f_pk2_c_ok(1i64)) + 60i64) =>! int32); };
+// TWIN: `pk2_c_okt`, the ternary named through a pointer local `t` (made for this row by the cells' rule, tools/mk_okt.py): main refuses it at the same site.
+// seat S (Ailp-team_155), row 2: the by-name twin of the price pk2_c_ok, its store spelled through a pointer local `t`.
+struct:H_pk2_c_okt = { List<int64>:l; int64:k; };
+func:mk_pk2_c_okt = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_pk2_c_okt = H_pk2_c_okt() never fails { pass H_pk2_c_okt{ l: raw mk_pk2_c_okt(), k: 2i64 }; };
+func:fp_pk2_c_okt = int64->(H_pk2_c_okt->:q) never fails { pass @((<-q).l[0i64]); };
+func:growh_pk2_c_okt = int64(H_pk2_c_okt->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:HPE_pk2_c_okt = { int64->:ep; int64:z; };
+struct:SQ2_pk2_c_okt = { HPE_pk2_c_okt->:q; List<int64>:own; };
+enum:EO_pk2_c_okt = { A(SQ2_pk2_c_okt); Z; };
+func:g_pk2_c_okt = int64(H_pk2_c_okt->:hq, HPE_pk2_c_okt->:c1, HPE_pk2_c_okt->:c2, int64:n) never fails {
+    SQ2_pk2_c_okt:m2 = SQ2_pk2_c_okt{ q: c2, own: raw mk_pk2_c_okt() };
+    EO_pk2_c_okt:o = EO_pk2_c_okt.A(SQ2_pk2_c_okt{ q: c1, own: raw mk_pk2_c_okt() });
+    pick (move(o)) {
+        (EO_pk2_c_okt.A(m)) {
+            SQ2_pk2_c_okt->:t = is (n > 0i64) : @m : @m2; (<-((<-t).q)).ep = (<-c2).ep;
+        },
+        (EO_pk2_c_okt.Z) { }
+    }
+    discard(raw growh_pk2_c_okt(hq));
+    pass (<-((<-c1).ep)) + 6i64;
+};
+func:f_pk2_c_okt = int64(int64:n) never fails {
+    H_pk2_c_okt:h = raw mkh_pk2_c_okt();
+    int64:z0 = 1i64;
+    HPE_pk2_c_okt:c1 = HPE_pk2_c_okt{ ep: @z0, z: 0i64 };
+    HPE_pk2_c_okt:c2 = HPE_pk2_c_okt{ ep: @z0, z: 0i64 };
+    pass raw g_pk2_c_okt(@h, @c1, @c2, n);
+};
+func:cell_main_pk2_c_okt = int32() never fails { pass (((raw f_pk2_c_okt(1i64)) + 60i64) =>! int32); };
+// PRICE: `pk2_dd_ok`, a right program main runs to 67, refused here at its store (one site); at parity. Its twin `pk2_dd_tw` follows.
+// seat S (Ailp-team_155), S1b: (P''') right twin of pk2_c_dd: `(<-((<-(@m)).q)).ep = (<-c2).ep`, 67.
+struct:H_pk2_dd_ok = { List<int64>:l; int64:k; };
+func:mk_pk2_dd_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_pk2_dd_ok = H_pk2_dd_ok() never fails { pass H_pk2_dd_ok{ l: raw mk_pk2_dd_ok(), k: 2i64 }; };
+func:fp_pk2_dd_ok = int64->(H_pk2_dd_ok->:q) never fails { pass @((<-q).l[0i64]); };
+func:growh_pk2_dd_ok = int64(H_pk2_dd_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:HPE_pk2_dd_ok = { int64->:ep; int64:z; };
+struct:SQ2_pk2_dd_ok = { HPE_pk2_dd_ok->:q; List<int64>:own; };
+enum:EO_pk2_dd_ok = { A(SQ2_pk2_dd_ok); Z; };
+func:g_pk2_dd_ok = int64(H_pk2_dd_ok->:hq, HPE_pk2_dd_ok->:c1, HPE_pk2_dd_ok->:c2, int64:n) never fails {
+    SQ2_pk2_dd_ok:m2 = SQ2_pk2_dd_ok{ q: c2, own: raw mk_pk2_dd_ok() };
+    EO_pk2_dd_ok:o = EO_pk2_dd_ok.A(SQ2_pk2_dd_ok{ q: c1, own: raw mk_pk2_dd_ok() });
+    pick (move(o)) {
+        (EO_pk2_dd_ok.A(m)) {
+            (<-((<-(@m)).q)).ep = (<-c2).ep;
+        },
+        (EO_pk2_dd_ok.Z) { }
+    }
+    discard(raw growh_pk2_dd_ok(hq));
+    pass (<-((<-c1).ep)) + 6i64;
+};
+func:f_pk2_dd_ok = int64(int64:n) never fails {
+    H_pk2_dd_ok:h = raw mkh_pk2_dd_ok();
+    int64:z0 = 1i64;
+    HPE_pk2_dd_ok:c1 = HPE_pk2_dd_ok{ ep: @z0, z: 0i64 };
+    HPE_pk2_dd_ok:c2 = HPE_pk2_dd_ok{ ep: @z0, z: 0i64 };
+    pass raw g_pk2_dd_ok(@h, @c1, @c2, n);
+};
+func:cell_main_pk2_dd_ok = int32() never fails { pass (((raw f_pk2_dd_ok(1i64)) + 60i64) =>! int32); };
+// TWIN: `pk2_dd_tw`, the target named through a pointer local `t`: main refuses it at the same site.
+// seat S (Ailp-team_155), S1b: (P''') by-name twin of pk2_dd_ok: `SQ2_pk2_dd_tw->:t = @m; (<-((<-t).q)).ep = (<-c2).ep`, 67.
+struct:H_pk2_dd_tw = { List<int64>:l; int64:k; };
+func:mk_pk2_dd_tw = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_pk2_dd_tw = H_pk2_dd_tw() never fails { pass H_pk2_dd_tw{ l: raw mk_pk2_dd_tw(), k: 2i64 }; };
+func:fp_pk2_dd_tw = int64->(H_pk2_dd_tw->:q) never fails { pass @((<-q).l[0i64]); };
+func:growh_pk2_dd_tw = int64(H_pk2_dd_tw->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+struct:HPE_pk2_dd_tw = { int64->:ep; int64:z; };
+struct:SQ2_pk2_dd_tw = { HPE_pk2_dd_tw->:q; List<int64>:own; };
+enum:EO_pk2_dd_tw = { A(SQ2_pk2_dd_tw); Z; };
+func:g_pk2_dd_tw = int64(H_pk2_dd_tw->:hq, HPE_pk2_dd_tw->:c1, HPE_pk2_dd_tw->:c2, int64:n) never fails {
+    SQ2_pk2_dd_tw:m2 = SQ2_pk2_dd_tw{ q: c2, own: raw mk_pk2_dd_tw() };
+    EO_pk2_dd_tw:o = EO_pk2_dd_tw.A(SQ2_pk2_dd_tw{ q: c1, own: raw mk_pk2_dd_tw() });
+    pick (move(o)) {
+        (EO_pk2_dd_tw.A(m)) {
+            SQ2_pk2_dd_tw->:t = @m; (<-((<-t).q)).ep = (<-c2).ep;
+        },
+        (EO_pk2_dd_tw.Z) { }
+    }
+    discard(raw growh_pk2_dd_tw(hq));
+    pass (<-((<-c1).ep)) + 6i64;
+};
+func:f_pk2_dd_tw = int64(int64:n) never fails {
+    H_pk2_dd_tw:h = raw mkh_pk2_dd_tw();
+    int64:z0 = 1i64;
+    HPE_pk2_dd_tw:c1 = HPE_pk2_dd_tw{ ep: @z0, z: 0i64 };
+    HPE_pk2_dd_tw:c2 = HPE_pk2_dd_tw{ ep: @z0, z: 0i64 };
+    pass raw g_pk2_dd_tw(@h, @c1, @c2, n);
+};
+func:cell_main_pk2_dd_tw = int32() never fails { pass (((raw f_pk2_dd_tw(1i64)) + 60i64) =>! int32); };
+// PRICE: `pk2_ok`, a right program main runs to 67, refused here at its store (one site); at parity. Its twin `pk2_tw` follows.
+// seat S (Ailp-team_155), S1b: (P) right: `(<-((<-(is (n > 0i64) : @m : @m2)).q)).lp = hq` over a consuming `pick` arm's binding `m` and a local `m2`, the caller's pointer stored, 67.
+struct:H_pk2_ok = { int64:k; int64:z; };
+struct:HPO_pk2_ok = { H_pk2_ok->:lp; int64:z; };
+struct:SQ2_pk2_ok = { HPO_pk2_ok->:q; List<int64>:own; };
+func:mk_pk2_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+enum:EO_pk2_ok = { A(SQ2_pk2_ok); Z; };
+func:g_pk2_ok = int64(H_pk2_ok->:hq, HPO_pk2_ok->:c1, HPO_pk2_ok->:c2, int64:n) never fails {
+    SQ2_pk2_ok:m2 = SQ2_pk2_ok{ q: c2, own: raw mk_pk2_ok() };
+    EO_pk2_ok:o = EO_pk2_ok.A(SQ2_pk2_ok{ q: c1, own: raw mk_pk2_ok() });
+    int64:r = 0i64;
+    pick (move(o)) {
+        (EO_pk2_ok.A(m)) {
+            (<-((<-(is (n > 0i64) : @m : @m2)).q)).lp = hq;
+            r = (<-((<-c1).lp)).k;
+        },
+        (EO_pk2_ok.Z) { }
+    }
+    pass r;
+};
+func:f_pk2_ok = int64(int64:n) never fails {
+    H_pk2_ok:a = H_pk2_ok{ k: 7i64, z: 0i64 };
+    H_pk2_ok:b = H_pk2_ok{ k: 7i64, z: 0i64 };
+    HPO_pk2_ok:c1 = HPO_pk2_ok{ lp: @b, z: 0i64 };
+    HPO_pk2_ok:c2 = HPO_pk2_ok{ lp: @b, z: 0i64 };
+    pass raw g_pk2_ok(@a, @c1, @c2, n);
+};
+func:cell_main_pk2_ok = int32() never fails { pass (((raw f_pk2_ok(1i64)) + 60i64) =>! int32); };
+// TWIN: `pk2_tw`, the ternary named through a pointer local `t`: main refuses it at the same site.
+// seat S (Ailp-team_155), S1b: (P) by-name twin of pk2_ok: `SQ2_pk2_tw->:t = is (n > 0i64) : @m : @m2; (<-((<-t).q)).lp = hq`, 67.
+struct:H_pk2_tw = { int64:k; int64:z; };
+struct:HPO_pk2_tw = { H_pk2_tw->:lp; int64:z; };
+struct:SQ2_pk2_tw = { HPO_pk2_tw->:q; List<int64>:own; };
+func:mk_pk2_tw = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+enum:EO_pk2_tw = { A(SQ2_pk2_tw); Z; };
+func:g_pk2_tw = int64(H_pk2_tw->:hq, HPO_pk2_tw->:c1, HPO_pk2_tw->:c2, int64:n) never fails {
+    SQ2_pk2_tw:m2 = SQ2_pk2_tw{ q: c2, own: raw mk_pk2_tw() };
+    EO_pk2_tw:o = EO_pk2_tw.A(SQ2_pk2_tw{ q: c1, own: raw mk_pk2_tw() });
+    int64:r = 0i64;
+    pick (move(o)) {
+        (EO_pk2_tw.A(m)) {
+            SQ2_pk2_tw->:t = is (n > 0i64) : @m : @m2; (<-((<-t).q)).lp = hq;
+            r = (<-((<-c1).lp)).k;
+        },
+        (EO_pk2_tw.Z) { }
+    }
+    pass r;
+};
+func:f_pk2_tw = int64(int64:n) never fails {
+    H_pk2_tw:a = H_pk2_tw{ k: 7i64, z: 0i64 };
+    H_pk2_tw:b = H_pk2_tw{ k: 7i64, z: 0i64 };
+    HPO_pk2_tw:c1 = HPO_pk2_tw{ lp: @b, z: 0i64 };
+    HPO_pk2_tw:c2 = HPO_pk2_tw{ lp: @b, z: 0i64 };
+    pass raw g_pk2_tw(@a, @c1, @c2, n);
+};
+func:cell_main_pk2_tw = int32() never fails { pass (((raw f_pk2_tw(1i64)) + 60i64) =>! int32); };
+// PINNED: `rw_mx_c`, refused by main and here at the same site (BORROW-009, the store into the caller's storage), for the row's mutants:
+// a pointer parameter's target beside a local's address under one ternary (`(<-(is (n > 100i64) : hp : @h)).p = s.ptr`).
+// Its refs go into the pointer's value alone (`onp`), so the free through `h.p` adds nothing here; the mutant m03 (`onp` never set) adds BORROW-011 at that free.
+// A8 reach: the rootless destination's value names a POINTER PARAMETER's target and a local's address; row 2 records into every target once a
+// parameter's pointer is among them. Freed in the same frame through the local `h.p`.
+struct:PW_rw_mx_c = { wild any->:p; int64:z; };
+func:k2_rw_mx_c = int64(PW_rw_mx_c->:hp, int64:n) never fails {
+    string:s = string_concat("ab", "cde");
+    wild int8->:zb = alloc(8i64);
+    PW_rw_mx_c:h = PW_rw_mx_c{ p: zb =>! wild any->, z: 0i64 };
+    (<-(is (n > 100i64) : hp : @h)).p = s.ptr =>! wild any->;
+    dalloc(h.p); //F
+    dalloc(zb);
+    pass 0i64;
+};
+func:g_rw_mx_c = int64(int64:n) {
+    wild int8->:zq = alloc(8i64);
+    PW_rw_mx_c:hq = PW_rw_mx_c{ p: zq =>! wild any->, z: 0i64 };
+    int64:r = raw k2_rw_mx_c(@hq, n);
+    dalloc(hq.p);
+    pass 7i64 + r;
+};
+func:cell_main_rw_mx_c = int32() never fails { pass (((g_rw_mx_c(1i64) ?! E5) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};
