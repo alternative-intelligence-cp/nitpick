@@ -1,0 +1,623 @@
+// expect-exit: 0
+mod:header_store_target_ok;
+// 2026-11-15 (landing 177d2b7, row 1: DEF-660's K-a2 as V1 with F6). THE RIGHT CONTROLS OF `header_store_target.npk`: each `nw_` cell stores the caller's
+// own `@k`, which outlives every read, through a local's or a by-value parameter's buffer, string or cstring header (the address spelling's two keep the
+// header's first word and write it back before the header drops); each `nt_` cell is `lib/ntensor.npk`'s store through a header reached through `self`
+// (`self.cells.ptr =>! wild T->` in a method and a free function, a string's and a cstring's `.ptr`, a ternary of two casts, a value handed to a storing
+// callee, and `int64` stores with no `#ptr_add`), which a record on `self`'s own chain refused beside the cast's `@self` party (`nt_vb_ok` before F6, and the
+// rest with row 2's rootless destination). Each runs its exit on main (78f9b3a) and with this row, at -O0 and -O2 and under the freed-heap detector.
+// One cell a case, its names suffixed with the cell's; `main` exits with the case's number when a case returns other than its exit on main.
+error:E5;
+// nw_bLgq_ok: see tools/mknw.py
+func:mk_nw_bLgq_ok = int64(int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    buffer:b = buffer_new(16i64);
+    wild int64->->:q = ((b).ptr =>! wild int64->->);
+    <-q = (g) =>! wild int64->;
+    loop(0i64, 64i64, 1i64) { drop list_push(@l, 1i64); }
+    int64->:p = (<-((b).ptr =>! wild int64->->)) =>! int64->;
+    pass <-p;
+};
+func:cell_main_nw_bLgq_ok = int32() never fails {
+    int64:k = 7i64;
+    pass ((mk_nw_bLgq_ok(@k) ?! E5) + 60i64) =>! int32;
+};
+// nw_bLl_ok: see tools/mknw.py
+func:mk_nw_bLl_ok = NIL(List<buffer>->:ls, int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    buffer:b = buffer_new(16i64);
+    <-((b).ptr =>! wild int64->->) = (g) =>! wild int64->;
+    drop list_push(ls, move(b));
+    pass NIL;
+};
+func:cell_main_nw_bLl_ok = int32() never fails {
+    int64:k = 7i64;
+    List<buffer>:ls = raw list_init::<buffer>(2i64);
+    mk_nw_bLl_ok(@ls, @k) ?! E5;
+    int64->:p = (<-((ls[0i64]).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_bLp_ok: see tools/mknw.py
+func:mk_nw_bLp_ok = NIL(buffer->:out, int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    buffer:b = buffer_new(16i64);
+    <-((b).ptr =>! wild int64->->) = (g) =>! wild int64->;
+    <-out = move(b);
+    pass NIL;
+};
+func:cell_main_nw_bLp_ok = int32() never fails {
+    int64:k = 7i64;
+    buffer:h0 = buffer_new(16i64);
+    mk_nw_bLp_ok(@h0, @k) ?! E5;
+    int64->:p = (<-((h0).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_bLr_ok: see tools/mknw.py
+func:mk_nw_bLr_ok = buffer(int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    buffer:b = buffer_new(16i64);
+    <-((b).ptr =>! wild int64->->) = (g) =>! wild int64->;
+    pass b;
+};
+func:cell_main_nw_bLr_ok = int32() never fails {
+    int64:k = 7i64;
+    buffer:h = mk_nw_bLr_ok(@k) ?! E5;
+    int64->:p = (<-((h).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_bLrc_ok: see tools/mknw.py
+func:put_nw_bLrc_ok = NIL(wild int64->->:d, wild int64->:v) never fails { <-d = v; pass NIL; };
+func:mk_nw_bLrc_ok = buffer(int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    buffer:b = buffer_new(16i64);
+    drop put_nw_bLrc_ok(((b).ptr =>! wild int64->->), (g) =>! wild int64->);
+    pass b;
+};
+func:cell_main_nw_bLrc_ok = int32() never fails {
+    int64:k = 7i64;
+    buffer:h = mk_nw_bLrc_ok(@k) ?! E5;
+    int64->:p = (<-((h).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_bLrq_ok: see tools/mknw.py
+func:mk_nw_bLrq_ok = buffer(int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    buffer:b = buffer_new(16i64);
+    wild int64->->:q = ((b).ptr =>! wild int64->->);
+    <-q = (g) =>! wild int64->;
+    pass b;
+};
+func:cell_main_nw_bLrq_ok = int32() never fails {
+    int64:k = 7i64;
+    buffer:h = mk_nw_bLrq_ok(@k) ?! E5;
+    int64->:p = (<-((h).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_bPgq_ok: see tools/mknw.py
+func:mk_nw_bPgq_ok = int64(move buffer:b, int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    wild int64->->:q = ((b).ptr =>! wild int64->->);
+    <-q = (g) =>! wild int64->;
+    loop(0i64, 64i64, 1i64) { drop list_push(@l, 1i64); }
+    int64->:p = (<-((b).ptr =>! wild int64->->)) =>! int64->;
+    pass <-p;
+};
+func:cell_main_nw_bPgq_ok = int32() never fails {
+    int64:k = 7i64;
+    buffer:b0 = buffer_new(16i64);
+    pass ((mk_nw_bPgq_ok(move(b0), @k) ?! E5) + 60i64) =>! int32;
+};
+// nw_bPl_ok: see tools/mknw.py
+func:mk_nw_bPl_ok = NIL(List<buffer>->:ls, move buffer:b, int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    <-((b).ptr =>! wild int64->->) = (g) =>! wild int64->;
+    drop list_push(ls, move(b));
+    pass NIL;
+};
+func:cell_main_nw_bPl_ok = int32() never fails {
+    int64:k = 7i64;
+    List<buffer>:ls = raw list_init::<buffer>(2i64);
+    buffer:b0 = buffer_new(16i64);
+    mk_nw_bPl_ok(@ls, move(b0), @k) ?! E5;
+    int64->:p = (<-((ls[0i64]).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_bPp_ok: see tools/mknw.py
+func:mk_nw_bPp_ok = NIL(buffer->:out, move buffer:b, int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    <-((b).ptr =>! wild int64->->) = (g) =>! wild int64->;
+    <-out = move(b);
+    pass NIL;
+};
+func:cell_main_nw_bPp_ok = int32() never fails {
+    int64:k = 7i64;
+    buffer:h0 = buffer_new(16i64);
+    buffer:b0 = buffer_new(16i64);
+    mk_nw_bPp_ok(@h0, move(b0), @k) ?! E5;
+    int64->:p = (<-((h0).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_bPr_ok: see tools/mknw.py
+func:mk_nw_bPr_ok = buffer(move buffer:b, int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    <-((b).ptr =>! wild int64->->) = (g) =>! wild int64->;
+    pass b;
+};
+func:cell_main_nw_bPr_ok = int32() never fails {
+    int64:k = 7i64;
+    buffer:b0 = buffer_new(16i64);
+    buffer:h = mk_nw_bPr_ok(move(b0), @k) ?! E5;
+    int64->:p = (<-((h).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_bPrc_ok: see tools/mknw.py
+func:put_nw_bPrc_ok = NIL(wild int64->->:d, wild int64->:v) never fails { <-d = v; pass NIL; };
+func:mk_nw_bPrc_ok = buffer(move buffer:b, int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    drop put_nw_bPrc_ok(((b).ptr =>! wild int64->->), (g) =>! wild int64->);
+    pass b;
+};
+func:cell_main_nw_bPrc_ok = int32() never fails {
+    int64:k = 7i64;
+    buffer:b0 = buffer_new(16i64);
+    buffer:h = mk_nw_bPrc_ok(move(b0), @k) ?! E5;
+    int64->:p = (<-((h).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_bPrq_ok: see tools/mknw.py
+func:mk_nw_bPrq_ok = buffer(move buffer:b, int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    wild int64->->:q = ((b).ptr =>! wild int64->->);
+    <-q = (g) =>! wild int64->;
+    pass b;
+};
+func:cell_main_nw_bPrq_ok = int32() never fails {
+    int64:k = 7i64;
+    buffer:b0 = buffer_new(16i64);
+    buffer:h = mk_nw_bPrq_ok(move(b0), @k) ?! E5;
+    int64->:p = (<-((h).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_cLgq_ok: see tools/mknw.py
+func:mk_nw_cLgq_ok = int64(int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    string:tb = "abcdefghabcdefgh".clone() ?! E5; cstring:b = to_cstring(tb) ?! E5;
+    wild int64->->:q = ((b).ptr =>! wild int64->->);
+    <-q = (g) =>! wild int64->;
+    loop(0i64, 64i64, 1i64) { drop list_push(@l, 1i64); }
+    int64->:p = (<-((b).ptr =>! wild int64->->)) =>! int64->;
+    pass <-p;
+};
+func:cell_main_nw_cLgq_ok = int32() never fails {
+    int64:k = 7i64;
+    pass ((mk_nw_cLgq_ok(@k) ?! E5) + 60i64) =>! int32;
+};
+// nw_cLr_ok: see tools/mknw.py
+func:mk_nw_cLr_ok = cstring(int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    string:tb = "abcdefghabcdefgh".clone() ?! E5; cstring:b = to_cstring(tb) ?! E5;
+    <-((b).ptr =>! wild int64->->) = (g) =>! wild int64->;
+    pass b;
+};
+func:cell_main_nw_cLr_ok = int32() never fails {
+    int64:k = 7i64;
+    cstring:h = mk_nw_cLr_ok(@k) ?! E5;
+    int64->:p = (<-((h).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_cLrc_ok: see tools/mknw.py
+func:put_nw_cLrc_ok = NIL(wild int64->->:d, wild int64->:v) never fails { <-d = v; pass NIL; };
+func:mk_nw_cLrc_ok = cstring(int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    string:tb = "abcdefghabcdefgh".clone() ?! E5; cstring:b = to_cstring(tb) ?! E5;
+    drop put_nw_cLrc_ok(((b).ptr =>! wild int64->->), (g) =>! wild int64->);
+    pass b;
+};
+func:cell_main_nw_cLrc_ok = int32() never fails {
+    int64:k = 7i64;
+    cstring:h = mk_nw_cLrc_ok(@k) ?! E5;
+    int64->:p = (<-((h).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_cLrq_ok: see tools/mknw.py
+func:mk_nw_cLrq_ok = cstring(int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    string:tb = "abcdefghabcdefgh".clone() ?! E5; cstring:b = to_cstring(tb) ?! E5;
+    wild int64->->:q = ((b).ptr =>! wild int64->->);
+    <-q = (g) =>! wild int64->;
+    pass b;
+};
+func:cell_main_nw_cLrq_ok = int32() never fails {
+    int64:k = 7i64;
+    cstring:h = mk_nw_cLrq_ok(@k) ?! E5;
+    int64->:p = (<-((h).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_cPgq_ok: see tools/mknw.py
+func:mk_nw_cPgq_ok = int64(move cstring:b, int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    wild int64->->:q = ((b).ptr =>! wild int64->->);
+    <-q = (g) =>! wild int64->;
+    loop(0i64, 64i64, 1i64) { drop list_push(@l, 1i64); }
+    int64->:p = (<-((b).ptr =>! wild int64->->)) =>! int64->;
+    pass <-p;
+};
+func:cell_main_nw_cPgq_ok = int32() never fails {
+    int64:k = 7i64;
+    string:tb0 = "abcdefghabcdefgh".clone() ?! E5; cstring:b0 = to_cstring(tb0) ?! E5;
+    pass ((mk_nw_cPgq_ok(move(b0), @k) ?! E5) + 60i64) =>! int32;
+};
+// nw_cPr_ok: see tools/mknw.py
+func:mk_nw_cPr_ok = cstring(move cstring:b, int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    <-((b).ptr =>! wild int64->->) = (g) =>! wild int64->;
+    pass b;
+};
+func:cell_main_nw_cPr_ok = int32() never fails {
+    int64:k = 7i64;
+    string:tb0 = "abcdefghabcdefgh".clone() ?! E5; cstring:b0 = to_cstring(tb0) ?! E5;
+    cstring:h = mk_nw_cPr_ok(move(b0), @k) ?! E5;
+    int64->:p = (<-((h).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_cPrc_ok: see tools/mknw.py
+func:put_nw_cPrc_ok = NIL(wild int64->->:d, wild int64->:v) never fails { <-d = v; pass NIL; };
+func:mk_nw_cPrc_ok = cstring(move cstring:b, int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    drop put_nw_cPrc_ok(((b).ptr =>! wild int64->->), (g) =>! wild int64->);
+    pass b;
+};
+func:cell_main_nw_cPrc_ok = int32() never fails {
+    int64:k = 7i64;
+    string:tb0 = "abcdefghabcdefgh".clone() ?! E5; cstring:b0 = to_cstring(tb0) ?! E5;
+    cstring:h = mk_nw_cPrc_ok(move(b0), @k) ?! E5;
+    int64->:p = (<-((h).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_cPrq_ok: see tools/mknw.py
+func:mk_nw_cPrq_ok = cstring(move cstring:b, int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    wild int64->->:q = ((b).ptr =>! wild int64->->);
+    <-q = (g) =>! wild int64->;
+    pass b;
+};
+func:cell_main_nw_cPrq_ok = int32() never fails {
+    int64:k = 7i64;
+    string:tb0 = "abcdefghabcdefgh".clone() ?! E5; cstring:b0 = to_cstring(tb0) ?! E5;
+    cstring:h = mk_nw_cPrq_ok(move(b0), @k) ?! E5;
+    int64->:p = (<-((h).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_sLgq_ok: see tools/mknw.py
+func:mk_nw_sLgq_ok = int64(int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    string:b = "abcdefghabcdefgh".clone() ?! E5;
+    wild int64->->:q = ((b).ptr =>! wild int64->->);
+    <-q = (g) =>! wild int64->;
+    loop(0i64, 64i64, 1i64) { drop list_push(@l, 1i64); }
+    int64->:p = (<-((b).ptr =>! wild int64->->)) =>! int64->;
+    pass <-p;
+};
+func:cell_main_nw_sLgq_ok = int32() never fails {
+    int64:k = 7i64;
+    pass ((mk_nw_sLgq_ok(@k) ?! E5) + 60i64) =>! int32;
+};
+// nw_sLr_ok: see tools/mknw.py
+func:mk_nw_sLr_ok = string(int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    string:b = "abcdefghabcdefgh".clone() ?! E5;
+    <-((b).ptr =>! wild int64->->) = (g) =>! wild int64->;
+    pass b;
+};
+func:cell_main_nw_sLr_ok = int32() never fails {
+    int64:k = 7i64;
+    string:h = mk_nw_sLr_ok(@k) ?! E5;
+    int64->:p = (<-((h).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_sLrc_ok: see tools/mknw.py
+func:put_nw_sLrc_ok = NIL(wild int64->->:d, wild int64->:v) never fails { <-d = v; pass NIL; };
+func:mk_nw_sLrc_ok = string(int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    string:b = "abcdefghabcdefgh".clone() ?! E5;
+    drop put_nw_sLrc_ok(((b).ptr =>! wild int64->->), (g) =>! wild int64->);
+    pass b;
+};
+func:cell_main_nw_sLrc_ok = int32() never fails {
+    int64:k = 7i64;
+    string:h = mk_nw_sLrc_ok(@k) ?! E5;
+    int64->:p = (<-((h).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_sLrq_ok: see tools/mknw.py
+func:mk_nw_sLrq_ok = string(int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    string:b = "abcdefghabcdefgh".clone() ?! E5;
+    wild int64->->:q = ((b).ptr =>! wild int64->->);
+    <-q = (g) =>! wild int64->;
+    pass b;
+};
+func:cell_main_nw_sLrq_ok = int32() never fails {
+    int64:k = 7i64;
+    string:h = mk_nw_sLrq_ok(@k) ?! E5;
+    int64->:p = (<-((h).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_sPgq_ok: see tools/mknw.py
+func:mk_nw_sPgq_ok = int64(move string:b, int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    wild int64->->:q = ((b).ptr =>! wild int64->->);
+    <-q = (g) =>! wild int64->;
+    loop(0i64, 64i64, 1i64) { drop list_push(@l, 1i64); }
+    int64->:p = (<-((b).ptr =>! wild int64->->)) =>! int64->;
+    pass <-p;
+};
+func:cell_main_nw_sPgq_ok = int32() never fails {
+    int64:k = 7i64;
+    string:b0 = "abcdefghabcdefgh".clone() ?! E5;
+    pass ((mk_nw_sPgq_ok(move(b0), @k) ?! E5) + 60i64) =>! int32;
+};
+// nw_sPr_ok: see tools/mknw.py
+func:mk_nw_sPr_ok = string(move string:b, int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    <-((b).ptr =>! wild int64->->) = (g) =>! wild int64->;
+    pass b;
+};
+func:cell_main_nw_sPr_ok = int32() never fails {
+    int64:k = 7i64;
+    string:b0 = "abcdefghabcdefgh".clone() ?! E5;
+    string:h = mk_nw_sPr_ok(move(b0), @k) ?! E5;
+    int64->:p = (<-((h).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_sPrc_ok: see tools/mknw.py
+func:put_nw_sPrc_ok = NIL(wild int64->->:d, wild int64->:v) never fails { <-d = v; pass NIL; };
+func:mk_nw_sPrc_ok = string(move string:b, int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    drop put_nw_sPrc_ok(((b).ptr =>! wild int64->->), (g) =>! wild int64->);
+    pass b;
+};
+func:cell_main_nw_sPrc_ok = int32() never fails {
+    int64:k = 7i64;
+    string:b0 = "abcdefghabcdefgh".clone() ?! E5;
+    string:h = mk_nw_sPrc_ok(move(b0), @k) ?! E5;
+    int64->:p = (<-((h).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_sPrq_ok: see tools/mknw.py
+func:mk_nw_sPrq_ok = string(move string:b, int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    wild int64->->:q = ((b).ptr =>! wild int64->->);
+    <-q = (g) =>! wild int64->;
+    pass b;
+};
+func:cell_main_nw_sPrq_ok = int32() never fails {
+    int64:k = 7i64;
+    string:b0 = "abcdefghabcdefgh".clone() ?! E5;
+    string:h = mk_nw_sPrq_ok(move(b0), @k) ?! E5;
+    int64->:p = (<-((h).ptr =>! wild int64->->)) =>! int64->;
+    pass ((<-p) + 60i64) =>! int32;
+};
+// nw_aLgq_ok: see tools/mknw2.py (a remake of tools/mknw.py's cell as a right program)
+func:mk_nw_aLgq_ok = int64(int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    buffer:b = buffer_new(16i64);
+    wild int64->:hw = (@b) =>! wild int64->;
+    int64:sv = <-hw;
+    wild int64->->:q = ((@b) =>! wild int64->->);
+    <-q = (g) =>! wild int64->;
+    loop(0i64, 64i64, 1i64) { drop list_push(@l, 1i64); }
+    int64:r = 0i64;
+    {
+        int64->:p = (<-((@b) =>! wild int64->->)) =>! int64->;
+        r = <-p;
+    }
+    <-hw = sv;
+    pass r;
+};
+func:cell_main_nw_aLgq_ok = int32() never fails {
+    int64:k = 7i64;
+    pass ((mk_nw_aLgq_ok(@k) ?! E5) + 60i64) =>! int32;
+};
+// nw_aPgq_ok: see tools/mknw2.py (a remake of tools/mknw.py's cell as a right program)
+func:mk_nw_aPgq_ok = int64(move buffer:b, int64->:g) {
+    List<int64>:l = raw list_init::<int64>(2i64);
+    drop list_push(@l, 7i64);
+    wild int64->:hw = (@b) =>! wild int64->;
+    int64:sv = <-hw;
+    wild int64->->:q = ((@b) =>! wild int64->->);
+    <-q = (g) =>! wild int64->;
+    loop(0i64, 64i64, 1i64) { drop list_push(@l, 1i64); }
+    int64:r = 0i64;
+    {
+        int64->:p = (<-((@b) =>! wild int64->->)) =>! int64->;
+        r = <-p;
+    }
+    <-hw = sv;
+    pass r;
+};
+func:cell_main_nw_aPgq_ok = int32() never fails {
+    int64:k = 7i64;
+    buffer:b0 = buffer_new(16i64);
+    pass ((mk_nw_aPgq_ok(move(b0), @k) ?! E5) + 60i64) =>! int32;
+};
+struct:M_nt_ad_ok<T> = { int64[4]:bytes; int64:n; };
+func:mk_nt_ad_ok<T> = M_nt_ad_ok<T>(int64:n) { int64[4]:z = [0i64, 0i64, 0i64, 0i64]; M_nt_ad_ok<T>:out = M_nt_ad_ok{ bytes: z, n: n }; pass out; };
+impl:<T>:M_nt_ad_ok<T> = {
+    func:set_nt_ad_ok = NIL(M_nt_ad_ok<T>->:self, int64:k, move T:v) { <-(#ptr_add<T>((@(self.bytes)) =>! wild T->, k)) = move(v); pass NIL; };
+};
+func:cell_main_nt_ad_ok = int32() never fails { M_nt_ad_ok<int64>:m = mk_nt_ad_ok::<int64>(4i64) ?! E5; m.set_nt_ad_ok(1i64, 7i64) ?! E5; pass (m.bytes[1i64] + 60i64) =>! int32; };
+struct:M_nt_as_ok<T> = { int64[4]:bytes; int64:n; };
+func:mk_nt_as_ok<T> = M_nt_as_ok<T>(int64:n) { int64[4]:z = [0i64, 0i64, 0i64, 0i64]; M_nt_as_ok<T>:out = M_nt_as_ok{ bytes: z, n: n }; pass out; };
+impl:<T>:M_nt_as_ok<T> = {
+    func:set_nt_as_ok = NIL(M_nt_as_ok<T>->:self, int64:k, move T:v) { <-(#ptr_add<T>(self =>! wild T->, k)) = move(v); pass NIL; };
+};
+func:cell_main_nt_as_ok = int32() never fails { M_nt_as_ok<int64>:m = mk_nt_as_ok::<int64>(4i64) ?! E5; m.set_nt_as_ok(1i64, 7i64) ?! E5; pass (m.bytes[1i64] + 60i64) =>! int32; };
+struct:M_nt_c_ok = { cstring:s; int64:n; };
+func:set_nt_c_ok = NIL(M_nt_c_ok->:self, int64:k, move uint8:v) never fails { <-(#ptr_add<uint8>(self.s.ptr =>! wild uint8->, k)) = move(v); pass NIL; };
+func:cell_main_nt_c_ok = int32() never fails { string:t = "abcd".clone() ?! E5; cstring:u = to_cstring(t) ?! E5; M_nt_c_ok:m = M_nt_c_ok{ s: move(u), n: 4i64 }; drop set_nt_c_ok(@m, 1i64, 7u8); pass ((<-(#ptr_add<uint8>(m.s.ptr =>! wild uint8->, 1i64))) + 60u8) =>! int32; };
+struct:M_nt_gc_ok<T> = { cstring:s; int64:n; };
+func:mk_nt_gc_ok<T> = M_nt_gc_ok<T>(int64:n) { string:t = "abcdefghabcdefghabcdefghabcdefgh".clone() ?! E5; cstring:u = to_cstring(t) ?! E5; M_nt_gc_ok<T>:out = M_nt_gc_ok{ s: move(u), n: n }; pass out; };
+impl:<T>:M_nt_gc_ok<T> = {
+    func:set_nt_gc_ok = NIL(M_nt_gc_ok<T>->:self, int64:k, move T:v) { <-(#ptr_add<T>(self.s.ptr =>! wild T->, k)) = move(v); pass NIL; };
+    func:get_nt_gc_ok = T(M_nt_gc_ok<T>->:self, int64:k) { pass (<-(#ptr_add<T>(self.s.ptr =>! wild T->, k))); };
+};
+func:cell_main_nt_gc_ok = int32() never fails { M_nt_gc_ok<int64>:m = mk_nt_gc_ok::<int64>(4i64) ?! E5; m.set_nt_gc_ok(1i64, 7i64) ?! E5; pass ((m.get_nt_gc_ok(1i64) ?! E5) + 60i64) =>! int32; };
+struct:M_nt_gf_ok<T> = { buffer:cells; int64:n; };
+func:mk_nt_gf_ok<T> = M_nt_gf_ok<T>(int64:n) { buffer:b = buffer_new(n * #size_of<T>()); M_nt_gf_ok<T>:out = M_nt_gf_ok{ cells: move(b), n: n }; pass out; };
+func:setf_nt_gf_ok<T> = NIL(M_nt_gf_ok<T>->:self, int64:k, move T:v) { <-(#ptr_add<T>(self.cells.ptr =>! wild T->, k)) = move(v); pass NIL; };
+func:cell_main_nt_gf_ok = int32() never fails { M_nt_gf_ok<int64>:m = mk_nt_gf_ok::<int64>(4i64) ?! E5; setf_nt_gf_ok::<int64>(@m, 1i64, 7i64) ?! E5; pass ((<-(#ptr_add<int64>(m.cells.ptr =>! wild int64->, 1i64))) + 60i64) =>! int32; };
+struct:M_nt_gnp_ok<T> = { buffer:cells; int64:n; };
+func:mk_nt_gnp_ok<T> = M_nt_gnp_ok<T>(int64:n) { buffer:b = buffer_new(n * #size_of<T>()); M_nt_gnp_ok<T>:out = M_nt_gnp_ok{ cells: move(b), n: n }; pass out; };
+impl:<T>:M_nt_gnp_ok<T> = {
+    func:set_nt_gnp_ok = NIL(M_nt_gnp_ok<T>->:self, int64:k, move T:v) { <-(self.cells.ptr =>! wild T->) = move(v); pass NIL; };
+    func:get_nt_gnp_ok = T(M_nt_gnp_ok<T>->:self, int64:k) { pass (<-(self.cells.ptr =>! wild T->)); };
+};
+func:cell_main_nt_gnp_ok = int32() never fails { M_nt_gnp_ok<int64>:m = mk_nt_gnp_ok::<int64>(4i64) ?! E5; m.set_nt_gnp_ok(1i64, 7i64) ?! E5; pass ((m.get_nt_gnp_ok(1i64) ?! E5) + 60i64) =>! int32; };
+struct:M_nt_g_ok<T> = { buffer:cells; int64:n; };
+func:mk_nt_g_ok<T> = M_nt_g_ok<T>(int64:n) { buffer:b = buffer_new(n * #size_of<T>()); M_nt_g_ok<T>:out = M_nt_g_ok{ cells: move(b), n: n }; pass out; };
+impl:<T>:M_nt_g_ok<T> = {
+    func:set_nt_g_ok = NIL(M_nt_g_ok<T>->:self, int64:k, move T:v) { <-(#ptr_add<T>(self.cells.ptr =>! wild T->, k)) = move(v); pass NIL; };
+    func:get_nt_g_ok = T(M_nt_g_ok<T>->:self, int64:k) { pass (<-(#ptr_add<T>(self.cells.ptr =>! wild T->, k))); };
+};
+func:cell_main_nt_g_ok = int32() never fails { M_nt_g_ok<int64>:m = mk_nt_g_ok::<int64>(4i64) ?! E5; m.set_nt_g_ok(1i64, 7i64) ?! E5; pass (((m.get_nt_g_ok(1i64) ?! E5) + 60i64) =>! int32); };
+struct:M_nt_gs_ok<T> = { string:s; int64:n; };
+func:mk_nt_gs_ok<T> = M_nt_gs_ok<T>(int64:n) { string:t = "abcdefghabcdefghabcdefghabcdefgh".clone() ?! E5; M_nt_gs_ok<T>:out = M_nt_gs_ok{ s: move(t), n: n }; pass out; };
+impl:<T>:M_nt_gs_ok<T> = {
+    func:set_nt_gs_ok = NIL(M_nt_gs_ok<T>->:self, int64:k, move T:v) { <-(#ptr_add<T>(self.s.ptr =>! wild T->, k)) = move(v); pass NIL; };
+    func:get_nt_gs_ok = T(M_nt_gs_ok<T>->:self, int64:k) { pass (<-(#ptr_add<T>(self.s.ptr =>! wild T->, k))); };
+};
+func:cell_main_nt_gs_ok = int32() never fails { M_nt_gs_ok<int64>:m = mk_nt_gs_ok::<int64>(4i64) ?! E5; m.set_nt_gs_ok(1i64, 7i64) ?! E5; pass ((m.get_nt_gs_ok(1i64) ?! E5) + 60i64) =>! int32; };
+struct:M_nt_im_ok = { buffer:cells; int64:n; };
+func:set_nt_im_ok = NIL(M_nt_im_ok->:self, int64:k, move int64:v) never fails { <-(#ptr_add<int64>(self.cells.ptr =>! wild int64->, k)) = move(v); pass NIL; };
+func:cell_main_nt_im_ok = int32() never fails { buffer:b = buffer_new(32i64); M_nt_im_ok:m = M_nt_im_ok{ cells: move(b), n: 4i64 }; drop set_nt_im_ok(@m, 1i64, 7i64); pass ((<-(#ptr_add<int64>(m.cells.ptr =>! wild int64->, 1i64))) + 60i64) =>! int32; };
+struct:M_nt_i_ok = { buffer:cells; int64:n; };
+func:set_nt_i_ok = NIL(M_nt_i_ok->:self, int64:k, int64:v) never fails { <-(#ptr_add<int64>(self.cells.ptr =>! wild int64->, k)) = v; pass NIL; };
+func:cell_main_nt_i_ok = int32() never fails { buffer:b = buffer_new(32i64); M_nt_i_ok:m = M_nt_i_ok{ cells: move(b), n: 4i64 }; drop set_nt_i_ok(@m, 1i64, 7i64); pass ((<-(#ptr_add<int64>(m.cells.ptr =>! wild int64->, 1i64))) + 60i64) =>! int32; };
+struct:M_nt_mi_ok = { buffer:cells; int64:n; };
+impl:M_nt_mi_ok = {
+    func:set_nt_mi_ok = NIL(M_nt_mi_ok->:self, int64:k, move int64:v) never fails { <-(#ptr_add<int64>(self.cells.ptr =>! wild int64->, k)) = move(v); pass NIL; };
+};
+func:cell_main_nt_mi_ok = int32() never fails { buffer:b = buffer_new(32i64); M_nt_mi_ok:m = M_nt_mi_ok{ cells: move(b), n: 4i64 }; drop m.set_nt_mi_ok(1i64, 7i64); pass ((<-(#ptr_add<int64>(m.cells.ptr =>! wild int64->, 1i64))) + 60i64) =>! int32; };
+struct:M_nt_np_ok = { buffer:cells; int64:n; };
+func:set_nt_np_ok = NIL(M_nt_np_ok->:self, int64:k, move int64:v) never fails { <-((self.cells.ptr =>! wild int64->)) = move(v); pass NIL; };
+func:cell_main_nt_np_ok = int32() never fails { buffer:b = buffer_new(32i64); M_nt_np_ok:m = M_nt_np_ok{ cells: move(b), n: 4i64 }; drop set_nt_np_ok(@m, 0i64, 7i64); pass ((<-(m.cells.ptr =>! wild int64->)) + 60i64) =>! int32; };
+struct:M_nt_pl_ok = { buffer:cells; int64:n; };
+func:set_nt_pl_ok = NIL(M_nt_pl_ok->:self, int64:k, move int64:v) never fails { <-((self.cells.ptr =>! int64->)) = move(v); pass NIL; };
+func:cell_main_nt_pl_ok = int32() never fails { buffer:b = buffer_new(32i64); M_nt_pl_ok:m = M_nt_pl_ok{ cells: move(b), n: 4i64 }; drop set_nt_pl_ok(@m, 0i64, 7i64); pass ((<-(m.cells.ptr =>! int64->)) + 60i64) =>! int32; };
+struct:M_nt_s_ok = { string:s; int64:n; };
+func:set_nt_s_ok = NIL(M_nt_s_ok->:self, int64:k, move uint8:v) never fails { <-(#ptr_add<uint8>(self.s.ptr =>! wild uint8->, k)) = move(v); pass NIL; };
+func:cell_main_nt_s_ok = int32() never fails { string:t = "abcd".clone() ?! E5; M_nt_s_ok:m = M_nt_s_ok{ s: move(t), n: 4i64 }; drop set_nt_s_ok(@m, 1i64, 7u8); pass ((<-(#ptr_add<uint8>(m.s.ptr =>! wild uint8->, 1i64))) + 60u8) =>! int32; };
+struct:M_nt_tb_ok<T> = { buffer:cells; int64:n; };
+func:mk_nt_tb_ok<T> = M_nt_tb_ok<T>(int64:n) { buffer:b = buffer_new(n * #size_of<T>()); M_nt_tb_ok<T>:out = M_nt_tb_ok{ cells: move(b), n: n }; pass out; };
+impl:<T>:M_nt_tb_ok<T> = {
+    func:set_nt_tb_ok = NIL(M_nt_tb_ok<T>->:self, int64:k, move T:v) { <-(#ptr_add<T>(is (k > 0i64) : (self.cells.ptr =>! wild T->) : (self.cells.ptr =>! wild T->), k)) = move(v); pass NIL; };
+    func:get_nt_tb_ok = T(M_nt_tb_ok<T>->:self, int64:k) { pass (<-(#ptr_add<T>(self.cells.ptr =>! wild T->, k))); };
+};
+func:cell_main_nt_tb_ok = int32() never fails { M_nt_tb_ok<int64>:m = mk_nt_tb_ok::<int64>(4i64) ?! E5; m.set_nt_tb_ok(1i64, 7i64) ?! E5; pass ((m.get_nt_tb_ok(1i64) ?! E5) + 60i64) =>! int32; };
+struct:M_nt_vb_ok<T> = { buffer:cells; int64:n; };
+func:mk_nt_vb_ok<T> = M_nt_vb_ok<T>(int64:n) { buffer:b = buffer_new(n * #size_of<T>()); M_nt_vb_ok<T>:out = M_nt_vb_ok{ cells: move(b), n: n }; pass out; };
+func:put_nt_vb_ok<T> = NIL(wild T->:p, move T:v) { <-p = move(v); pass NIL; };
+impl:<T>:M_nt_vb_ok<T> = {
+    func:set_nt_vb_ok = NIL(M_nt_vb_ok<T>->:self, int64:k, move T:v) { put_nt_vb_ok::<T>(#ptr_add<T>(self.cells.ptr =>! wild T->, k), move(v)) ?! E5; pass NIL; };
+    func:get_nt_vb_ok = T(M_nt_vb_ok<T>->:self, int64:k) { pass (<-(#ptr_add<T>(self.cells.ptr =>! wild T->, k))); };
+};
+func:cell_main_nt_vb_ok = int32() never fails { M_nt_vb_ok<int64>:m = mk_nt_vb_ok::<int64>(4i64) ?! E5; m.set_nt_vb_ok(1i64, 7i64) ?! E5; pass ((m.get_nt_vb_ok(1i64) ?! E5) + 60i64) =>! int32; };
+func:main = int32(cstring[]:argv) {
+    if ((raw cell_main_nw_bLgq_ok()) != 67i32) { exit 1i32; }
+    if ((raw cell_main_nw_bLl_ok()) != 67i32) { exit 2i32; }
+    if ((raw cell_main_nw_bLp_ok()) != 67i32) { exit 3i32; }
+    if ((raw cell_main_nw_bLr_ok()) != 67i32) { exit 4i32; }
+    if ((raw cell_main_nw_bLrc_ok()) != 67i32) { exit 5i32; }
+    if ((raw cell_main_nw_bLrq_ok()) != 67i32) { exit 6i32; }
+    if ((raw cell_main_nw_bPgq_ok()) != 67i32) { exit 7i32; }
+    if ((raw cell_main_nw_bPl_ok()) != 67i32) { exit 8i32; }
+    if ((raw cell_main_nw_bPp_ok()) != 67i32) { exit 9i32; }
+    if ((raw cell_main_nw_bPr_ok()) != 67i32) { exit 10i32; }
+    if ((raw cell_main_nw_bPrc_ok()) != 67i32) { exit 11i32; }
+    if ((raw cell_main_nw_bPrq_ok()) != 67i32) { exit 12i32; }
+    if ((raw cell_main_nw_cLgq_ok()) != 67i32) { exit 13i32; }
+    if ((raw cell_main_nw_cLr_ok()) != 67i32) { exit 14i32; }
+    if ((raw cell_main_nw_cLrc_ok()) != 67i32) { exit 15i32; }
+    if ((raw cell_main_nw_cLrq_ok()) != 67i32) { exit 16i32; }
+    if ((raw cell_main_nw_cPgq_ok()) != 67i32) { exit 17i32; }
+    if ((raw cell_main_nw_cPr_ok()) != 67i32) { exit 18i32; }
+    if ((raw cell_main_nw_cPrc_ok()) != 67i32) { exit 19i32; }
+    if ((raw cell_main_nw_cPrq_ok()) != 67i32) { exit 20i32; }
+    if ((raw cell_main_nw_sLgq_ok()) != 67i32) { exit 21i32; }
+    if ((raw cell_main_nw_sLr_ok()) != 67i32) { exit 22i32; }
+    if ((raw cell_main_nw_sLrc_ok()) != 67i32) { exit 23i32; }
+    if ((raw cell_main_nw_sLrq_ok()) != 67i32) { exit 24i32; }
+    if ((raw cell_main_nw_sPgq_ok()) != 67i32) { exit 25i32; }
+    if ((raw cell_main_nw_sPr_ok()) != 67i32) { exit 26i32; }
+    if ((raw cell_main_nw_sPrc_ok()) != 67i32) { exit 27i32; }
+    if ((raw cell_main_nw_sPrq_ok()) != 67i32) { exit 28i32; }
+    if ((raw cell_main_nw_aLgq_ok()) != 67i32) { exit 29i32; }
+    if ((raw cell_main_nw_aPgq_ok()) != 67i32) { exit 30i32; }
+    if ((raw cell_main_nt_ad_ok()) != 67i32) { exit 31i32; }
+    if ((raw cell_main_nt_as_ok()) != 67i32) { exit 32i32; }
+    if ((raw cell_main_nt_c_ok()) != 67i32) { exit 33i32; }
+    if ((raw cell_main_nt_gc_ok()) != 67i32) { exit 34i32; }
+    if ((raw cell_main_nt_gf_ok()) != 67i32) { exit 35i32; }
+    if ((raw cell_main_nt_gnp_ok()) != 67i32) { exit 36i32; }
+    if ((raw cell_main_nt_g_ok()) != 67i32) { exit 37i32; }
+    if ((raw cell_main_nt_gs_ok()) != 67i32) { exit 38i32; }
+    if ((raw cell_main_nt_im_ok()) != 67i32) { exit 39i32; }
+    if ((raw cell_main_nt_i_ok()) != 67i32) { exit 40i32; }
+    if ((raw cell_main_nt_mi_ok()) != 67i32) { exit 41i32; }
+    if ((raw cell_main_nt_np_ok()) != 67i32) { exit 42i32; }
+    if ((raw cell_main_nt_pl_ok()) != 67i32) { exit 43i32; }
+    if ((raw cell_main_nt_s_ok()) != 67i32) { exit 44i32; }
+    if ((raw cell_main_nt_tb_ok()) != 67i32) { exit 45i32; }
+    if ((raw cell_main_nt_vb_ok()) != 67i32) { exit 46i32; }
+    wild_release_all();   // the cells' own `wild` blocks, live at `exit 0` by design (D-183), are released before it, or the exit is WildLeak
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

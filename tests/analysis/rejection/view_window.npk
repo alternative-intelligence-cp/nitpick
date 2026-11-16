@@ -1,21 +1,23 @@
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 45:52
-// expect-error: NITPICK-BORROW-015
-// expect-error-at: 51:89
-// expect-error: NITPICK-BORROW-015
-// expect-error-at: 56:52
-// expect-error: NITPICK-BORROW-015
-// expect-error-at: 60:43
-// expect-error: NITPICK-BORROW-015
-// expect-error-at: 64:45
-// expect-error: NITPICK-BORROW-015
-// expect-error-at: 69:52
-// expect-error: NITPICK-BORROW-015
-// expect-error-at: 74:48
+// expect-error-at: 50:52
 // expect-error: NITPICK-BORROW-013
-// expect-error-at: 79:44
+// expect-error-at: 56:84
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 79:50
+// expect-error-at: 56:89
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 61:52
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 65:43
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 69:45
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 74:52
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 79:48
+// expect-error: NITPICK-BORROW-013
+// expect-error-at: 84:44
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 84:50
 // A CALL'S OR A RANGE'S VIEW IS LIVE TO THE END OF THE FULL EXPRESSION THAT FORMED IT (DEF-410 (b), landing 176).
 // A view a call returns (`string_bytes(s)`, a user function passing a view of its parameter through) or a
 // range forms (`b[0...4]`) carried no party while the rest of its full expression ran, so a later operand of
@@ -26,6 +28,9 @@
 // result, holder -1, live to the end of the statement's top-level expression, and a write-capable access of
 // the viewed owner inside that window is `NITPICK-BORROW-015`, as it is for a view a binding holds.
 mod:view_window;
+// 2026-11-15 (landing 177d2b7, row 1: DEF-660's K-a2 as V1 with F6; management_50's rulings, l.11537 item 5). `array_elem`'s literal gains a second
+// report, BORROW-013 at `move(s)` beside its own BORROW-015: a string's `.ptr` now carries its header's address (DEF-660's header ref), so the first
+// element's `#wild_slice` holds an address into `s` across the second element's move of it.
 error:E5;
 func:take = int64(move string:x) never fails { pass 0i64; };
 func:takeb = int64(move buffer:x) never fails { pass 0i64; };

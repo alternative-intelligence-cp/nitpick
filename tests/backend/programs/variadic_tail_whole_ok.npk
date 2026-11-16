@@ -1,0 +1,338 @@
+// expect-exit: 0
+mod:variadic_tail_whole_ok;
+// 2026-11-15 (landing 177d2b7, row 5: DEF-670). The right controls of `variadic_tail_whole.npk`, each 67 on main (78f9b3a) and on the row at -O0,
+// -O2 and under the detector: a tail's element read out and stored (`p1_elem_ok`, `p2_efor_ok`, `p3_eloc_ok`, `a_arrd_ok`), the faces' controls
+// with the store kept in this frame, and the address road's `a_adr_ok`, `a_adri_ok`, `a_adrs_ok`.
+error:E5;
+struct:SV_a_adr_ok = { int32[]:s; };
+struct:SVH_a_adr_ok = { SV_a_adr_ok->:sv; int64:z; };
+func:clob_a_adr_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_a_adr_ok = NIL(SV_a_adr_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_a_adr_ok = NIL(SV_a_adr_ok->:p, SV_a_adr_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_a_adr_ok = NIL(SV_a_adr_ok->:w, int32[]:v) never fails { drop setsv_a_adr_ok(w, v); pass NIL; };
+func:idsl_a_adr_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_a_adr_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_a_adr_ok = { func:sets = NIL(SV_a_adr_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_a_adr_ok = NIL(SV_a_adr_ok->:w2, int32[]:keep, ..*int32[]:vs) never fails { int32[]->:pv = @keep; drop setsv_a_adr_ok(w2, <-pv); pass NIL; };
+func:mid_a_adr_ok = NIL(SV_a_adr_ok->:w, int32[]:keep) never fails { drop k_a_adr_ok(w, keep, 7i32); pass NIL; };
+func:f_a_adr_ok = int32() never fails { int32[1]:o = [7i32]; SV_a_adr_ok:sv = SV_a_adr_ok{ s: o[0i64...1i64] }; drop mid_a_adr_ok(@sv, o[0i64...1i64]); int32:c = raw clob_a_adr_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_a_adr_ok = int32() never fails { pass (raw f_a_adr_ok()) + 60i32; };
+struct:SV_a_adri_ok = { int32[]:s; };
+struct:SVH_a_adri_ok = { SV_a_adri_ok->:sv; int64:z; };
+func:clob_a_adri_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_a_adri_ok = NIL(SV_a_adri_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_a_adri_ok = NIL(SV_a_adri_ok->:p, SV_a_adri_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_a_adri_ok = NIL(SV_a_adri_ok->:w, int32[]:v) never fails { drop setsv_a_adri_ok(w, v); pass NIL; };
+func:idsl_a_adri_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_a_adri_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_a_adri_ok = { func:sets = NIL(SV_a_adri_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_a_adri_ok = NIL(SV_a_adri_ok->:w2, int32[]:keep, ..*int32[]:vs) never fails { drop setsv_a_adri_ok(w2, <-(@keep)); pass NIL; };
+func:mid_a_adri_ok = NIL(SV_a_adri_ok->:w, int32[]:keep) never fails { drop k_a_adri_ok(w, keep, 7i32); pass NIL; };
+func:f_a_adri_ok = int32() never fails { int32[1]:o = [7i32]; SV_a_adri_ok:sv = SV_a_adri_ok{ s: o[0i64...1i64] }; drop mid_a_adri_ok(@sv, o[0i64...1i64]); int32:c = raw clob_a_adri_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_a_adri_ok = int32() never fails { pass (raw f_a_adri_ok()) + 60i32; };
+struct:SV_a_adrs_ok = { int32[]:s; };
+struct:SVH_a_adrs_ok = { SV_a_adrs_ok->:sv; int64:z; };
+func:clob_a_adrs_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_a_adrs_ok = NIL(SV_a_adrs_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_a_adrs_ok = NIL(SV_a_adrs_ok->:p, SV_a_adrs_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_a_adrs_ok = NIL(SV_a_adrs_ok->:w, int32[]:v) never fails { drop setsv_a_adrs_ok(w, v); pass NIL; };
+func:idsl_a_adrs_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_a_adrs_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_a_adrs_ok = { func:sets = NIL(SV_a_adrs_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+struct:SPV_a_adrs_ok = { int32[]->:p; int64:z; };
+func:k_a_adrs_ok = NIL(SV_a_adrs_ok->:w2, int32[]:keep, ..*int32[]:vs) never fails { SPV_a_adrs_ok:sp = SPV_a_adrs_ok{ p: @keep, z: 1i64 }; drop setsv_a_adrs_ok(w2, <-(sp.p)); pass NIL; };
+func:mid_a_adrs_ok = NIL(SV_a_adrs_ok->:w, int32[]:keep) never fails { drop k_a_adrs_ok(w, keep, 7i32); pass NIL; };
+func:f_a_adrs_ok = int32() never fails { int32[1]:o = [7i32]; SV_a_adrs_ok:sv = SV_a_adrs_ok{ s: o[0i64...1i64] }; drop mid_a_adrs_ok(@sv, o[0i64...1i64]); int32:c = raw clob_a_adrs_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_a_adrs_ok = int32() never fails { pass (raw f_a_adrs_ok()) + 60i32; };
+struct:SV_a_arrd_ok = { int32[]:s; };
+struct:SVH_a_arrd_ok = { SV_a_arrd_ok->:sv; int64:z; };
+func:clob_a_arrd_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_a_arrd_ok = NIL(SV_a_arrd_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_a_arrd_ok = NIL(SV_a_arrd_ok->:p, SV_a_arrd_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_a_arrd_ok = NIL(SV_a_arrd_ok->:w, int32[]:v) never fails { drop setsv_a_arrd_ok(w, v); pass NIL; };
+func:idsl_a_arrd_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_a_arrd_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_a_arrd_ok = { func:sets = NIL(SV_a_arrd_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_a_arrd_ok = NIL(SV_a_arrd_ok->:w2, int32[]:keep, ..*int32[][]:vs) never fails { int32[][1]:arr = [vs[0i64]]; drop setsv_a_arrd_ok(w2, arr[0i64]); pass NIL; };
+func:mid2_a_arrd_ok = NIL(SV_a_arrd_ok->:w, int32[]:keep, int32[]:el) never fails { drop k_a_arrd_ok(w, keep, el); pass NIL; };
+func:f_a_arrd_ok = int32() never fails { int32[1]:o = [7i32]; int32[1]:o2 = [7i32]; SV_a_arrd_ok:sv = SV_a_arrd_ok{ s: o[0i64...1i64] }; drop mid2_a_arrd_ok(@sv, o[0i64...1i64], o2[0i64...1i64]); int32:c = raw clob_a_arrd_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_a_arrd_ok = int32() never fails { pass (raw f_a_arrd_ok()) + 60i32; };
+struct:SV_a_lst_ok = { int32[]:s; };
+struct:SVH_a_lst_ok = { SV_a_lst_ok->:sv; int64:z; };
+func:clob_a_lst_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_a_lst_ok = NIL(SV_a_lst_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_a_lst_ok = NIL(SV_a_lst_ok->:p, SV_a_lst_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_a_lst_ok = NIL(SV_a_lst_ok->:w, int32[]:v) never fails { drop setsv_a_lst_ok(w, v); pass NIL; };
+func:idsl_a_lst_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_a_lst_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_a_lst_ok = { func:sets = NIL(SV_a_lst_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_a_lst_ok = NIL(List<int32[]>->:l, int32[]:keep, ..*int32[]:vs) never fails { drop list_push(l, keep); pass NIL; };
+func:mid_a_lst_ok = NIL(List<int32[]>->:l, int32[]:keep) never fails { drop k_a_lst_ok(l, keep, 7i32); pass NIL; };
+func:f_a_lst_ok = int32() never fails { int32[1]:o = [7i32]; List<int32[]>:l = raw list_init::<int32[]>(2i64); drop mid_a_lst_ok(@l, o[0i64...1i64]); int32:c = raw clob_a_lst_ok(); int32:got = l[0i64][0i64]; pass got; };
+func:cell_main_a_lst_ok = int32() never fails { pass (raw f_a_lst_ok()) + 60i32; };
+struct:SV_a_lstl_ok = { int32[]:s; };
+struct:SVH_a_lstl_ok = { SV_a_lstl_ok->:sv; int64:z; };
+func:clob_a_lstl_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_a_lstl_ok = NIL(SV_a_lstl_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_a_lstl_ok = NIL(SV_a_lstl_ok->:p, SV_a_lstl_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_a_lstl_ok = NIL(SV_a_lstl_ok->:w, int32[]:v) never fails { drop setsv_a_lstl_ok(w, v); pass NIL; };
+func:idsl_a_lstl_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_a_lstl_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_a_lstl_ok = { func:sets = NIL(SV_a_lstl_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_a_lstl_ok = NIL(SV_a_lstl_ok->:w2, int32[]:keep, ..*int32[]:vs) never fails { List<int32[]>:l = raw list_init::<int32[]>(2i64); drop list_push(@l, keep); drop setsv_a_lstl_ok(w2, l[0i64]); pass NIL; };
+func:mid_a_lstl_ok = NIL(SV_a_lstl_ok->:w, int32[]:keep) never fails { drop k_a_lstl_ok(w, keep, 7i32); pass NIL; };
+func:f_a_lstl_ok = int32() never fails { int32[1]:o = [7i32]; SV_a_lstl_ok:sv = SV_a_lstl_ok{ s: o[0i64...1i64] }; drop mid_a_lstl_ok(@sv, o[0i64...1i64]); int32:c = raw clob_a_lstl_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_a_lstl_ok = int32() never fails { pass (raw f_a_lstl_ok()) + 60i32; };
+struct:SV_a_mksv_ok = { int32[]:s; };
+struct:SVH_a_mksv_ok = { SV_a_mksv_ok->:sv; int64:z; };
+func:clob_a_mksv_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_a_mksv_ok = NIL(SV_a_mksv_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_a_mksv_ok = NIL(SV_a_mksv_ok->:p, SV_a_mksv_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_a_mksv_ok = NIL(SV_a_mksv_ok->:w, int32[]:v) never fails { drop setsv_a_mksv_ok(w, v); pass NIL; };
+func:idsl_a_mksv_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_a_mksv_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_a_mksv_ok = { func:sets = NIL(SV_a_mksv_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:mksv_a_mksv_ok = SV_a_mksv_ok(int32[]:v) never fails { pass SV_a_mksv_ok{ s: v }; };
+func:k_a_mksv_ok = NIL(SV_a_mksv_ok->:w2, int32[]:keep, ..*int32[]:vs) never fails { drop setv_a_mksv_ok(w2, raw mksv_a_mksv_ok(keep)); pass NIL; };
+func:mid_a_mksv_ok = NIL(SV_a_mksv_ok->:w, int32[]:keep) never fails { drop k_a_mksv_ok(w, keep, 7i32); pass NIL; };
+func:f_a_mksv_ok = int32() never fails { int32[1]:o = [7i32]; SV_a_mksv_ok:sv = SV_a_mksv_ok{ s: o[0i64...1i64] }; drop mid_a_mksv_ok(@sv, o[0i64...1i64]); int32:c = raw clob_a_mksv_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_a_mksv_ok = int32() never fails { pass (raw f_a_mksv_ok()) + 60i32; };
+struct:SV_a_sfld_ok = { int32[]:s; };
+struct:SVH_a_sfld_ok = { SV_a_sfld_ok->:sv; int64:z; };
+func:clob_a_sfld_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_a_sfld_ok = NIL(SV_a_sfld_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_a_sfld_ok = NIL(SV_a_sfld_ok->:p, SV_a_sfld_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_a_sfld_ok = NIL(SV_a_sfld_ok->:w, int32[]:v) never fails { drop setsv_a_sfld_ok(w, v); pass NIL; };
+func:idsl_a_sfld_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_a_sfld_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_a_sfld_ok = { func:sets = NIL(SV_a_sfld_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_a_sfld_ok = NIL(SV_a_sfld_ok->:w2, int32[]:keep, ..*int32[]:vs) never fails { SV_a_sfld_ok:t = SV_a_sfld_ok{ s: keep }; drop setsv_a_sfld_ok(w2, t.s); pass NIL; };
+func:mid_a_sfld_ok = NIL(SV_a_sfld_ok->:w, int32[]:keep) never fails { drop k_a_sfld_ok(w, keep, 7i32); pass NIL; };
+func:f_a_sfld_ok = int32() never fails { int32[1]:o = [7i32]; SV_a_sfld_ok:sv = SV_a_sfld_ok{ s: o[0i64...1i64] }; drop mid_a_sfld_ok(@sv, o[0i64...1i64]); int32:c = raw clob_a_sfld_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_a_sfld_ok = int32() never fails { pass (raw f_a_sfld_ok()) + 60i32; };
+struct:SV_p1_elem_ok = { int32[]:s; };
+struct:SVH_p1_elem_ok = { SV_p1_elem_ok->:sv; int64:z; };
+func:clob_p1_elem_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_p1_elem_ok = NIL(SV_p1_elem_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_p1_elem_ok = NIL(SV_p1_elem_ok->:p, SV_p1_elem_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_p1_elem_ok = NIL(SV_p1_elem_ok->:w, int32[]:v) never fails { drop setsv_p1_elem_ok(w, v); pass NIL; };
+func:idsl_p1_elem_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_p1_elem_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_p1_elem_ok = { func:sets = NIL(SV_p1_elem_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_p1_elem_ok = NIL(SV_p1_elem_ok->:w2, int32[]:keep, ..*int32[][]:vs) never fails { drop setsv_p1_elem_ok(w2, vs[0i64]); pass NIL; };
+func:mid2_p1_elem_ok = NIL(SV_p1_elem_ok->:w, int32[]:keep, int32[]:el) never fails { drop k_p1_elem_ok(w, keep, el); pass NIL; };
+func:f_p1_elem_ok = int32() never fails { int32[1]:o = [7i32]; int32[1]:o2 = [7i32]; SV_p1_elem_ok:sv = SV_p1_elem_ok{ s: o[0i64...1i64] }; drop mid2_p1_elem_ok(@sv, o[0i64...1i64], o2[0i64...1i64]); int32:c = raw clob_p1_elem_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_p1_elem_ok = int32() never fails { pass (raw f_p1_elem_ok()) + 60i32; };
+struct:SV_a10_gen_ok = { int32[]:s; };
+struct:SVH_a10_gen_ok = { SV_a10_gen_ok->:sv; int64:z; };
+func:clob_a10_gen_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_a10_gen_ok = NIL(SV_a10_gen_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_a10_gen_ok = NIL(SV_a10_gen_ok->:p, SV_a10_gen_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_a10_gen_ok = NIL(SV_a10_gen_ok->:w, int32[]:v) never fails { drop setsv_a10_gen_ok(w, v); pass NIL; };
+func:idsl_a10_gen_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_a10_gen_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_a10_gen_ok = { func:sets = NIL(SV_a10_gen_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_a10_gen_ok = NIL(SV_a10_gen_ok->:w2, int32[]:keep, ..*int32[]:vs) never fails { drop setg_a10_gen_ok::<SV_a10_gen_ok>(w2, SV_a10_gen_ok{ s: keep }); pass NIL; };
+func:mid_a10_gen_ok = NIL(SV_a10_gen_ok->:w, int32[]:keep) never fails { drop k_a10_gen_ok(w, keep, 7i32); pass NIL; };
+func:f_a10_gen_ok = int32() never fails { int32[1]:o = [7i32]; SV_a10_gen_ok:sv = SV_a10_gen_ok{ s: o[0i64...1i64] }; drop mid_a10_gen_ok(@sv, o[0i64...1i64]); int32:c = raw clob_a10_gen_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_a10_gen_ok = int32() never fails { pass (raw f_a10_gen_ok()) + 60i32; };
+struct:SV_a1_cp_ok = { int32[]:s; };
+struct:SVH_a1_cp_ok = { SV_a1_cp_ok->:sv; int64:z; };
+func:clob_a1_cp_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_a1_cp_ok = NIL(SV_a1_cp_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_a1_cp_ok = NIL(SV_a1_cp_ok->:p, SV_a1_cp_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_a1_cp_ok = NIL(SV_a1_cp_ok->:w, int32[]:v) never fails { drop setsv_a1_cp_ok(w, v); pass NIL; };
+func:idsl_a1_cp_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_a1_cp_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_a1_cp_ok = { func:sets = NIL(SV_a1_cp_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_a1_cp_ok = NIL(SV_a1_cp_ok->:w2, int32[]:keep, ..*int32[]:vs) never fails { int32[]:t2 = keep; drop setsv_a1_cp_ok(w2, t2); pass NIL; };
+func:mid_a1_cp_ok = NIL(SV_a1_cp_ok->:w, int32[]:keep) never fails { drop k_a1_cp_ok(w, keep, 7i32); pass NIL; };
+func:f_a1_cp_ok = int32() never fails { int32[1]:o = [7i32]; SV_a1_cp_ok:sv = SV_a1_cp_ok{ s: o[0i64...1i64] }; drop mid_a1_cp_ok(@sv, o[0i64...1i64]); int32:c = raw clob_a1_cp_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_a1_cp_ok = int32() never fails { pass (raw f_a1_cp_ok()) + 60i32; };
+struct:SV_a2_fld_ok = { int32[]:s; };
+struct:SVH_a2_fld_ok = { SV_a2_fld_ok->:sv; int64:z; };
+func:clob_a2_fld_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_a2_fld_ok = NIL(SV_a2_fld_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_a2_fld_ok = NIL(SV_a2_fld_ok->:p, SV_a2_fld_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_a2_fld_ok = NIL(SV_a2_fld_ok->:w, int32[]:v) never fails { drop setsv_a2_fld_ok(w, v); pass NIL; };
+func:idsl_a2_fld_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_a2_fld_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_a2_fld_ok = { func:sets = NIL(SV_a2_fld_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_a2_fld_ok = NIL(SV_a2_fld_ok->:w2, int32[]:keep, ..*int32[]:vs) never fails { SV_a2_fld_ok:tmp = SV_a2_fld_ok{ s: keep }; drop setv_a2_fld_ok(w2, tmp); pass NIL; };
+func:mid_a2_fld_ok = NIL(SV_a2_fld_ok->:w, int32[]:keep) never fails { drop k_a2_fld_ok(w, keep, 7i32); pass NIL; };
+func:f_a2_fld_ok = int32() never fails { int32[1]:o = [7i32]; SV_a2_fld_ok:sv = SV_a2_fld_ok{ s: o[0i64...1i64] }; drop mid_a2_fld_ok(@sv, o[0i64...1i64]); int32:c = raw clob_a2_fld_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_a2_fld_ok = int32() never fails { pass (raw f_a2_fld_ok()) + 60i32; };
+struct:SV_a3_cal_ok = { int32[]:s; };
+struct:SVH_a3_cal_ok = { SV_a3_cal_ok->:sv; int64:z; };
+func:clob_a3_cal_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_a3_cal_ok = NIL(SV_a3_cal_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_a3_cal_ok = NIL(SV_a3_cal_ok->:p, SV_a3_cal_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_a3_cal_ok = NIL(SV_a3_cal_ok->:w, int32[]:v) never fails { drop setsv_a3_cal_ok(w, v); pass NIL; };
+func:idsl_a3_cal_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_a3_cal_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_a3_cal_ok = { func:sets = NIL(SV_a3_cal_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_a3_cal_ok = NIL(SV_a3_cal_ok->:w2, int32[]:keep, ..*int32[]:vs) never fails { drop k2_a3_cal_ok(w2, keep); pass NIL; };
+func:mid_a3_cal_ok = NIL(SV_a3_cal_ok->:w, int32[]:keep) never fails { drop k_a3_cal_ok(w, keep, 7i32); pass NIL; };
+func:f_a3_cal_ok = int32() never fails { int32[1]:o = [7i32]; SV_a3_cal_ok:sv = SV_a3_cal_ok{ s: o[0i64...1i64] }; drop mid_a3_cal_ok(@sv, o[0i64...1i64]); int32:c = raw clob_a3_cal_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_a3_cal_ok = int32() never fails { pass (raw f_a3_cal_ok()) + 60i32; };
+struct:SV_a4_loop_ok = { int32[]:s; };
+struct:SVH_a4_loop_ok = { SV_a4_loop_ok->:sv; int64:z; };
+func:clob_a4_loop_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_a4_loop_ok = NIL(SV_a4_loop_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_a4_loop_ok = NIL(SV_a4_loop_ok->:p, SV_a4_loop_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_a4_loop_ok = NIL(SV_a4_loop_ok->:w, int32[]:v) never fails { drop setsv_a4_loop_ok(w, v); pass NIL; };
+func:idsl_a4_loop_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_a4_loop_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_a4_loop_ok = { func:sets = NIL(SV_a4_loop_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_a4_loop_ok = NIL(SV_a4_loop_ok->:w2, int32[]:keep, ..*int32[]:vs) never fails { loop(0i64, 2i64, 1i64) { drop setsv_a4_loop_ok(w2, keep); } pass NIL; };
+func:mid_a4_loop_ok = NIL(SV_a4_loop_ok->:w, int32[]:keep) never fails { drop k_a4_loop_ok(w, keep, 7i32); pass NIL; };
+func:f_a4_loop_ok = int32() never fails { int32[1]:o = [7i32]; SV_a4_loop_ok:sv = SV_a4_loop_ok{ s: o[0i64...1i64] }; drop mid_a4_loop_ok(@sv, o[0i64...1i64]); int32:c = raw clob_a4_loop_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_a4_loop_ok = int32() never fails { pass (raw f_a4_loop_ok()) + 60i32; };
+struct:SV_a5_br_ok = { int32[]:s; };
+struct:SVH_a5_br_ok = { SV_a5_br_ok->:sv; int64:z; };
+func:clob_a5_br_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_a5_br_ok = NIL(SV_a5_br_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_a5_br_ok = NIL(SV_a5_br_ok->:p, SV_a5_br_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_a5_br_ok = NIL(SV_a5_br_ok->:w, int32[]:v) never fails { drop setsv_a5_br_ok(w, v); pass NIL; };
+func:idsl_a5_br_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_a5_br_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_a5_br_ok = { func:sets = NIL(SV_a5_br_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_a5_br_ok = NIL(SV_a5_br_ok->:w2, int32[]:keep, ..*int32[]:vs) never fails { if (vs.len > 0i64) { drop setsv_a5_br_ok(w2, keep); } pass NIL; };
+func:mid_a5_br_ok = NIL(SV_a5_br_ok->:w, int32[]:keep) never fails { drop k_a5_br_ok(w, keep, 7i32); pass NIL; };
+func:f_a5_br_ok = int32() never fails { int32[1]:o = [7i32]; SV_a5_br_ok:sv = SV_a5_br_ok{ s: o[0i64...1i64] }; drop mid_a5_br_ok(@sv, o[0i64...1i64]); int32:c = raw clob_a5_br_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_a5_br_ok = int32() never fails { pass (raw f_a5_br_ok()) + 60i32; };
+struct:SV_a6_cast_ok = { int32[]:s; };
+struct:SVH_a6_cast_ok = { SV_a6_cast_ok->:sv; int64:z; };
+func:clob_a6_cast_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_a6_cast_ok = NIL(SV_a6_cast_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_a6_cast_ok = NIL(SV_a6_cast_ok->:p, SV_a6_cast_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_a6_cast_ok = NIL(SV_a6_cast_ok->:w, int32[]:v) never fails { drop setsv_a6_cast_ok(w, v); pass NIL; };
+func:idsl_a6_cast_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_a6_cast_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_a6_cast_ok = { func:sets = NIL(SV_a6_cast_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_a6_cast_ok = NIL(SV_a6_cast_ok->:w2, int32[]:keep, ..*int32[]:vs) never fails { drop setsv_a6_cast_ok(w2 =>! SV_a6_cast_ok->, keep); pass NIL; };
+func:mid_a6_cast_ok = NIL(SV_a6_cast_ok->:w, int32[]:keep) never fails { drop k_a6_cast_ok(w, keep, 7i32); pass NIL; };
+func:f_a6_cast_ok = int32() never fails { int32[1]:o = [7i32]; SV_a6_cast_ok:sv = SV_a6_cast_ok{ s: o[0i64...1i64] }; drop mid_a6_cast_ok(@sv, o[0i64...1i64]); int32:c = raw clob_a6_cast_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_a6_cast_ok = int32() never fails { pass (raw f_a6_cast_ok()) + 60i32; };
+struct:SV_a7_id_ok = { int32[]:s; };
+struct:SVH_a7_id_ok = { SV_a7_id_ok->:sv; int64:z; };
+func:clob_a7_id_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_a7_id_ok = NIL(SV_a7_id_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_a7_id_ok = NIL(SV_a7_id_ok->:p, SV_a7_id_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_a7_id_ok = NIL(SV_a7_id_ok->:w, int32[]:v) never fails { drop setsv_a7_id_ok(w, v); pass NIL; };
+func:idsl_a7_id_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_a7_id_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_a7_id_ok = { func:sets = NIL(SV_a7_id_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_a7_id_ok = NIL(SV_a7_id_ok->:w2, int32[]:keep, ..*int32[]:vs) never fails { drop setsv_a7_id_ok(w2, raw idsl_a7_id_ok(keep)); pass NIL; };
+func:mid_a7_id_ok = NIL(SV_a7_id_ok->:w, int32[]:keep) never fails { drop k_a7_id_ok(w, keep, 7i32); pass NIL; };
+func:f_a7_id_ok = int32() never fails { int32[1]:o = [7i32]; SV_a7_id_ok:sv = SV_a7_id_ok{ s: o[0i64...1i64] }; drop mid_a7_id_ok(@sv, o[0i64...1i64]); int32:c = raw clob_a7_id_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_a7_id_ok = int32() never fails { pass (raw f_a7_id_ok()) + 60i32; };
+struct:SV_a8_meth_ok = { int32[]:s; };
+struct:SVH_a8_meth_ok = { SV_a8_meth_ok->:sv; int64:z; };
+func:clob_a8_meth_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_a8_meth_ok = NIL(SV_a8_meth_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_a8_meth_ok = NIL(SV_a8_meth_ok->:p, SV_a8_meth_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_a8_meth_ok = NIL(SV_a8_meth_ok->:w, int32[]:v) never fails { drop setsv_a8_meth_ok(w, v); pass NIL; };
+func:idsl_a8_meth_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_a8_meth_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_a8_meth_ok = { func:sets = NIL(SV_a8_meth_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_a8_meth_ok = NIL(SV_a8_meth_ok->:w2, int32[]:keep, ..*int32[]:vs) never fails { drop w2.sets(keep); pass NIL; };
+func:mid_a8_meth_ok = NIL(SV_a8_meth_ok->:w, int32[]:keep) never fails { drop k_a8_meth_ok(w, keep, 7i32); pass NIL; };
+func:f_a8_meth_ok = int32() never fails { int32[1]:o = [7i32]; SV_a8_meth_ok:sv = SV_a8_meth_ok{ s: o[0i64...1i64] }; drop mid_a8_meth_ok(@sv, o[0i64...1i64]); int32:c = raw clob_a8_meth_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_a8_meth_ok = int32() never fails { pass (raw f_a8_meth_ok()) + 60i32; };
+struct:SV_a9_tern_ok = { int32[]:s; };
+struct:SVH_a9_tern_ok = { SV_a9_tern_ok->:sv; int64:z; };
+func:clob_a9_tern_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_a9_tern_ok = NIL(SV_a9_tern_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_a9_tern_ok = NIL(SV_a9_tern_ok->:p, SV_a9_tern_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_a9_tern_ok = NIL(SV_a9_tern_ok->:w, int32[]:v) never fails { drop setsv_a9_tern_ok(w, v); pass NIL; };
+func:idsl_a9_tern_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_a9_tern_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_a9_tern_ok = { func:sets = NIL(SV_a9_tern_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_a9_tern_ok = NIL(SV_a9_tern_ok->:w2, int32[]:keep, ..*int32[]:vs) never fails { drop setsv_a9_tern_ok(w2, is (vs.len > 5i64) : keep : keep); pass NIL; };
+func:mid_a9_tern_ok = NIL(SV_a9_tern_ok->:w, int32[]:keep) never fails { drop k_a9_tern_ok(w, keep, 7i32); pass NIL; };
+func:f_a9_tern_ok = int32() never fails { int32[1]:o = [7i32]; SV_a9_tern_ok:sv = SV_a9_tern_ok{ s: o[0i64...1i64] }; drop mid_a9_tern_ok(@sv, o[0i64...1i64]); int32:c = raw clob_a9_tern_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_a9_tern_ok = int32() never fails { pass (raw f_a9_tern_ok()) + 60i32; };
+struct:SV_p2_efor_ok = { int32[]:s; };
+struct:SVH_p2_efor_ok = { SV_p2_efor_ok->:sv; int64:z; };
+func:clob_p2_efor_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_p2_efor_ok = NIL(SV_p2_efor_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_p2_efor_ok = NIL(SV_p2_efor_ok->:p, SV_p2_efor_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_p2_efor_ok = NIL(SV_p2_efor_ok->:w, int32[]:v) never fails { drop setsv_p2_efor_ok(w, v); pass NIL; };
+func:idsl_p2_efor_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_p2_efor_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_p2_efor_ok = { func:sets = NIL(SV_p2_efor_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_p2_efor_ok = NIL(SV_p2_efor_ok->:w2, int32[]:keep, ..*int32[][]:vs) never fails { for (int32[]:q in vs) { drop setsv_p2_efor_ok(w2, q); } pass NIL; };
+func:mid2_p2_efor_ok = NIL(SV_p2_efor_ok->:w, int32[]:keep, int32[]:el) never fails { drop k_p2_efor_ok(w, keep, el); pass NIL; };
+func:f_p2_efor_ok = int32() never fails { int32[1]:o = [7i32]; int32[1]:o2 = [7i32]; SV_p2_efor_ok:sv = SV_p2_efor_ok{ s: o[0i64...1i64] }; drop mid2_p2_efor_ok(@sv, o[0i64...1i64], o2[0i64...1i64]); int32:c = raw clob_p2_efor_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_p2_efor_ok = int32() never fails { pass (raw f_p2_efor_ok()) + 60i32; };
+struct:SV_p3_eloc_ok = { int32[]:s; };
+struct:SVH_p3_eloc_ok = { SV_p3_eloc_ok->:sv; int64:z; };
+func:clob_p3_eloc_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_p3_eloc_ok = NIL(SV_p3_eloc_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_p3_eloc_ok = NIL(SV_p3_eloc_ok->:p, SV_p3_eloc_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_p3_eloc_ok = NIL(SV_p3_eloc_ok->:w, int32[]:v) never fails { drop setsv_p3_eloc_ok(w, v); pass NIL; };
+func:idsl_p3_eloc_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_p3_eloc_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_p3_eloc_ok = { func:sets = NIL(SV_p3_eloc_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_p3_eloc_ok = NIL(SV_p3_eloc_ok->:w2, int32[]:keep, ..*int32[][]:vs) never fails { int32[]:q = vs[0i64]; drop setsv_p3_eloc_ok(w2, q); pass NIL; };
+func:mid2_p3_eloc_ok = NIL(SV_p3_eloc_ok->:w, int32[]:keep, int32[]:el) never fails { drop k_p3_eloc_ok(w, keep, el); pass NIL; };
+func:f_p3_eloc_ok = int32() never fails { int32[1]:o = [7i32]; int32[1]:o2 = [7i32]; SV_p3_eloc_ok:sv = SV_p3_eloc_ok{ s: o[0i64...1i64] }; drop mid2_p3_eloc_ok(@sv, o[0i64...1i64], o2[0i64...1i64]); int32:c = raw clob_p3_eloc_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_p3_eloc_ok = int32() never fails { pass (raw f_p3_eloc_ok()) + 60i32; };
+struct:SV_p4_rd_ok = { int32[]:s; };
+struct:SVH_p4_rd_ok = { SV_p4_rd_ok->:sv; int64:z; };
+func:clob_p4_rd_ok = int32() never fails { int32[32]:a = [23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32, 23i32]; int64:i = 3i64; pass a[i]; };
+func:setsv_p4_rd_ok = NIL(SV_p4_rd_ok->:p, int32[]:v) never fails { (<-p).s = v; pass NIL; };
+func:setv_p4_rd_ok = NIL(SV_p4_rd_ok->:p, SV_p4_rd_ok:v) never fails { (<-p) = v; pass NIL; };
+func:k2_p4_rd_ok = NIL(SV_p4_rd_ok->:w, int32[]:v) never fails { drop setsv_p4_rd_ok(w, v); pass NIL; };
+func:idsl_p4_rd_ok = int32[](int32[]:v) never fails { pass v; };
+func:setg_p4_rd_ok<T> = NIL(T->:p, move T:v) never fails { (<-p) = move(v); pass NIL; };
+impl:SV_p4_rd_ok = { func:sets = NIL(SV_p4_rd_ok->:self, int32[]:v) never fails { (<-self).s = v; pass NIL; }; };
+func:k_p4_rd_ok = NIL(SV_p4_rd_ok->:w2, int32[]:keep, ..*int32[]:vs) never fails { SV_p4_rd_ok:loc = SV_p4_rd_ok{ s: vs }; int32:z = loc.s[0i64]; drop setsv_p4_rd_ok(w2, keep); pass NIL; };
+func:mid_p4_rd_ok = NIL(SV_p4_rd_ok->:w, int32[]:keep) never fails { drop k_p4_rd_ok(w, keep, 7i32); pass NIL; };
+func:f_p4_rd_ok = int32() never fails { int32[1]:o = [7i32]; SV_p4_rd_ok:sv = SV_p4_rd_ok{ s: o[0i64...1i64] }; drop mid_p4_rd_ok(@sv, o[0i64...1i64]); int32:c = raw clob_p4_rd_ok(); int32:got = sv.s[0i64]; pass got; };
+func:cell_main_p4_rd_ok = int32() never fails { pass (raw f_p4_rd_ok()) + 60i32; };
+func:main = int32(cstring[]:argv) {
+    if ((raw cell_main_a_adr_ok()) != 67i32) { exit 1i32; }
+    if ((raw cell_main_a_adri_ok()) != 67i32) { exit 2i32; }
+    if ((raw cell_main_a_adrs_ok()) != 67i32) { exit 3i32; }
+    if ((raw cell_main_a_arrd_ok()) != 67i32) { exit 4i32; }
+    if ((raw cell_main_a_lst_ok()) != 67i32) { exit 5i32; }
+    if ((raw cell_main_a_lstl_ok()) != 67i32) { exit 6i32; }
+    if ((raw cell_main_a_mksv_ok()) != 67i32) { exit 7i32; }
+    if ((raw cell_main_a_sfld_ok()) != 67i32) { exit 8i32; }
+    if ((raw cell_main_p1_elem_ok()) != 67i32) { exit 9i32; }
+    if ((raw cell_main_a10_gen_ok()) != 67i32) { exit 10i32; }
+    if ((raw cell_main_a1_cp_ok()) != 67i32) { exit 11i32; }
+    if ((raw cell_main_a2_fld_ok()) != 67i32) { exit 12i32; }
+    if ((raw cell_main_a3_cal_ok()) != 67i32) { exit 13i32; }
+    if ((raw cell_main_a4_loop_ok()) != 67i32) { exit 14i32; }
+    if ((raw cell_main_a5_br_ok()) != 67i32) { exit 15i32; }
+    if ((raw cell_main_a6_cast_ok()) != 67i32) { exit 16i32; }
+    if ((raw cell_main_a7_id_ok()) != 67i32) { exit 17i32; }
+    if ((raw cell_main_a8_meth_ok()) != 67i32) { exit 18i32; }
+    if ((raw cell_main_a9_tern_ok()) != 67i32) { exit 19i32; }
+    if ((raw cell_main_p2_efor_ok()) != 67i32) { exit 20i32; }
+    if ((raw cell_main_p3_eloc_ok()) != 67i32) { exit 21i32; }
+    if ((raw cell_main_p4_rd_ok()) != 67i32) { exit 22i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

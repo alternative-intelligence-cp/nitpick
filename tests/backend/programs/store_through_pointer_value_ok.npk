@@ -10669,126 +10669,9 @@ func:f_u_gsln_ok = int64(int64:n) never fails {
     pass raw g_u_gsln_ok(@h0, @h2, @hz, n);
 };
 func:cell_main_u_gsln_ok = int32() never fails { pass (((raw f_u_gsln_ok(1i64)) + 60i64) =>! int32); };
-struct:K_p_uran = { int64:k; };
-struct:H_p_uran = { List<int64>:l; int64:k; K_p_uran:kk; };
-func:mk_p_uran = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
-func:mkh_p_uran = H_p_uran() never fails { pass H_p_uran{ l: raw mk_p_uran(), k: 2i64, kk: K_p_uran{ k: 3i64 } }; };
-func:growh_p_uran = int64(H_p_uran->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:growl_p_uran = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
-func:fp_p_uran = int64->(H_p_uran->:q) never fails { pass @((<-q).l[0i64]); };
-func:idh_p_uran = H_p_uran->(H_p_uran->:q) never fails { pass q; };
-func:getl_p_uran = List<int64>->(H_p_uran->:w) never fails { pass @w.l; };
-struct:HPO_p_uran = { H_p_uran->:lp; List<int64>:own; };
-struct:SQ_p_uran = { HPO_p_uran->:q; int64:z; };
-struct:SR_p_uran = { SQ_p_uran->:sq; int64:z; };
-struct:SL_p_uran = { List<int64>->:l; int64:z; };
-struct:SL2_p_uran = { SL_p_uran:s; int64:z; };
-struct:SLP_p_uran = { SL_p_uran->:sp; int64:z; };
-struct:SQB_p_uran = { HPO_p_uran->:q; int64:z; };
-struct:HPB_p_uran = { H_p_uran->:lp; List<int64>:own; };
-struct:PV_p_uran = { H_p_uran->:p; int64:v; };
-struct:HPV_p_uran = { H_p_uran->:lp; List<PV_p_uran>:own; };
-struct:SLV_p_uran = { List<PV_p_uran>->:l; int64:z; };
-struct:SQV_p_uran = { HPV_p_uran->:q; int64:z; };
-func:getown_p_uran = List<int64>->(HPO_p_uran->:w) never fails { pass @w.own; };
-func:getownv_p_uran = List<PV_p_uran>->(HPV_p_uran->:w) never fails { pass @w.own; };
-func:mkv_p_uran = List<PV_p_uran>(H_p_uran->:h) never fails { List<PV_p_uran>:l = raw list_init::<PV_p_uran>(1i64); drop list_push(@l, PV_p_uran{ p: h, v: 1i64 }); pass l; };
-func:idp_p_uran = HPO_p_uran->(HPO_p_uran->:w) never fails { pass w; };
-func:cvq_p_uran = SQ_p_uran->(SQB_p_uran->:b) never fails { pass ((b =>! any->) =>! SQ_p_uran->); };
-func:put_p_uran = int64(HPO_p_uran->:p, H_p_uran->:v) never fails { p.lp = v; pass 7i64; };
-struct:SR2_p_uran = { SQ_p_uran->:sq; int64:z; };
-struct:SPP_p_uran = { HPO_p_uran->->:qq; int64:z; };
-struct:SPPP_p_uran = { HPO_p_uran->->->:qqq; int64:z; };
-struct:SPPPP_p_uran = { HPO_p_uran->->->->:qqqq; int64:z; };
-struct:HN_p_uran = { int64:a; int64:b; };
-struct:SN_p_uran = { HN_p_uran->:q; int64:z; };
-struct:SNPP_p_uran = { HN_p_uran->->:qq; int64:z; };
-struct:SN4_p_uran = { HN_p_uran->->->->:qqqq; int64:z; };
-struct:W_p_uran = { HPO_p_uran:h; int64:z; };
-struct:W2_p_uran = { HPO_p_uran->:a; HPO_p_uran->:b; int64:z; };
-struct:SO2_p_uran = { HPO_p_uran->->?:oqq; int64:z; };
-func:geth_p_uran = HPO_p_uran->(W_p_uran->:w) never fails { pass @w.h; };
-func:geta_p_uran = HPO_p_uran->->(W2_p_uran->:w) never fails { pass @w.a; };
-func:mksqw_p_uran = SQ_p_uran(W_p_uran->:w) never fails { pass SQ_p_uran{ q: @w.h, z: 1i64 }; };
-func:idpp_p_uran = HPO_p_uran->->(HPO_p_uran->->:p) never fails { pass p; };
-func:rety_p_uran = HPO_p_uran->(HN_p_uran->:p) never fails { pass ((p =>! any->) =>! HPO_p_uran->); };
-func:put2pp_p_uran = int64(HPO_p_uran->->:pp, H_p_uran->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
-func:put3_p_uran = int64(HPO_p_uran->->->:pp, H_p_uran->:v) never fails { (<-(<-(<-pp))).lp = v; pass 7i64; };
-func:put4_p_uran = int64(HPO_p_uran->->->->:pp, H_p_uran->:v) never fails { (<-(<-(<-(<-pp)))).lp = v; pass 7i64; };
-impl:HPO_p_uran = { func:setme = int64(HPO_p_uran->:self, H_p_uran->:v) never fails { (<-self).lp = v; pass 7i64; }; };
-func:g_p_uran = int64(H_p_uran->:h0p, H_p_uran->:hq, H_p_uran->:hz, int64:n) never fails {
-    int64->:e = raw fp_p_uran(hz);
-    HPO_p_uran:ma = HPO_p_uran{ lp: h0p, own: raw mk_p_uran() }; HPO_p_uran:mb = HPO_p_uran{ lp: h0p, own: raw mk_p_uran() }; W2_p_uran:w = W2_p_uran{ a: @ma, b: @mb, z: 1i64 };
-    HPO_p_uran->->:tq = raw geta_p_uran(@w); discard(raw put2pp_p_uran(tq, hq));
-    e = raw fp_p_uran(mb.lp);
-    discard(raw growh_p_uran(hq));
-    pass (<-e) + 6i64;
-};
-func:f_p_uran = int64(int64:n) never fails {
-    H_p_uran:hz = raw mkh_p_uran(); H_p_uran:h0 = raw mkh_p_uran(); H_p_uran:h2 = raw mkh_p_uran();
-    pass raw g_p_uran(@h0, @h2, @hz, n);
-};
-func:cell_main_p_uran = int32() never fails { pass (((raw f_p_uran(1i64)) + 60i64) =>! int32); };
-struct:K_p_urtn = { int64:k; };
-struct:H_p_urtn = { List<int64>:l; int64:k; K_p_urtn:kk; };
-func:mk_p_urtn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
-func:mkh_p_urtn = H_p_urtn() never fails { pass H_p_urtn{ l: raw mk_p_urtn(), k: 2i64, kk: K_p_urtn{ k: 3i64 } }; };
-func:growh_p_urtn = int64(H_p_urtn->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:growl_p_urtn = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
-func:fp_p_urtn = int64->(H_p_urtn->:q) never fails { pass @((<-q).l[0i64]); };
-func:idh_p_urtn = H_p_urtn->(H_p_urtn->:q) never fails { pass q; };
-func:getl_p_urtn = List<int64>->(H_p_urtn->:w) never fails { pass @w.l; };
-struct:HPO_p_urtn = { H_p_urtn->:lp; List<int64>:own; };
-struct:SQ_p_urtn = { HPO_p_urtn->:q; int64:z; };
-struct:SR_p_urtn = { SQ_p_urtn->:sq; int64:z; };
-struct:SL_p_urtn = { List<int64>->:l; int64:z; };
-struct:SL2_p_urtn = { SL_p_urtn:s; int64:z; };
-struct:SLP_p_urtn = { SL_p_urtn->:sp; int64:z; };
-struct:SQB_p_urtn = { HPO_p_urtn->:q; int64:z; };
-struct:HPB_p_urtn = { H_p_urtn->:lp; List<int64>:own; };
-struct:PV_p_urtn = { H_p_urtn->:p; int64:v; };
-struct:HPV_p_urtn = { H_p_urtn->:lp; List<PV_p_urtn>:own; };
-struct:SLV_p_urtn = { List<PV_p_urtn>->:l; int64:z; };
-struct:SQV_p_urtn = { HPV_p_urtn->:q; int64:z; };
-func:getown_p_urtn = List<int64>->(HPO_p_urtn->:w) never fails { pass @w.own; };
-func:getownv_p_urtn = List<PV_p_urtn>->(HPV_p_urtn->:w) never fails { pass @w.own; };
-func:mkv_p_urtn = List<PV_p_urtn>(H_p_urtn->:h) never fails { List<PV_p_urtn>:l = raw list_init::<PV_p_urtn>(1i64); drop list_push(@l, PV_p_urtn{ p: h, v: 1i64 }); pass l; };
-func:idp_p_urtn = HPO_p_urtn->(HPO_p_urtn->:w) never fails { pass w; };
-func:cvq_p_urtn = SQ_p_urtn->(SQB_p_urtn->:b) never fails { pass ((b =>! any->) =>! SQ_p_urtn->); };
-func:put_p_urtn = int64(HPO_p_urtn->:p, H_p_urtn->:v) never fails { p.lp = v; pass 7i64; };
-struct:SR2_p_urtn = { SQ_p_urtn->:sq; int64:z; };
-struct:SPP_p_urtn = { HPO_p_urtn->->:qq; int64:z; };
-struct:SPPP_p_urtn = { HPO_p_urtn->->->:qqq; int64:z; };
-struct:SPPPP_p_urtn = { HPO_p_urtn->->->->:qqqq; int64:z; };
-struct:HN_p_urtn = { int64:a; int64:b; };
-struct:SN_p_urtn = { HN_p_urtn->:q; int64:z; };
-struct:SNPP_p_urtn = { HN_p_urtn->->:qq; int64:z; };
-struct:SN4_p_urtn = { HN_p_urtn->->->->:qqqq; int64:z; };
-struct:W_p_urtn = { HPO_p_urtn:h; int64:z; };
-struct:W2_p_urtn = { HPO_p_urtn->:a; HPO_p_urtn->:b; int64:z; };
-struct:SO2_p_urtn = { HPO_p_urtn->->?:oqq; int64:z; };
-func:geth_p_urtn = HPO_p_urtn->(W_p_urtn->:w) never fails { pass @w.h; };
-func:geta_p_urtn = HPO_p_urtn->->(W2_p_urtn->:w) never fails { pass @w.a; };
-func:mksqw_p_urtn = SQ_p_urtn(W_p_urtn->:w) never fails { pass SQ_p_urtn{ q: @w.h, z: 1i64 }; };
-func:idpp_p_urtn = HPO_p_urtn->->(HPO_p_urtn->->:p) never fails { pass p; };
-func:rety_p_urtn = HPO_p_urtn->(HN_p_urtn->:p) never fails { pass ((p =>! any->) =>! HPO_p_urtn->); };
-func:put2pp_p_urtn = int64(HPO_p_urtn->->:pp, H_p_urtn->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
-func:put3_p_urtn = int64(HPO_p_urtn->->->:pp, H_p_urtn->:v) never fails { (<-(<-(<-pp))).lp = v; pass 7i64; };
-func:put4_p_urtn = int64(HPO_p_urtn->->->->:pp, H_p_urtn->:v) never fails { (<-(<-(<-(<-pp)))).lp = v; pass 7i64; };
-impl:HPO_p_urtn = { func:setme = int64(HPO_p_urtn->:self, H_p_urtn->:v) never fails { (<-self).lp = v; pass 7i64; }; };
-func:g_p_urtn = int64(H_p_urtn->:h0p, H_p_urtn->:hq, H_p_urtn->:hz, int64:n) never fails {
-    int64->:e = raw fp_p_urtn(hz);
-    HPO_p_urtn:ma = HPO_p_urtn{ lp: h0p, own: raw mk_p_urtn() }; HPO_p_urtn:mb = HPO_p_urtn{ lp: h0p, own: raw mk_p_urtn() }; W2_p_urtn:w = W2_p_urtn{ a: @ma, b: @mb, z: 1i64 }; W2_p_urtn:w2 = W2_p_urtn{ a: @mb, b: @ma, z: 1i64 };
-    HPO_p_urtn->->:tq = is (n > 100i64) : raw geta_p_urtn(@w2) : raw geta_p_urtn(@w); discard(raw put2pp_p_urtn(tq, hq));
-    e = raw fp_p_urtn(mb.lp);
-    discard(raw growh_p_urtn(hq));
-    pass (<-e) + 6i64;
-};
-func:f_p_urtn = int64(int64:n) never fails {
-    H_p_urtn:hz = raw mkh_p_urtn(); H_p_urtn:h0 = raw mkh_p_urtn(); H_p_urtn:h2 = raw mkh_p_urtn();
-    pass raw g_p_urtn(@h0, @h2, @hz, n);
-};
-func:cell_main_p_urtn = int32() never fails { pass (((raw f_p_urtn(1i64)) + 60i64) =>! int32); };
+// PRICE (177d2b7 row 4, DEF-591's Wc; at parity): `p_uran` and `p_urtn` stood here. The holder question with refs is field-blind, as main is by name,
+// so row 4 refuses both (BORROW-015 at the growth); they moved to tests/analysis/rejection/store_holder_with_refs.npk, each beside its by-name twin
+// (`p_uranm`, `p_urtnm`: the field's address by name, W2's `stpv_ok_nm` spelling), which main refuses at the same site.
 struct:K_q8_acn_ok = { int64:k; };
 struct:H_q8_acn_ok = { List<int64>:l; int64:k; K_q8_acn_ok:kk; };
 func:mk_q8_acn_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
@@ -11765,8 +11648,6 @@ func:main = int32(cstring[]:argv) {
     if ((raw cell_main_c_sqsn_ok()) != 67i32) { exit 196i32; }
     if ((raw cell_main_c_slv2n_ok()) != 67i32) { exit 197i32; }
     if ((raw cell_main_u_gsln_ok()) != 67i32) { exit 198i32; }
-    if ((raw cell_main_p_uran()) != 67i32) { exit 199i32; }
-    if ((raw cell_main_p_urtn()) != 67i32) { exit 200i32; }
     if ((raw cell_main_q8_acn_ok()) != 67i32) { exit 201i32; }
     if ((raw cell_main_q8_awcn_ok()) != 67i32) { exit 202i32; }
     if ((raw cell_main_q8_ofcn_ok()) != 67i32) { exit 203i32; }

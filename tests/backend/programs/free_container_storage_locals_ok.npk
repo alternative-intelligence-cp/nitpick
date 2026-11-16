@@ -1,0 +1,882 @@
+// expect-exit: 0
+mod:free_container_storage_locals_ok;
+// 2026-11-15 (landing 177d2b7, row 1: DEF-660's K-a2 as V1 with F6, W3c and W3d). The right controls of `free_container_storage_locals.npk`: each wrong cell's
+// twin, the same program without the hand free (`wa_*_ok`, `wb_wf_*_ok`, `wb_wv_*_ok`, `wb_cm_*_ok`, `wv_*_ok`, `hl_lw_ok`, `hi_lh_ok`, `hi_wl_ok`), and the
+// right guards the row must keep: a header in an `alloc` block reached through a `wild` slice field of a struct local, plain (`wb_sf_*`) or `wild`
+// (`wb_sw_*`), or through an element of a `wild` local array of `#wild_slice`s (`wb_ae_*`), or through an element of a `wild` slice made by `#wild_slice`
+// over the block (`wa_bs_*`), each freed by hand, which the block never drops; `ok_wsv_ok`, a `wild` slice local copied from one made by `#wild_slice` over
+// a `wild` block, its `.ptr` freed; `nt_vs_ok` and `nt_vc_ok`, F6's lifts of a store through a header's `.ptr`; the mutants' kills: `hl_ps_ok` (`hl_ps`'s
+// twin), `hl_pt_ok` (a block's string reached through a struct local's `wild` pointer field: a pointer on the way) and `hl_sf_ok` (a `wild` slice
+// field's element in a block, its own `wild string` field freed: a slice at the base); a parameter's header in a block, freed by hand: through a pointer
+// parameter (`hl_vw_ok`), a parameter's pointer field (`hp_mv_ok`, `hp_g_ok`, `hp_re_ok` re-pointed first, `hp_ar_ok`, `hp_vv_ok`, `hp_sf_ok`, `hp_fx_ok`,
+// `hp_pt_ok`), a `wild string->` in a generic function (`hp_gf_ok`), a `wild SS[]` slice field (`hp_sl_ok`) and a `for` binding over `HP[1]` (`hp_fe_ok`);
+// a `List`'s element's pointer field into a block (`hi_lp_ok`), `hidden` fields in a block through a `wild` slice (`hi_hd_ok`), a `wild
+// string[2]` field's element under a `wild` slice of a block (`hi_sai`, beside `hi_lai`'s twin `hi_lai_ok`); a `for` binding over a
+// `wild SS[]` view of a block (`hl_fe2_ok`), which the block never drops. Each case returns its program's exit, 67 on main and on the row.
+error:E5;
+// wa_as_c_ok
+func:g_wa_as_c_ok = int64(int64:n) {
+    wild string[2]:a = [string_concat("ab1", "cde"), string_concat("ab2", "cde")];
+    pass 7i64;
+};
+func:cell_main_wa_as_c_ok = int32() never fails { pass (((g_wa_as_c_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_as_d_ok
+func:g_wa_as_d_ok = int64(int64:n) {
+    wild string[2]:a = [string_concat("ab1", "cde"), string_concat("ab2", "cde")];
+    pass 7i64;
+};
+func:cell_main_wa_as_d_ok = int32() never fails { pass (((g_wa_as_d_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_as_k_ok
+func:fr_wa_as_k_ok = NIL(wild any->:p) never fails { dalloc(p); pass NIL; };
+func:g_wa_as_k_ok = int64(int64:n) {
+    wild string[2]:a = [string_concat("ab1", "cde"), string_concat("ab2", "cde")];
+    pass 7i64;
+};
+func:cell_main_wa_as_k_ok = int32() never fails { pass (((g_wa_as_k_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_as_r_ok
+func:g_wa_as_r_ok = int64(int64:n) {
+    wild string[2]:a = [string_concat("ab1", "cde"), string_concat("ab2", "cde")];
+    pass 7i64;
+};
+func:cell_main_wa_as_r_ok = int32() never fails { pass (((g_wa_as_r_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_as_t_ok
+func:g_wa_as_t_ok = int64(int64:n) {
+    wild string[2]:a = [string_concat("ab1", "cde"), string_concat("ab2", "cde")];
+    pass 7i64;
+};
+func:cell_main_wa_as_t_ok = int32() never fails { pass (((g_wa_as_t_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_as_x_ok
+func:g_wa_as_x_ok = int64(int64:n) {
+    wild string[2]:a = [string_concat("ab1", "cde"), string_concat("ab2", "cde")];
+    pass 7i64;
+};
+func:cell_main_wa_as_x_ok = int32() never fails { pass (((g_wa_as_x_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_ac_c_ok
+func:g_wa_ac_c_ok = int64(int64:n) {
+    wild cstring[2]:a = [(to_cstring(string_concat("ab1", "cde")) ?! E5), (to_cstring(string_concat("ab2", "cde")) ?! E5)];
+    pass 7i64;
+};
+func:cell_main_wa_ac_c_ok = int32() never fails { pass (((g_wa_ac_c_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_ac_d_ok
+func:g_wa_ac_d_ok = int64(int64:n) {
+    wild cstring[2]:a = [(to_cstring(string_concat("ab1", "cde")) ?! E5), (to_cstring(string_concat("ab2", "cde")) ?! E5)];
+    pass 7i64;
+};
+func:cell_main_wa_ac_d_ok = int32() never fails { pass (((g_wa_ac_d_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_ac_k_ok
+func:fr_wa_ac_k_ok = NIL(wild any->:p) never fails { dalloc(p); pass NIL; };
+func:g_wa_ac_k_ok = int64(int64:n) {
+    wild cstring[2]:a = [(to_cstring(string_concat("ab1", "cde")) ?! E5), (to_cstring(string_concat("ab2", "cde")) ?! E5)];
+    pass 7i64;
+};
+func:cell_main_wa_ac_k_ok = int32() never fails { pass (((g_wa_ac_k_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_ac_r_ok
+func:g_wa_ac_r_ok = int64(int64:n) {
+    wild cstring[2]:a = [(to_cstring(string_concat("ab1", "cde")) ?! E5), (to_cstring(string_concat("ab2", "cde")) ?! E5)];
+    pass 7i64;
+};
+func:cell_main_wa_ac_r_ok = int32() never fails { pass (((g_wa_ac_r_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_ac_t_ok
+func:g_wa_ac_t_ok = int64(int64:n) {
+    wild cstring[2]:a = [(to_cstring(string_concat("ab1", "cde")) ?! E5), (to_cstring(string_concat("ab2", "cde")) ?! E5)];
+    pass 7i64;
+};
+func:cell_main_wa_ac_t_ok = int32() never fails { pass (((g_wa_ac_t_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_ac_x_ok
+func:g_wa_ac_x_ok = int64(int64:n) {
+    wild cstring[2]:a = [(to_cstring(string_concat("ab1", "cde")) ?! E5), (to_cstring(string_concat("ab2", "cde")) ?! E5)];
+    pass 7i64;
+};
+func:cell_main_wa_ac_x_ok = int32() never fails { pass (((g_wa_ac_x_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_ab_c_ok
+func:g_wa_ab_c_ok = int64(int64:n) {
+    wild buffer[2]:a = [buffer_new(16i64), buffer_new(16i64)];
+    pass 7i64;
+};
+func:cell_main_wa_ab_c_ok = int32() never fails { pass (((g_wa_ab_c_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_ab_d_ok
+func:g_wa_ab_d_ok = int64(int64:n) {
+    wild buffer[2]:a = [buffer_new(16i64), buffer_new(16i64)];
+    pass 7i64;
+};
+func:cell_main_wa_ab_d_ok = int32() never fails { pass (((g_wa_ab_d_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_ab_k_ok
+func:fr_wa_ab_k_ok = NIL(wild any->:p) never fails { dalloc(p); pass NIL; };
+func:g_wa_ab_k_ok = int64(int64:n) {
+    wild buffer[2]:a = [buffer_new(16i64), buffer_new(16i64)];
+    pass 7i64;
+};
+func:cell_main_wa_ab_k_ok = int32() never fails { pass (((g_wa_ab_k_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_ab_r_ok
+func:g_wa_ab_r_ok = int64(int64:n) {
+    wild buffer[2]:a = [buffer_new(16i64), buffer_new(16i64)];
+    pass 7i64;
+};
+func:cell_main_wa_ab_r_ok = int32() never fails { pass (((g_wa_ab_r_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_ab_t_ok
+func:g_wa_ab_t_ok = int64(int64:n) {
+    wild buffer[2]:a = [buffer_new(16i64), buffer_new(16i64)];
+    pass 7i64;
+};
+func:cell_main_wa_ab_t_ok = int32() never fails { pass (((g_wa_ab_t_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_ab_x_ok
+func:g_wa_ab_x_ok = int64(int64:n) {
+    wild buffer[2]:a = [buffer_new(16i64), buffer_new(16i64)];
+    pass 7i64;
+};
+func:cell_main_wa_ab_x_ok = int32() never fails { pass (((g_wa_ab_x_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_a2_c_ok
+func:g_wa_a2_c_ok = int64(int64:n) {
+    wild string[2][2]:a = [[string_concat("ab1", "cde"), string_concat("ab2", "cde")], [string_concat("ab3", "cde"), string_concat("ab4", "cde")]];
+    pass 7i64;
+};
+func:cell_main_wa_a2_c_ok = int32() never fails { pass (((g_wa_a2_c_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_a2_d_ok
+func:g_wa_a2_d_ok = int64(int64:n) {
+    wild string[2][2]:a = [[string_concat("ab1", "cde"), string_concat("ab2", "cde")], [string_concat("ab3", "cde"), string_concat("ab4", "cde")]];
+    pass 7i64;
+};
+func:cell_main_wa_a2_d_ok = int32() never fails { pass (((g_wa_a2_d_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_a2_k_ok
+func:fr_wa_a2_k_ok = NIL(wild any->:p) never fails { dalloc(p); pass NIL; };
+func:g_wa_a2_k_ok = int64(int64:n) {
+    wild string[2][2]:a = [[string_concat("ab1", "cde"), string_concat("ab2", "cde")], [string_concat("ab3", "cde"), string_concat("ab4", "cde")]];
+    pass 7i64;
+};
+func:cell_main_wa_a2_k_ok = int32() never fails { pass (((g_wa_a2_k_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_a2_r_ok
+func:g_wa_a2_r_ok = int64(int64:n) {
+    wild string[2][2]:a = [[string_concat("ab1", "cde"), string_concat("ab2", "cde")], [string_concat("ab3", "cde"), string_concat("ab4", "cde")]];
+    pass 7i64;
+};
+func:cell_main_wa_a2_r_ok = int32() never fails { pass (((g_wa_a2_r_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_a2_t_ok
+func:g_wa_a2_t_ok = int64(int64:n) {
+    wild string[2][2]:a = [[string_concat("ab1", "cde"), string_concat("ab2", "cde")], [string_concat("ab3", "cde"), string_concat("ab4", "cde")]];
+    pass 7i64;
+};
+func:cell_main_wa_a2_t_ok = int32() never fails { pass (((g_wa_a2_t_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_a2_x_ok
+func:g_wa_a2_x_ok = int64(int64:n) {
+    wild string[2][2]:a = [[string_concat("ab1", "cde"), string_concat("ab2", "cde")], [string_concat("ab3", "cde"), string_concat("ab4", "cde")]];
+    pass 7i64;
+};
+func:cell_main_wa_a2_x_ok = int32() never fails { pass (((g_wa_a2_x_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_bs_c_ok
+func:g_wa_bs_c_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild string[]:v = #wild_slice<string>(blk =>! wild string->, 2i64);
+    v[0i64] = string_concat("ab1", "cde");
+    v[1i64] = string_concat("ab2", "cde");
+    wild any->:q = v[0i64].ptr =>! wild any->;
+    dalloc(q); //F
+    dalloc(v[1i64].ptr =>! wild any->);
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_wa_bs_c_ok = int32() never fails { pass (((g_wa_bs_c_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_bs_d_ok
+func:g_wa_bs_d_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild string[]:v = #wild_slice<string>(blk =>! wild string->, 2i64);
+    v[0i64] = string_concat("ab1", "cde");
+    v[1i64] = string_concat("ab2", "cde");
+    dalloc(v[0i64].ptr =>! wild any->); //F
+    dalloc(v[1i64].ptr =>! wild any->);
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_wa_bs_d_ok = int32() never fails { pass (((g_wa_bs_d_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_bs_k_ok
+func:fr_wa_bs_k_ok = NIL(wild any->:p) never fails { dalloc(p); pass NIL; };
+func:g_wa_bs_k_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild string[]:v = #wild_slice<string>(blk =>! wild string->, 2i64);
+    v[0i64] = string_concat("ab1", "cde");
+    v[1i64] = string_concat("ab2", "cde");
+    drop fr_wa_bs_k_ok(v[0i64].ptr =>! wild any->); //F
+    dalloc(v[1i64].ptr =>! wild any->);
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_wa_bs_k_ok = int32() never fails { pass (((g_wa_bs_k_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_bs_r_ok
+func:g_wa_bs_r_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild string[]:v = #wild_slice<string>(blk =>! wild string->, 2i64);
+    v[0i64] = string_concat("ab1", "cde");
+    v[1i64] = string_concat("ab2", "cde");
+    wild int8->:q = ralloc(v[0i64].ptr =>! wild any->, 64i64); //F
+    dalloc(q);
+    dalloc(v[1i64].ptr =>! wild any->);
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_wa_bs_r_ok = int32() never fails { pass (((g_wa_bs_r_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wa_bs_t_ok
+func:g_wa_bs_t_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild string[]:v = #wild_slice<string>(blk =>! wild string->, 2i64);
+    v[0i64] = string_concat("ab1", "cde");
+    v[1i64] = string_concat("ab2", "cde");
+    dalloc(is (n > 0i64) : (v[0i64].ptr =>! wild any->) : (v[1i64].ptr =>! wild any->)); //F
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_wa_bs_t_ok = int32() never fails { pass (((g_wa_bs_t_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wb_wf_d_ok
+struct:SS_wb_wf_d_ok = { wild string:s; int64:k; };
+func:g_wb_wf_d_ok = int64(int64:n) {
+    SS_wb_wf_d_ok:h = SS_wb_wf_d_ok{ s: string_concat("ab1", "cde"), k: 1i64 };
+    pass 7i64;
+};
+func:cell_main_wb_wf_d_ok = int32() never fails { pass (((g_wb_wf_d_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wb_wf_c_ok
+struct:SS_wb_wf_c_ok = { wild string:s; int64:k; };
+func:g_wb_wf_c_ok = int64(int64:n) {
+    SS_wb_wf_c_ok:h = SS_wb_wf_c_ok{ s: string_concat("ab1", "cde"), k: 1i64 };
+    pass 7i64;
+};
+func:cell_main_wb_wf_c_ok = int32() never fails { pass (((g_wb_wf_c_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wb_wf_k_ok
+struct:SS_wb_wf_k_ok = { wild string:s; int64:k; };
+func:fr_wb_wf_k_ok = NIL(wild any->:p) never fails { dalloc(p); pass NIL; };
+func:g_wb_wf_k_ok = int64(int64:n) {
+    SS_wb_wf_k_ok:h = SS_wb_wf_k_ok{ s: string_concat("ab1", "cde"), k: 1i64 };
+    pass 7i64;
+};
+func:cell_main_wb_wf_k_ok = int32() never fails { pass (((g_wb_wf_k_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wb_wv_d_ok
+struct:SS_wb_wv_d_ok = { wild string:s; int64:k; };
+func:g_wb_wv_d_ok = int64(int64:n) {
+    wild SS_wb_wv_d_ok:h = SS_wb_wv_d_ok{ s: string_concat("ab1", "cde"), k: 1i64 };
+    pass 7i64;
+};
+func:cell_main_wb_wv_d_ok = int32() never fails { pass (((g_wb_wv_d_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wb_wv_c_ok
+struct:SS_wb_wv_c_ok = { wild string:s; int64:k; };
+func:g_wb_wv_c_ok = int64(int64:n) {
+    wild SS_wb_wv_c_ok:h = SS_wb_wv_c_ok{ s: string_concat("ab1", "cde"), k: 1i64 };
+    pass 7i64;
+};
+func:cell_main_wb_wv_c_ok = int32() never fails { pass (((g_wb_wv_c_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wb_wv_k_ok
+struct:SS_wb_wv_k_ok = { wild string:s; int64:k; };
+func:fr_wb_wv_k_ok = NIL(wild any->:p) never fails { dalloc(p); pass NIL; };
+func:g_wb_wv_k_ok = int64(int64:n) {
+    wild SS_wb_wv_k_ok:h = SS_wb_wv_k_ok{ s: string_concat("ab1", "cde"), k: 1i64 };
+    pass 7i64;
+};
+func:cell_main_wb_wv_k_ok = int32() never fails { pass (((g_wb_wv_k_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wb_cm_d_ok
+struct:SS_wb_cm_d_ok = { wild string:s; int64:k; };
+func:g_wb_cm_d_ok = int64(int64:n) {
+    SS_wb_cm_d_ok:h = SS_wb_cm_d_ok{ s: string_concat("ab1", "cde"), k: 1i64 };
+    pass 7i64;
+};
+func:cell_main_wb_cm_d_ok = int32() never fails { pass (((g_wb_cm_d_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wb_cm_c_ok
+struct:SS_wb_cm_c_ok = { wild string:s; int64:k; };
+func:g_wb_cm_c_ok = int64(int64:n) {
+    SS_wb_cm_c_ok:h = SS_wb_cm_c_ok{ s: string_concat("ab1", "cde"), k: 1i64 };
+    pass 7i64;
+};
+func:cell_main_wb_cm_c_ok = int32() never fails { pass (((g_wb_cm_c_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wb_cm_k_ok
+struct:SS_wb_cm_k_ok = { wild string:s; int64:k; };
+func:fr_wb_cm_k_ok = NIL(wild any->:p) never fails { dalloc(p); pass NIL; };
+func:g_wb_cm_k_ok = int64(int64:n) {
+    SS_wb_cm_k_ok:h = SS_wb_cm_k_ok{ s: string_concat("ab1", "cde"), k: 1i64 };
+    pass 7i64;
+};
+func:cell_main_wb_cm_k_ok = int32() never fails { pass (((g_wb_cm_k_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wb_sf_d_ok
+struct:SH_wb_sf_d_ok = { wild string[]:sl; int64:k; };
+func:g_wb_sf_d_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    SH_wb_sf_d_ok:h = SH_wb_sf_d_ok{ sl: #wild_slice<string>(blk =>! wild string->, 2i64), k: 1i64 };
+    h.sl[0i64] = string_concat("ab1", "cde");
+    h.sl[1i64] = string_concat("ab2", "cde");
+    dalloc(h.sl[0i64].ptr =>! wild any->); //F
+    dalloc(h.sl[1i64].ptr =>! wild any->);
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_wb_sf_d_ok = int32() never fails { pass (((g_wb_sf_d_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wb_sf_c_ok
+struct:SH_wb_sf_c_ok = { wild string[]:sl; int64:k; };
+func:g_wb_sf_c_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    SH_wb_sf_c_ok:h = SH_wb_sf_c_ok{ sl: #wild_slice<string>(blk =>! wild string->, 2i64), k: 1i64 };
+    h.sl[0i64] = string_concat("ab1", "cde");
+    h.sl[1i64] = string_concat("ab2", "cde");
+    wild any->:q = h.sl[0i64].ptr =>! wild any->;
+    dalloc(q); //F
+    dalloc(h.sl[1i64].ptr =>! wild any->);
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_wb_sf_c_ok = int32() never fails { pass (((g_wb_sf_c_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wb_sf_k_ok
+struct:SH_wb_sf_k_ok = { wild string[]:sl; int64:k; };
+func:fr_wb_sf_k_ok = NIL(wild any->:p) never fails { dalloc(p); pass NIL; };
+func:g_wb_sf_k_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    SH_wb_sf_k_ok:h = SH_wb_sf_k_ok{ sl: #wild_slice<string>(blk =>! wild string->, 2i64), k: 1i64 };
+    h.sl[0i64] = string_concat("ab1", "cde");
+    h.sl[1i64] = string_concat("ab2", "cde");
+    drop fr_wb_sf_k_ok(h.sl[0i64].ptr =>! wild any->); //F
+    dalloc(h.sl[1i64].ptr =>! wild any->);
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_wb_sf_k_ok = int32() never fails { pass (((g_wb_sf_k_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wb_sw_d_ok
+struct:SH_wb_sw_d_ok = { wild string[]:sl; int64:k; };
+func:g_wb_sw_d_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild SH_wb_sw_d_ok:h = SH_wb_sw_d_ok{ sl: #wild_slice<string>(blk =>! wild string->, 2i64), k: 1i64 };
+    h.sl[0i64] = string_concat("ab1", "cde");
+    h.sl[1i64] = string_concat("ab2", "cde");
+    dalloc(h.sl[0i64].ptr =>! wild any->); //F
+    dalloc(h.sl[1i64].ptr =>! wild any->);
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_wb_sw_d_ok = int32() never fails { pass (((g_wb_sw_d_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wb_sw_c_ok
+struct:SH_wb_sw_c_ok = { wild string[]:sl; int64:k; };
+func:g_wb_sw_c_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild SH_wb_sw_c_ok:h = SH_wb_sw_c_ok{ sl: #wild_slice<string>(blk =>! wild string->, 2i64), k: 1i64 };
+    h.sl[0i64] = string_concat("ab1", "cde");
+    h.sl[1i64] = string_concat("ab2", "cde");
+    wild any->:q = h.sl[0i64].ptr =>! wild any->;
+    dalloc(q); //F
+    dalloc(h.sl[1i64].ptr =>! wild any->);
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_wb_sw_c_ok = int32() never fails { pass (((g_wb_sw_c_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wb_sw_k_ok
+struct:SH_wb_sw_k_ok = { wild string[]:sl; int64:k; };
+func:fr_wb_sw_k_ok = NIL(wild any->:p) never fails { dalloc(p); pass NIL; };
+func:g_wb_sw_k_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild SH_wb_sw_k_ok:h = SH_wb_sw_k_ok{ sl: #wild_slice<string>(blk =>! wild string->, 2i64), k: 1i64 };
+    h.sl[0i64] = string_concat("ab1", "cde");
+    h.sl[1i64] = string_concat("ab2", "cde");
+    drop fr_wb_sw_k_ok(h.sl[0i64].ptr =>! wild any->); //F
+    dalloc(h.sl[1i64].ptr =>! wild any->);
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_wb_sw_k_ok = int32() never fails { pass (((g_wb_sw_k_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wb_ae_d_ok
+func:g_wb_ae_d_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild string[][1]:aa = [#wild_slice<string>(blk =>! wild string->, 2i64)];
+    aa[0i64][0i64] = string_concat("ab1", "cde");
+    aa[0i64][1i64] = string_concat("ab2", "cde");
+    dalloc(aa[0i64][0i64].ptr =>! wild any->); //F
+    dalloc(aa[0i64][1i64].ptr =>! wild any->);
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_wb_ae_d_ok = int32() never fails { pass (((g_wb_ae_d_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wb_ae_c_ok
+func:g_wb_ae_c_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild string[][1]:aa = [#wild_slice<string>(blk =>! wild string->, 2i64)];
+    aa[0i64][0i64] = string_concat("ab1", "cde");
+    aa[0i64][1i64] = string_concat("ab2", "cde");
+    wild any->:q = aa[0i64][0i64].ptr =>! wild any->;
+    dalloc(q); //F
+    dalloc(aa[0i64][1i64].ptr =>! wild any->);
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_wb_ae_c_ok = int32() never fails { pass (((g_wb_ae_c_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wb_ae_k_ok
+func:fr_wb_ae_k_ok = NIL(wild any->:p) never fails { dalloc(p); pass NIL; };
+func:g_wb_ae_k_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild string[][1]:aa = [#wild_slice<string>(blk =>! wild string->, 2i64)];
+    aa[0i64][0i64] = string_concat("ab1", "cde");
+    aa[0i64][1i64] = string_concat("ab2", "cde");
+    drop fr_wb_ae_k_ok(aa[0i64][0i64].ptr =>! wild any->); //F
+    dalloc(aa[0i64][1i64].ptr =>! wild any->);
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_wb_ae_k_ok = int32() never fails { pass (((g_wb_ae_k_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wv_pv_d_ok
+struct:SS_wv_pv_d_ok = { wild string:s; int64:k; };
+enum:Es_wv_pv_d_ok = { V(SS_wv_pv_d_ok); Z; };
+func:g_wv_pv_d_ok = int64(int64:n) {
+    Es_wv_pv_d_ok:e = Es_wv_pv_d_ok.V(SS_wv_pv_d_ok{ s: string_concat("ab1", "cde"), k: 1i64 });
+    int64:r = 0i64;
+    pick (e) {
+        (Es_wv_pv_d_ok.V(v)) {  r = v.k; },
+        (Es_wv_pv_d_ok.Z) { r = 2i64; }
+    }
+    pass r + 6i64;
+};
+func:cell_main_wv_pv_d_ok = int32() never fails { pass (((g_wv_pv_d_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wv_pw_d_ok
+struct:SS_wv_pw_d_ok = { wild string:s; int64:k; };
+enum:Es_wv_pw_d_ok = { V(SS_wv_pw_d_ok); Z; };
+func:g_wv_pw_d_ok = int64(int64:n) {
+    wild Es_wv_pw_d_ok:e = Es_wv_pw_d_ok.V(SS_wv_pw_d_ok{ s: string_concat("ab1", "cde"), k: 1i64 });
+    int64:r = 0i64;
+    pick (e) {
+        (Es_wv_pw_d_ok.V(v)) {  r = v.k; },
+        (Es_wv_pw_d_ok.Z) { r = 2i64; }
+    }
+    pass r + 6i64;
+};
+func:cell_main_wv_pw_d_ok = int32() never fails { pass (((g_wv_pw_d_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wv_pv_k_ok
+struct:SS_wv_pv_k_ok = { wild string:s; int64:k; };
+enum:Es_wv_pv_k_ok = { V(SS_wv_pv_k_ok); Z; };
+func:fr_wv_pv_k_ok = NIL(wild any->:p) never fails { dalloc(p); pass NIL; };
+func:g_wv_pv_k_ok = int64(int64:n) {
+    Es_wv_pv_k_ok:e = Es_wv_pv_k_ok.V(SS_wv_pv_k_ok{ s: string_concat("ab1", "cde"), k: 1i64 });
+    int64:r = 0i64;
+    pick (e) {
+        (Es_wv_pv_k_ok.V(v)) {  r = v.k; },
+        (Es_wv_pv_k_ok.Z) { r = 2i64; }
+    }
+    pass r + 6i64;
+};
+func:cell_main_wv_pv_k_ok = int32() never fails { pass (((g_wv_pv_k_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// wv_pw_k_ok
+struct:SS_wv_pw_k_ok = { wild string:s; int64:k; };
+enum:Es_wv_pw_k_ok = { V(SS_wv_pw_k_ok); Z; };
+func:fr_wv_pw_k_ok = NIL(wild any->:p) never fails { dalloc(p); pass NIL; };
+func:g_wv_pw_k_ok = int64(int64:n) {
+    wild Es_wv_pw_k_ok:e = Es_wv_pw_k_ok.V(SS_wv_pw_k_ok{ s: string_concat("ab1", "cde"), k: 1i64 });
+    int64:r = 0i64;
+    pick (e) {
+        (Es_wv_pw_k_ok.V(v)) {  r = v.k; },
+        (Es_wv_pw_k_ok.Z) { r = 2i64; }
+    }
+    pass r + 6i64;
+};
+func:cell_main_wv_pw_k_ok = int32() never fails { pass (((g_wv_pw_k_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// ok_wsv_ok
+func:g_ok_wsv_ok = int64(int64:n) never fails {
+    wild int8->:blk = alloc(16i64);
+    wild int64[]:u = #wild_slice<int64>(blk =>! wild int64->, 2i64);
+    u[0i64] = 7i64;
+    int64:k = u[0i64];
+    wild int64[]:v = u;
+    dalloc(v.ptr =>! wild any->);
+    pass k;
+};
+func:cell_main_ok_wsv_ok = int32() never fails { pass (((raw g_ok_wsv_ok(1i64)) + 60i64) =>! int32); };
+// nt_vs_ok
+struct:M_nt_vs_ok<T> = { string:cells; int64:n; };
+func:mk_nt_vs_ok<T> = M_nt_vs_ok<T>(int64:n) { string:b = "abcdefghabcdefghabcdefghabcdefgh".clone() ?! E5; M_nt_vs_ok<T>:out = M_nt_vs_ok{ cells: move(b), n: n }; pass out; };
+func:put_nt_vs_ok<T> = NIL(wild T->:p, move T:v) { <-p = move(v); pass NIL; };
+impl:<T>:M_nt_vs_ok<T> = {
+    func:set_nt_vs_ok = NIL(M_nt_vs_ok<T>->:self, int64:k, move T:v) { put_nt_vs_ok::<T>(#ptr_add<T>(self.cells.ptr =>! wild T->, k), move(v)) ?! E5; pass NIL; };
+    func:get_nt_vs_ok = T(M_nt_vs_ok<T>->:self, int64:k) { pass (<-(#ptr_add<T>(self.cells.ptr =>! wild T->, k))); };
+};
+func:cell_main_nt_vs_ok = int32() never fails { M_nt_vs_ok<int64>:m = mk_nt_vs_ok::<int64>(4i64) ?! E5; m.set_nt_vs_ok(1i64, 7i64) ?! E5; pass ((m.get_nt_vs_ok(1i64) ?! E5) + 60i64) =>! int32; };
+// nt_vc_ok
+struct:M_nt_vc_ok<T> = { cstring:cells; int64:n; };
+func:mk_nt_vc_ok<T> = M_nt_vc_ok<T>(int64:n) { string:t = "abcdefghabcdefghabcdefghabcdefgh".clone() ?! E5; cstring:b = to_cstring(t) ?! E5; M_nt_vc_ok<T>:out = M_nt_vc_ok{ cells: move(b), n: n }; pass out; };
+func:put_nt_vc_ok<T> = NIL(wild T->:p, move T:v) { <-p = move(v); pass NIL; };
+impl:<T>:M_nt_vc_ok<T> = {
+    func:set_nt_vc_ok = NIL(M_nt_vc_ok<T>->:self, int64:k, move T:v) { put_nt_vc_ok::<T>(#ptr_add<T>(self.cells.ptr =>! wild T->, k), move(v)) ?! E5; pass NIL; };
+    func:get_nt_vc_ok = T(M_nt_vc_ok<T>->:self, int64:k) { pass (<-(#ptr_add<T>(self.cells.ptr =>! wild T->, k))); };
+};
+func:cell_main_nt_vc_ok = int32() never fails { M_nt_vc_ok<int64>:m = mk_nt_vc_ok::<int64>(4i64) ?! E5; m.set_nt_vc_ok(1i64, 7i64) ?! E5; pass ((m.get_nt_vc_ok(1i64) ?! E5) + 60i64) =>! int32; };
+// hl_ps_ok
+func:g_hl_ps_ok = int64(int64:n) {
+    string:s = string_concat("ab1", "cde");
+    wild string->:p = (@s) =>! wild string->;
+    pass 7i64;
+};
+func:cell_main_hl_ps_ok = int32() never fails { pass (((g_hl_ps_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hl_pt_ok
+struct:SS_hl_pt_ok = { wild string:s; int64:k; };
+struct:HP_hl_pt_ok = { wild SS_hl_pt_ok->:p; int64:k; };
+func:g_hl_pt_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    HP_hl_pt_ok:h = HP_hl_pt_ok{ p: blk =>! wild SS_hl_pt_ok->, k: 1i64 };
+    (<-(h.p)).s = string_concat("ab1", "cde");
+    dalloc(h.p.s.ptr =>! wild any->);
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_hl_pt_ok = int32() never fails { pass (((g_hl_pt_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hl_sf_ok
+struct:SS_hl_sf_ok = { wild string:s; int64:k; };
+struct:HS_hl_sf_ok = { wild SS_hl_sf_ok[]:sl; int64:k; };
+func:g_hl_sf_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    HS_hl_sf_ok:h = HS_hl_sf_ok{ sl: #wild_slice<SS_hl_sf_ok>(blk =>! wild SS_hl_sf_ok->, 2i64), k: 1i64 };
+    h.sl[0i64].s = string_concat("ab1", "cde");
+    dalloc(h.sl[0i64].s.ptr =>! wild any->);
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_hl_sf_ok = int32() never fails { pass (((g_hl_sf_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hl_lw_ok
+struct:SS_hl_lw_ok = { wild string:s; int64:k; };
+func:g_hl_lw_ok = int64(int64:n) {
+    List<SS_hl_lw_ok>:l = raw list_init::<SS_hl_lw_ok>(2i64);
+    drop list_push(@l, SS_hl_lw_ok{ s: string_concat("ab1", "cde"), k: 1i64 });
+    pass 7i64;
+};
+func:cell_main_hl_lw_ok = int32() never fails { pass (((g_hl_lw_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hl_vw_ok
+struct:SS_hl_vw_ok = { wild string:s; int64:k; };
+func:fr_hl_vw_ok = int64(wild SS_hl_vw_ok->:p) never fails { dalloc(p.s.ptr =>! wild any->); pass 0i64; };
+func:g_hl_vw_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild SS_hl_vw_ok->:p = blk =>! wild SS_hl_vw_ok->;
+    (<-p).s = string_concat("ab1", "cde");
+    discard(raw fr_hl_vw_ok(p));
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_hl_vw_ok = int32() never fails { pass (((g_hl_vw_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hl_fe2_ok
+struct:SS_hl_fe2_ok = { wild string:s; int64:k; };
+func:g_hl_fe2_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild SS_hl_fe2_ok[]:v = #wild_slice<SS_hl_fe2_ok>(blk =>! wild SS_hl_fe2_ok->, 1i64);
+    v[0i64].s = string_concat("ab1", "cde");
+    for (SS_hl_fe2_ok:e in v) { dalloc(e.s.ptr =>! wild any->); }
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_hl_fe2_ok = int32() never fails { pass (((g_hl_fe2_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hi_lh_ok
+struct:SS_hi_lh_ok = { wild string:s; int64:k; };
+struct:LH_hi_lh_ok = { List<SS_hi_lh_ok>:l; int64:k; };
+func:g_hi_lh_ok = int64(int64:n) {
+    wild LH_hi_lh_ok:h = LH_hi_lh_ok{ l: raw list_init::<SS_hi_lh_ok>(2i64), k: 1i64 };
+    drop list_push(@(h.l), SS_hi_lh_ok{ s: string_concat("ab1", "cde"), k: 1i64 });
+    pass 7i64;
+};
+func:cell_main_hi_lh_ok = int32() never fails { pass (((g_hi_lh_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hi_wl_ok
+struct:SS_hi_wl_ok = { wild string:s; int64:k; };
+func:g_hi_wl_ok = int64(int64:n) {
+    wild List<SS_hi_wl_ok>:l = raw list_init::<SS_hi_wl_ok>(2i64);
+    drop list_push(@l, SS_hi_wl_ok{ s: string_concat("ab1", "cde"), k: 1i64 });
+    pass 7i64;
+};
+func:cell_main_hi_wl_ok = int32() never fails { pass (((g_hi_wl_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hi_lp_ok
+struct:SS_hi_lp_ok = { wild string:s; int64:k; };
+struct:HP_hi_lp_ok = { wild SS_hi_lp_ok->:p; int64:k; };
+func:g_hi_lp_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild SS_hi_lp_ok->:q = blk =>! wild SS_hi_lp_ok->;
+    (<-q).s = string_concat("ab1", "cde");
+    List<HP_hi_lp_ok>:l = raw list_init::<HP_hi_lp_ok>(2i64);
+    drop list_push(@l, HP_hi_lp_ok{ p: q, k: 1i64 });
+    dalloc(l[0i64].p.s.ptr =>! wild any->);
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_hi_lp_ok = int32() never fails { pass (((g_hi_lp_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hi_hd_ok
+mod:hm_hi_hd_ok = {
+    pub struct:SH_hi_hd_ok = { hidden wild string:s; int64:k; };
+    pub func:mk_hi_hd_ok = SH_hi_hd_ok(int64:k) never fails { pass SH_hi_hd_ok{ s: string_concat("ab1", "cde"), k: k }; };
+    pub func:fr_hi_hd_ok = int64(int64:n) never fails {
+        wild int8->:blk = alloc(64i64);
+        wild SH_hi_hd_ok[]:v = #wild_slice<SH_hi_hd_ok>(blk =>! wild SH_hi_hd_ok->, 1i64);
+        v[0i64].s = string_concat("ab1", "cde");
+        dalloc(v[0i64].s.ptr =>! wild any->);
+        dalloc(blk);
+        pass 0i64;
+    };
+};
+use hm_hi_hd_ok.*;
+func:g_hi_hd_ok = int64(int64:n) {
+    pass (raw fr_hi_hd_ok(n)) + 7i64;
+};
+func:cell_main_hi_hd_ok = int32() never fails { pass (((g_hi_hd_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hp_mv_ok
+struct:SS_hp_mv_ok = { wild string:s; int64:k; };
+struct:HP_hp_mv_ok = { wild SS_hp_mv_ok->:p; int64:k; };
+func:fr_hp_mv_ok = int64(move HP_hp_mv_ok:h) never fails { dalloc(h.p.s.ptr =>! wild any->); pass 0i64; };
+func:g_hp_mv_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild SS_hp_mv_ok->:q = blk =>! wild SS_hp_mv_ok->;
+    (<-q).s = string_concat("ab1", "cde");
+    int64:r = raw fr_hp_mv_ok(HP_hp_mv_ok{ p: q, k: 1i64 });
+    dalloc(blk);
+    pass r + 7i64;
+};
+func:cell_main_hp_mv_ok = int32() never fails { pass (((g_hp_mv_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hp_g_ok
+struct:SS_hp_g_ok = { wild string:s; int64:k; };
+struct:WP_hp_g_ok<T> = { wild SS_hp_g_ok->:p; T:v; };
+func:fr_hp_g_ok<T> = int64(WP_hp_g_ok<T>:h) never fails { dalloc(h.p.s.ptr =>! wild any->); pass 0i64; };
+func:g_hp_g_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild SS_hp_g_ok->:q = blk =>! wild SS_hp_g_ok->;
+    (<-q).s = string_concat("ab1", "cde");
+    WP_hp_g_ok<int64>:w = WP_hp_g_ok{ p: q, v: 1i64 };
+    int64:r = raw fr_hp_g_ok::<int64>(move(w));
+    dalloc(blk);
+    pass r + 7i64;
+};
+func:cell_main_hp_g_ok = int32() never fails { pass (((g_hp_g_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hp_gf_ok
+struct:SS_hp_gf_ok = { wild string:s; int64:k; };
+func:fr_hp_gf_ok<T> = int64(wild string->:w, T:v) never fails { dalloc(w.ptr =>! wild any->); pass 0i64; };
+func:g_hp_gf_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild SS_hp_gf_ok->:q = blk =>! wild SS_hp_gf_ok->;
+    (<-q).s = string_concat("ab1", "cde");
+    int64:r = raw fr_hp_gf_ok::<int64>((@((<-q).s)) =>! wild string->, 1i64);
+    dalloc(blk);
+    pass r + 7i64;
+};
+func:cell_main_hp_gf_ok = int32() never fails { pass (((g_hp_gf_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hp_sl_ok
+struct:SS_hp_sl_ok = { wild string:s; int64:k; };
+struct:HS_hp_sl_ok = { wild SS_hp_sl_ok[]:sl; int64:k; };
+func:fr_hp_sl_ok = int64(HS_hp_sl_ok:h) never fails { dalloc(h.sl[0i64].s.ptr =>! wild any->); pass 0i64; };
+func:g_hp_sl_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild SS_hp_sl_ok->:q = blk =>! wild SS_hp_sl_ok->;
+    (<-q).s = string_concat("ab1", "cde");
+    int64:r = raw fr_hp_sl_ok(HS_hp_sl_ok{ sl: #wild_slice<SS_hp_sl_ok>(q, 1i64), k: 1i64 });
+    dalloc(blk);
+    pass r + 7i64;
+};
+func:cell_main_hp_sl_ok = int32() never fails { pass (((g_hp_sl_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hp_re_ok
+struct:SS_hp_re_ok = { wild string:s; int64:k; };
+struct:HP_hp_re_ok = { wild SS_hp_re_ok->:p; int64:k; };
+func:fr_hp_re_ok = int64(HP_hp_re_ok:h, wild SS_hp_re_ok->:q) never fails { h.p = q; dalloc(h.p.s.ptr =>! wild any->); pass 0i64; };
+func:g_hp_re_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild SS_hp_re_ok->:q = blk =>! wild SS_hp_re_ok->;
+    (<-q).s = string_concat("ab1", "cde");
+    wild int8->:b2 = alloc(64i64);
+    int64:r = raw fr_hp_re_ok(HP_hp_re_ok{ p: b2 =>! wild SS_hp_re_ok->, k: 1i64 }, q);
+    dalloc(b2);
+    dalloc(blk);
+    pass r + 7i64;
+};
+func:cell_main_hp_re_ok = int32() never fails { pass (((g_hp_re_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hp_ar_ok
+struct:SS_hp_ar_ok = { wild string:s; int64:k; };
+struct:HP_hp_ar_ok = { wild SS_hp_ar_ok->:p; int64:k; };
+func:fr_hp_ar_ok = int64(HP_hp_ar_ok[1]:a) never fails { dalloc(a[0i64].p.s.ptr =>! wild any->); pass 0i64; };
+func:g_hp_ar_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild SS_hp_ar_ok->:q = blk =>! wild SS_hp_ar_ok->;
+    (<-q).s = string_concat("ab1", "cde");
+    int64:r = raw fr_hp_ar_ok([HP_hp_ar_ok{ p: q, k: 1i64 }]);
+    dalloc(blk);
+    pass r + 7i64;
+};
+func:cell_main_hp_ar_ok = int32() never fails { pass (((g_hp_ar_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hp_vv_ok
+struct:SS_hp_vv_ok = { wild string:s; int64:k; };
+struct:HP_hp_vv_ok = { wild SS_hp_vv_ok->:p; int64:k; };
+enum:Ep_hp_vv_ok = { V(HP_hp_vv_ok); Z; };
+func:fr_hp_vv_ok = int64(Ep_hp_vv_ok:e) never fails {
+    int64:r = 0i64;
+    pick (e) {
+        (Ep_hp_vv_ok.V(v)) { dalloc(v.p.s.ptr =>! wild any->); r = v.k; },
+        (Ep_hp_vv_ok.Z) { r = 2i64; }
+    }
+    pass r;
+};
+func:g_hp_vv_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild SS_hp_vv_ok->:q = blk =>! wild SS_hp_vv_ok->;
+    (<-q).s = string_concat("ab1", "cde");
+    int64:r = raw fr_hp_vv_ok(Ep_hp_vv_ok.V(HP_hp_vv_ok{ p: q, k: 1i64 }));
+    dalloc(blk);
+    pass r + 6i64;
+};
+func:cell_main_hp_vv_ok = int32() never fails { pass (((g_hp_vv_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hp_fe_ok
+struct:SS_hp_fe_ok = { wild string:s; int64:k; };
+struct:HP_hp_fe_ok = { wild SS_hp_fe_ok->:p; int64:k; };
+func:fr_hp_fe_ok = int64(HP_hp_fe_ok[1]:a) never fails { for (HP_hp_fe_ok:e in a) { dalloc(e.p.s.ptr =>! wild any->); } pass 0i64; };
+func:g_hp_fe_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild SS_hp_fe_ok->:q = blk =>! wild SS_hp_fe_ok->;
+    (<-q).s = string_concat("ab1", "cde");
+    int64:r = raw fr_hp_fe_ok([HP_hp_fe_ok{ p: q, k: 1i64 }]);
+    dalloc(blk);
+    pass r + 7i64;
+};
+func:cell_main_hp_fe_ok = int32() never fails { pass (((g_hp_fe_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hp_sf_ok
+struct:SS_hp_sf_ok = { wild string:s; int64:k; };
+struct:HP_hp_sf_ok = { wild SS_hp_sf_ok->:p; int64:k; };
+impl:HP_hp_sf_ok = {
+    func:fr_hp_sf_ok = int64(move HP_hp_sf_ok:self) never fails { dalloc(self.p.s.ptr =>! wild any->); pass 0i64; };
+};
+func:g_hp_sf_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild SS_hp_sf_ok->:q = blk =>! wild SS_hp_sf_ok->;
+    (<-q).s = string_concat("ab1", "cde");
+    HP_hp_sf_ok:t = HP_hp_sf_ok{ p: q, k: 1i64 };
+    int64:r = raw (move(t)).fr_hp_sf_ok();
+    dalloc(blk);
+    pass r + 7i64;
+};
+func:cell_main_hp_sf_ok = int32() never fails { pass (((g_hp_sf_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hp_fx_ok
+struct:SS_hp_fx_ok = { wild string:s; int64:k; };
+struct:HP_hp_fx_ok = { wild SS_hp_fx_ok->:p; int64:k; };
+func:fr_hp_fx_ok = int64(fixed HP_hp_fx_ok:h) never fails { dalloc(h.p.s.ptr =>! wild any->); pass 0i64; };
+func:g_hp_fx_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild SS_hp_fx_ok->:q = blk =>! wild SS_hp_fx_ok->;
+    (<-q).s = string_concat("ab1", "cde");
+    int64:r = raw fr_hp_fx_ok(HP_hp_fx_ok{ p: q, k: 1i64 });
+    dalloc(blk);
+    pass r + 7i64;
+};
+func:cell_main_hp_fx_ok = int32() never fails { pass (((g_hp_fx_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hp_pt_ok
+struct:SS_hp_pt_ok = { wild string:s; int64:k; };
+struct:HP_hp_pt_ok = { wild SS_hp_pt_ok->:p; int64:k; };
+func:fr_hp_pt_ok = int64(HP_hp_pt_ok:h) never fails { dalloc(h.p.s.ptr =>! wild any->); pass 0i64; };
+func:g_hp_pt_ok = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild SS_hp_pt_ok->:q = blk =>! wild SS_hp_pt_ok->;
+    (<-q).s = string_concat("ab1", "cde");
+    int64:r = raw fr_hp_pt_ok(HP_hp_pt_ok{ p: q, k: 1i64 });
+    dalloc(blk);
+    pass r + 7i64;
+};
+func:cell_main_hp_pt_ok = int32() never fails { pass (((g_hp_pt_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hi_lai_ok
+struct:SA_hi_lai_ok = { wild string[2]:a; int64:k; };
+func:g_hi_lai_ok = int64(int64:n) {
+    List<SA_hi_lai_ok>:l = raw list_init::<SA_hi_lai_ok>(2i64);
+    drop list_push(@l, SA_hi_lai_ok{ a: [string_concat("ab1", "cde"), string_concat("ab2", "cde")], k: 1i64 });
+    pass 7i64;
+};
+func:cell_main_hi_lai_ok = int32() never fails { pass (((g_hi_lai_ok(1i64) ?! E5) + 60i64) =>! int32); };
+// hi_sai
+struct:SA_hi_sai = { wild string[2]:a; int64:k; };
+func:g_hi_sai = int64(int64:n) {
+    wild int8->:blk = alloc(64i64);
+    wild SA_hi_sai[]:v = #wild_slice<SA_hi_sai>(blk =>! wild SA_hi_sai->, 1i64);
+    v[0i64].a = [string_concat("ab1", "cde"), string_concat("ab2", "cde")];
+    dalloc(v[0i64].a[1i64].ptr =>! wild any->);
+    dalloc(v[0i64].a[0i64].ptr =>! wild any->);
+    dalloc(blk);
+    pass 7i64;
+};
+func:cell_main_hi_sai = int32() never fails { pass (((g_hi_sai(1i64) ?! E5) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) {
+    if ((raw cell_main_wa_as_c_ok()) != 67i32) { exit 1i32; }
+    if ((raw cell_main_wa_as_d_ok()) != 67i32) { exit 2i32; }
+    if ((raw cell_main_wa_as_k_ok()) != 67i32) { exit 3i32; }
+    if ((raw cell_main_wa_as_r_ok()) != 67i32) { exit 4i32; }
+    if ((raw cell_main_wa_as_t_ok()) != 67i32) { exit 5i32; }
+    if ((raw cell_main_wa_as_x_ok()) != 67i32) { exit 6i32; }
+    if ((raw cell_main_wa_ac_c_ok()) != 67i32) { exit 7i32; }
+    if ((raw cell_main_wa_ac_d_ok()) != 67i32) { exit 8i32; }
+    if ((raw cell_main_wa_ac_k_ok()) != 67i32) { exit 9i32; }
+    if ((raw cell_main_wa_ac_r_ok()) != 67i32) { exit 10i32; }
+    if ((raw cell_main_wa_ac_t_ok()) != 67i32) { exit 11i32; }
+    if ((raw cell_main_wa_ac_x_ok()) != 67i32) { exit 12i32; }
+    if ((raw cell_main_wa_ab_c_ok()) != 67i32) { exit 13i32; }
+    if ((raw cell_main_wa_ab_d_ok()) != 67i32) { exit 14i32; }
+    if ((raw cell_main_wa_ab_k_ok()) != 67i32) { exit 15i32; }
+    if ((raw cell_main_wa_ab_r_ok()) != 67i32) { exit 16i32; }
+    if ((raw cell_main_wa_ab_t_ok()) != 67i32) { exit 17i32; }
+    if ((raw cell_main_wa_ab_x_ok()) != 67i32) { exit 18i32; }
+    if ((raw cell_main_wa_a2_c_ok()) != 67i32) { exit 19i32; }
+    if ((raw cell_main_wa_a2_d_ok()) != 67i32) { exit 20i32; }
+    if ((raw cell_main_wa_a2_k_ok()) != 67i32) { exit 21i32; }
+    if ((raw cell_main_wa_a2_r_ok()) != 67i32) { exit 22i32; }
+    if ((raw cell_main_wa_a2_t_ok()) != 67i32) { exit 23i32; }
+    if ((raw cell_main_wa_a2_x_ok()) != 67i32) { exit 24i32; }
+    if ((raw cell_main_wa_bs_c_ok()) != 67i32) { exit 25i32; }
+    if ((raw cell_main_wa_bs_d_ok()) != 67i32) { exit 26i32; }
+    if ((raw cell_main_wa_bs_k_ok()) != 67i32) { exit 27i32; }
+    if ((raw cell_main_wa_bs_r_ok()) != 67i32) { exit 28i32; }
+    if ((raw cell_main_wa_bs_t_ok()) != 67i32) { exit 29i32; }
+    if ((raw cell_main_wb_wf_d_ok()) != 67i32) { exit 30i32; }
+    if ((raw cell_main_wb_wf_c_ok()) != 67i32) { exit 31i32; }
+    if ((raw cell_main_wb_wf_k_ok()) != 67i32) { exit 32i32; }
+    if ((raw cell_main_wb_wv_d_ok()) != 67i32) { exit 33i32; }
+    if ((raw cell_main_wb_wv_c_ok()) != 67i32) { exit 34i32; }
+    if ((raw cell_main_wb_wv_k_ok()) != 67i32) { exit 35i32; }
+    if ((raw cell_main_wb_cm_d_ok()) != 67i32) { exit 36i32; }
+    if ((raw cell_main_wb_cm_c_ok()) != 67i32) { exit 37i32; }
+    if ((raw cell_main_wb_cm_k_ok()) != 67i32) { exit 38i32; }
+    if ((raw cell_main_wb_sf_d_ok()) != 67i32) { exit 39i32; }
+    if ((raw cell_main_wb_sf_c_ok()) != 67i32) { exit 40i32; }
+    if ((raw cell_main_wb_sf_k_ok()) != 67i32) { exit 41i32; }
+    if ((raw cell_main_wb_sw_d_ok()) != 67i32) { exit 42i32; }
+    if ((raw cell_main_wb_sw_c_ok()) != 67i32) { exit 43i32; }
+    if ((raw cell_main_wb_sw_k_ok()) != 67i32) { exit 44i32; }
+    if ((raw cell_main_wb_ae_d_ok()) != 67i32) { exit 45i32; }
+    if ((raw cell_main_wb_ae_c_ok()) != 67i32) { exit 46i32; }
+    if ((raw cell_main_wb_ae_k_ok()) != 67i32) { exit 47i32; }
+    if ((raw cell_main_wv_pv_d_ok()) != 67i32) { exit 48i32; }
+    if ((raw cell_main_wv_pw_d_ok()) != 67i32) { exit 49i32; }
+    if ((raw cell_main_wv_pv_k_ok()) != 67i32) { exit 50i32; }
+    if ((raw cell_main_wv_pw_k_ok()) != 67i32) { exit 51i32; }
+    if ((raw cell_main_ok_wsv_ok()) != 67i32) { exit 52i32; }
+    if ((raw cell_main_nt_vs_ok()) != 67i32) { exit 53i32; }
+    if ((raw cell_main_nt_vc_ok()) != 67i32) { exit 54i32; }
+    if ((raw cell_main_hl_ps_ok()) != 67i32) { exit 55i32; }
+    if ((raw cell_main_hl_pt_ok()) != 67i32) { exit 56i32; }
+    if ((raw cell_main_hl_sf_ok()) != 67i32) { exit 57i32; }
+    if ((raw cell_main_hl_lw_ok()) != 67i32) { exit 58i32; }
+    if ((raw cell_main_hl_vw_ok()) != 67i32) { exit 59i32; }
+    if ((raw cell_main_hl_fe2_ok()) != 67i32) { exit 60i32; }
+    if ((raw cell_main_hi_lh_ok()) != 67i32) { exit 61i32; }
+    if ((raw cell_main_hi_wl_ok()) != 67i32) { exit 62i32; }
+    if ((raw cell_main_hi_lp_ok()) != 67i32) { exit 63i32; }
+    if ((raw cell_main_hi_hd_ok()) != 67i32) { exit 64i32; }
+    if ((raw cell_main_hp_mv_ok()) != 67i32) { exit 65i32; }
+    if ((raw cell_main_hp_g_ok()) != 67i32) { exit 66i32; }
+    if ((raw cell_main_hp_gf_ok()) != 67i32) { exit 67i32; }
+    if ((raw cell_main_hp_sl_ok()) != 67i32) { exit 68i32; }
+    if ((raw cell_main_hp_re_ok()) != 67i32) { exit 69i32; }
+    if ((raw cell_main_hp_ar_ok()) != 67i32) { exit 70i32; }
+    if ((raw cell_main_hp_vv_ok()) != 67i32) { exit 71i32; }
+    if ((raw cell_main_hp_fe_ok()) != 67i32) { exit 72i32; }
+    if ((raw cell_main_hp_sf_ok()) != 67i32) { exit 73i32; }
+    if ((raw cell_main_hp_fx_ok()) != 67i32) { exit 74i32; }
+    if ((raw cell_main_hp_pt_ok()) != 67i32) { exit 75i32; }
+    if ((raw cell_main_hi_lai_ok()) != 67i32) { exit 76i32; }
+    if ((raw cell_main_hi_sai()) != 67i32) { exit 77i32; }
+    wild_release_all();   // the cells' own `wild` blocks, live at `exit 0` by design (D-183), are released before it, or the exit is WildLeak
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

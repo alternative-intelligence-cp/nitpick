@@ -3305,7 +3305,17 @@ func:acc_expr = NIL(Alias->:x, ExprId:id, int32:akind, int32:depth) never fails 
         // `dalloc(p)`, `ralloc(p, n)` AND `wildx_free(p)` VACATE THEIR FIRST ARGUMENT (DEF-413, 176b; review B's §3): `B->:p = @b;
         // dalloc(b.m);` then a read through `p` reached the freed buffer (the allocator's poison, 231 on 175 and 176; p9 cells) --
         // the window was asked by the `move` arm alone, though the row claimed the frees. The same vacating access as a move.
-        if (raw alias_is_free_call(x, n)) { drop check_addr_window(x, ExprId{ index: raw ast_id_at(x.ast, (raw expr_list_start(n)) + (raw expr_generic_count(n)), 0i32) }, n.span); }
+        if (raw alias_is_free_call(x, n)) {
+            ExprId:fa = ExprId{ index: raw ast_id_at(x.ast, (raw expr_list_start(n)) + (raw expr_generic_count(n)), 0i32) };
+            drop check_addr_window(x, fa, n.span);
+            if (raw escape_free_refused(x.esc, fa, 8i32)) { drop alias_err(x, raw BORROW_WILD_STORE(), "this free's argument may point into storage a `List`, slice, string, cstring or buffer owns, which frees it again at its drop (DEF-660): free only a `wild` block of your own", n.span); }
+        }
+        // DEF-660: a callee that frees through a parameter's own value (`pfrees`), handed what the free itself refuses.
+        for (int32:fj in 0i32...((raw expr_list_count(n)) - (raw expr_generic_count(n)))) {
+            if ((raw escape_call_frees(x.esc, id, fj)) && (raw escape_free_refused(x.esc, ExprId{ index: raw ast_id_at(x.ast, (raw expr_list_start(n)) + (raw expr_generic_count(n)), fj) }, 8i32))) {
+                drop alias_err(x, raw BORROW_WILD_STORE(), "this call hands a callee that frees its argument a pointer the free itself refuses (DEF-660)", n.span);
+            }
+        }
         drop acc_call(x, id, n, raw expr_none(), (raw expr_list_start(n)) + (raw expr_generic_count(n)),
                       (raw expr_list_count(n)) - (raw expr_generic_count(n)), raw expr_callee(n), dd);
         pass NIL;
