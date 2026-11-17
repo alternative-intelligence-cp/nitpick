@@ -1,0 +1,8 @@
+// The other side of `param_redef_store_faces.npk` (landing 177d2b9, row 2, DEF-685): a fixture that file imports, not a test, so
+// nothing in it is checked. Its two `pub` generic functions are seat A4's r21 helper: `setgx` stores `q` through `pp`, and `fwdgx` hands
+// both on to `setgx`, so a callee in another module redefines a pointer parameter of the importing file's `a4_xmf` and `a4_xmg`.
+mod:param_redef_store_xlib;
+
+pub func:setgx<T> = int64(T->->:pp, T->:q) never fails { <-pp = q; pass 7i64; };
+
+pub func:fwdgx<T> = int64(T->->:pp, T->:q) never fails { discard(raw setgx(pp, q)); pass 7i64; };

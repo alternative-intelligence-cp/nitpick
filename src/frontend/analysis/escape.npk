@@ -91,6 +91,7 @@ pub struct:Escape = {
     // root to record -- so `deref_targets_hold` follows only the declaration of a pointer
     // local never redefined. Flipped once, a change to the fixpoint as a mark is.
     wild bool->:redef;
+    wild bool->:predef;   // DEF-685: the same for a POINTER PARAMETER (`a = b`, `@a`), keyed by its declaration: `walk_chain_key` reads its chain only then
 
     // MARKING RUNS TO A FIXPOINT BEFORE ANYTHING IS REPORTED, and these two are
     // what makes that possible.
@@ -309,6 +310,7 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
     wild int8->:vpmem = alloc(dsize * #size_of<int32>());
     wild int8->:ovmem = alloc(dsize * #size_of<int32>());
     wild int8->:phmem = alloc(dsize * #size_of<bool>());
+    wild int8->:prmem = alloc(dsize * #size_of<bool>());
     wild int8->:lnmem = alloc(dsize * #size_of<bool>());
     wild int8->:rtmem = alloc(dsize * #size_of<int32>());
     wild int8->:pfmem = alloc(dsize * #size_of<int32>());
@@ -353,7 +355,7 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                        mu_path: raw list_init::<int32>(64i64),
                        mu_next: raw list_init::<int32>(64i64),
                        override_of: ovmem =>! wild int32->, impls: impls,
-                       pholds: phmem =>! wild bool->, lends: lnmem =>! wild bool->, retypes: rtmem =>! wild int32->, pfrees: pfmem =>! wild int32->,
+                       pholds: phmem =>! wild bool->, lends: lnmem =>! wild bool->, retypes: rtmem =>! wild int32->, pfrees: pfmem =>! wild int32->, predef: prmem =>! wild bool->,
                        decl_count: dsize =>! int32, cur_fn: 0i32 - 1i32,
                        unresolved: raw list_init::<int32>(4i64) };
     for (int64:i in 0i64...size) {
@@ -368,6 +370,7 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
         x.vp_head[j] = 0i32 - 1i32;
         x.override_of[j] = 0i32;
         x.pholds[j] = false;
+        x.predef[j] = false;
         x.lends[j] = false;
         x.retypes[j] = 0i32;
         x.pfrees[j] = 0i32;
@@ -1453,6 +1456,14 @@ func:record_dest_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, bool:auto_ref,
         if ((callee > 0i32) && (x.retypes[callee => int64] != 0i32)) { for (int64:gi in 0i64...got.count) { got[gi].xc = raw escape_xc_join(got[gi].xc, x.retypes[callee => int64]); } }   // DEF-585
         if (unnamed) { drop record_refs_into_unnamed_slice(x, aj, @got); continue; }
         if (pval) { drop record_refs_into_pointer_value(x, aj, @got); continue; }   // V
+        // DEF-685 (D5): `@o` (or `$$ o`) handed to a callee that stores through it (`bothp(@o, …)`, `d4_bothpl`) redefines `o`, whose chain takes `got`
+        // below (`record_view_refs_at_place`): the mark is set here, as `o = q` sets it, and not where `@o` alone is taken (`rdhp(@p)`, `a4_pvat`)
+        // (under its casts, as `dest_place` peels them: `setpo(((@o) =>! any->) =>! HPO->->, p2)`, `q_dcast`)
+        ExprNode:ajn = raw ast_expr(x.ast, aj);
+        for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+            if ((ajn.kind == ExprKind.ExprCastExpr) || (ajn.kind == ExprKind.ExprUncheckedCastExpr)) { ajn = raw ast_expr(x.ast, raw expr_operand(ajn)); }
+        }
+        if ((!aj_auto) && ((ajn.kind == ExprKind.ExprAddressOfExpr) || (ajn.kind == ExprKind.ExprBorrowExpr))) { drop escape_mark_redef(x, dp, true); }
         // A DESTINATION REACHED THROUGH A SLICE whose storage this call cannot
         // name (DEF-289's second face, landing 157): a frame view stored there
         // is refused below and records nothing more (one mistake, one report,
@@ -1745,6 +1756,8 @@ func:ref_root_is_frame_owned = bool(Escape->:x, ViewRef:r) never fails {
 // a call (`call`) the slice handed on is the destination as a whole.
 func:fold_flow_into_param = NIL(Escape->:x, ExprId:dest, List<ViewRef>->:refs, bool:call) never fails {
     ExprId:rid = raw root_ident_id(x, dest);
+    bool:un = false;
+    if (raw expr_is_none(rid)) { rid = raw escape_unwrap_root(x, dest); un = true; }   // DEF-671
     if (raw expr_is_none(rid)) { pass NIL; }
     ExprNode:rn = raw ast_expr(x.ast, rid);
     int32:j = raw param_index_of(x, rn.a);
@@ -1752,6 +1765,12 @@ func:fold_flow_into_param = NIL(Escape->:x, ExprId:dest, List<ViewRef>->:refs, b
     int32:rt = raw exprtypes_get(x.etypes, rid);
     if (rt == 0i32) { pass NIL; }
     int32:rk = raw type_kind(x.types, rt);
+    // DEF-671: an Optional or `Result` parameter's pointer -- through its unwrap, through its `.value` (`(<-(r.value)).lp = v`) or handed to a storing
+    // callee (`put(r.value, v)`, `putopt(r, v)`) -- stores into its pointee, the caller's. Its own reassignment, whole or in part (`r = …`, `r.value = p2`:
+    // no pointer on the way), moves the pointer and stores into no pointee: its chain has it, walked as a by-value parameter's (B′'s release, `rel_rv4`).
+    List<int32>:hp = raw list_init::<int32>(4i64);
+    discard(raw path_indirections(x, dest, @hp));
+    if (un || call || (hp.count > 0i64)) { rk = raw type_kind(x.types, raw type_unwrapped(x.types, rt)); }
     if (rk == (raw TY_SLICE())) {
         if ((!call) && ((raw path_rel(x, dest)) == 0i32)) { pass NIL; }
     } else {
@@ -1768,6 +1787,26 @@ func:fold_flow_into_param = NIL(Escape->:x, ExprId:dest, List<ViewRef>->:refs, b
         }
     }
     pass NIL;
+};
+
+// DEF-671: A STORE THROUGH AN UNWRAPPED PARAMETER (`(<-(p ??! E)).lp = v`, `p ?! E`, `p ?? d`) lands in what the parameter's pointer points at, as
+// alias.npk's `passed_pointee` peels it: the place is rooted at the unwrap's operand (`??`: its left, the parameter's side).
+// (an unwrap under an unwrap, `(p ?! E) ??! E` over a `Result<HPO->?>`, `b_res2`: each level's operand in turn, to a name)
+func:escape_unwrap_root = ExprId(Escape->:x, ExprId:dest) never fails {
+    ExprId:cur = dest;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        PlaceRoot:r = raw esc_place_root(x, cur);
+        if (r.exhausted || (raw expr_is_none(r.id))) { pass (raw expr_none()); }
+        ExprNode:un = raw ast_expr(x.ast, r.id);
+        if ((un.kind != ExprKind.ExprEmphaticCoalesceExpr) && (un.kind != ExprKind.ExprEmphaticUnwrapExpr) && (un.kind != ExprKind.ExprNullCoalesceExpr)) { pass (raw expr_none()); }
+        cur = raw expr_operand(un);
+        ExprId:rid = raw root_ident_id(x, cur);
+        if (!(raw expr_is_none(rid))) { pass rid; }
+    }
+    // THE WALK'S END FAILS CLOSED (the register's "THE FUEL FAILS CLOSED"): 64 unwraps peeled and still no name is a store whose pointee
+    // can't be read, and "no store" there accepted 65 levels (`fu_n65`: 236 at -O0, 97 under the detector). It's refused where the walk stops.
+    drop escape_err(x, raw BORROW_UNTRACKED(), "a store through a place reached through more unwraps (`?!`, `??!`, `??`) than the escape analysis follows, so where it lands can't be read -- hold the unwrapped pointer in a local and store through it", (raw ast_expr(x.ast, cur)).span);
+    pass (raw expr_none());
 };
 
 // A store's target rooted at a pointer parameter's pointee -- `dst.f = v`,
@@ -1864,8 +1903,10 @@ func:record_refs_through_indirection = NIL(Escape->:x, ExprId:dest, List<ViewRef
             List<int32>:sqp = raw list_init::<int32>(4i64);
             List<int32>:squ = raw list_init::<int32>(4i64);
             for (int64:j in 0i64...tg.count) {
-                int32:tk = raw walk_chain_key_of_ref(x, tg[j]);
-                if ((hp.count >= 2i64) && (tk != (0i32 - 1i32))) { drop rrti_path(x, tk, @hp, hp.count - 2i64, 0i32, refs, dest, @sq, @sqp, @squ); }
+                int32:tk = raw walk_chain_key_of_ref(x, tg[j], false);
+                // DEF-685 (D5): a marked parameter's chain is walked BESIDE main's record below, never in its place (`a4_nrlat`)
+                int32:dk = raw walk_chain_key_of_ref(x, tg[j], true);
+                if ((hp.count >= 2i64) && (dk != (0i32 - 1i32))) { drop rrti_path(x, dk, @hp, hp.count - 2i64, 0i32, refs, dest, @sq, @sqp, @squ); }
                 // (a target with no chain to read -- a pointer or slice parameter's pointee reached by address, `@p.s` -- takes the refs itself, as `rrti_path`
                 // makes such a target take them above the last hop: `(<-((<-(is (k > 0i64) : @p.s : @p.s2)).q)).lp = v` over `SW->:p`, `a1_pa2`)
                 if ((hp.count >= 2i64) && (tk == (0i32 - 1i32)) && (!(raw pick_store_refused(x, tg[j].root, refs.count, dest)))) { drop record_refs_at_target(x, tg[j], refs); }
@@ -1883,11 +1924,13 @@ func:record_refs_through_indirection = NIL(Escape->:x, ExprId:dest, List<ViewRef
     // `walk_chain_key` below names the roots it reads (177d2b5 row 1).
     int32:rt = raw exprtypes_get(x.etypes, rid);
     if (rt == 0i32) { pass NIL; }
-    int32:key = raw walk_chain_key(x, rn.a, rt);   // (B) re-based
+    int32:key = raw walk_chain_key(x, rn.a, rt, true);   // (B) re-based; DEF-685: a marked parameter's too (main passes NIL here for it: the walk only adds)
     if (key == (0i32 - 1i32)) { pass NIL; }
     int32:rk = raw type_kind(x.types, rt);
     ExprNode:dn = raw ast_expr(x.ast, dest);
     bool:bare = (dn.kind == ExprKind.ExprIdentifierExpr);
+    // DEF-685: a pointer parameter's own reassignment (`a = b`) moves the pointer and stores into no pointee (its chain's walk made it a self-flow, `t_pun_ok`)
+    if (bare && (!call) && (rk == (raw TY_POINTER())) && ((raw param_index_of(x, rn.a)) >= 0i32)) { pass NIL; }
     // THE INDIRECTION'S TYPE: the root itself when it is a pointer or a slice, else
     // the last pointer-typed base on the path (`o.inner.v`: `Holder->`); a bare
     // pointer NAME is an indirection only as a call's destination (`put(hp, v)`
@@ -1930,7 +1973,7 @@ func:record_refs_through_indirection = NIL(Escape->:x, ExprId:dest, List<ViewRef
     bool:old_matrix = ((!call) && (rk == (raw TY_POINTER())) && (refs.count > 0i64));
     int32:held = 0i32;   // V: a pointer VALUE handed to a storing callee -- its own type says what the callee's store goes on through, one level
     if (refs.count > 0i64) {
-        int32:dt = is (wt != 0i32) : wt : raw exprtypes_get(x.etypes, dest);
+        int32:dt = is (wt != 0i32) : wt : (raw type_unwrapped(x.types, raw exprtypes_get(x.etypes, dest)));
         if (call && x.call_pval && (dt != 0i32) && ((raw type_kind(x.types, dt)) != (raw TY_SLICE())) && (raw type_holds_pointer(x.types, dt, 8i32))) { held = dt; }
     }
     if ((ind == 0i32) && (!old_matrix) && (hops.count < 2i64) && (held == 0i32)) { pass NIL; }
@@ -1959,7 +2002,8 @@ func:record_refs_through_indirection = NIL(Escape->:x, ExprId:dest, List<ViewRef
 // (B) re-based (177d2b5): THE CHAIN THE STORE'S WALK READS for the root `sym`, whose own type is `rt` -- `escape_add_view_ref`'s key: a local's declaring
 // statement; a `for` binding's or a by-value parameter's declaration, spelled -(decl + 1), whose chain holds what the body stored into it as a local's does
 // (`b.q = @mloc`, `s.q = @mloc`); -1 for anything else: a pointer or a slice parameter's chain is the views stored INTO its pointee, and no walk reads it.
-func:walk_chain_key = int32(Escape->:x, int32:sym, int32:rt) never fails {
+// DEF-685 (D5): `mark` false is main's answer; true reads a marked parameter's chain too, and a caller asking it walks that chain beside main's record
+func:walk_chain_key = int32(Escape->:x, int32:sym, int32:rt, bool:mark) never fails {
     if (sym == 0i32) { pass (0i32 - 1i32); }
     Symbol:sy = raw symtab_get(x.tab, sym);
     if (sy.origin_kind == (raw SYM_STMT())) { pass sy.origin; }
@@ -1967,12 +2011,15 @@ func:walk_chain_key = int32(Escape->:x, int32:sym, int32:rt) never fails {
     int32:rk = raw type_kind(x.types, rt);
     if (raw symbol_is_loop_binding(x, sy)) { pass (raw frame_owned_key(x, sym)); }
     if ((raw symbol_is_param(x, sy)) && (rk != (raw TY_POINTER())) && (rk != (raw TY_SLICE()))) { pass (raw frame_owned_key(x, sym)); }
+    // DEF-685: a POINTER parameter the body redefined (`a = b`, in one branch too; `@a`, `predef`): its chain also holds where the body pointed it, and a
+    // store through it lands there (`t_pun`); one never redefined keeps no walk, as its chain is only the views stored into its pointee (P9's `rule_slot`)
+    if (mark && (raw symbol_is_param(x, sy)) && x.predef[sy.origin => int64]) { pass (raw frame_owned_key(x, sym)); }   // (a slice one too: `a = b; a[0].p = v`, `p_sl`)
     pass (0i32 - 1i32);
 };
 
 // (B): the same for a chain ref's root. A STATEMENT LOCAL KEEPS ITS STATEMENT'S ORIGIN, read off `pr.root` as every walk read it before (the ruling's
 // condition: additive by construction); any other root is typed by the ref's own place, and answers only where that place is rooted at it.
-func:walk_chain_key_of_ref = int32(Escape->:x, ViewRef:pr) never fails {
+func:walk_chain_key_of_ref = int32(Escape->:x, ViewRef:pr, bool:mark) never fails {
     if (pr.root == 0i32) { pass (0i32 - 1i32); }
     Symbol:sy = raw symtab_get(x.tab, pr.root);
     if (sy.origin_kind == (raw SYM_STMT())) { pass sy.origin; }
@@ -1980,7 +2027,7 @@ func:walk_chain_key_of_ref = int32(Escape->:x, ViewRef:pr) never fails {
     if (raw expr_is_none(rid)) { pass (0i32 - 1i32); }
     ExprNode:rn = raw ast_expr(x.ast, rid);
     if (rn.a != pr.root) { pass (0i32 - 1i32); }
-    pass (raw walk_chain_key(x, pr.root, raw exprtypes_get(x.etypes, rid)));
+    pass (raw walk_chain_key(x, pr.root, raw exprtypes_get(x.etypes, rid), mark));
 };
 
 // (B): a chain's first ref by its key -- a statement, or a declaration spelled -(decl + 1).
@@ -2041,12 +2088,19 @@ func:rrti_path = NIL(Escape->:x, int32:origin, List<int32>->:hops, int64:hi, int
         if (pr.root == 0i32) { continue; }
         // DEF-667: a write takes a target that holds the pointee (DEF-591), with refs or without: `SL{ l: raw getown(hp) }`, `wz2g`; `<-((<-sp).l) = raw mkv(h2)`, `dw_rw`
         if (!((raw rrti_is_target(x, pr, ind, true)) || ((refs.count > 0i64) && (raw rrti_read_target(x, pr, ind))))) { continue; }   // DEF-672 at each hop
-        int32:tk = raw walk_chain_key_of_ref(x, pr);
-        if ((hi > 0i64) && (tk != (0i32 - 1i32))) { drop rrti_path(x, tk, hops, hi - 1i64, held, refs, dest, seen, seenp, seenu); continue; }
+        int32:tk = raw walk_chain_key_of_ref(x, pr, false);
+        // DEF-685 (D5): a marked parameter's chain (`dk`) is walked BESIDE main's record, never in its place: `@p` alone marks `p`, and its empty chain
+        // walked instead of the record dropped main's FLOW and MUT (`a4_shat`, `a4_fldat`, `a4_wrat`)
+        int32:dk = raw walk_chain_key_of_ref(x, pr, true);
+        if ((hi > 0i64) && (pr.kind == (raw REF_ADDR())) && (raw place_through_pointer(x, ExprId{ index: pr.place }))) {   // DEF-644 (B): down the pointee's chain too
+            List<ViewRef>:rr = raw list_init::<ViewRef>(4i64);
+            if (raw escape_reroot_targets(x, pr, @rr)) { for (int64:i in 0i64...rr.count) { int32:rk2 = raw walk_chain_key_of_ref(x, rr[i], true); if (rk2 != (0i32 - 1i32)) { drop rrti_path(x, rk2, hops, hi - 1i64, held, refs, dest, seen, seenp, seenu); } } }
+        }
+        if ((hi > 0i64) && (dk != (0i32 - 1i32))) { drop rrti_path(x, dk, hops, hi - 1i64, held, refs, dest, seen, seenp, seenu); if (tk != (0i32 - 1i32)) { continue; } }
         if (!(raw pick_store_refused(x, pr.root, refs.count, dest))) { drop record_refs_at_target(x, pr, refs); }
-        if ((held != 0i32) && (hi == 0i64) && (tk != (0i32 - 1i32))) { drop rrti_held(x, tk, raw type_elem(x.types, ind), refs, dest, seen); }
+        if ((held != 0i32) && (hi == 0i64) && (dk != (0i32 - 1i32))) { drop rrti_held(x, dk, raw type_elem(x.types, ind), refs, dest, seen); }
         // V: and read as the name road reads it, at the value's own pointer type, on that walk's own pairs (`seenu`; the no-hop arm's comment above)
-        if ((held != 0i32) && (hi == 0i64) && (tk != (0i32 - 1i32))) { drop rrti_chain(x, tk, held, false, refs, dest, seenu, raw BORROW_FUEL()); }
+        if ((held != 0i32) && (hi == 0i64) && (dk != (0i32 - 1i32))) { drop rrti_chain(x, dk, held, false, refs, dest, seenu, raw BORROW_FUEL()); }
     }
     pass NIL;
 };
@@ -2129,7 +2183,8 @@ func:rrti_is_target = bool(Escape->:x, ViewRef:pr, int32:ind, bool:walone) never
 func:rrti_read_target = bool(Escape->:x, ViewRef:pr, int32:ind) never fails {
     // (and read as an aggregate that holds the indirection's type, whose member is the parameter's pointer: `SQ:b = <-sp`, `SQ:b = (<-rp).s`)
     if ((pr.kind != (raw REF_PASS())) || (pr.read <= 0i32) || (!(raw escape_type_holds(x, pr.read, ind, 8i32)))) { pass false; }
-    int32:pk = raw type_kind(x.types, raw exprtypes_get(x.etypes, ExprId{ index: pr.place }));
+    // DEF-671: an Optional or `Result` parameter's pointer, read out through its unwrap (`SQ{ q: (osp ??! E5).q }`, `c4_opt`; `(rsp ?! E5).q`, `c4_res`)
+    int32:pk = raw type_kind(x.types, raw type_unwrapped(x.types, raw exprtypes_get(x.etypes, ExprId{ index: pr.place })));
     pass ((pk == (raw TY_POINTER())) || (pk == (raw TY_SLICE())));
 };
 
@@ -2172,8 +2227,16 @@ func:rrti_chain = NIL(Escape->:x, int32:origin, int32:ind, bool:old_matrix, List
         if (target) {
             if (!(raw pick_store_refused(x, pr.root, refs.count, dest))) { drop record_refs_at_target(x, pr, refs); }   // DEF-633
             if ((raw type_kind(x.types, pte)) == (raw TY_POINTER())) {   // row 8, hole 4; (B): a `for` binding or a by-value parameter as the target is walked as a local is
-                int32:ck = raw walk_chain_key_of_ref(x, pr);
+                int32:ck = raw walk_chain_key_of_ref(x, pr, true);   // (DEF-685: the record is above, so a marked parameter's walk only adds)
+                // DEF-685: a POINTER parameter's own slot (`<-rp = p2` over `rp = @r`, `t_pind`) took the refs above; what the pointer in it points at
+                // isn't written, so its chain (walked once `@r` redefined it) is read only by a store through it (`t_pind_ok`'s self-flow, D2's price)
+                ExprNode:cpn = raw ast_expr(x.ast, ExprId{ index: pr.place });
+                if ((cpn.kind == ExprKind.ExprIdentifierExpr) && ((raw param_index_of(x, pr.root)) >= 0i32) && ((raw type_kind(x.types, raw exprtypes_get(x.etypes, ExprId{ index: pr.place }))) == (raw TY_POINTER()))) { ck = 0i32 - 1i32; }
                 if (ck != (0i32 - 1i32)) { drop rrti_chain(x, ck, pte, false, refs, dest, seen, fuel - 1i32); }
+                if ((pr.kind == (raw REF_ADDR())) && (raw place_through_pointer(x, ExprId{ index: pr.place }))) {   // DEF-644 (B): down the pointee's chain too
+                    List<ViewRef>:rr = raw list_init::<ViewRef>(4i64);
+                    if (raw escape_reroot_targets(x, pr, @rr)) { for (int64:i in 0i64...rr.count) { int32:rk2 = raw walk_chain_key_of_ref(x, rr[i], true); if (rk2 != (0i32 - 1i32)) { drop rrti_chain(x, rk2, pte, false, refs, dest, seen, fuel - 1i32); } } }
+                }
             }
             continue;
         }
@@ -2196,7 +2259,34 @@ func:rrti_chain = NIL(Escape->:x, int32:origin, int32:ind, bool:old_matrix, List
 // (`record_matrix_at`); a target this frame owns -- a local, a `for` binding, a
 // by-value parameter itself -- holds the stored refs on its root's chain
 // (`frame_owned_key`), so D-325's freeze has a party for each.
+// DEF-644 (B): THE TARGETS OF A PLACE TAKEN THROUGH ANOTHER POINTER (`@((<-q0).inner)`, `@((<-pb).q)`, `@(<-mp2)`): the place is storage that pointer
+// points at, and the chain of the place's root is the pointer's own, which names the pointee, so the targets are the pointee's: `escape_pointer_targets`
+// of the first pointer inward from the place's base. Answers whether any was found.
+func:escape_reroot_targets = bool(Escape->:x, ViewRef:pr, List<ViewRef>->:out) never fails {
+    if ((pr.kind != (raw REF_ADDR())) || (pr.root == 0i32)) { pass false; }
+    ExprId:pl = ExprId{ index: pr.place };
+    if (!(raw place_through_pointer(x, pl))) { pass false; }
+    ExprNode:pn = raw ast_expr(x.ast, pl);
+    ExprId:inw = raw expr_none();
+    if ((pn.kind == ExprKind.ExprMemberAccessExpr) || (pn.kind == ExprKind.ExprDerefExpr)) { inw = raw expr_operand(pn); }
+    if (pn.kind == ExprKind.ExprIndexExpr) { inw = raw expr_lhs(pn); }
+    ExprId:ptr = raw escape_first_pointer_inward(x, inw);
+    if (raw expr_is_none(ptr)) { pass false; }
+    int64:n0 = out.count;
+    drop escape_pointer_targets(x, ptr, out);
+    pass (out.count > n0);
+};
+
 func:record_refs_at_target = NIL(Escape->:x, ViewRef:pr, List<ViewRef>->:refs) never fails {
+    if ((pr.kind == (raw REF_ADDR())) && (raw place_through_pointer(x, ExprId{ index: pr.place }))) {   // DEF-644 (B)
+        List<ViewRef>:rr = raw list_init::<ViewRef>(4i64);
+        if (raw escape_reroot_targets(x, pr, @rr)) { for (int64:i in 0i64...rr.count) { drop record_refs_at_target_one(x, rr[i], refs); } }
+    }
+    drop record_refs_at_target_one(x, pr, refs);
+    pass NIL;
+};
+
+func:record_refs_at_target_one = NIL(Escape->:x, ViewRef:pr, List<ViewRef>->:refs) never fails {
     int32:j = raw param_index_of(x, pr.root);
     if (j >= 0i32) {
         drop record_matrix_at(x, j, pr, refs);
@@ -2206,6 +2296,15 @@ func:record_refs_at_target = NIL(Escape->:x, ViewRef:pr, List<ViewRef>->:refs) n
         int32:pt = raw exprtypes_get(x.etypes, ExprId{ index: pr.place });
         if (pt == 0i32) { pass NIL; }
         int32:pk = raw type_kind(x.types, pt);
+        // DEF-685: a pointer parameter's OWN slot, its address carried (`HPO->->:rp = @r; <-rp = p2`, `t_pind`), is this frame's as a by-value one's is: the
+        // stored refs join its chain, which `walk_chain_key` reads once `@r` redefined it (`predef`). D5: THE MARK THROUGH AN ADDRESS IS SET HERE, where
+        // something is written through it, not where `@r` is taken: `rdhp(@p)` handed to a reader marked `p`, and its chain of the views stored into its
+        // pointee was walked as where it points (`a4_pvat`, P9's `rule_slot` class)
+        ExprNode:pln = raw ast_expr(x.ast, ExprId{ index: pr.place });
+        if ((pr.kind == (raw REF_ADDR())) && (pln.kind == ExprKind.ExprIdentifierExpr)) {
+            pk = 0i32;
+            if ((refs.count > 0i64) && (!x.predef[(raw symtab_get(x.tab, pr.root)).origin => int64])) { x.predef[(raw symtab_get(x.tab, pr.root)).origin => int64] = true; x.changed = true; }
+        }
         if ((pk == (raw TY_POINTER())) || (((pk == (raw TY_STRING())) || (pk == (raw TY_CSTRING())) || (pk == (raw TY_BUFFER()))) && (raw place_through_pointer(x, ExprId{ index: pr.place })))) { pass NIL; }
     }
     int32:key = raw frame_owned_key(x, pr.root);
@@ -2607,7 +2706,8 @@ pub func:escape_pointer_targets = NIL(Escape->:x, ExprId:pe, List<ViewRef>->:out
         if ((pn.kind == ExprKind.ExprCastExpr) || (pn.kind == ExprKind.ExprUncheckedCastExpr)) { pu = raw expr_operand(pn); continue; }
         break;
     }
-    int32:pty = raw exprtypes_get(x.etypes, pu);
+    // DEF-671: an Optional or `Result` pointer value points where the pointer it holds does (`putopt(raw mko(@m), hq)`, `b_carg`; a ternary, `b_targ`)
+    int32:pty = raw type_unwrapped(x.types, raw exprtypes_get(x.etypes, pu));
     if (pty == 0i32) { pass NIL; }
     if ((raw type_kind(x.types, pty)) != (raw TY_POINTER())) { pass NIL; }
     int32:pte = raw type_elem(x.types, pty);
@@ -3080,7 +3180,7 @@ func:escape_is_pointer_value = bool(Escape->:x, ExprId:a) never fails {
     if (raw expr_is_none(a)) { pass false; }
     int32:at = raw exprtypes_get(x.etypes, a);
     if (at == 0i32) { pass false; }
-    pass ((raw type_kind(x.types, at)) == (raw TY_POINTER()));
+    pass ((raw type_kind(x.types, raw type_unwrapped(x.types, at))) == (raw TY_POINTER()));   // DEF-671: an Optional or `Result` pointer too
 };
 
 func:record_refs_into_pointer_value = NIL(Escape->:x, ExprId:a, List<ViewRef>->:got) never fails {
@@ -3108,7 +3208,7 @@ func:record_refs_into_pointer_value = NIL(Escape->:x, ExprId:a, List<ViewRef>->:
     }
     List<ViewRef>:tg = raw list_init::<ViewRef>(4i64);
     drop escape_pointer_targets(x, a, @tg);
-    int32:pte = raw type_elem(x.types, raw exprtypes_get(x.etypes, a));
+    int32:pte = raw type_elem(x.types, raw type_unwrapped(x.types, raw exprtypes_get(x.etypes, a)));   // DEF-671: as the targets are read
     List<int32>:seen = raw list_init::<int32>(4i64);
     List<int32>:seeno = raw list_init::<int32>(4i64);   // V: the walk at each target's own type keeps its own pairs, apart from `seen` (below)
     for (int64:i in 0i64...tg.count) {
@@ -3118,7 +3218,7 @@ func:record_refs_into_pointer_value = NIL(Escape->:x, ExprId:a, List<ViewRef>->:
         // TYPES (Addendum 28): the type as written, where a middle pointer stored at its written type is met (`h_mix`, `h_mxlr`, `h_mxg`), and the target's
         // OWN where a cast retyped it -- the operand under the casts, read where the target was taken, a carried value's pointee or an address's place -- where
         // one stored at the operand's is met (`h_rapc`; under a call `h_rapcc`, in a ternary's arms `h_rapci`, which no peel of the argument's top reaches)
-        int32:ck = raw walk_chain_key_of_ref(x, r);
+        int32:ck = raw walk_chain_key_of_ref(x, r, true);   // (DEF-685: the record is above, so a marked parameter's walk only adds)
         if ((ck != (0i32 - 1i32)) && ((raw type_kind(x.types, pte)) == (raw TY_POINTER()))) { drop rrti_chain(x, ck, pte, false, got, a, @seen, raw BORROW_FUEL()); }
         int32:et = raw escape_path_end_type(x, raw exprtypes_get(x.etypes, ExprId{ index: r.place }), r.path);
         // a REF_PASS's own type is its value's pointee where that value is a pointer; any other kind's `.a` is no pointee (a struct's is its DeclId), so none
@@ -3237,6 +3337,9 @@ func:record_mut_of_place = NIL(Escape->:x, ExprId:place, int32:sub) never fails 
     ExprNode:pn0 = raw ast_expr(x.ast, pl);
     if (pn0.kind == ExprKind.ExprDerefExpr) { pl = raw expr_operand(pn0); }
     ExprId:rid = raw root_ident_id(x, pl);
+    bool:un = false;
+    // DEF-671's write face: a place rooted at a parameter's unwrap (`@((<-(r ??! E5)).own)` handed to `list_push`, `b_ow`), as `fold_flow_into_param` reads it
+    if (raw expr_is_none(rid)) { rid = raw escape_unwrap_root(x, pl); un = true; }
     if (raw expr_is_none(rid)) { pass NIL; }
     ExprNode:rn = raw ast_expr(x.ast, rid);
     int32:k = raw param_index_of(x, rn.a);
@@ -3262,6 +3365,7 @@ func:record_mut_of_place = NIL(Escape->:x, ExprId:place, int32:sub) never fails 
     // slice binding itself (the empty path: `sl = other`, a move of the header)
     // writes nothing the caller holds.
     int32:rk = raw type_kind(x.types, rt);
+    if (un) { rk = raw type_kind(x.types, raw type_unwrapped(x.types, rt)); }   // DEF-671: through the unwrap, the pointer it holds
     if (rk == (raw TY_SLICE())) {
         if (wp == 0i32) { pass NIL; }
     } else {
@@ -4401,10 +4505,14 @@ func:escape_mark = NIL(Escape->:x, int32:stmt_index) never fails {
 // A POINTER LOCAL'S REDEFINITION (`redef`): flipped once, so `changed` is set as
 // `escape_mark` sets it -- a dereference read before the redefinition was walked answered
 // from the declaration, and the next round answers again. An untyped name is marked.
-func:escape_mark_redef = NIL(Escape->:x, ExprId:e) never fails {
+func:escape_mark_redef = NIL(Escape->:x, ExprId:e, bool:whole) never fails {
     ExprNode:n = raw ast_expr(x.ast, e);
     if ((n.kind != ExprKind.ExprIdentifierExpr) || (n.a == 0i32)) { pass NIL; }
     Symbol:s = raw symtab_get(x.tab, n.a);
+    // DEF-685: a PARAMETER's (`predef`, by its declaration) -- from then on the store walk reads a pointer or slice one's chain, which holds where the body
+    // pointed it (a by-value one's chain is read anyway). D5: assigned WHOLE (`a = b`, `whole`); an address taken (`@a`, `$$ a`) marks it only where
+    // something is written through it (`record_refs_at_target`)
+    if (whole && (raw symbol_is_param(x, s)) && (!x.predef[s.origin => int64])) { x.predef[s.origin => int64] = true; x.changed = true; }
     if (s.origin_kind != (raw SYM_STMT())) { pass NIL; }
     if ((s.origin < 0i32) || (s.origin >= x.holds_count)) { pass NIL; }
     int32:t = raw exprtypes_get(x.etypes, e);
@@ -5603,7 +5711,7 @@ func:escape_assign = NIL(Escape->:x, StmtNode:s) never fails {
     // The target is walked too: `rec[raw f(@i)] = 0i32` can break a rule inside
     // an index expression that no rule about the assignment itself would catch.
     discard(raw escape_expr(x, tgt, raw ESCAPE_DEPTH()));
-    drop escape_mark_redef(x, tgt);
+    drop escape_mark_redef(x, tgt, true);
 
     if (raw expr_is_none(val)) { pass NIL; }
 
@@ -6362,12 +6470,12 @@ func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
     // to be a borrow.
     if (n.kind == ExprKind.ExprAddressOfExpr) {
         discard(raw escape_expr(x, raw expr_operand(n), d));
-        drop escape_mark_redef(x, raw expr_operand(n));
+        drop escape_mark_redef(x, raw expr_operand(n), false);
         pass true;
     }
     if (n.kind == ExprKind.ExprBorrowExpr) {
         discard(raw escape_expr(x, raw expr_operand(n), d));
-        drop escape_mark_redef(x, raw expr_operand(n));
+        drop escape_mark_redef(x, raw expr_operand(n), false);
         pass true;
     }
 

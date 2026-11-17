@@ -1,0 +1,51 @@
+// expect-exit: 127
+mod:q_min_fv_ok;
+// 2026-11-16 (landing 177d2b9, row 4, the tests row). DEF-674's register row: "`q_min_fv_ok` is the cell any fix must pass." It was in no test of
+// landing 177d2b8. A struct holds a pointer filled through a function value (`b: raw fv(@mb)`, `fv = idb`) beside one taken by address (`o:
+// @mo2`); a store through the second (`(<-(s.o)).lp = hq`) can't reach `mb`, so a view of `mb.lp` held across a growth of `hq` reads live memory.
+// A right program: accepted on main (acb78ea) and here, it exits 127 (`(<-e3) + 66i64`, plus 60) at -O0 and -O2 on roads 0-2 and under the
+// detector. The register on DEF-674's fixes: "A fix marks only what an unknown callee could have retyped, not the whole object."
+error:E5;
+struct:K = { int64:k; };
+struct:H = { List<int64>:l; int64:k; K:kk; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO = { H->:lp; List<int64>:own; };
+struct:HPB = { H->:lp; List<int64>:own; };
+func:idb = HPB->(HPB->:p) never fails { pass p; };
+struct:S2 = { HPB->:b; HPO->:o; };
+func:g = int64(H->:h0p, H->:hq, H->:hz, int64:n) never fails {
+    HPB:mb = HPB{ lp: h0p, own: raw mk() }; HPO:mo2 = HPO{ lp: h0p, own: raw mk() };
+    func HPB->(HPB->) never fails:fv = idb;
+    S2:s = S2{ b: raw fv(@mb), o: @mo2 };
+    (<-(s.o)).lp = hq;
+    int64->:e3 = raw fp(mb.lp);
+    discard(raw growh(hq));
+    pass (<-e3) + 66i64;
+};
+func:f = int64(int64:n) never fails {
+    H:hz = raw mkh(); H:h0 = raw mkh(); H:h2 = raw mkh();
+    pass raw g(@h0, @h2, @hz, n);
+};
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

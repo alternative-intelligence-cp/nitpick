@@ -1,0 +1,591 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 84:31
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 142:32
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 200:32
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 257:27
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 317:33
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 375:31
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 439:32
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 503:35
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 563:29
+mod:param_redef_store_guards;
+// 2026-11-16 (landing 177d2b9, row 2: DEF-685, seat D2's D5, stacked on row 1). A STORE THROUGH A POINTER PARAMETER THE CALLEE REDEFINED LANDS
+// WHERE THE PARAMETER NOW POINTS, not in the argument first passed (`a = b; (<-a).lp = v`). The escape analysis walks a MARKED parameter's own
+// chain (where the body pointed it) BESIDE main's record of the store at the parameter, never in its place, so the callee's summary records the
+// store and the caller's view across the call is refused. A parameter is marked only on three roads: (1) it is assigned whole (`a = b`, in one
+// branch too); (2) refs land on its own address ref (`rp = @r; <-rp = p2`); (3) `@o` or `$$ o`, under casts too, is handed to a callee whose
+// summary stores refs through that parameter (`bothp(@o, o, p2, hq)`). An address taken alone (`rdhp(@p)`) marks nothing.
+// THE GUARDS (6, one per form, one cell each): `a4_shat`, `a4_fldat`, `a4_nrlat`, `a4_wrat`, `a4_slfdat`, `a4_dfat`. Main (acb78ea), row 1 and
+// this row refuse each at the same site; D4 as it stood (the walk of a marked parameter's chain IN PLACE OF main's record, and `@p` alone marking
+// `p`) accepted each and read freed heap (236 at -O0 and -O2, 97 under the detector). They guard against that either/or coming back: a store
+// reached through a struct local after `rdpp(@p)` (`a4_shat`), two hops from a struct local (`a4_fldat`), the no-root branch (`a4_nrlat`), the
+// write alone with no value stored (`a4_wrat`), a slice parameter (`a4_slfdat`), and `@p` taken in a `defer` (`a4_dfat`).
+// THE MUTANTS' KILLERS (3, this row's step 5): `k_pa7_r1`, `k_slfdat_r1`, `k_sl7`. Main, row 1 and this row refuse each at the same site; the
+// mutant each names in its comment, which brings the either/or back for a parameter marked by a real road, accepted it and read freed heap.
+error:E5;
+struct:K_a4_shat = { int64:k; };
+struct:H_a4_shat = { List<int64>:l; int64:k; K_a4_shat:kk; };
+func:mk_a4_shat = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_a4_shat = H_a4_shat() never fails { pass H_a4_shat{ l: raw mk_a4_shat(), k: 2i64, kk: K_a4_shat{ k: 3i64 } }; };
+func:growh_a4_shat = int64(H_a4_shat->:w_a4_shat) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w_a4_shat.l, 1i64); } pass 7i64; };
+func:growl_a4_shat = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_a4_shat = int64->(H_a4_shat->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_a4_shat = H_a4_shat->(H_a4_shat->:q) never fails { pass q; };
+func:getl_a4_shat = List<int64>->(H_a4_shat->:w_a4_shat) never fails { pass @w_a4_shat.l; };
+struct:HPO_a4_shat = { H_a4_shat->:lp; List<int64>:own; };
+struct:SQ_a4_shat = { HPO_a4_shat->:q; int64:z; };
+struct:SR_a4_shat = { SQ_a4_shat->:sq; int64:z; };
+struct:SL_a4_shat = { List<int64>->:l; int64:z; };
+struct:SL2_a4_shat = { SL_a4_shat:s; int64:z; };
+struct:SLP_a4_shat = { SL_a4_shat->:sp; int64:z; };
+struct:SQB_a4_shat = { HPO_a4_shat->:q; int64:z; };
+struct:HPB_a4_shat = { H_a4_shat->:lp; List<int64>:own; };
+struct:PV_a4_shat = { H_a4_shat->:p; int64:v; };
+struct:HPV_a4_shat = { H_a4_shat->:lp; List<PV_a4_shat>:own; };
+struct:SLV_a4_shat = { List<PV_a4_shat>->:l; int64:z; };
+struct:SQV_a4_shat = { HPV_a4_shat->:q; int64:z; };
+func:getown_a4_shat = List<int64>->(HPO_a4_shat->:w_a4_shat) never fails { pass @w_a4_shat.own; };
+func:getownv_a4_shat = List<PV_a4_shat>->(HPV_a4_shat->:w_a4_shat) never fails { pass @w_a4_shat.own; };
+func:mkv_a4_shat = List<PV_a4_shat>(H_a4_shat->:h) never fails { List<PV_a4_shat>:l = raw list_init::<PV_a4_shat>(1i64); drop list_push(@l, PV_a4_shat{ p: h, v: 1i64 }); pass l; };
+func:idp_a4_shat = HPO_a4_shat->(HPO_a4_shat->:w_a4_shat) never fails { pass w_a4_shat; };
+func:cvq_a4_shat = SQ_a4_shat->(SQB_a4_shat->:b) never fails { pass ((b =>! any->) =>! SQ_a4_shat->); };
+func:put_a4_shat = int64(HPO_a4_shat->:p, H_a4_shat->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_a4_shat = { SQ_a4_shat->:sq; int64:z; };
+struct:ST_a4_shat = { SR_a4_shat->:sr; int64:z; };
+struct:SPP_a4_shat = { HPO_a4_shat->->:qq; int64:z; };
+struct:SPPP_a4_shat = { HPO_a4_shat->->->:qqq; int64:z; };
+struct:SQX_a4_shat = { HPB_a4_shat->:q; int64:z; };
+struct:HN_a4_shat = { int64:a; int64:b; };
+struct:SN_a4_shat = { HN_a4_shat->:q; int64:z; };
+struct:SA_a4_shat = { any->:q; int64:z; };
+func:put2_a4_shat = int64(SQ_a4_shat->:p, H_a4_shat->:v) never fails { (<-((<-p).q)).lp = v; pass 7i64; };
+func:getq_a4_shat = HPO_a4_shat->(SQ_a4_shat->:w_a4_shat) never fails { pass (<-w_a4_shat).q; };
+func:putgrow_a4_shat = int64(HPO_a4_shat->:p, H_a4_shat->:v) never fails { p.lp = v; loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:mksq_a4_shat = SQ_a4_shat(HPO_a4_shat->:p) never fails { pass SQ_a4_shat{ q: p, z: 1i64 }; };
+func:cpsq_a4_shat = SQ_a4_shat(SQ_a4_shat->:w_a4_shat) never fails { pass SQ_a4_shat{ q: (<-w_a4_shat).q, z: 2i64 }; };
+struct:SO_a4_shat = { HPO_a4_shat->?:oq; int64:z; };
+struct:SRO_a4_shat = { SO_a4_shat->:so; int64:z; };
+func:g3p_a4_shat = int64(HPO_a4_shat->:a, HPO_a4_shat->:b, H_a4_shat->:v, int64:n) never fails { a = b; (<-a).lp = v; pass 7i64; };
+func:rdpp_a4_shat = int64(SQ_a4_shat->->:pp) never fails { pass (<-(<-pp)).z; };
+func:w_a4_shat = int64(SQ_a4_shat->:p, SQ_a4_shat->:p2, H_a4_shat->:v, int64:n) never fails { discard(raw rdpp_a4_shat(@p)); SR_a4_shat:ls = SR_a4_shat{ sq: p, z: 1i64 }; SR_a4_shat->:lr = @ls; (<-((<-((<-lr).sq)).q)).lp = v; pass 7i64; };
+func:g_a4_shat = int64(H_a4_shat->:h0p, H_a4_shat->:hq, H_a4_shat->:hz, int64:n) never fails {
+    HPO_a4_shat:m = HPO_a4_shat{ lp: h0p, own: raw mk_a4_shat() }; HPO_a4_shat:m2 = HPO_a4_shat{ lp: h0p, own: raw mk_a4_shat() };
+    SQ_a4_shat:s = SQ_a4_shat{ q: @m, z: 1i64 }; SQ_a4_shat:s2 = SQ_a4_shat{ q: @m2, z: 2i64 };
+    discard(raw w_a4_shat(@s, @s2, hq, n));
+    int64->:e2 = raw fp_a4_shat((<-(s.q)).lp);
+    discard(raw growh_a4_shat(hq));
+    pass (<-e2) + 6i64;
+};
+func:f_a4_shat = int64(int64:n) never fails {
+    H_a4_shat:hz = raw mkh_a4_shat(); H_a4_shat:h0 = raw mkh_a4_shat(); H_a4_shat:h2 = raw mkh_a4_shat();
+    pass raw g_a4_shat(@h0, @h2, @hz, n);
+};
+func:cell_main_a4_shat = int32() never fails { pass (((raw f_a4_shat(1i64)) + 60i64) =>! int32); };
+struct:K_a4_fldat = { int64:k; };
+struct:H_a4_fldat = { List<int64>:l; int64:k; K_a4_fldat:kk; };
+func:mk_a4_fldat = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_a4_fldat = H_a4_fldat() never fails { pass H_a4_fldat{ l: raw mk_a4_fldat(), k: 2i64, kk: K_a4_fldat{ k: 3i64 } }; };
+func:growh_a4_fldat = int64(H_a4_fldat->:w_a4_fldat) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w_a4_fldat.l, 1i64); } pass 7i64; };
+func:growl_a4_fldat = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_a4_fldat = int64->(H_a4_fldat->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_a4_fldat = H_a4_fldat->(H_a4_fldat->:q) never fails { pass q; };
+func:getl_a4_fldat = List<int64>->(H_a4_fldat->:w_a4_fldat) never fails { pass @w_a4_fldat.l; };
+struct:HPO_a4_fldat = { H_a4_fldat->:lp; List<int64>:own; };
+struct:SQ_a4_fldat = { HPO_a4_fldat->:q; int64:z; };
+struct:SR_a4_fldat = { SQ_a4_fldat->:sq; int64:z; };
+struct:SL_a4_fldat = { List<int64>->:l; int64:z; };
+struct:SL2_a4_fldat = { SL_a4_fldat:s; int64:z; };
+struct:SLP_a4_fldat = { SL_a4_fldat->:sp; int64:z; };
+struct:SQB_a4_fldat = { HPO_a4_fldat->:q; int64:z; };
+struct:HPB_a4_fldat = { H_a4_fldat->:lp; List<int64>:own; };
+struct:PV_a4_fldat = { H_a4_fldat->:p; int64:v; };
+struct:HPV_a4_fldat = { H_a4_fldat->:lp; List<PV_a4_fldat>:own; };
+struct:SLV_a4_fldat = { List<PV_a4_fldat>->:l; int64:z; };
+struct:SQV_a4_fldat = { HPV_a4_fldat->:q; int64:z; };
+func:getown_a4_fldat = List<int64>->(HPO_a4_fldat->:w_a4_fldat) never fails { pass @w_a4_fldat.own; };
+func:getownv_a4_fldat = List<PV_a4_fldat>->(HPV_a4_fldat->:w_a4_fldat) never fails { pass @w_a4_fldat.own; };
+func:mkv_a4_fldat = List<PV_a4_fldat>(H_a4_fldat->:h) never fails { List<PV_a4_fldat>:l = raw list_init::<PV_a4_fldat>(1i64); drop list_push(@l, PV_a4_fldat{ p: h, v: 1i64 }); pass l; };
+func:idp_a4_fldat = HPO_a4_fldat->(HPO_a4_fldat->:w_a4_fldat) never fails { pass w_a4_fldat; };
+func:cvq_a4_fldat = SQ_a4_fldat->(SQB_a4_fldat->:b) never fails { pass ((b =>! any->) =>! SQ_a4_fldat->); };
+func:put_a4_fldat = int64(HPO_a4_fldat->:p, H_a4_fldat->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_a4_fldat = { SQ_a4_fldat->:sq; int64:z; };
+struct:ST_a4_fldat = { SR_a4_fldat->:sr; int64:z; };
+struct:SPP_a4_fldat = { HPO_a4_fldat->->:qq; int64:z; };
+struct:SPPP_a4_fldat = { HPO_a4_fldat->->->:qqq; int64:z; };
+struct:SQX_a4_fldat = { HPB_a4_fldat->:q; int64:z; };
+struct:HN_a4_fldat = { int64:a; int64:b; };
+struct:SN_a4_fldat = { HN_a4_fldat->:q; int64:z; };
+struct:SA_a4_fldat = { any->:q; int64:z; };
+func:put2_a4_fldat = int64(SQ_a4_fldat->:p, H_a4_fldat->:v) never fails { (<-((<-p).q)).lp = v; pass 7i64; };
+func:getq_a4_fldat = HPO_a4_fldat->(SQ_a4_fldat->:w_a4_fldat) never fails { pass (<-w_a4_fldat).q; };
+func:putgrow_a4_fldat = int64(HPO_a4_fldat->:p, H_a4_fldat->:v) never fails { p.lp = v; loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:mksq_a4_fldat = SQ_a4_fldat(HPO_a4_fldat->:p) never fails { pass SQ_a4_fldat{ q: p, z: 1i64 }; };
+func:cpsq_a4_fldat = SQ_a4_fldat(SQ_a4_fldat->:w_a4_fldat) never fails { pass SQ_a4_fldat{ q: (<-w_a4_fldat).q, z: 2i64 }; };
+struct:SO_a4_fldat = { HPO_a4_fldat->?:oq; int64:z; };
+struct:SRO_a4_fldat = { SO_a4_fldat->:so; int64:z; };
+func:g3p_a4_fldat = int64(HPO_a4_fldat->:a, HPO_a4_fldat->:b, H_a4_fldat->:v, int64:n) never fails { a = b; (<-a).lp = v; pass 7i64; };
+func:rdpp_a4_fldat = int64(SQ_a4_fldat->->:pp) never fails { pass (<-(<-pp)).z; };
+func:w_a4_fldat = int64(SQ_a4_fldat->:p, SQ_a4_fldat->:p2, H_a4_fldat->:v, int64:n) never fails { discard(raw rdpp_a4_fldat(@p)); SR_a4_fldat:lr = SR_a4_fldat{ sq: p, z: 1i64 }; (<-((<-(lr.sq)).q)).lp = v; pass 7i64; };
+func:g_a4_fldat = int64(H_a4_fldat->:h0p, H_a4_fldat->:hq, H_a4_fldat->:hz, int64:n) never fails {
+    HPO_a4_fldat:m = HPO_a4_fldat{ lp: h0p, own: raw mk_a4_fldat() }; HPO_a4_fldat:m2 = HPO_a4_fldat{ lp: h0p, own: raw mk_a4_fldat() };
+    SQ_a4_fldat:s = SQ_a4_fldat{ q: @m, z: 1i64 }; SQ_a4_fldat:s2 = SQ_a4_fldat{ q: @m2, z: 2i64 };
+    discard(raw w_a4_fldat(@s, @s2, hq, n));
+    int64->:e2 = raw fp_a4_fldat((<-(s.q)).lp);
+    discard(raw growh_a4_fldat(hq));
+    pass (<-e2) + 6i64;
+};
+func:f_a4_fldat = int64(int64:n) never fails {
+    H_a4_fldat:hz = raw mkh_a4_fldat(); H_a4_fldat:h0 = raw mkh_a4_fldat(); H_a4_fldat:h2 = raw mkh_a4_fldat();
+    pass raw g_a4_fldat(@h0, @h2, @hz, n);
+};
+func:cell_main_a4_fldat = int32() never fails { pass (((raw f_a4_fldat(1i64)) + 60i64) =>! int32); };
+struct:K_a4_nrlat = { int64:k; };
+struct:H_a4_nrlat = { List<int64>:l; int64:k; K_a4_nrlat:kk; };
+func:mk_a4_nrlat = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_a4_nrlat = H_a4_nrlat() never fails { pass H_a4_nrlat{ l: raw mk_a4_nrlat(), k: 2i64, kk: K_a4_nrlat{ k: 3i64 } }; };
+func:growh_a4_nrlat = int64(H_a4_nrlat->:w_a4_nrlat) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w_a4_nrlat.l, 1i64); } pass 7i64; };
+func:growl_a4_nrlat = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_a4_nrlat = int64->(H_a4_nrlat->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_a4_nrlat = H_a4_nrlat->(H_a4_nrlat->:q) never fails { pass q; };
+func:getl_a4_nrlat = List<int64>->(H_a4_nrlat->:w_a4_nrlat) never fails { pass @w_a4_nrlat.l; };
+struct:HPO_a4_nrlat = { H_a4_nrlat->:lp; List<int64>:own; };
+struct:SQ_a4_nrlat = { HPO_a4_nrlat->:q; int64:z; };
+struct:SR_a4_nrlat = { SQ_a4_nrlat->:sq; int64:z; };
+struct:SL_a4_nrlat = { List<int64>->:l; int64:z; };
+struct:SL2_a4_nrlat = { SL_a4_nrlat:s; int64:z; };
+struct:SLP_a4_nrlat = { SL_a4_nrlat->:sp; int64:z; };
+struct:SQB_a4_nrlat = { HPO_a4_nrlat->:q; int64:z; };
+struct:HPB_a4_nrlat = { H_a4_nrlat->:lp; List<int64>:own; };
+struct:PV_a4_nrlat = { H_a4_nrlat->:p; int64:v; };
+struct:HPV_a4_nrlat = { H_a4_nrlat->:lp; List<PV_a4_nrlat>:own; };
+struct:SLV_a4_nrlat = { List<PV_a4_nrlat>->:l; int64:z; };
+struct:SQV_a4_nrlat = { HPV_a4_nrlat->:q; int64:z; };
+func:getown_a4_nrlat = List<int64>->(HPO_a4_nrlat->:w_a4_nrlat) never fails { pass @w_a4_nrlat.own; };
+func:getownv_a4_nrlat = List<PV_a4_nrlat>->(HPV_a4_nrlat->:w_a4_nrlat) never fails { pass @w_a4_nrlat.own; };
+func:mkv_a4_nrlat = List<PV_a4_nrlat>(H_a4_nrlat->:h) never fails { List<PV_a4_nrlat>:l = raw list_init::<PV_a4_nrlat>(1i64); drop list_push(@l, PV_a4_nrlat{ p: h, v: 1i64 }); pass l; };
+func:idp_a4_nrlat = HPO_a4_nrlat->(HPO_a4_nrlat->:w_a4_nrlat) never fails { pass w_a4_nrlat; };
+func:cvq_a4_nrlat = SQ_a4_nrlat->(SQB_a4_nrlat->:b) never fails { pass ((b =>! any->) =>! SQ_a4_nrlat->); };
+func:put_a4_nrlat = int64(HPO_a4_nrlat->:p, H_a4_nrlat->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_a4_nrlat = { SQ_a4_nrlat->:sq; int64:z; };
+struct:ST_a4_nrlat = { SR_a4_nrlat->:sr; int64:z; };
+struct:SPP_a4_nrlat = { HPO_a4_nrlat->->:qq; int64:z; };
+struct:SPPP_a4_nrlat = { HPO_a4_nrlat->->->:qqq; int64:z; };
+struct:SQX_a4_nrlat = { HPB_a4_nrlat->:q; int64:z; };
+struct:HN_a4_nrlat = { int64:a; int64:b; };
+struct:SN_a4_nrlat = { HN_a4_nrlat->:q; int64:z; };
+struct:SA_a4_nrlat = { any->:q; int64:z; };
+func:put2_a4_nrlat = int64(SQ_a4_nrlat->:p, H_a4_nrlat->:v) never fails { (<-((<-p).q)).lp = v; pass 7i64; };
+func:getq_a4_nrlat = HPO_a4_nrlat->(SQ_a4_nrlat->:w_a4_nrlat) never fails { pass (<-w_a4_nrlat).q; };
+func:putgrow_a4_nrlat = int64(HPO_a4_nrlat->:p, H_a4_nrlat->:v) never fails { p.lp = v; loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:mksq_a4_nrlat = SQ_a4_nrlat(HPO_a4_nrlat->:p) never fails { pass SQ_a4_nrlat{ q: p, z: 1i64 }; };
+func:cpsq_a4_nrlat = SQ_a4_nrlat(SQ_a4_nrlat->:w_a4_nrlat) never fails { pass SQ_a4_nrlat{ q: (<-w_a4_nrlat).q, z: 2i64 }; };
+struct:SO_a4_nrlat = { HPO_a4_nrlat->?:oq; int64:z; };
+struct:SRO_a4_nrlat = { SO_a4_nrlat->:so; int64:z; };
+func:g3p_a4_nrlat = int64(HPO_a4_nrlat->:a, HPO_a4_nrlat->:b, H_a4_nrlat->:v, int64:n) never fails { a = b; (<-a).lp = v; pass 7i64; };
+func:rdpp_a4_nrlat = int64(SQ_a4_nrlat->->:pp) never fails { pass (<-(<-pp)).z; };
+func:w_a4_nrlat = int64(SQ_a4_nrlat->:p, SQ_a4_nrlat->:p2, H_a4_nrlat->:v, int64:n) never fails { discard(raw rdpp_a4_nrlat(@p)); SR_a4_nrlat:ls = SR_a4_nrlat{ sq: p, z: 1i64 }; SR_a4_nrlat->:lr = @ls; (<-((<-((<-(is (n >= 0i64) : lr : lr)).sq)).q)).lp = v; pass 7i64; };
+func:g_a4_nrlat = int64(H_a4_nrlat->:h0p, H_a4_nrlat->:hq, H_a4_nrlat->:hz, int64:n) never fails {
+    HPO_a4_nrlat:m = HPO_a4_nrlat{ lp: h0p, own: raw mk_a4_nrlat() }; HPO_a4_nrlat:m2 = HPO_a4_nrlat{ lp: h0p, own: raw mk_a4_nrlat() };
+    SQ_a4_nrlat:s = SQ_a4_nrlat{ q: @m, z: 1i64 }; SQ_a4_nrlat:s2 = SQ_a4_nrlat{ q: @m2, z: 2i64 };
+    discard(raw w_a4_nrlat(@s, @s2, hq, n));
+    int64->:e2 = raw fp_a4_nrlat((<-(s.q)).lp);
+    discard(raw growh_a4_nrlat(hq));
+    pass (<-e2) + 6i64;
+};
+func:f_a4_nrlat = int64(int64:n) never fails {
+    H_a4_nrlat:hz = raw mkh_a4_nrlat(); H_a4_nrlat:h0 = raw mkh_a4_nrlat(); H_a4_nrlat:h2 = raw mkh_a4_nrlat();
+    pass raw g_a4_nrlat(@h0, @h2, @hz, n);
+};
+func:cell_main_a4_nrlat = int32() never fails { pass (((raw f_a4_nrlat(1i64)) + 60i64) =>! int32); };
+struct:K_a4_wrat = { int64:k; };
+struct:H_a4_wrat = { List<int64>:l; int64:k; K_a4_wrat:kk; };
+func:mk_a4_wrat = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_a4_wrat = H_a4_wrat() never fails { pass H_a4_wrat{ l: raw mk_a4_wrat(), k: 2i64, kk: K_a4_wrat{ k: 3i64 } }; };
+func:growh_a4_wrat = int64(H_a4_wrat->:w_a4_wrat) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w_a4_wrat.l, 1i64); } pass 7i64; };
+func:growl_a4_wrat = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_a4_wrat = int64->(H_a4_wrat->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_a4_wrat = H_a4_wrat->(H_a4_wrat->:q) never fails { pass q; };
+func:getl_a4_wrat = List<int64>->(H_a4_wrat->:w_a4_wrat) never fails { pass @w_a4_wrat.l; };
+struct:HPO_a4_wrat = { H_a4_wrat->:lp; List<int64>:own; };
+struct:SQ_a4_wrat = { HPO_a4_wrat->:q; int64:z; };
+struct:SR_a4_wrat = { SQ_a4_wrat->:sq; int64:z; };
+struct:SL_a4_wrat = { List<int64>->:l; int64:z; };
+struct:SL2_a4_wrat = { SL_a4_wrat:s; int64:z; };
+struct:SLP_a4_wrat = { SL_a4_wrat->:sp; int64:z; };
+struct:SQB_a4_wrat = { HPO_a4_wrat->:q; int64:z; };
+struct:HPB_a4_wrat = { H_a4_wrat->:lp; List<int64>:own; };
+struct:PV_a4_wrat = { H_a4_wrat->:p; int64:v; };
+struct:HPV_a4_wrat = { H_a4_wrat->:lp; List<PV_a4_wrat>:own; };
+struct:SLV_a4_wrat = { List<PV_a4_wrat>->:l; int64:z; };
+struct:SQV_a4_wrat = { HPV_a4_wrat->:q; int64:z; };
+func:getown_a4_wrat = List<int64>->(HPO_a4_wrat->:w_a4_wrat) never fails { pass @w_a4_wrat.own; };
+func:getownv_a4_wrat = List<PV_a4_wrat>->(HPV_a4_wrat->:w_a4_wrat) never fails { pass @w_a4_wrat.own; };
+func:mkv_a4_wrat = List<PV_a4_wrat>(H_a4_wrat->:h) never fails { List<PV_a4_wrat>:l = raw list_init::<PV_a4_wrat>(1i64); drop list_push(@l, PV_a4_wrat{ p: h, v: 1i64 }); pass l; };
+func:idp_a4_wrat = HPO_a4_wrat->(HPO_a4_wrat->:w_a4_wrat) never fails { pass w_a4_wrat; };
+func:cvq_a4_wrat = SQ_a4_wrat->(SQB_a4_wrat->:b) never fails { pass ((b =>! any->) =>! SQ_a4_wrat->); };
+func:put_a4_wrat = int64(HPO_a4_wrat->:p, H_a4_wrat->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_a4_wrat = { SQ_a4_wrat->:sq; int64:z; };
+struct:ST_a4_wrat = { SR_a4_wrat->:sr; int64:z; };
+struct:SPP_a4_wrat = { HPO_a4_wrat->->:qq; int64:z; };
+struct:SPPP_a4_wrat = { HPO_a4_wrat->->->:qqq; int64:z; };
+struct:SQX_a4_wrat = { HPB_a4_wrat->:q; int64:z; };
+struct:HN_a4_wrat = { int64:a; int64:b; };
+struct:SN_a4_wrat = { HN_a4_wrat->:q; int64:z; };
+struct:SA_a4_wrat = { any->:q; int64:z; };
+func:put2_a4_wrat = int64(SQ_a4_wrat->:p, H_a4_wrat->:v) never fails { (<-((<-p).q)).lp = v; pass 7i64; };
+func:getq_a4_wrat = HPO_a4_wrat->(SQ_a4_wrat->:w_a4_wrat) never fails { pass (<-w_a4_wrat).q; };
+func:putgrow_a4_wrat = int64(HPO_a4_wrat->:p, H_a4_wrat->:v) never fails { p.lp = v; loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:mksq_a4_wrat = SQ_a4_wrat(HPO_a4_wrat->:p) never fails { pass SQ_a4_wrat{ q: p, z: 1i64 }; };
+func:cpsq_a4_wrat = SQ_a4_wrat(SQ_a4_wrat->:w_a4_wrat) never fails { pass SQ_a4_wrat{ q: (<-w_a4_wrat).q, z: 2i64 }; };
+struct:SO_a4_wrat = { HPO_a4_wrat->?:oq; int64:z; };
+struct:SRO_a4_wrat = { SO_a4_wrat->:so; int64:z; };
+func:g3p_a4_wrat = int64(HPO_a4_wrat->:a, HPO_a4_wrat->:b, H_a4_wrat->:v, int64:n) never fails { a = b; (<-a).lp = v; pass 7i64; };
+func:rdpp_a4_wrat = int64(SQ_a4_wrat->->:pp) never fails { pass (<-(<-pp)).z; };
+func:w_a4_wrat = int64(SQ_a4_wrat->:p, SQ_a4_wrat->:p2, H_a4_wrat->:v, int64:n) never fails { discard(raw rdpp_a4_wrat(@p)); SR_a4_wrat:ls = SR_a4_wrat{ sq: p, z: 1i64 }; SR_a4_wrat->:lr = @ls; (<-((<-((<-lr).sq)).q)).own = raw mk_a4_wrat(); pass 7i64; };
+func:g_a4_wrat = int64(H_a4_wrat->:h0p, H_a4_wrat->:hq, H_a4_wrat->:hz, int64:n) never fails {
+    HPO_a4_wrat:m = HPO_a4_wrat{ lp: h0p, own: raw mk_a4_wrat() }; HPO_a4_wrat:m2 = HPO_a4_wrat{ lp: h0p, own: raw mk_a4_wrat() };
+    SQ_a4_wrat:s = SQ_a4_wrat{ q: @m, z: 1i64 }; SQ_a4_wrat:s2 = SQ_a4_wrat{ q: @m2, z: 2i64 };
+    int64->:e2 = @((<-(s.q)).own[0i64]);
+    discard(raw w_a4_wrat(@s, @s2, hq, n));
+    pass (<-e2) + 6i64;
+};
+func:f_a4_wrat = int64(int64:n) never fails {
+    H_a4_wrat:hz = raw mkh_a4_wrat(); H_a4_wrat:h0 = raw mkh_a4_wrat(); H_a4_wrat:h2 = raw mkh_a4_wrat();
+    pass raw g_a4_wrat(@h0, @h2, @hz, n);
+};
+func:cell_main_a4_wrat = int32() never fails { pass (((raw f_a4_wrat(1i64)) + 60i64) =>! int32); };
+struct:K_a4_slfdat = { int64:k; };
+struct:H_a4_slfdat = { List<int64>:l; int64:k; K_a4_slfdat:kk; };
+func:mk_a4_slfdat = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_a4_slfdat = H_a4_slfdat() never fails { pass H_a4_slfdat{ l: raw mk_a4_slfdat(), k: 2i64, kk: K_a4_slfdat{ k: 3i64 } }; };
+func:growh_a4_slfdat = int64(H_a4_slfdat->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_a4_slfdat = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_a4_slfdat = int64->(H_a4_slfdat->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_a4_slfdat = H_a4_slfdat->(H_a4_slfdat->:q) never fails { pass q; };
+func:getl_a4_slfdat = List<int64>->(H_a4_slfdat->:w) never fails { pass @w.l; };
+struct:HPO_a4_slfdat = { H_a4_slfdat->:lp; List<int64>:own; };
+struct:SQ_a4_slfdat = { HPO_a4_slfdat->:q; int64:z; };
+struct:SR_a4_slfdat = { SQ_a4_slfdat->:sq; int64:z; };
+struct:SL_a4_slfdat = { List<int64>->:l; int64:z; };
+struct:SL2_a4_slfdat = { SL_a4_slfdat:s; int64:z; };
+struct:SLP_a4_slfdat = { SL_a4_slfdat->:sp; int64:z; };
+struct:SQB_a4_slfdat = { HPO_a4_slfdat->:q; int64:z; };
+struct:HPB_a4_slfdat = { H_a4_slfdat->:lp; List<int64>:own; };
+struct:PV_a4_slfdat = { H_a4_slfdat->:p; int64:v; };
+struct:HPV_a4_slfdat = { H_a4_slfdat->:lp; List<PV_a4_slfdat>:own; };
+struct:SLV_a4_slfdat = { List<PV_a4_slfdat>->:l; int64:z; };
+struct:SQV_a4_slfdat = { HPV_a4_slfdat->:q; int64:z; };
+func:getown_a4_slfdat = List<int64>->(HPO_a4_slfdat->:w) never fails { pass @w.own; };
+func:getownv_a4_slfdat = List<PV_a4_slfdat>->(HPV_a4_slfdat->:w) never fails { pass @w.own; };
+func:mkv_a4_slfdat = List<PV_a4_slfdat>(H_a4_slfdat->:h) never fails { List<PV_a4_slfdat>:l = raw list_init::<PV_a4_slfdat>(1i64); drop list_push(@l, PV_a4_slfdat{ p: h, v: 1i64 }); pass l; };
+func:idp_a4_slfdat = HPO_a4_slfdat->(HPO_a4_slfdat->:w) never fails { pass w; };
+func:cvq_a4_slfdat = SQ_a4_slfdat->(SQB_a4_slfdat->:b) never fails { pass ((b =>! any->) =>! SQ_a4_slfdat->); };
+func:put_a4_slfdat = int64(HPO_a4_slfdat->:p, H_a4_slfdat->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_a4_slfdat = { SQ_a4_slfdat->:sq; int64:z; };
+struct:ST_a4_slfdat = { SR_a4_slfdat->:sr; int64:z; };
+struct:SPP_a4_slfdat = { HPO_a4_slfdat->->:qq; int64:z; };
+struct:SPPP_a4_slfdat = { HPO_a4_slfdat->->->:qqq; int64:z; };
+struct:SQX_a4_slfdat = { HPB_a4_slfdat->:q; int64:z; };
+struct:HN_a4_slfdat = { int64:a; int64:b; };
+struct:SN_a4_slfdat = { HN_a4_slfdat->:q; int64:z; };
+struct:SA_a4_slfdat = { any->:q; int64:z; };
+func:put2_a4_slfdat = int64(SQ_a4_slfdat->:p, H_a4_slfdat->:v) never fails { (<-((<-p).q)).lp = v; pass 7i64; };
+func:getq_a4_slfdat = HPO_a4_slfdat->(SQ_a4_slfdat->:w) never fails { pass (<-w).q; };
+func:putgrow_a4_slfdat = int64(HPO_a4_slfdat->:p, H_a4_slfdat->:v) never fails { p.lp = v; loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:mksq_a4_slfdat = SQ_a4_slfdat(HPO_a4_slfdat->:p) never fails { pass SQ_a4_slfdat{ q: p, z: 1i64 }; };
+func:cpsq_a4_slfdat = SQ_a4_slfdat(SQ_a4_slfdat->:w) never fails { pass SQ_a4_slfdat{ q: (<-w).q, z: 2i64 }; };
+struct:SO_a4_slfdat = { HPO_a4_slfdat->?:oq; int64:z; };
+struct:SRO_a4_slfdat = { SO_a4_slfdat->:so; int64:z; };
+func:g3p_a4_slfdat = int64(HPO_a4_slfdat->:a, HPO_a4_slfdat->:b, H_a4_slfdat->:v, int64:n) never fails { a = b; (<-a).lp = v; pass 7i64; };
+func:rdsl_a4_slfdat = int64(SQ_a4_slfdat[]->:pa) never fails { pass (<-pa)[0i64].z; };
+struct:SVQ_a4_slfdat = { SQ_a4_slfdat[]:sl; int64:z; };
+func:ws_a4_slfdat = int64(SQ_a4_slfdat[]:a, H_a4_slfdat->:v, int64:n) never fails { discard(raw rdsl_a4_slfdat(@a)); SVQ_a4_slfdat:lr = SVQ_a4_slfdat{ sl: a, z: 1i64 }; (<-(lr.sl[0i64].q)).lp = v; pass 7i64; };
+func:g_a4_slfdat = int64(H_a4_slfdat->:h0p, H_a4_slfdat->:hq, H_a4_slfdat->:hz, int64:n) never fails {
+    HPO_a4_slfdat:m = HPO_a4_slfdat{ lp: h0p, own: raw mk_a4_slfdat() }; HPO_a4_slfdat:m2 = HPO_a4_slfdat{ lp: h0p, own: raw mk_a4_slfdat() };
+    SQ_a4_slfdat:s = SQ_a4_slfdat{ q: @m, z: 1i64 }; SQ_a4_slfdat:s2 = SQ_a4_slfdat{ q: @m2, z: 2i64 };
+    SQ_a4_slfdat[1]:sa = [SQ_a4_slfdat{ q: @m, z: 1i64 }];
+    discard(raw ws_a4_slfdat(sa[0i64...1i64], hq, n));
+    int64->:e2 = raw fp_a4_slfdat((<-(sa[0i64].q)).lp);
+    discard(raw growh_a4_slfdat(hq));
+    pass (<-e2) + 6i64;
+};
+func:f_a4_slfdat = int64(int64:n) never fails {
+    H_a4_slfdat:hz = raw mkh_a4_slfdat(); H_a4_slfdat:h0 = raw mkh_a4_slfdat(); H_a4_slfdat:h2 = raw mkh_a4_slfdat();
+    pass raw g_a4_slfdat(@h0, @h2, @hz, n);
+};
+func:cell_main_a4_slfdat = int32() never fails { pass (((raw f_a4_slfdat(1i64)) + 60i64) =>! int32); };
+struct:K_a4_dfat = { int64:k; };
+struct:H_a4_dfat = { List<int64>:l; int64:k; K_a4_dfat:kk; };
+func:mk_a4_dfat = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_a4_dfat = H_a4_dfat() never fails { pass H_a4_dfat{ l: raw mk_a4_dfat(), k: 2i64, kk: K_a4_dfat{ k: 3i64 } }; };
+func:growh_a4_dfat = int64(H_a4_dfat->:w_a4_dfat) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w_a4_dfat.l, 1i64); } pass 7i64; };
+func:growl_a4_dfat = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_a4_dfat = int64->(H_a4_dfat->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_a4_dfat = H_a4_dfat->(H_a4_dfat->:q) never fails { pass q; };
+func:getl_a4_dfat = List<int64>->(H_a4_dfat->:w_a4_dfat) never fails { pass @w_a4_dfat.l; };
+struct:HPO_a4_dfat = { H_a4_dfat->:lp; List<int64>:own; };
+struct:SQ_a4_dfat = { HPO_a4_dfat->:q; int64:z; };
+struct:SR_a4_dfat = { SQ_a4_dfat->:sq; int64:z; };
+struct:SL_a4_dfat = { List<int64>->:l; int64:z; };
+struct:SL2_a4_dfat = { SL_a4_dfat:s; int64:z; };
+struct:SLP_a4_dfat = { SL_a4_dfat->:sp; int64:z; };
+struct:SQB_a4_dfat = { HPO_a4_dfat->:q; int64:z; };
+struct:HPB_a4_dfat = { H_a4_dfat->:lp; List<int64>:own; };
+struct:PV_a4_dfat = { H_a4_dfat->:p; int64:v; };
+struct:HPV_a4_dfat = { H_a4_dfat->:lp; List<PV_a4_dfat>:own; };
+struct:SLV_a4_dfat = { List<PV_a4_dfat>->:l; int64:z; };
+struct:SQV_a4_dfat = { HPV_a4_dfat->:q; int64:z; };
+func:getown_a4_dfat = List<int64>->(HPO_a4_dfat->:w_a4_dfat) never fails { pass @w_a4_dfat.own; };
+func:getownv_a4_dfat = List<PV_a4_dfat>->(HPV_a4_dfat->:w_a4_dfat) never fails { pass @w_a4_dfat.own; };
+func:mkv_a4_dfat = List<PV_a4_dfat>(H_a4_dfat->:h) never fails { List<PV_a4_dfat>:l = raw list_init::<PV_a4_dfat>(1i64); drop list_push(@l, PV_a4_dfat{ p: h, v: 1i64 }); pass l; };
+func:idp_a4_dfat = HPO_a4_dfat->(HPO_a4_dfat->:w_a4_dfat) never fails { pass w_a4_dfat; };
+func:cvq_a4_dfat = SQ_a4_dfat->(SQB_a4_dfat->:b) never fails { pass ((b =>! any->) =>! SQ_a4_dfat->); };
+func:put_a4_dfat = int64(HPO_a4_dfat->:p, H_a4_dfat->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_a4_dfat = { SQ_a4_dfat->:sq; int64:z; };
+struct:ST_a4_dfat = { SR_a4_dfat->:sr; int64:z; };
+struct:SPP_a4_dfat = { HPO_a4_dfat->->:qq; int64:z; };
+struct:SPPP_a4_dfat = { HPO_a4_dfat->->->:qqq; int64:z; };
+struct:SQX_a4_dfat = { HPB_a4_dfat->:q; int64:z; };
+struct:HN_a4_dfat = { int64:a; int64:b; };
+struct:SN_a4_dfat = { HN_a4_dfat->:q; int64:z; };
+struct:SA_a4_dfat = { any->:q; int64:z; };
+func:put2_a4_dfat = int64(SQ_a4_dfat->:p, H_a4_dfat->:v) never fails { (<-((<-p).q)).lp = v; pass 7i64; };
+func:getq_a4_dfat = HPO_a4_dfat->(SQ_a4_dfat->:w_a4_dfat) never fails { pass (<-w_a4_dfat).q; };
+func:putgrow_a4_dfat = int64(HPO_a4_dfat->:p, H_a4_dfat->:v) never fails { p.lp = v; loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:mksq_a4_dfat = SQ_a4_dfat(HPO_a4_dfat->:p) never fails { pass SQ_a4_dfat{ q: p, z: 1i64 }; };
+func:cpsq_a4_dfat = SQ_a4_dfat(SQ_a4_dfat->:w_a4_dfat) never fails { pass SQ_a4_dfat{ q: (<-w_a4_dfat).q, z: 2i64 }; };
+struct:SO_a4_dfat = { HPO_a4_dfat->?:oq; int64:z; };
+struct:SRO_a4_dfat = { SO_a4_dfat->:so; int64:z; };
+func:g3p_a4_dfat = int64(HPO_a4_dfat->:a, HPO_a4_dfat->:b, H_a4_dfat->:v, int64:n) never fails { a = b; (<-a).lp = v; pass 7i64; };
+func:rdpp_a4_dfat = int64(SQ_a4_dfat->->:pp) never fails { pass (<-(<-pp)).z; };
+func:w_a4_dfat = int64(SQ_a4_dfat->:p, SQ_a4_dfat->:p2, H_a4_dfat->:v, int64:n) never fails { defer { discard(raw rdpp_a4_dfat(@p)); } SR_a4_dfat:ls = SR_a4_dfat{ sq: p, z: 1i64 }; SR_a4_dfat->:lr = @ls; (<-((<-((<-lr).sq)).q)).lp = v; pass 7i64; };
+func:g_a4_dfat = int64(H_a4_dfat->:h0p, H_a4_dfat->:hq, H_a4_dfat->:hz, int64:n) never fails {
+    HPO_a4_dfat:m = HPO_a4_dfat{ lp: h0p, own: raw mk_a4_dfat() }; HPO_a4_dfat:m2 = HPO_a4_dfat{ lp: h0p, own: raw mk_a4_dfat() };
+    SQ_a4_dfat:s = SQ_a4_dfat{ q: @m, z: 1i64 }; SQ_a4_dfat:s2 = SQ_a4_dfat{ q: @m2, z: 2i64 };
+    discard(raw w_a4_dfat(@s, @s2, hq, n));
+    int64->:e2 = raw fp_a4_dfat((<-(s.q)).lp);
+    discard(raw growh_a4_dfat(hq));
+    pass (<-e2) + 6i64;
+};
+func:f_a4_dfat = int64(int64:n) never fails {
+    H_a4_dfat:hz = raw mkh_a4_dfat(); H_a4_dfat:h0 = raw mkh_a4_dfat(); H_a4_dfat:h2 = raw mkh_a4_dfat();
+    pass raw g_a4_dfat(@h0, @h2, @hz, n);
+};
+func:cell_main_a4_dfat = int32() never fails { pass (((raw f_a4_dfat(1i64)) + 60i64) =>! int32); };
+// GUARD, KILLS MUTANT n07 (row 2, step 5): the no-root branch's either/or back, main's record skipped where the marked parameter's chain is
+// walked. `p = p2` in a branch never taken marks `p`; the store through `@p.s` under a ternary lands in the first argument,
+// which only main's record of it at `p.s` refuses (a156's `a1_pa2` form).
+struct:K_k_pa7_r1 = { int64:k; };
+struct:H_k_pa7_r1 = { List<int64>:l; int64:k; K_k_pa7_r1:kk; };
+func:mk_k_pa7_r1 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_k_pa7_r1 = H_k_pa7_r1() never fails { pass H_k_pa7_r1{ l: raw mk_k_pa7_r1(), k: 2i64, kk: K_k_pa7_r1{ k: 3i64 } }; };
+func:growh_k_pa7_r1 = int64(H_k_pa7_r1->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_k_pa7_r1 = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_k_pa7_r1 = int64->(H_k_pa7_r1->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_k_pa7_r1 = H_k_pa7_r1->(H_k_pa7_r1->:q) never fails { pass q; };
+func:getl_k_pa7_r1 = List<int64>->(H_k_pa7_r1->:w) never fails { pass @w.l; };
+struct:HPO_k_pa7_r1 = { H_k_pa7_r1->:lp; List<int64>:own; };
+struct:SQ_k_pa7_r1 = { HPO_k_pa7_r1->:q; int64:z; };
+struct:SR_k_pa7_r1 = { SQ_k_pa7_r1->:sq; int64:z; };
+struct:SL_k_pa7_r1 = { List<int64>->:l; int64:z; };
+struct:SL2_k_pa7_r1 = { SL_k_pa7_r1:s; int64:z; };
+struct:SLP_k_pa7_r1 = { SL_k_pa7_r1->:sp; int64:z; };
+struct:SQB_k_pa7_r1 = { HPO_k_pa7_r1->:q; int64:z; };
+struct:HPB_k_pa7_r1 = { H_k_pa7_r1->:lp; List<int64>:own; };
+struct:PV_k_pa7_r1 = { H_k_pa7_r1->:p; int64:v; };
+struct:HPV_k_pa7_r1 = { H_k_pa7_r1->:lp; List<PV_k_pa7_r1>:own; };
+struct:SLV_k_pa7_r1 = { List<PV_k_pa7_r1>->:l; int64:z; };
+struct:SQV_k_pa7_r1 = { HPV_k_pa7_r1->:q; int64:z; };
+func:getown_k_pa7_r1 = List<int64>->(HPO_k_pa7_r1->:w) never fails { pass @w.own; };
+func:getownv_k_pa7_r1 = List<PV_k_pa7_r1>->(HPV_k_pa7_r1->:w) never fails { pass @w.own; };
+func:mkv_k_pa7_r1 = List<PV_k_pa7_r1>(H_k_pa7_r1->:h) never fails { List<PV_k_pa7_r1>:l = raw list_init::<PV_k_pa7_r1>(1i64); drop list_push(@l, PV_k_pa7_r1{ p: h, v: 1i64 }); pass l; };
+func:idp_k_pa7_r1 = HPO_k_pa7_r1->(HPO_k_pa7_r1->:w) never fails { pass w; };
+func:cvq_k_pa7_r1 = SQ_k_pa7_r1->(SQB_k_pa7_r1->:b) never fails { pass ((b =>! any->) =>! SQ_k_pa7_r1->); };
+func:put_k_pa7_r1 = int64(HPO_k_pa7_r1->:p, H_k_pa7_r1->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_k_pa7_r1 = { SQ_k_pa7_r1->:sq; int64:z; };
+struct:ST_k_pa7_r1 = { SR_k_pa7_r1->:sr; int64:z; };
+struct:SPP_k_pa7_r1 = { HPO_k_pa7_r1->->:qq; int64:z; };
+struct:SPPP_k_pa7_r1 = { HPO_k_pa7_r1->->->:qqq; int64:z; };
+struct:SQX_k_pa7_r1 = { HPB_k_pa7_r1->:q; int64:z; };
+struct:HN_k_pa7_r1 = { int64:a; int64:b; };
+struct:SN_k_pa7_r1 = { HN_k_pa7_r1->:q; int64:z; };
+struct:SA_k_pa7_r1 = { any->:q; int64:z; };
+func:put2_k_pa7_r1 = int64(SQ_k_pa7_r1->:p, H_k_pa7_r1->:v) never fails { (<-((<-p).q)).lp = v; pass 7i64; };
+func:getq_k_pa7_r1 = HPO_k_pa7_r1->(SQ_k_pa7_r1->:w) never fails { pass (<-w).q; };
+func:putgrow_k_pa7_r1 = int64(HPO_k_pa7_r1->:p, H_k_pa7_r1->:v) never fails { p.lp = v; loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:mksq_k_pa7_r1 = SQ_k_pa7_r1(HPO_k_pa7_r1->:p) never fails { pass SQ_k_pa7_r1{ q: p, z: 1i64 }; };
+func:cpsq_k_pa7_r1 = SQ_k_pa7_r1(SQ_k_pa7_r1->:w) never fails { pass SQ_k_pa7_r1{ q: (<-w).q, z: 2i64 }; };
+struct:SO_k_pa7_r1 = { HPO_k_pa7_r1->?:oq; int64:z; };
+struct:SRO_k_pa7_r1 = { SO_k_pa7_r1->:so; int64:z; };
+func:g3p_k_pa7_r1 = int64(HPO_k_pa7_r1->:a, HPO_k_pa7_r1->:b, H_k_pa7_r1->:v, int64:n) never fails { a = b; (<-a).lp = v; pass 7i64; };
+func:rdpp_k_pa7_r1 = int64(SQ_k_pa7_r1->->:pp) never fails { pass (<-(<-pp)).z; };
+struct:SW_k_pa7_r1 = { SQ_k_pa7_r1:s; SQ_k_pa7_r1:s2; int64:z; };
+func:setsw_k_pa7_r1 = int64(SW_k_pa7_r1->->:pp, SW_k_pa7_r1->:x) never fails { <-pp = x; pass 7i64; };
+func:cla_k_pa7_r1 = int64(SW_k_pa7_r1->:p, SW_k_pa7_r1->:p2, H_k_pa7_r1->:v, int64:n) never fails { if (n == 77i64) { p = p2; } (<-((<-(is (n > 0i64) : @p.s : @p.s2)).q)).lp = v; pass 7i64; };
+func:g_k_pa7_r1 = int64(H_k_pa7_r1->:h0p, H_k_pa7_r1->:hq, H_k_pa7_r1->:hz, int64:n) never fails {
+    HPO_k_pa7_r1:mo = HPO_k_pa7_r1{ lp: h0p, own: raw mk_k_pa7_r1() }; HPO_k_pa7_r1:mo2 = HPO_k_pa7_r1{ lp: h0p, own: raw mk_k_pa7_r1() };
+    SW_k_pa7_r1:w = SW_k_pa7_r1{ s: SQ_k_pa7_r1{ q: @mo, z: 1i64 }, s2: SQ_k_pa7_r1{ q: @mo, z: 1i64 }, z: 0i64 };
+    SW_k_pa7_r1:w2 = SW_k_pa7_r1{ s: SQ_k_pa7_r1{ q: @mo2, z: 1i64 }, s2: SQ_k_pa7_r1{ q: @mo2, z: 1i64 }, z: 0i64 };
+    discard(raw cla_k_pa7_r1(@w, @w2, hq, n));
+    int64->:e2 = raw fp_k_pa7_r1((<-(w.s.q)).lp);
+    discard(raw growh_k_pa7_r1(hq));
+    pass (<-e2) + 6i64;
+};
+func:f_k_pa7_r1 = int64(int64:n) never fails {
+    H_k_pa7_r1:hz = raw mkh_k_pa7_r1(); H_k_pa7_r1:h0 = raw mkh_k_pa7_r1(); H_k_pa7_r1:h2 = raw mkh_k_pa7_r1();
+    pass raw g_k_pa7_r1(@h0, @h2, @hz, n);
+};
+func:cell_main_k_pa7_r1 = int32() never fails { pass (((raw f_k_pa7_r1(1i64)) + 60i64) =>! int32); };
+
+// GUARD, KILLS MUTANTS n11 and n13 (row 2, step 5): the either/or back in `walk_chain_key` (mark read true) and in `rrti_path`.
+// `a4_slfdat` with `a = a;` in a branch never taken in place of `rdsl(@a)`: the slice parameter is marked by a real road,
+// and the store through the local holding it lands in the first argument.
+struct:K_k_slfdat_r1 = { int64:k; };
+struct:H_k_slfdat_r1 = { List<int64>:l; int64:k; K_k_slfdat_r1:kk; };
+func:mk_k_slfdat_r1 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_k_slfdat_r1 = H_k_slfdat_r1() never fails { pass H_k_slfdat_r1{ l: raw mk_k_slfdat_r1(), k: 2i64, kk: K_k_slfdat_r1{ k: 3i64 } }; };
+func:growh_k_slfdat_r1 = int64(H_k_slfdat_r1->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_k_slfdat_r1 = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_k_slfdat_r1 = int64->(H_k_slfdat_r1->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_k_slfdat_r1 = H_k_slfdat_r1->(H_k_slfdat_r1->:q) never fails { pass q; };
+func:getl_k_slfdat_r1 = List<int64>->(H_k_slfdat_r1->:w) never fails { pass @w.l; };
+struct:HPO_k_slfdat_r1 = { H_k_slfdat_r1->:lp; List<int64>:own; };
+struct:SQ_k_slfdat_r1 = { HPO_k_slfdat_r1->:q; int64:z; };
+struct:SR_k_slfdat_r1 = { SQ_k_slfdat_r1->:sq; int64:z; };
+struct:SL_k_slfdat_r1 = { List<int64>->:l; int64:z; };
+struct:SL2_k_slfdat_r1 = { SL_k_slfdat_r1:s; int64:z; };
+struct:SLP_k_slfdat_r1 = { SL_k_slfdat_r1->:sp; int64:z; };
+struct:SQB_k_slfdat_r1 = { HPO_k_slfdat_r1->:q; int64:z; };
+struct:HPB_k_slfdat_r1 = { H_k_slfdat_r1->:lp; List<int64>:own; };
+struct:PV_k_slfdat_r1 = { H_k_slfdat_r1->:p; int64:v; };
+struct:HPV_k_slfdat_r1 = { H_k_slfdat_r1->:lp; List<PV_k_slfdat_r1>:own; };
+struct:SLV_k_slfdat_r1 = { List<PV_k_slfdat_r1>->:l; int64:z; };
+struct:SQV_k_slfdat_r1 = { HPV_k_slfdat_r1->:q; int64:z; };
+func:getown_k_slfdat_r1 = List<int64>->(HPO_k_slfdat_r1->:w) never fails { pass @w.own; };
+func:getownv_k_slfdat_r1 = List<PV_k_slfdat_r1>->(HPV_k_slfdat_r1->:w) never fails { pass @w.own; };
+func:mkv_k_slfdat_r1 = List<PV_k_slfdat_r1>(H_k_slfdat_r1->:h) never fails { List<PV_k_slfdat_r1>:l = raw list_init::<PV_k_slfdat_r1>(1i64); drop list_push(@l, PV_k_slfdat_r1{ p: h, v: 1i64 }); pass l; };
+func:idp_k_slfdat_r1 = HPO_k_slfdat_r1->(HPO_k_slfdat_r1->:w) never fails { pass w; };
+func:cvq_k_slfdat_r1 = SQ_k_slfdat_r1->(SQB_k_slfdat_r1->:b) never fails { pass ((b =>! any->) =>! SQ_k_slfdat_r1->); };
+func:put_k_slfdat_r1 = int64(HPO_k_slfdat_r1->:p, H_k_slfdat_r1->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_k_slfdat_r1 = { SQ_k_slfdat_r1->:sq; int64:z; };
+struct:ST_k_slfdat_r1 = { SR_k_slfdat_r1->:sr; int64:z; };
+struct:SPP_k_slfdat_r1 = { HPO_k_slfdat_r1->->:qq; int64:z; };
+struct:SPPP_k_slfdat_r1 = { HPO_k_slfdat_r1->->->:qqq; int64:z; };
+struct:SQX_k_slfdat_r1 = { HPB_k_slfdat_r1->:q; int64:z; };
+struct:HN_k_slfdat_r1 = { int64:a; int64:b; };
+struct:SN_k_slfdat_r1 = { HN_k_slfdat_r1->:q; int64:z; };
+struct:SA_k_slfdat_r1 = { any->:q; int64:z; };
+func:put2_k_slfdat_r1 = int64(SQ_k_slfdat_r1->:p, H_k_slfdat_r1->:v) never fails { (<-((<-p).q)).lp = v; pass 7i64; };
+func:getq_k_slfdat_r1 = HPO_k_slfdat_r1->(SQ_k_slfdat_r1->:w) never fails { pass (<-w).q; };
+func:putgrow_k_slfdat_r1 = int64(HPO_k_slfdat_r1->:p, H_k_slfdat_r1->:v) never fails { p.lp = v; loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:mksq_k_slfdat_r1 = SQ_k_slfdat_r1(HPO_k_slfdat_r1->:p) never fails { pass SQ_k_slfdat_r1{ q: p, z: 1i64 }; };
+func:cpsq_k_slfdat_r1 = SQ_k_slfdat_r1(SQ_k_slfdat_r1->:w) never fails { pass SQ_k_slfdat_r1{ q: (<-w).q, z: 2i64 }; };
+struct:SO_k_slfdat_r1 = { HPO_k_slfdat_r1->?:oq; int64:z; };
+struct:SRO_k_slfdat_r1 = { SO_k_slfdat_r1->:so; int64:z; };
+func:g3p_k_slfdat_r1 = int64(HPO_k_slfdat_r1->:a, HPO_k_slfdat_r1->:b, H_k_slfdat_r1->:v, int64:n) never fails { a = b; (<-a).lp = v; pass 7i64; };
+func:rdsl_k_slfdat_r1 = int64(SQ_k_slfdat_r1[]->:pa) never fails { pass (<-pa)[0i64].z; };
+struct:SVQ_k_slfdat_r1 = { SQ_k_slfdat_r1[]:sl; int64:z; };
+func:ws_k_slfdat_r1 = int64(SQ_k_slfdat_r1[]:a, H_k_slfdat_r1->:v, int64:n) never fails { if (n == 77i64) { a = a; } SVQ_k_slfdat_r1:lr = SVQ_k_slfdat_r1{ sl: a, z: 1i64 }; (<-(lr.sl[0i64].q)).lp = v; pass 7i64; };
+func:g_k_slfdat_r1 = int64(H_k_slfdat_r1->:h0p, H_k_slfdat_r1->:hq, H_k_slfdat_r1->:hz, int64:n) never fails {
+    HPO_k_slfdat_r1:m = HPO_k_slfdat_r1{ lp: h0p, own: raw mk_k_slfdat_r1() }; HPO_k_slfdat_r1:m2 = HPO_k_slfdat_r1{ lp: h0p, own: raw mk_k_slfdat_r1() };
+    SQ_k_slfdat_r1:s = SQ_k_slfdat_r1{ q: @m, z: 1i64 }; SQ_k_slfdat_r1:s2 = SQ_k_slfdat_r1{ q: @m2, z: 2i64 };
+    SQ_k_slfdat_r1[1]:sa = [SQ_k_slfdat_r1{ q: @m, z: 1i64 }];
+    discard(raw ws_k_slfdat_r1(sa[0i64...1i64], hq, n));
+    int64->:e2 = raw fp_k_slfdat_r1((<-(sa[0i64].q)).lp);
+    discard(raw growh_k_slfdat_r1(hq));
+    pass (<-e2) + 6i64;
+};
+func:f_k_slfdat_r1 = int64(int64:n) never fails {
+    H_k_slfdat_r1:hz = raw mkh_k_slfdat_r1(); H_k_slfdat_r1:h0 = raw mkh_k_slfdat_r1(); H_k_slfdat_r1:h2 = raw mkh_k_slfdat_r1();
+    pass raw g_k_slfdat_r1(@h0, @h2, @hz, n);
+};
+func:cell_main_k_slfdat_r1 = int32() never fails { pass (((raw f_k_slfdat_r1(1i64)) + 60i64) =>! int32); };
+// GUARD, KILLS MUTANT n07 (row 2, step 5) on a slice parameter: `a = a2` in a branch never taken, the store through `@a[0]` under a
+// ternary lands in the first argument (`k_pa7_r1`'s form over `SQ[]:a`).
+struct:K_k_sl7 = { int64:k; };
+struct:H_k_sl7 = { List<int64>:l; int64:k; K_k_sl7:kk; };
+func:mk_k_sl7 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_k_sl7 = H_k_sl7() never fails { pass H_k_sl7{ l: raw mk_k_sl7(), k: 2i64, kk: K_k_sl7{ k: 3i64 } }; };
+func:growh_k_sl7 = int64(H_k_sl7->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_k_sl7 = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_k_sl7 = int64->(H_k_sl7->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_k_sl7 = H_k_sl7->(H_k_sl7->:q) never fails { pass q; };
+func:getl_k_sl7 = List<int64>->(H_k_sl7->:w) never fails { pass @w.l; };
+struct:HPO_k_sl7 = { H_k_sl7->:lp; List<int64>:own; };
+struct:SQ_k_sl7 = { HPO_k_sl7->:q; int64:z; };
+struct:SR_k_sl7 = { SQ_k_sl7->:sq; int64:z; };
+struct:SL_k_sl7 = { List<int64>->:l; int64:z; };
+struct:SL2_k_sl7 = { SL_k_sl7:s; int64:z; };
+struct:SLP_k_sl7 = { SL_k_sl7->:sp; int64:z; };
+struct:SQB_k_sl7 = { HPO_k_sl7->:q; int64:z; };
+struct:HPB_k_sl7 = { H_k_sl7->:lp; List<int64>:own; };
+struct:PV_k_sl7 = { H_k_sl7->:p; int64:v; };
+struct:HPV_k_sl7 = { H_k_sl7->:lp; List<PV_k_sl7>:own; };
+struct:SLV_k_sl7 = { List<PV_k_sl7>->:l; int64:z; };
+struct:SQV_k_sl7 = { HPV_k_sl7->:q; int64:z; };
+func:getown_k_sl7 = List<int64>->(HPO_k_sl7->:w) never fails { pass @w.own; };
+func:getownv_k_sl7 = List<PV_k_sl7>->(HPV_k_sl7->:w) never fails { pass @w.own; };
+func:mkv_k_sl7 = List<PV_k_sl7>(H_k_sl7->:h) never fails { List<PV_k_sl7>:l = raw list_init::<PV_k_sl7>(1i64); drop list_push(@l, PV_k_sl7{ p: h, v: 1i64 }); pass l; };
+func:idp_k_sl7 = HPO_k_sl7->(HPO_k_sl7->:w) never fails { pass w; };
+func:cvq_k_sl7 = SQ_k_sl7->(SQB_k_sl7->:b) never fails { pass ((b =>! any->) =>! SQ_k_sl7->); };
+func:put_k_sl7 = int64(HPO_k_sl7->:p, H_k_sl7->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_k_sl7 = { SQ_k_sl7->:sq; int64:z; };
+struct:ST_k_sl7 = { SR_k_sl7->:sr; int64:z; };
+struct:SPP_k_sl7 = { HPO_k_sl7->->:qq; int64:z; };
+struct:SPPP_k_sl7 = { HPO_k_sl7->->->:qqq; int64:z; };
+struct:SQX_k_sl7 = { HPB_k_sl7->:q; int64:z; };
+struct:HN_k_sl7 = { int64:a; int64:b; };
+struct:SN_k_sl7 = { HN_k_sl7->:q; int64:z; };
+struct:SA_k_sl7 = { any->:q; int64:z; };
+func:put2_k_sl7 = int64(SQ_k_sl7->:p, H_k_sl7->:v) never fails { (<-((<-p).q)).lp = v; pass 7i64; };
+func:getq_k_sl7 = HPO_k_sl7->(SQ_k_sl7->:w) never fails { pass (<-w).q; };
+func:putgrow_k_sl7 = int64(HPO_k_sl7->:p, H_k_sl7->:v) never fails { p.lp = v; loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:mksq_k_sl7 = SQ_k_sl7(HPO_k_sl7->:p) never fails { pass SQ_k_sl7{ q: p, z: 1i64 }; };
+func:cpsq_k_sl7 = SQ_k_sl7(SQ_k_sl7->:w) never fails { pass SQ_k_sl7{ q: (<-w).q, z: 2i64 }; };
+struct:SO_k_sl7 = { HPO_k_sl7->?:oq; int64:z; };
+struct:SRO_k_sl7 = { SO_k_sl7->:so; int64:z; };
+func:g3p_k_sl7 = int64(HPO_k_sl7->:a, HPO_k_sl7->:b, H_k_sl7->:v, int64:n) never fails { a = b; (<-a).lp = v; pass 7i64; };
+func:rdpp_k_sl7 = int64(SQ_k_sl7->->:pp) never fails { pass (<-(<-pp)).z; };
+func:ws_k_sl7 = int64(SQ_k_sl7[]:a, SQ_k_sl7[]:a2, H_k_sl7->:v, int64:n) never fails { if (n == 77i64) { a = a2; } (<-((<-(is (n >= 0i64) : @a[0i64] : @a[0i64])).q)).lp = v; pass 7i64; };
+func:g_k_sl7 = int64(H_k_sl7->:h0p, H_k_sl7->:hq, H_k_sl7->:hz, int64:n) never fails {
+    HPO_k_sl7:m = HPO_k_sl7{ lp: h0p, own: raw mk_k_sl7() }; HPO_k_sl7:m2 = HPO_k_sl7{ lp: h0p, own: raw mk_k_sl7() };
+    SQ_k_sl7[1]:sa = [SQ_k_sl7{ q: @m, z: 1i64 }]; SQ_k_sl7[1]:sa2 = [SQ_k_sl7{ q: @m2, z: 2i64 }];
+    discard(raw ws_k_sl7(sa[0i64...1i64], sa2[0i64...1i64], hq, n));
+    int64->:e2 = raw fp_k_sl7((<-(sa[0i64].q)).lp);
+    discard(raw growh_k_sl7(hq));
+    pass (<-e2) + 6i64;
+};
+func:f_k_sl7 = int64(int64:n) never fails {
+    H_k_sl7:hz = raw mkh_k_sl7(); H_k_sl7:h0 = raw mkh_k_sl7(); H_k_sl7:h2 = raw mkh_k_sl7();
+    pass raw g_k_sl7(@h0, @h2, @hz, n);
+};
+func:cell_main_k_sl7 = int32() never fails { pass (((raw f_k_sl7(1i64)) + 60i64) =>! int32); };
+
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};
