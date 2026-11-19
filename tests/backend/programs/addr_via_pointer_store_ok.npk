@@ -7,10 +7,13 @@ mod:addr_via_pointer_store_ok;
 // pointer inward from the place's base), and a store records on each target and then on the address ref itself, as main does
 // (`record_refs_at_target` wraps the old body, `record_refs_at_target_one`). `rrti_path`'s and `rrti_chain`'s descents also go down the rerooted
 // targets' chains (by row 2's marked key), beside their own walk. A fix only adds records beside main's.
-// THE CONTROLS AND RIGHT PROGRAMS (118), each running 67 on main (acb78ea), row 2's candidate and here, by text: seat S's and seat A3's controls
+// THE CONTROLS AND RIGHT PROGRAMS (118; 116 since 177d2c row 3), each running 67 on main (acb78ea), row 2's candidate and here, by text: seat S's and seat A3's controls
 // and right programs, seat S2's and seat A5's right programs, A5's fuel shapes one per form at K = 130 (7 of 56), and the controls of row 3's own
 // probe faces and guard (`kp_chm_ok`, `kp_chd_ok`, `kp_chi_ok`, `km6_g2_ok`, `km8_cl_ok`, `km8_clm_ok`, `km8_pf_ok`, `km8_sp_ok`, `km6_rr_ok`).
 // Not here: the other 49 `fu_*` and A5's 8 compile-time probes `tm_*`.
+// 2026-11-18 (landing 177d2c, row 3, rulings l.17362): `pk2_lc_ok` and `r21_pkt_ok` moved to redef_reroot_store_prices.npk, prices at parity (a
+// store into a `pick` binding's storage through an address rerooted to it is refused there at BORROW-009, as its direct twin is on main); 118 ->
+// 116.
 error:E5;
 // Ailp-team_156, a3_hqv RIGHT TWIN, no growth (a3_hq with a parameter's value, as BORROW-002 refuses a borrow stored there): a one-hop rootless store whose targets are a
 // field through a LOCAL POINTER (`@q.h`, q = @m); `q` dies at the block's end; `m.h.lp` read after `hq` grows.
@@ -5853,106 +5856,6 @@ func:f_perf_wide_ok = int64(int64:n) never fails {
     pass raw g_perf_wide_ok(@h0, @h2, @hz, n);
 };
 func:cell_main_perf_wide_ok = int32() never fails { pass (((raw f_perf_wide_ok(1i64)) + 60i64) =>! int32); };
-struct:K_pk2_lc_ok = { int64:k; };
-struct:H_pk2_lc_ok = { List<int64>:l; int64:k; K_pk2_lc_ok:kk; };
-func:mk_pk2_lc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
-func:mkh_pk2_lc_ok = H_pk2_lc_ok() never fails { pass H_pk2_lc_ok{ l: raw mk_pk2_lc_ok(), k: 2i64, kk: K_pk2_lc_ok{ k: 3i64 } }; };
-func:growh_pk2_lc_ok = int64(H_pk2_lc_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:growl_pk2_lc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
-func:fp_pk2_lc_ok = int64->(H_pk2_lc_ok->:q) never fails { pass @((<-q).l[0i64]); };
-func:idh_pk2_lc_ok = H_pk2_lc_ok->(H_pk2_lc_ok->:q) never fails { pass q; };
-func:getl_pk2_lc_ok = List<int64>->(H_pk2_lc_ok->:w) never fails { pass @w.l; };
-struct:HPO_pk2_lc_ok = { H_pk2_lc_ok->:lp; List<int64>:own; };
-struct:SQ_pk2_lc_ok = { HPO_pk2_lc_ok->:q; int64:z; };
-struct:SR_pk2_lc_ok = { SQ_pk2_lc_ok->:sq; int64:z; };
-struct:SL_pk2_lc_ok = { List<int64>->:l; int64:z; };
-struct:SL2_pk2_lc_ok = { SL_pk2_lc_ok:s; int64:z; };
-struct:SLP_pk2_lc_ok = { SL_pk2_lc_ok->:sp; int64:z; };
-struct:SQB_pk2_lc_ok = { HPO_pk2_lc_ok->:q; int64:z; };
-struct:HPB_pk2_lc_ok = { H_pk2_lc_ok->:lp; List<int64>:own; };
-struct:PV_pk2_lc_ok = { H_pk2_lc_ok->:p; int64:v; };
-struct:HPV_pk2_lc_ok = { H_pk2_lc_ok->:lp; List<PV_pk2_lc_ok>:own; };
-struct:SLV_pk2_lc_ok = { List<PV_pk2_lc_ok>->:l; int64:z; };
-struct:SQV_pk2_lc_ok = { HPV_pk2_lc_ok->:q; int64:z; };
-func:getown_pk2_lc_ok = List<int64>->(HPO_pk2_lc_ok->:w) never fails { pass @w.own; };
-func:getownv_pk2_lc_ok = List<PV_pk2_lc_ok>->(HPV_pk2_lc_ok->:w) never fails { pass @w.own; };
-func:mkv_pk2_lc_ok = List<PV_pk2_lc_ok>(H_pk2_lc_ok->:h) never fails { List<PV_pk2_lc_ok>:l = raw list_init::<PV_pk2_lc_ok>(1i64); drop list_push(@l, PV_pk2_lc_ok{ p: h, v: 1i64 }); pass l; };
-func:idp_pk2_lc_ok = HPO_pk2_lc_ok->(HPO_pk2_lc_ok->:w) never fails { pass w; };
-func:cvq_pk2_lc_ok = SQ_pk2_lc_ok->(SQB_pk2_lc_ok->:b) never fails { pass ((b =>! any->) =>! SQ_pk2_lc_ok->); };
-func:put_pk2_lc_ok = int64(HPO_pk2_lc_ok->:p, H_pk2_lc_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SR2_pk2_lc_ok = { SQ_pk2_lc_ok->:sq; int64:z; };
-struct:SPP_pk2_lc_ok = { HPO_pk2_lc_ok->->:qq; int64:z; };
-struct:SPPP_pk2_lc_ok = { HPO_pk2_lc_ok->->->:qqq; int64:z; };
-struct:SPPPP_pk2_lc_ok = { HPO_pk2_lc_ok->->->->:qqqq; int64:z; };
-struct:HN_pk2_lc_ok = { int64:a; int64:b; };
-struct:SN_pk2_lc_ok = { HN_pk2_lc_ok->:q; int64:z; };
-struct:SNPP_pk2_lc_ok = { HN_pk2_lc_ok->->:qq; int64:z; };
-struct:SN4_pk2_lc_ok = { HN_pk2_lc_ok->->->->:qqqq; int64:z; };
-struct:W_pk2_lc_ok = { HPO_pk2_lc_ok:h; int64:z; };
-struct:W2_pk2_lc_ok = { HPO_pk2_lc_ok->:a; HPO_pk2_lc_ok->:b; int64:z; };
-struct:SO2_pk2_lc_ok = { HPO_pk2_lc_ok->->?:oqq; int64:z; };
-func:geth_pk2_lc_ok = HPO_pk2_lc_ok->(W_pk2_lc_ok->:w) never fails { pass @w.h; };
-func:geta_pk2_lc_ok = HPO_pk2_lc_ok->->(W2_pk2_lc_ok->:w) never fails { pass @w.a; };
-func:mksqw_pk2_lc_ok = SQ_pk2_lc_ok(W_pk2_lc_ok->:w) never fails { pass SQ_pk2_lc_ok{ q: @w.h, z: 1i64 }; };
-func:idpp_pk2_lc_ok = HPO_pk2_lc_ok->->(HPO_pk2_lc_ok->->:p) never fails { pass p; };
-func:rety_pk2_lc_ok = HPO_pk2_lc_ok->(HN_pk2_lc_ok->:p) never fails { pass ((p =>! any->) =>! HPO_pk2_lc_ok->); };
-func:put2pp_pk2_lc_ok = int64(HPO_pk2_lc_ok->->:pp, H_pk2_lc_ok->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
-func:put3_pk2_lc_ok = int64(HPO_pk2_lc_ok->->->:pp, H_pk2_lc_ok->:v) never fails { (<-(<-(<-pp))).lp = v; pass 7i64; };
-func:put4_pk2_lc_ok = int64(HPO_pk2_lc_ok->->->->:pp, H_pk2_lc_ok->:v) never fails { (<-(<-(<-(<-pp)))).lp = v; pass 7i64; };
-impl:HPO_pk2_lc_ok = { func:setme = int64(HPO_pk2_lc_ok->:self, H_pk2_lc_ok->:v) never fails { (<-self).lp = v; pass 7i64; }; };
-struct:WX3_pk2_lc_ok = { HN_pk2_lc_ok->->:x; int64:z; };
-struct:WX4_pk2_lc_ok = { HN_pk2_lc_ok->->->:x; int64:z; };
-struct:SA_pk2_lc_ok = { any->:p; int64:z; };
-struct:SX3_pk2_lc_ok = { HN_pk2_lc_ok->->->:x3; int64:z; };
-struct:SN5_pk2_lc_ok = { HN_pk2_lc_ok->->->->->:q5; int64:z; };
-struct:SP5_pk2_lc_ok = { HPO_pk2_lc_ok->->->->->:q5; int64:z; };
-func:getx3_pk2_lc_ok = HN_pk2_lc_ok->->->(WX3_pk2_lc_ok->:w) never fails { pass @w.x; };
-func:getx3c_pk2_lc_ok = HPO_pk2_lc_ok->->->(WX3_pk2_lc_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_pk2_lc_ok->->->; };
-func:getx4_pk2_lc_ok = HN_pk2_lc_ok->->->->(WX4_pk2_lc_ok->:w) never fails { pass @w.x; };
-func:getx4c_pk2_lc_ok = HPO_pk2_lc_ok->->->->(WX4_pk2_lc_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_pk2_lc_ok->->->->; };
-func:toany_pk2_lc_ok = any->(HN_pk2_lc_ok->->:p) never fails { pass (p =>! any->); };
-func:put5_pk2_lc_ok = int64(HPO_pk2_lc_ok->->->->->:pp, H_pk2_lc_ok->:v) never fails { (<-(<-(<-(<-(<-pp))))).lp = v; pass 7i64; };
-struct:WP_pk2_lc_ok = { HPO_pk2_lc_ok->:p; int64:z; };
-struct:SW_pk2_lc_ok = { WP_pk2_lc_ok:w; int64:z; };
-struct:SWP_pk2_lc_ok = { SW_pk2_lc_ok->:sw; int64:z; };
-struct:SO_pk2_lc_ok = { HPO_pk2_lc_ok->?:o; int64:z; };
-struct:SA2_pk2_lc_ok = { HPO_pk2_lc_ok->[2]:arr; int64:z; };
-struct:SI_pk2_lc_ok = { int64:i; int64:z; };
-struct:WPP_pk2_lc_ok = { HPO_pk2_lc_ok->->:pp; int64:z; };
-struct:SWPP_pk2_lc_ok = { WPP_pk2_lc_ok:w; int64:z; };
-func:putwp_pk2_lc_ok = int64(WP_pk2_lc_ok:w, H_pk2_lc_ok->:v) never fails { (<-(w.p)).lp = v; pass 7i64; };
-func:conv_pk2_lc_ok = HPO_pk2_lc_ok->(HPB_pk2_lc_ok->:p) never fails { pass ((p =>! any->) =>! HPO_pk2_lc_ok->); };
-func:conv2_pk2_lc_ok = HPO_pk2_lc_ok->(HPB_pk2_lc_ok->:p) never fails { pass ((p =>! any->) =>! HPO_pk2_lc_ok->); };
-struct:RR_pk2_lc_ok = { SQ_pk2_lc_ok->:sq; HPO_pk2_lc_ok->:q; int64:z; };
-struct:X2_pk2_lc_ok = { H_pk2_lc_ok->:lp; HPB_pk2_lc_ok:inner; };
-func:cvh_pk2_lc_ok = X2_pk2_lc_ok->(HPB_pk2_lc_ok->:p) never fails { pass ((p =>! any->) =>! X2_pk2_lc_ok->); };
-func:putx_pk2_lc_ok = int64(X2_pk2_lc_ok->:p, H_pk2_lc_ok->:v) never fails { p.lp = v; pass 7i64; };
-func:idh2_pk2_lc_ok = HPB_pk2_lc_ok->(HPB_pk2_lc_ok->:p) never fails { pass p; };
-func:putb_pk2_lc_ok = int64(HPB_pk2_lc_ok->:p, H_pk2_lc_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SX_pk2_lc_ok = { X2_pk2_lc_ok->:q; int64:z; };
-struct:SB_pk2_lc_ok = { HPB_pk2_lc_ok->:p; int64:z; };
-struct:Y2_pk2_lc_ok = { X2_pk2_lc_ok:x; int64:z; };
-struct:XA_pk2_lc_ok = { HPB_pk2_lc_ok[2]:arr; int64:z; };
-struct:XL_pk2_lc_ok = { List<HPB_pk2_lc_ok>:l; int64:z; };
-enum:EB_pk2_lc_ok = { A(HPB_pk2_lc_ok); Z; };
-func:idx_pk2_lc_ok = X2_pk2_lc_ok->(X2_pk2_lc_ok->:q) never fails { pass q; };
-func:getq_pk2_lc_ok = X2_pk2_lc_ok->(SX_pk2_lc_ok->:s) never fails { pass s.q; };
-func:inr_pk2_lc_ok = HPB_pk2_lc_ok->(X2_pk2_lc_ok->:q) never fails { pass @((<-q).inner); };
-func:st_pk2_lc_ok = int64(X2_pk2_lc_ok->:qp, H_pk2_lc_ok->:v) never fails { HPB_pk2_lc_ok->:r = @((<-qp).inner); (<-r).lp = v; pass 7i64; };
-func:stq_pk2_lc_ok = int64(SX_pk2_lc_ok->:sp, H_pk2_lc_ok->:v) never fails { HPB_pk2_lc_ok->:r = @((<-((<-sp).q)).inner); (<-r).lp = v; pass 7i64; };
-enum:EX_pk2_lc_ok = { A(X2_pk2_lc_ok); Z; };
-func:g_pk2_lc_ok = int64(H_pk2_lc_ok->:h0p, H_pk2_lc_ok->:hq, H_pk2_lc_ok->:hz, int64:n) never fails {
-    int64->:e = raw fp_pk2_lc_ok(hz);
-    EX_pk2_lc_ok:o = EX_pk2_lc_ok.A(X2_pk2_lc_ok{ lp: h0p, inner: HPB_pk2_lc_ok{ lp: h0p, own: raw mk_pk2_lc_ok() } });
-    pick (move(o)) { (EX_pk2_lc_ok.A(m)) { X2_pk2_lc_ok->:q0 = @m; HPB_pk2_lc_ok->:r = @((<-q0).inner); HPB_pk2_lc_ok->:rl = r; (<-rl).lp = hq; e = raw fp_pk2_lc_ok(m.inner.lp); }, (EX_pk2_lc_ok.Z) { } }
-    discard(raw growh_pk2_lc_ok(hq));
-    pass 7i64;
-};
-func:f_pk2_lc_ok = int64(int64:n) never fails {
-    H_pk2_lc_ok:hz = raw mkh_pk2_lc_ok(); H_pk2_lc_ok:h0 = raw mkh_pk2_lc_ok(); H_pk2_lc_ok:h2 = raw mkh_pk2_lc_ok();
-    pass raw g_pk2_lc_ok(@h0, @h2, @hz, n);
-};
-func:cell_main_pk2_lc_ok = int32() never fails { pass (((raw f_pk2_lc_ok(1i64)) + 60i64) =>! int32); };
 struct:K_pk2_ok = { int64:k; };
 struct:H_pk2_ok = { List<int64>:l; int64:k; K_pk2_ok:kk; };
 func:mk_pk2_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
@@ -7332,107 +7235,6 @@ func:f_r20_optb_ok = int64(int64:n) never fails {
     pass raw g_r20_optb_ok(@h0, @h2, @hz, n);
 };
 func:cell_main_r20_optb_ok = int32() never fails { pass (((raw f_r20_optb_ok(1i64)) + 60i64) =>! int32); };
-struct:K_r21_pkt_ok = { int64:k; };
-struct:H_r21_pkt_ok = { List<int64>:l; int64:k; K_r21_pkt_ok:kk; };
-func:mk_r21_pkt_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
-func:mkh_r21_pkt_ok = H_r21_pkt_ok() never fails { pass H_r21_pkt_ok{ l: raw mk_r21_pkt_ok(), k: 2i64, kk: K_r21_pkt_ok{ k: 3i64 } }; };
-func:growh_r21_pkt_ok = int64(H_r21_pkt_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:growl_r21_pkt_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
-func:fp_r21_pkt_ok = int64->(H_r21_pkt_ok->:q) never fails { pass @((<-q).l[0i64]); };
-func:idh_r21_pkt_ok = H_r21_pkt_ok->(H_r21_pkt_ok->:q) never fails { pass q; };
-func:getl_r21_pkt_ok = List<int64>->(H_r21_pkt_ok->:w) never fails { pass @w.l; };
-struct:HPO_r21_pkt_ok = { H_r21_pkt_ok->:lp; List<int64>:own; };
-struct:SQ_r21_pkt_ok = { HPO_r21_pkt_ok->:q; int64:z; };
-struct:SR_r21_pkt_ok = { SQ_r21_pkt_ok->:sq; int64:z; };
-struct:SL_r21_pkt_ok = { List<int64>->:l; int64:z; };
-struct:SL2_r21_pkt_ok = { SL_r21_pkt_ok:s; int64:z; };
-struct:SLP_r21_pkt_ok = { SL_r21_pkt_ok->:sp; int64:z; };
-struct:SQB_r21_pkt_ok = { HPO_r21_pkt_ok->:q; int64:z; };
-struct:HPB_r21_pkt_ok = { H_r21_pkt_ok->:lp; List<int64>:own; };
-struct:PV_r21_pkt_ok = { H_r21_pkt_ok->:p; int64:v; };
-struct:HPV_r21_pkt_ok = { H_r21_pkt_ok->:lp; List<PV_r21_pkt_ok>:own; };
-struct:SLV_r21_pkt_ok = { List<PV_r21_pkt_ok>->:l; int64:z; };
-struct:SQV_r21_pkt_ok = { HPV_r21_pkt_ok->:q; int64:z; };
-func:getown_r21_pkt_ok = List<int64>->(HPO_r21_pkt_ok->:w) never fails { pass @w.own; };
-func:getownv_r21_pkt_ok = List<PV_r21_pkt_ok>->(HPV_r21_pkt_ok->:w) never fails { pass @w.own; };
-func:mkv_r21_pkt_ok = List<PV_r21_pkt_ok>(H_r21_pkt_ok->:h) never fails { List<PV_r21_pkt_ok>:l = raw list_init::<PV_r21_pkt_ok>(1i64); drop list_push(@l, PV_r21_pkt_ok{ p: h, v: 1i64 }); pass l; };
-func:idp_r21_pkt_ok = HPO_r21_pkt_ok->(HPO_r21_pkt_ok->:w) never fails { pass w; };
-func:cvq_r21_pkt_ok = SQ_r21_pkt_ok->(SQB_r21_pkt_ok->:b) never fails { pass ((b =>! any->) =>! SQ_r21_pkt_ok->); };
-func:put_r21_pkt_ok = int64(HPO_r21_pkt_ok->:p, H_r21_pkt_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SR2_r21_pkt_ok = { SQ_r21_pkt_ok->:sq; int64:z; };
-struct:SPP_r21_pkt_ok = { HPO_r21_pkt_ok->->:qq; int64:z; };
-struct:SPPP_r21_pkt_ok = { HPO_r21_pkt_ok->->->:qqq; int64:z; };
-struct:SPPPP_r21_pkt_ok = { HPO_r21_pkt_ok->->->->:qqqq; int64:z; };
-struct:HN_r21_pkt_ok = { int64:a; int64:b; };
-struct:SN_r21_pkt_ok = { HN_r21_pkt_ok->:q; int64:z; };
-struct:SNPP_r21_pkt_ok = { HN_r21_pkt_ok->->:qq; int64:z; };
-struct:SN4_r21_pkt_ok = { HN_r21_pkt_ok->->->->:qqqq; int64:z; };
-struct:W_r21_pkt_ok = { HPO_r21_pkt_ok:h; int64:z; };
-struct:W2_r21_pkt_ok = { HPO_r21_pkt_ok->:a; HPO_r21_pkt_ok->:b; int64:z; };
-struct:SO2_r21_pkt_ok = { HPO_r21_pkt_ok->->?:oqq; int64:z; };
-func:geth_r21_pkt_ok = HPO_r21_pkt_ok->(W_r21_pkt_ok->:w) never fails { pass @w.h; };
-func:geta_r21_pkt_ok = HPO_r21_pkt_ok->->(W2_r21_pkt_ok->:w) never fails { pass @w.a; };
-func:mksqw_r21_pkt_ok = SQ_r21_pkt_ok(W_r21_pkt_ok->:w) never fails { pass SQ_r21_pkt_ok{ q: @w.h, z: 1i64 }; };
-func:idpp_r21_pkt_ok = HPO_r21_pkt_ok->->(HPO_r21_pkt_ok->->:p) never fails { pass p; };
-func:rety_r21_pkt_ok = HPO_r21_pkt_ok->(HN_r21_pkt_ok->:p) never fails { pass ((p =>! any->) =>! HPO_r21_pkt_ok->); };
-func:put2pp_r21_pkt_ok = int64(HPO_r21_pkt_ok->->:pp, H_r21_pkt_ok->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
-func:put3_r21_pkt_ok = int64(HPO_r21_pkt_ok->->->:pp, H_r21_pkt_ok->:v) never fails { (<-(<-(<-pp))).lp = v; pass 7i64; };
-func:put4_r21_pkt_ok = int64(HPO_r21_pkt_ok->->->->:pp, H_r21_pkt_ok->:v) never fails { (<-(<-(<-(<-pp)))).lp = v; pass 7i64; };
-impl:HPO_r21_pkt_ok = { func:setme = int64(HPO_r21_pkt_ok->:self, H_r21_pkt_ok->:v) never fails { (<-self).lp = v; pass 7i64; }; };
-struct:WX3_r21_pkt_ok = { HN_r21_pkt_ok->->:x; int64:z; };
-struct:WX4_r21_pkt_ok = { HN_r21_pkt_ok->->->:x; int64:z; };
-struct:SA_r21_pkt_ok = { any->:p; int64:z; };
-struct:SX3_r21_pkt_ok = { HN_r21_pkt_ok->->->:x3; int64:z; };
-struct:SN5_r21_pkt_ok = { HN_r21_pkt_ok->->->->->:q5; int64:z; };
-struct:SP5_r21_pkt_ok = { HPO_r21_pkt_ok->->->->->:q5; int64:z; };
-func:getx3_r21_pkt_ok = HN_r21_pkt_ok->->->(WX3_r21_pkt_ok->:w) never fails { pass @w.x; };
-func:getx3c_r21_pkt_ok = HPO_r21_pkt_ok->->->(WX3_r21_pkt_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_r21_pkt_ok->->->; };
-func:getx4_r21_pkt_ok = HN_r21_pkt_ok->->->->(WX4_r21_pkt_ok->:w) never fails { pass @w.x; };
-func:getx4c_r21_pkt_ok = HPO_r21_pkt_ok->->->->(WX4_r21_pkt_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_r21_pkt_ok->->->->; };
-func:toany_r21_pkt_ok = any->(HN_r21_pkt_ok->->:p) never fails { pass (p =>! any->); };
-func:put5_r21_pkt_ok = int64(HPO_r21_pkt_ok->->->->->:pp, H_r21_pkt_ok->:v) never fails { (<-(<-(<-(<-(<-pp))))).lp = v; pass 7i64; };
-struct:WP_r21_pkt_ok = { HPO_r21_pkt_ok->:p; int64:z; };
-struct:SW_r21_pkt_ok = { WP_r21_pkt_ok:w; int64:z; };
-struct:SWP_r21_pkt_ok = { SW_r21_pkt_ok->:sw; int64:z; };
-struct:SO_r21_pkt_ok = { HPO_r21_pkt_ok->?:o; int64:z; };
-struct:SA2_r21_pkt_ok = { HPO_r21_pkt_ok->[2]:arr; int64:z; };
-struct:SI_r21_pkt_ok = { int64:i; int64:z; };
-struct:WPP_r21_pkt_ok = { HPO_r21_pkt_ok->->:pp; int64:z; };
-struct:SWPP_r21_pkt_ok = { WPP_r21_pkt_ok:w; int64:z; };
-func:putwp_r21_pkt_ok = int64(WP_r21_pkt_ok:w, H_r21_pkt_ok->:v) never fails { (<-(w.p)).lp = v; pass 7i64; };
-func:conv_r21_pkt_ok = HPO_r21_pkt_ok->(HPB_r21_pkt_ok->:p) never fails { pass ((p =>! any->) =>! HPO_r21_pkt_ok->); };
-func:conv2_r21_pkt_ok = HPO_r21_pkt_ok->(HPB_r21_pkt_ok->:p) never fails { pass ((p =>! any->) =>! HPO_r21_pkt_ok->); };
-struct:RR_r21_pkt_ok = { SQ_r21_pkt_ok->:sq; HPO_r21_pkt_ok->:q; int64:z; };
-struct:X2_r21_pkt_ok = { H_r21_pkt_ok->:lp; HPB_r21_pkt_ok:inner; };
-func:cvh_r21_pkt_ok = X2_r21_pkt_ok->(HPB_r21_pkt_ok->:p) never fails { pass ((p =>! any->) =>! X2_r21_pkt_ok->); };
-func:putx_r21_pkt_ok = int64(X2_r21_pkt_ok->:p, H_r21_pkt_ok->:v) never fails { p.lp = v; pass 7i64; };
-func:idh2_r21_pkt_ok = HPB_r21_pkt_ok->(HPB_r21_pkt_ok->:p) never fails { pass p; };
-func:putb_r21_pkt_ok = int64(HPB_r21_pkt_ok->:p, H_r21_pkt_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SX_r21_pkt_ok = { X2_r21_pkt_ok->:q; int64:z; };
-struct:SB_r21_pkt_ok = { HPB_r21_pkt_ok->:p; int64:z; };
-struct:Y2_r21_pkt_ok = { X2_r21_pkt_ok:x; int64:z; };
-struct:XA_r21_pkt_ok = { HPB_r21_pkt_ok[2]:arr; int64:z; };
-struct:XL_r21_pkt_ok = { List<HPB_r21_pkt_ok>:l; int64:z; };
-enum:EB_r21_pkt_ok = { A(HPB_r21_pkt_ok); Z; };
-func:idx_r21_pkt_ok = X2_r21_pkt_ok->(X2_r21_pkt_ok->:q) never fails { pass q; };
-func:getq_r21_pkt_ok = X2_r21_pkt_ok->(SX_r21_pkt_ok->:s) never fails { pass s.q; };
-func:inr_r21_pkt_ok = HPB_r21_pkt_ok->(X2_r21_pkt_ok->:q) never fails { pass @((<-q).inner); };
-func:st_r21_pkt_ok = int64(X2_r21_pkt_ok->:qp, H_r21_pkt_ok->:v) never fails { HPB_r21_pkt_ok->:r = @((<-qp).inner); (<-r).lp = v; pass 7i64; };
-func:stq_r21_pkt_ok = int64(SX_r21_pkt_ok->:sp, H_r21_pkt_ok->:v) never fails { HPB_r21_pkt_ok->:r = @((<-((<-sp).q)).inner); (<-r).lp = v; pass 7i64; };
-enum:EX_r21_pkt_ok = { A(X2_r21_pkt_ok); Z; };
-func:g_r21_pkt_ok = int64(H_r21_pkt_ok->:h0p, H_r21_pkt_ok->:hq, H_r21_pkt_ok->:hz, int64:n) never fails {
-    int64->:e = raw fp_r21_pkt_ok(hz);
-    X2_r21_pkt_ok:my = X2_r21_pkt_ok{ lp: h0p, inner: HPB_r21_pkt_ok{ lp: h0p, own: raw mk_r21_pkt_ok() } };
-    EX_r21_pkt_ok:o = EX_r21_pkt_ok.A(X2_r21_pkt_ok{ lp: h0p, inner: HPB_r21_pkt_ok{ lp: h0p, own: raw mk_r21_pkt_ok() } });
-    pick (move(o)) { (EX_r21_pkt_ok.A(m)) { X2_r21_pkt_ok->:q0 = @m; HPB_r21_pkt_ok->:r = @((<-q0).inner); (<-r).lp = hq; e = raw fp_r21_pkt_ok(my.inner.lp); }, (EX_r21_pkt_ok.Z) { } }
-    discard(raw growh_r21_pkt_ok(hq));
-    pass (<-e) + 6i64;
-};
-func:f_r21_pkt_ok = int64(int64:n) never fails {
-    H_r21_pkt_ok:hz = raw mkh_r21_pkt_ok(); H_r21_pkt_ok:h0 = raw mkh_r21_pkt_ok(); H_r21_pkt_ok:h2 = raw mkh_r21_pkt_ok();
-    pass raw g_r21_pkt_ok(@h0, @h2, @hz, n);
-};
-func:cell_main_r21_pkt_ok = int32() never fails { pass (((raw f_r21_pkt_ok(1i64)) + 60i64) =>! int32); };
 struct:K_r22_auto_ok = { int64:k; };
 struct:H_r22_auto_ok = { List<int64>:l; int64:k; K_r22_auto_ok:kk; };
 func:mk_r22_auto_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
@@ -13283,77 +13085,75 @@ func:main = int32(cstring[]:argv) {
     if ((raw cell_main_nul_mid_ok()) != 67i32) { exit 45i32; }
     if ((raw cell_main_perf_cyc_ok()) != 67i32) { exit 46i32; }
     if ((raw cell_main_perf_wide_ok()) != 67i32) { exit 47i32; }
-    if ((raw cell_main_pk2_lc_ok()) != 67i32) { exit 48i32; }
-    if ((raw cell_main_pk2_ok()) != 67i32) { exit 49i32; }
-    if ((raw cell_main_pk2c_ok()) != 67i32) { exit 50i32; }
-    if ((raw cell_main_pk3_ok()) != 67i32) { exit 51i32; }
-    if ((raw cell_main_qq3_ok()) != 67i32) { exit 52i32; }
-    if ((raw cell_main_qq4_ok()) != 67i32) { exit 53i32; }
-    if ((raw cell_main_qq5_ok()) != 67i32) { exit 54i32; }
-    if ((raw cell_main_qq6_ok()) != 67i32) { exit 55i32; }
-    if ((raw cell_main_r10_strct_ok()) != 67i32) { exit 56i32; }
-    if ((raw cell_main_r12_pf_ok()) != 67i32) { exit 57i32; }
-    if ((raw cell_main_r15_ap_ok()) != 67i32) { exit 58i32; }
-    if ((raw cell_main_r17_lst_ok()) != 67i32) { exit 59i32; }
-    if ((raw cell_main_r20_opt_ok()) != 67i32) { exit 60i32; }
-    if ((raw cell_main_r20_optb_ok()) != 67i32) { exit 61i32; }
-    if ((raw cell_main_r21_pkt_ok()) != 67i32) { exit 62i32; }
-    if ((raw cell_main_r22_auto_ok()) != 67i32) { exit 63i32; }
-    if ((raw cell_main_r22_autopp_ok()) != 67i32) { exit 64i32; }
-    if ((raw cell_main_r24_mid2_ok()) != 67i32) { exit 65i32; }
-    if ((raw cell_main_r24_mid3_ok()) != 67i32) { exit 66i32; }
-    if ((raw cell_main_r24_mid_ok()) != 67i32) { exit 67i32; }
-    if ((raw cell_main_r25_tern_ok()) != 67i32) { exit 68i32; }
-    if ((raw cell_main_r26_2lv_ok()) != 67i32) { exit 69i32; }
-    if ((raw cell_main_r26_2lv_ok2()) != 67i32) { exit 70i32; }
-    if ((raw cell_main_r26_3lv_n_ok()) != 67i32) { exit 71i32; }
-    if ((raw cell_main_r26_3lv_ok()) != 67i32) { exit 72i32; }
-    if ((raw cell_main_r26_dd_ok()) != 67i32) { exit 73i32; }
-    if ((raw cell_main_r26_dd_ok2()) != 67i32) { exit 74i32; }
-    if ((raw cell_main_r26_fld_ok()) != 67i32) { exit 75i32; }
-    if ((raw cell_main_r26_pp_ok()) != 67i32) { exit 76i32; }
-    if ((raw cell_main_r26_sbf_ok()) != 67i32) { exit 77i32; }
-    if ((raw cell_main_r3_d1_ok()) != 67i32) { exit 78i32; }
-    if ((raw cell_main_r3_dd_ok()) != 67i32) { exit 79i32; }
-    if ((raw cell_main_r3_pp_ok()) != 67i32) { exit 80i32; }
-    if ((raw cell_main_r3_ppp_ok()) != 67i32) { exit 81i32; }
-    if ((raw cell_main_r4_get_d_ok()) != 67i32) { exit 82i32; }
-    if ((raw cell_main_r4_get_ok()) != 67i32) { exit 83i32; }
-    if ((raw cell_main_r4_id2_ok()) != 67i32) { exit 84i32; }
-    if ((raw cell_main_r4_id_n_ok()) != 67i32) { exit 85i32; }
-    if ((raw cell_main_r4_id_ok()) != 67i32) { exit 86i32; }
-    if ((raw cell_main_r4_id_ok2()) != 67i32) { exit 87i32; }
-    if ((raw cell_main_r4_ida_ok()) != 67i32) { exit 88i32; }
-    if ((raw cell_main_r4_idd_ok()) != 67i32) { exit 89i32; }
-    if ((raw cell_main_r4_idf_ok()) != 67i32) { exit 90i32; }
-    if ((raw cell_main_r4_idv_ok()) != 67i32) { exit 91i32; }
-    if ((raw cell_main_r5_copy_ok()) != 67i32) { exit 92i32; }
-    if ((raw cell_main_r5_fld_ok()) != 67i32) { exit 93i32; }
-    if ((raw cell_main_r5_fldp_ok()) != 67i32) { exit 94i32; }
-    if ((raw cell_main_r6_cq_ok()) != 67i32) { exit 95i32; }
-    if ((raw cell_main_r7_late_n_ok()) != 67i32) { exit 96i32; }
-    if ((raw cell_main_r8_fld_ok()) != 67i32) { exit 97i32; }
-    if ((raw cell_main_r8_parq_ok()) != 67i32) { exit 98i32; }
-    if ((raw cell_main_r9_arr_ok()) != 67i32) { exit 99i32; }
-    if ((raw cell_main_tp_br_ok()) != 67i32) { exit 100i32; }
-    if ((raw cell_main_tp_diam_ok()) != 67i32) { exit 101i32; }
-    if ((raw cell_main_tp_join_ok()) != 67i32) { exit 102i32; }
-    if ((raw cell_main_tp_two_ok()) != 67i32) { exit 103i32; }
-    if ((raw cell_main_v_castfr_c()) != 67i32) { exit 104i32; }
-    if ((raw cell_main_v_dir1_c()) != 67i32) { exit 105i32; }
-    if ((raw cell_main_v_dstore_c()) != 67i32) { exit 106i32; }
-    if ((raw cell_main_v_nocall_c()) != 67i32) { exit 107i32; }
-    if ((raw cell_main_v_nocast_c()) != 67i32) { exit 108i32; }
-    if ((raw cell_main_v_whole_c()) != 67i32) { exit 109i32; }
-    if ((raw cell_main_kp_chm_ok()) != 67i32) { exit 110i32; }
-    if ((raw cell_main_kp_chd_ok()) != 67i32) { exit 111i32; }
-    if ((raw cell_main_kp_chi_ok()) != 67i32) { exit 112i32; }
-    if ((raw cell_main_km6_g2_ok()) != 67i32) { exit 113i32; }
-    if ((raw cell_main_km8_cl_ok()) != 67i32) { exit 114i32; }
-    if ((raw cell_main_km8_clm_ok()) != 67i32) { exit 115i32; }
-    if ((raw cell_main_km8_pf_ok()) != 67i32) { exit 116i32; }
-    if ((raw cell_main_km8_sp_ok()) != 67i32) { exit 117i32; }
-    if ((raw cell_main_km6_rr_ok()) != 67i32) { exit 118i32; }
+    if ((raw cell_main_pk2_ok()) != 67i32) { exit 48i32; }
+    if ((raw cell_main_pk2c_ok()) != 67i32) { exit 49i32; }
+    if ((raw cell_main_pk3_ok()) != 67i32) { exit 50i32; }
+    if ((raw cell_main_qq3_ok()) != 67i32) { exit 51i32; }
+    if ((raw cell_main_qq4_ok()) != 67i32) { exit 52i32; }
+    if ((raw cell_main_qq5_ok()) != 67i32) { exit 53i32; }
+    if ((raw cell_main_qq6_ok()) != 67i32) { exit 54i32; }
+    if ((raw cell_main_r10_strct_ok()) != 67i32) { exit 55i32; }
+    if ((raw cell_main_r12_pf_ok()) != 67i32) { exit 56i32; }
+    if ((raw cell_main_r15_ap_ok()) != 67i32) { exit 57i32; }
+    if ((raw cell_main_r17_lst_ok()) != 67i32) { exit 58i32; }
+    if ((raw cell_main_r20_opt_ok()) != 67i32) { exit 59i32; }
+    if ((raw cell_main_r20_optb_ok()) != 67i32) { exit 60i32; }
+    if ((raw cell_main_r22_auto_ok()) != 67i32) { exit 61i32; }
+    if ((raw cell_main_r22_autopp_ok()) != 67i32) { exit 62i32; }
+    if ((raw cell_main_r24_mid2_ok()) != 67i32) { exit 63i32; }
+    if ((raw cell_main_r24_mid3_ok()) != 67i32) { exit 64i32; }
+    if ((raw cell_main_r24_mid_ok()) != 67i32) { exit 65i32; }
+    if ((raw cell_main_r25_tern_ok()) != 67i32) { exit 66i32; }
+    if ((raw cell_main_r26_2lv_ok()) != 67i32) { exit 67i32; }
+    if ((raw cell_main_r26_2lv_ok2()) != 67i32) { exit 68i32; }
+    if ((raw cell_main_r26_3lv_n_ok()) != 67i32) { exit 69i32; }
+    if ((raw cell_main_r26_3lv_ok()) != 67i32) { exit 70i32; }
+    if ((raw cell_main_r26_dd_ok()) != 67i32) { exit 71i32; }
+    if ((raw cell_main_r26_dd_ok2()) != 67i32) { exit 72i32; }
+    if ((raw cell_main_r26_fld_ok()) != 67i32) { exit 73i32; }
+    if ((raw cell_main_r26_pp_ok()) != 67i32) { exit 74i32; }
+    if ((raw cell_main_r26_sbf_ok()) != 67i32) { exit 75i32; }
+    if ((raw cell_main_r3_d1_ok()) != 67i32) { exit 76i32; }
+    if ((raw cell_main_r3_dd_ok()) != 67i32) { exit 77i32; }
+    if ((raw cell_main_r3_pp_ok()) != 67i32) { exit 78i32; }
+    if ((raw cell_main_r3_ppp_ok()) != 67i32) { exit 79i32; }
+    if ((raw cell_main_r4_get_d_ok()) != 67i32) { exit 80i32; }
+    if ((raw cell_main_r4_get_ok()) != 67i32) { exit 81i32; }
+    if ((raw cell_main_r4_id2_ok()) != 67i32) { exit 82i32; }
+    if ((raw cell_main_r4_id_n_ok()) != 67i32) { exit 83i32; }
+    if ((raw cell_main_r4_id_ok()) != 67i32) { exit 84i32; }
+    if ((raw cell_main_r4_id_ok2()) != 67i32) { exit 85i32; }
+    if ((raw cell_main_r4_ida_ok()) != 67i32) { exit 86i32; }
+    if ((raw cell_main_r4_idd_ok()) != 67i32) { exit 87i32; }
+    if ((raw cell_main_r4_idf_ok()) != 67i32) { exit 88i32; }
+    if ((raw cell_main_r4_idv_ok()) != 67i32) { exit 89i32; }
+    if ((raw cell_main_r5_copy_ok()) != 67i32) { exit 90i32; }
+    if ((raw cell_main_r5_fld_ok()) != 67i32) { exit 91i32; }
+    if ((raw cell_main_r5_fldp_ok()) != 67i32) { exit 92i32; }
+    if ((raw cell_main_r6_cq_ok()) != 67i32) { exit 93i32; }
+    if ((raw cell_main_r7_late_n_ok()) != 67i32) { exit 94i32; }
+    if ((raw cell_main_r8_fld_ok()) != 67i32) { exit 95i32; }
+    if ((raw cell_main_r8_parq_ok()) != 67i32) { exit 96i32; }
+    if ((raw cell_main_r9_arr_ok()) != 67i32) { exit 97i32; }
+    if ((raw cell_main_tp_br_ok()) != 67i32) { exit 98i32; }
+    if ((raw cell_main_tp_diam_ok()) != 67i32) { exit 99i32; }
+    if ((raw cell_main_tp_join_ok()) != 67i32) { exit 100i32; }
+    if ((raw cell_main_tp_two_ok()) != 67i32) { exit 101i32; }
+    if ((raw cell_main_v_castfr_c()) != 67i32) { exit 102i32; }
+    if ((raw cell_main_v_dir1_c()) != 67i32) { exit 103i32; }
+    if ((raw cell_main_v_dstore_c()) != 67i32) { exit 104i32; }
+    if ((raw cell_main_v_nocall_c()) != 67i32) { exit 105i32; }
+    if ((raw cell_main_v_nocast_c()) != 67i32) { exit 106i32; }
+    if ((raw cell_main_v_whole_c()) != 67i32) { exit 107i32; }
+    if ((raw cell_main_kp_chm_ok()) != 67i32) { exit 108i32; }
+    if ((raw cell_main_kp_chd_ok()) != 67i32) { exit 109i32; }
+    if ((raw cell_main_kp_chi_ok()) != 67i32) { exit 110i32; }
+    if ((raw cell_main_km6_g2_ok()) != 67i32) { exit 111i32; }
+    if ((raw cell_main_km8_cl_ok()) != 67i32) { exit 112i32; }
+    if ((raw cell_main_km8_clm_ok()) != 67i32) { exit 113i32; }
+    if ((raw cell_main_km8_pf_ok()) != 67i32) { exit 114i32; }
+    if ((raw cell_main_km8_sp_ok()) != 67i32) { exit 115i32; }
+    if ((raw cell_main_km6_rr_ok()) != 67i32) { exit 116i32; }
     exit 0i32;
 };
 func:failsafe = int32(Error:e) {
