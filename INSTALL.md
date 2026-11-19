@@ -1,8 +1,9 @@
 # Installing Nitpick
 
 This builds the compiler from source on a clean Linux machine and compiles a
-first program with it. It takes about a minute once the tools are installed.
-Everything here was run, in this order, on a fresh clone.
+first program with it. Once the tools were installed, the build took a little
+over a minute on the virtual machine of the 2026-11-18 walkthrough (§3 gives
+each step's time). Everything here was run, in this order, on a fresh clone.
 
 ## 1. What you need
 
@@ -22,16 +23,28 @@ Everything here was run, in this order, on a fresh clone.
   sudo apt install llvm-20 lld-20
   ```
 
+  *Walked:* 2026-10-08, on a fresh Ubuntu Server 26.04.1 virtual machine (see
+  "What it was tested at" below).
+
   Where the distribution has no `llvm-20`, or an older one than 20.1.8 (Ubuntu
   24.04 "noble" ships 20.1.2, which §6 refuses), use the LLVM project's own
-  repository (about 880 MB for the 26 packages it installs):
+  repository (about 880 MB for the 26 packages it installs). `llvm.sh` needs
+  four tools a minimal install may not have: `add-apt-repository`,
+  `lsb_release`, `wget` and `gpg`. The first line installs them:
 
   ```sh
+  sudo apt install software-properties-common lsb-release wget gnupg
   wget https://apt.llvm.org/llvm.sh
   chmod +x llvm.sh
   sudo ./llvm.sh 20
   sudo apt install lld-20
   ```
+
+  *Unwalked:* never walked to its end on a minimal virtual machine. Its last
+  try, on 2026-11-18 on a minimal Ubuntu 24.04 virtual machine, stopped at the
+  missing tools the first line now installs; installing them there then stalled
+  for over ten minutes in `apt`'s index processing, on 1.5 cores, and was
+  stopped.
 
   `llvm.sh` does not check that a suite exists for your release: on one it does
   not serve LLVM 20 for (Ubuntu 26.04 today — it serves only 21 and later there,
@@ -48,7 +61,18 @@ Everything here was run, in this order, on a fresh clone.
   is to be installed"): apt.llvm.org ships no i386 build, and a multi-arch
   library must stay at one version across its architectures. Do not remove the
   32-bit drivers. Install the release as a PREFIX instead, from the same signed
-  packages, with no sudo beyond the repository line `llvm.sh` already added:
+  packages. This route doesn't need `llvm.sh`. If `llvm.sh` hasn't already added
+  the repository, add its key and line by hand (these are what `llvm.sh` writes,
+  shown for Ubuntu 24.04 "noble"):
+
+  ```sh
+  sudo apt install wget
+  wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
+  echo "deb https://apt.llvm.org/noble/ llvm-toolchain-noble-20 main" | sudo tee /etc/apt/sources.list.d/llvm-toolchain-noble-20.list > /dev/null
+  sudo apt-get update
+  ```
+
+  Then fetch and unpack the packages, with no more sudo:
 
   ```sh
   mkdir -p ~/.local/llvm-20.1.8/debs && cd ~/.local/llvm-20.1.8/debs
@@ -65,6 +89,12 @@ Everything here was run, in this order, on a fresh clone.
   `/usr/lib/llvm-20/bin`. The distribution's 20.1.2 stays where it is for
   everything else on the machine. (This is how the project's own machine moved
   to 20.1.8 on 2026-10-08.)
+
+  *Unwalked:* never walked on a minimal virtual machine, and the hand-written
+  key and line above never at all. The project's own machine, Linux Mint 22.3,
+  took this route on 2026-10-08 after `llvm.sh` had added the line. The
+  2026-11-18 walkthrough unpacked the same ten packages, but fetched them its
+  own way.
 
   Both apt routes install versioned names (`llc-20`, `opt-20`, `ld.lld-20`); the
   prefix route puts the plain names under its own `bin`. The commands below use
@@ -145,7 +175,9 @@ llc -O0 -filetype=obj -relocation-model=static build/npkc.ll -o build/npkc.o
 ld.lld -static -o build/npkc build/npkc.o build/npkrt.o
 ```
 
-Step 2 takes about fifteen seconds, step 3 about thirty. The result is
+On the 2026-11-18 walkthrough's virtual machine (Ubuntu 24.04, 1.5 cores, 6
+GiB), step 1 took 0.2 s, step 2 18.9 s, and step 3 47.2 s (22.5 s in the
+builder, 24.7 s in `llc`). Neither step's `ld.lld` link was timed. The result is
 `build/npkc`, the compiler, and `build/npkrt.o`, the runtime object every
 program links against. Keep both.
 
@@ -191,6 +223,10 @@ func:failsafe = int32(Error:e) {
     exit 99i32;
 };
 ```
+
+This program uses two escape hatches, `=>!` and `wild`, on `write`'s
+arguments. The strict switch will forbid them in application code, and the
+safe form of this program comes with DEF-693.
 
 What is in it, since none of it is optional:
 
@@ -252,7 +288,8 @@ ld.lld -static -o build/npkg build/npkg.o build/npkrt.o
 ./build/npkg build
 ```
 
-It takes about a minute, rewrites `build/` with the same bytes §3 made (and
+On the 2026-11-18 walkthrough's virtual machine, building `npkg` took 10.6 s
+and `./build/npkg build` 75.8 s. It rewrites `build/` with the same bytes §3 made (and
 adds `build/datalayout_probe.ll`, its probe of the toolchain's data layout),
 and prints one `sha256` line per intermediate. The line for `build/npkc.ll` is
 the one that must match across machines on the same LLVM release: the emitted
@@ -263,7 +300,7 @@ of 20.1.8, apt.llvm.org's for Ubuntu 24.04 and Ubuntu 26.04's own, reproduced
 each other to the byte in the project's test of 2026-10-08: welcome, not
 promised). `npkg build` refuses an
 LLVM release other than the one `nitpick.toml` records (20.1.8; §1's note). `npkg
-test` runs the whole suite and takes about three hours.
+test` runs the whole suite, which takes hours (the walkthrough didn't run it).
 
 ## 7. Where to go next
 
@@ -305,7 +342,7 @@ tools/update.sh --check     # only say whether there's a newer commit (exit 3 if
 tools/update.sh --rebuild   # build and install what's checked out, your own changes included; no git
 ```
 
-It runs §3 and §4's commands, so it takes about a minute when there's something to build, and it needs only what §1 asked for. `--prefix DIR` installs somewhere other than `~/.local`; `--repo DIR` names a checkout other than the one it's in.
+It runs §3 and §4's commands, so it takes as long as §3 does when there's something to build, and it needs only what §1 asked for. `--prefix DIR` installs somewhere other than `~/.local`; `--repo DIR` names a checkout other than the one it's in.
 
 It never merges, rebases, stashes or discards. With uncommitted changes, or a branch that has gone its own way, it says so and stops with nothing changed. The installed compiler is replaced only after the new one has built §5's first program and that program has run, and the pair it replaces stays in `~/.local/lib/nitpick/previous/`, so you can compare the two: `~/.local/lib/nitpick/previous/npkc hello.npk -o old.ll`. `~/.local/lib/nitpick/installed-commit` records which commit is installed.
 

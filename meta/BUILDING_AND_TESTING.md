@@ -115,7 +115,8 @@ Three things to know before you use it:
   run**; do a full one first.
 - **A test's expectation lives inside the test**, as an `exit` code per case. A
   failure reports `exited N, expected 0`; find `exit Ni32` in the file to see
-  which case broke.
+  which case broke. Keep a check's exit codes clear of the failsafe's arms'
+  codes, or a failing check reads as a trap.
 - **Every test builds the whole frontend through the seed**, which is why even one
   test costs about a minute. That is the floor, not something to optimise around.
 

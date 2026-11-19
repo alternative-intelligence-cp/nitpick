@@ -201,6 +201,22 @@ never both:
 
 Both clauses are optional.
 
+**What's assigned only in `then` or `end` doesn't count after the loop.** The
+analyses don't decide which of the two runs, so a binding first assigned there
+is still unassigned after the `when`, even when both clauses assign it:
+
+```nitpick
+int32:r;
+when (x > 0i32) decreases x {
+    x -= 1i32;
+} then {
+    r = 1i32;
+} end {
+    r = 2i32;
+}
+exit r;    // NITPICK-ASSIGN-001: give `r` a value before the loop
+```
+
 > **This corrects an earlier revision** which sent `break` to `end` and reserved
 > `then` for normal completion. That grouping made `end` mean *either* "never
 > ran" *or* "broke out" — two unrelated outcomes — so telling them apart required
@@ -241,7 +257,9 @@ for (int64:i in 1..3) {
 > **What `for` iterates (D-166, 1.0.9):** a range, a slice, an array, or a
 > value whose type implements the prelude trait `Iterator` —
 > `assoc:Item; func:next = Item?(Self->:self);`, `NIL` ending the loop (the
-> `Iterator` form lands at 1.0.9d). **The binding's type must equal the element
+> `Iterator` form lands at 1.0.9d). **A walk consumes the iterator's position**:
+> `for` calls `next` on the iterator value itself, so after the loop it is at
+> its end, and a second `for` over it runs no trips. **The binding's type must equal the element
 > type**: no wrap, no widening. Anything else is refused at the checker by
 > name (`NITPICK-TYPE-007`, the type mismatch at the binding — this sentence
 > named `TYPE-033` until 1.6.1d step 4, DEF-133's d6), never at a backend rung.
@@ -259,7 +277,7 @@ for (int64:i in 1..3) {
 > *[2026-11-05, 1.6.1e landing 177d2b's GO, DEF-567, open:]* This doesn't reach through a pointer to a variadic tail yet: `int32->[]->:pp = @vs; pass (<-pp)[0i64];` hands back an element with no chain, and reads a local of a frame that's gone (AST_REFERENCE's note on the tail).
 
 ### 2.4 Counted Iteration (`loop` and `till`)
-For rapid, highly-optimized counted iteration, Nitpick offers `loop` and `till`. They automatically manage the iteration counter and expose it inside the block via the special `$` keyword.
+For rapid, highly-optimized counted iteration, Nitpick offers `loop` and `till`. They automatically manage the iteration counter and expose it inside the block via the special `$` keyword. **`$` is an `int64`, whatever the bounds' type**: in `till(10i32, 1i32) { int64:k = $; }` the bounds are `int32` and `$` is still `int64`.
 
 > `$` has one other home (1.5.1, V-5; lowered at 1.5.2): inside a `Rules`
 > body it is the SUBJECT — the value the rule is asked of (VERIFICATION §2).

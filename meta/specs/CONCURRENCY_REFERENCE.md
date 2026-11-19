@@ -66,6 +66,52 @@ string:p3 = await fetch_data(url) ?! E9;              // trap (`error:E9;` -- wr
 > function is a hard compile error, `NITPICK-TYPE-043` (written `NITPICK-040`, the prototype's numbering, until
 > 2026-10-30, landing 171's stale-example census).
 
+A whole program, which runs: a task suspends at `await sleep(…)`, `drop work(…)`
+spawns two of them (§2.2), and the end of `both`'s scope joins them, so `await
+both()` returns only after both tasks have finished. Saved as `tasks.npk`, it
+builds as INSTALL.md §5 builds `hello.npk` and exits 0.
+
+```nitpick
+mod:tasks;
+
+async func:work = NIL(int64:ms) {
+    await sleep(raw duration_ms(ms)) ?| NIL;   // suspends this task; the thread runs another
+    pass NIL;
+};
+
+async func:both = NIL() {
+    drop work(20i64);                          // spawn
+    drop work(20i64);                          // spawn
+    pass NIL;                                  // the scope's end joins both tasks
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    int64:t0 = mono_now();
+    await both() ?| NIL;                       // returns after both tasks have finished
+    int64:dt = (mono_now()) - t0;
+    if (dt < 20000000i64) { exit 1i32; }       // the join waited for the tasks
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow)       { exit 90i32; },
+        (OutOfBounds)       { exit 89i32; },
+        (LimitViolated)     { exit 88i32; },
+        (DecreasesViolated) { exit 87i32; },
+        (StackExhausted)    { exit 97i32; },
+        (MachineFault)      { exit 98i32; },
+        (Unreachable)       { exit 95i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 91i32; },
+        (WildLeak)          { exit 96i32; },
+        (DeadlineExceeded)  { exit 86i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 99i32;
+};
+```
+
 ### 2.2 Spawning a task
 
 Calling an `async` function **without** `await` and discarding the result spawns

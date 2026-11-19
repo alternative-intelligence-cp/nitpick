@@ -109,16 +109,26 @@ Requirements are enforced **transitively**: if `C` requires `B` and `B` requires
 ### 2.3 Associated Types (`assoc`)
 
 A trait may declare an associated type; an impl binds it to a concrete type.
+The prelude's `Iterator` declares one (a program can't declare its own
+`Iterator`: `NITPICK-RESOLVE-001`), and `next` takes the iterator by pointer,
+since it moves the position, and gives `NIL` at the end:
 
 ```nitpick
-trait:Iterator = {
+trait:Iterator = {                     // the prelude's
     assoc:Item;
-    func:next = Item(Self:self);
+    func:next = Item?(Self->:self);
 };
+
+struct:Range = { int32:current; int32:stop; };
 
 impl:Range:Iterator = {
     assoc:Item = int32;
-    func:next  = int32(Range:self) { pass(self.current); };
+    func:next  = int32?(Range->:self) {
+        if (self.current >= self.stop) { pass NIL; }
+        int32:v = self.current;
+        self.current += 1i32;
+        pass v;
+    };
 };
 ```
 
@@ -475,9 +485,20 @@ struct:Container<T> = {
     T:value;
 };
 
-func:extract_value<T> = T(Container<T>:c) {
-    pass c.value;
+func:extract_value<T> = T(move Container<T>:c) {
+    pass move(c.value);
 };
+```
+
+A bare `T` is move-only (§3.1), so the function takes the container by `move`
+and moves the value out.
+
+A generic struct's literal names the struct alone, and the binding's type gives
+`T`. Type arguments on the literal (`Container<int32>{value: 5i32}`) are
+`NITPICK-PARSE-002`:
+
+```nitpick
+Container<int32>:c = Container{value: 5i32};
 ```
 
 ### 3.1 Bounds
@@ -629,14 +650,14 @@ Type arguments are **inferred** at the overwhelming majority of call sites, and
 nothing is written:
 
 ```nitpick
-int32:val = extract_value(my_container);
+int32:val = extract_value(my_container) ?| 0i32;
 ```
 
 Where inference cannot decide, explicit type arguments in **expression position
 are always the turbofish** (D-064):
 
 ```nitpick
-int32:val = extract_value::<int32>(my_container);
+int32:val = extract_value::<int32>(my_container) ?| 0i32;
 ```
 
 | Position | Form |

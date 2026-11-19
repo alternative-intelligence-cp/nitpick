@@ -27,7 +27,7 @@ Variables in Nitpick exist in one of several allocation states. You can use cont
 > `pick` binds a `T` payload as a VIEW in place (D-266, 1.5.2h) and a consuming
 > one moves it. The `move` of a scalar is its copy; the rule costs nothing
 > where nothing owns.
-If no keyword is provided, the allocation is tracked and managed. The compiler drops the binding when its scope exits — after the scope's joins and `defer`s, before its channel reclaims (D-183, D-207) — and at no earlier point; a value's last textual use does not shorten its life. *(The sentence here said "or at its NLL last-use point" until 1.5.1b; the compiler never did that.)*
+If no keyword is provided, the allocation is tracked and managed. The compiler drops the binding when its scope exits — after the scope's joins and `defer`s, before its channel reclaims (D-183, D-207) — and at no earlier point; a value's last textual use does not shorten its life. *(The sentence here said "or at its NLL last-use point" until 1.5.1b; the compiler never did that.)* **The release of a managed value is its block's end, never `drop`:** `drop` runs a `never fails` call and has nothing to do with freeing (TYPE_REFERENCE §11), so `string:s = "abc"; drop s;` is `NITPICK-TYPE-007`, and a value released early goes in an inner block `{ … }` that ends where it should.
 ```nitpick
 int32:x = 42i32;           // Automatically managed on stack
 ```
@@ -92,6 +92,7 @@ A list is used through two mechanisms:
     it points at (TYPE-106, 1.6.1e landing 177c, DEF-425): a plain pointer has one element.
 - **The checked operations** change a list:
   - `list_push`, `list_reserve`;
+    A call that never fails and returns `NIL`, such as `list_push`, needs no `?!`. A bare call is `NITPICK-TYPE-039`, so write it with `drop`: `drop list_push(@l, 3i64);`.
   - `list_pop` (the last element, moved out);
   - `list_get(l, i)` (the element BY VALUE, for a `T: Copy` — D-327, 1.6.1c; `i` in `[0, count)`);
   - `list_truncate(l, n)` (drops `n…count−1`);
@@ -242,7 +243,7 @@ stack int32:counter = 0i32;
 ```
 
 ### 1.3 `wild` (Unmanaged / Manual Memory)
-Declares the memory as completely unmanaged. `wild` pointers **must** be manually freed. They explicitly bypass RAII tracking. If you fail to free a `wild` pointer, the compiler will abort with a memory leak error on `exit`. A `wild` value stays in the manual regime until the author crosses it out by `v =>! T->` (D-361, 1.6.1e landing 121): into a plain pointer binding, parameter, field or return it is `NITPICK-TYPE-097` otherwise. **A `wild` name's freed state is tracked by the name alone** (DEF-579, 1.6.1e landing 177d2b2): `NITPICK-MOVE-002` is a help and no proof. A free through an alias or a pointer goes unseen, and so does a callee handed `@s` or `$$m s` that frees what a `wild` pointer in `s` points at; `wild` is the opt-out, and keeping track past the name is the author's. Measured at landing 177d2b8, the same on main and on the landing's build: MOVE-002 is a bare repeat of the name, alone or after an `if`/`else`; the name under a ternary (`wdf_t1`, `wdf_t7`, and `wdf_tsame` with the same name on both arms), a cast, a call, a local copy or a struct field gets past, and the block is freed twice.
+Declares the memory as completely unmanaged. `wild` pointers **must** be manually freed. They explicitly bypass RAII tracking. If you fail to free a `wild` pointer, the compiler will abort with a memory leak error on `exit`. A `wild` value stays in the manual regime until the author crosses it out by `v =>! T->` (D-361, 1.6.1e landing 121): into a plain pointer binding, parameter, field or return it is `NITPICK-TYPE-097` otherwise. **A `wild` name's freed state is tracked by the name alone** (DEF-579, 1.6.1e landing 177d2b2): `NITPICK-MOVE-002` is a help and no proof. A free through an alias or a pointer goes unseen, and so does a callee handed `@s` or `$$m s` that frees what a `wild` pointer in `s` points at; `wild` is the opt-out, and keeping track past the name is the author's. Measured at landing 177d2b8, the same on main and on the landing's build: MOVE-002 is a bare repeat of the name, alone or after an `if`/`else`; the name under a ternary (`wdf_t1`, `wdf_t7`, and `wdf_tsame` with the same name on both arms), a cast, a call, a local copy or a struct field gets past, and the block is freed twice. `lib/nio.npk` frees with that cast spelling (`dalloc(out =>! wild int8->)`, its l.68 and l.223), so a program that copies `nio`'s idiom meets the runtime's trap, not the compile-time check.
 ```nitpick
 wild int8->:buffer = alloc(1024i64);
 ```
@@ -250,7 +251,7 @@ wild int8->:buffer = alloc(1024i64);
 ### 1.4 `wildx` (Executable Memory)
 Reserved for JIT compilers. Provides executable memory adhering to W⊕X (Write XOR Execute) security protocols with ASLR and guard pages.
 ```nitpick
-wildx uint8->:code = wildx_alloc(4096i64);
+wildx int8->:code = wildx_alloc(4096i64);
 ```
 
 ### 1.5 Constructing a pointer from an address

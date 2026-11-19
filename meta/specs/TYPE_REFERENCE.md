@@ -162,6 +162,14 @@ saturates to ERR rather than trapping — see §6.)*
     rather than the signed families. An unsigned type has no negative side to
     wrap into, so its overflow is the 255→0 shape exactly.
 - Literal suffixes: `42u32`, `0FFhexu8`
+- **A `uint64` prints with no cast**: `raw x.to_string()` gives its decimal
+  digits, at and above 2^63 too (the prelude's `impl:uint64:ToString`), so no
+  `=>!` to `int64` comes first:
+
+  ```nitpick
+  uint64:big = (1u64 << 63u64) + 9u64;
+  string:s = raw big.to_string();      // "9223372036854775817"
+  ```
 
 > **Note:** `uint8` and `char8` share the same LLVM IR type (`i8`) but are **semantically distinct**. The type checker enforces different operation sets. See §2 for char types.
 
@@ -926,6 +934,16 @@ choices dissolve: the value IS the digit string.
   one value spelled two ways (D-147 folds balanced digits at scan) —
   range-checked EXACTLY against the balanced bound. `ERR` takes the slot's
   type.
+  A worked example of a `trit` and a `nit` binding, with the `tri` and `non`
+  suffixes (LEXICAL_REFERENCE's `TernaryLiteral` and `NonaryLiteral`):
+
+  ```nitpick
+  trit:yes = 1tri;      // 1
+  trit:no  = 0Ttri;     // -1: the digit T is -1
+  nit:hi   = 4non;      // 4
+  nit:lo   = 0Dnon;     // -4: the digits A to D are -1 to -4
+  int32:sum = (yes => int32) + (no => int32) + (hi => int32) + (lo => int32);   // 0
+  ```
 - **Casts**: one family within itself — value-preserving, the sentinel maps,
   a smaller-bound target trap-or-saturates (`=>` / `=>!`), and
   `tryte ⇄ nyte` (the same 59049 values) is a pure relabel. Leaving to
@@ -1143,7 +1161,13 @@ known type-invariant problem. Single-field rules do not have it.
 - **The rule must hold of the field's VACANT value** (`NITPICK-TYPE-077`).
   A declared-uninitialised aggregate holds the vacant value (D-225) and a
   `move` or `pass` out of the field leaves it (S-26); neither passes a write
-  point, so no check would ever see that value. The constant folder decides
+  point, so no check would ever see that value. (D-225 writes the vacant value
+  only so that a drop of the slot is safe, for a type that drops. It doesn't
+  make the binding assigned: an element or field write, or a read, before the
+  aggregate is assigned whole is `NITPICK-ASSIGN-001`, D-010's "no default
+  value", whatever the type. `bool[4]:a; a[0i64] = true;` is refused at the
+  element write; assign it whole at its declaration,
+  `bool[4]:a = [false, false, false, false];`.) The constant folder decides
   the rule at the declaration with `$` bound to it — 0 for a plain integer,
   `false` for a `bool` — and a rule it cannot decide there is refused too,
   since nothing decides it later. Only a plain integer, a `bool` or a `char`

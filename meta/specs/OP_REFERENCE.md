@@ -380,6 +380,18 @@ value is ERR, so the taint cannot cross silently. See D-008.
 > preserves the ERR *state*, not the bit pattern, so it cannot launder a taint.
 > See D-008 §6.
 
+> **For the twisted types, write `=>` first.** Between a plain integer and a `tbb`,
+> `trit` or `nit`, `=>` is checked at run time: it traps `TbbErr` on an ERR
+> operand and on a value the target can't hold. `=>!` doesn't trap on narrowing:
+> out of range, it gives ERR. (Leaving the family, both spellings trap on ERR.)
+>
+> ```nitpick
+> tbb32:t = 70000i32 => tbb32;       // checked: a value with no image traps TbbErr
+> int32:i = t => int32;              // checked: ERR traps TbbErr
+> nit:n   = 3i32 => nit;             // checked: 7i32 => nit traps TbbErr
+> tbb32:s = 5000000000i64 =>! tbb32; // no trap: out of range becomes ERR
+> ```
+
 > **Integer→pointer casting is illegal.** It is suspended only by
 > `#wild_ptr<T>(addr)` in `wild` context (D-019).
 | `:` | Type Annotation | Used in variable declarations and ternary separators. | `int32:x` |
