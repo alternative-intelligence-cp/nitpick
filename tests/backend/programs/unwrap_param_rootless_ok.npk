@@ -1,0 +1,1246 @@
+// expect-exit: 0
+mod:unwrap_param_rootless_ok;
+// 2026-11-19 (landing 177d2d, row 1: DEF-671's roots 1, 2 and 4, form R4-15; rulings l.19266, l.19501, l.19687, l.19773 and l.20408). A function
+// handed an `Optional` or `Result` pointer that stores a pointer or a view through it after unwrapping it: alias asks a wrapped pointer as the
+// pointer (root 1, with seat AA's `target_is_pointee` line), the wrapped parameter's MUT and stores are walked on P11's road (root 2), and alias's
+// rootless arms read the wrapped pointee (root 4, with R4-15's one line in `check_pointer_targets`' rootless block). THE RIGHT PROGRAMS (51): the
+// controls of seat AR4's faces on the rootless road (unwrap_param_roots_faces.npk), each 67 on main and here; main() exits k at the k-th that isn't.
+error:E5;
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4c/w_grow_o_nm_ok.npk`.
+func:mk_w_grow_o_nm_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_w_grow_o_nm_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_w_grow_o_nm_ok = { List<int64>:own; List<int64>:a; };
+func:idp_w_grow_o_nm_ok = HP2_w_grow_o_nm_ok->(HP2_w_grow_o_nm_ok->:w) never fails { pass w; };
+func:idwo_w_grow_o_nm_ok = HP2_w_grow_o_nm_ok->?(HP2_w_grow_o_nm_ok->?:w) never fails { pass w; };
+func:growp_w_grow_o_nm_ok = int64(HP2_w_grow_o_nm_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-p).own), 1i64); } pass 7i64; };
+func:growpa_w_grow_o_nm_ok = int64(HP2_w_grow_o_nm_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-p).a), 1i64); } pass 7i64; };
+func:grow_o_w_grow_o_nm_ok = int64(HP2_w_grow_o_nm_ok->?:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ??! E5)).own), 1i64); } pass 7i64; };
+func:id_o_w_grow_o_nm_ok = HP2_w_grow_o_nm_ok->?(HP2_w_grow_o_nm_ok->?:w) never fails { pass w; };
+func:cast_o_w_grow_o_nm_ok = int64(HP2_w_grow_o_nm_ok->?:o) never fails { HX_w_grow_o_nm_ok->:x = (((o ??! E5) =>! any->) =>! HX_w_grow_o_nm_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:on_o_w_grow_o_nm_ok = int64(HP2_w_grow_o_nm_ok->?:o) never fails { HP2_w_grow_o_nm_ok->:p = (o ??! E5); pass raw growp_w_grow_o_nm_ok(p); };
+func:f_w_grow_o_nm_ok = int64(int64:n) never fails {
+    HP2_w_grow_o_nm_ok:m = HP2_w_grow_o_nm_ok{ a: raw mk_w_grow_o_nm_ok(), own: raw mk_w_grow_o_nm_ok() };
+    HP2_w_grow_o_nm_ok:m2 = HP2_w_grow_o_nm_ok{ a: raw mk_w_grow_o_nm_ok(), own: raw mk_w_grow_o_nm_ok() };
+    HP2_w_grow_o_nm_ok->?:om = @m;
+    HP2_w_grow_o_nm_ok->?:om2 = @m2;
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_o_w_grow_o_nm_ok(om));
+    pass (<-e) + 6i64;
+};
+func:cell_main_w_grow_o_nm_ok = int32() never fails { pass (((raw f_w_grow_o_nm_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4c/w_grow_o_x_ok.npk`.
+func:mk_w_grow_o_x_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_w_grow_o_x_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_w_grow_o_x_ok = { List<int64>:own; List<int64>:a; };
+func:idp_w_grow_o_x_ok = HP2_w_grow_o_x_ok->(HP2_w_grow_o_x_ok->:w) never fails { pass w; };
+func:idwo_w_grow_o_x_ok = HP2_w_grow_o_x_ok->?(HP2_w_grow_o_x_ok->?:w) never fails { pass w; };
+func:growp_w_grow_o_x_ok = int64(HP2_w_grow_o_x_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-p).own), 1i64); } pass 7i64; };
+func:growpa_w_grow_o_x_ok = int64(HP2_w_grow_o_x_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-p).a), 1i64); } pass 7i64; };
+func:grow_o_w_grow_o_x_ok = int64(HP2_w_grow_o_x_ok->?:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ??! E5)).own), 1i64); } pass 7i64; };
+func:id_o_w_grow_o_x_ok = HP2_w_grow_o_x_ok->?(HP2_w_grow_o_x_ok->?:w) never fails { pass w; };
+func:cast_o_w_grow_o_x_ok = int64(HP2_w_grow_o_x_ok->?:o) never fails { HX_w_grow_o_x_ok->:x = (((o ??! E5) =>! any->) =>! HX_w_grow_o_x_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:on_o_w_grow_o_x_ok = int64(HP2_w_grow_o_x_ok->?:o) never fails { HP2_w_grow_o_x_ok->:p = (o ??! E5); pass raw growp_w_grow_o_x_ok(p); };
+func:f_w_grow_o_x_ok = int64(int64:n) never fails {
+    HP2_w_grow_o_x_ok:m = HP2_w_grow_o_x_ok{ a: raw mk_w_grow_o_x_ok(), own: raw mk_w_grow_o_x_ok() };
+    HP2_w_grow_o_x_ok:m2 = HP2_w_grow_o_x_ok{ a: raw mk_w_grow_o_x_ok(), own: raw mk_w_grow_o_x_ok() };
+    HP2_w_grow_o_x_ok->?:om = @m;
+    HP2_w_grow_o_x_ok->?:om2 = @m2;
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_o_w_grow_o_x_ok(raw id_o_w_grow_o_x_ok(om)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_w_grow_o_x_ok = int32() never fails { pass (((raw f_w_grow_o_x_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4c/w_grow_r_nm_ok.npk`.
+func:mk_w_grow_r_nm_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_w_grow_r_nm_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_w_grow_r_nm_ok = { List<int64>:own; List<int64>:a; };
+func:idp_w_grow_r_nm_ok = HP2_w_grow_r_nm_ok->(HP2_w_grow_r_nm_ok->:w) never fails { pass w; };
+func:idwo_w_grow_r_nm_ok = HP2_w_grow_r_nm_ok->?(HP2_w_grow_r_nm_ok->?:w) never fails { pass w; };
+func:growp_w_grow_r_nm_ok = int64(HP2_w_grow_r_nm_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-p).own), 1i64); } pass 7i64; };
+func:growpa_w_grow_r_nm_ok = int64(HP2_w_grow_r_nm_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-p).a), 1i64); } pass 7i64; };
+func:grow_r_w_grow_r_nm_ok = int64(Result<HP2_w_grow_r_nm_ok->>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ?! E5)).own), 1i64); } pass 7i64; };
+func:cast_r_w_grow_r_nm_ok = int64(Result<HP2_w_grow_r_nm_ok->>:o) never fails { HX_w_grow_r_nm_ok->:x = (((o ?! E5) =>! any->) =>! HX_w_grow_r_nm_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:on_r_w_grow_r_nm_ok = int64(Result<HP2_w_grow_r_nm_ok->>:o) never fails { HP2_w_grow_r_nm_ok->:p = (o ?! E5); pass raw growp_w_grow_r_nm_ok(p); };
+func:f_w_grow_r_nm_ok = int64(int64:n) never fails {
+    HP2_w_grow_r_nm_ok:m = HP2_w_grow_r_nm_ok{ a: raw mk_w_grow_r_nm_ok(), own: raw mk_w_grow_r_nm_ok() };
+    HP2_w_grow_r_nm_ok:m2 = HP2_w_grow_r_nm_ok{ a: raw mk_w_grow_r_nm_ok(), own: raw mk_w_grow_r_nm_ok() };
+    Result<HP2_w_grow_r_nm_ok->>:om = Result{ value: @m };
+    Result<HP2_w_grow_r_nm_ok->>:om2 = Result{ value: @m2 };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_r_w_grow_r_nm_ok(om));
+    pass (<-e) + 6i64;
+};
+func:cell_main_w_grow_r_nm_ok = int32() never fails { pass (((raw f_w_grow_r_nm_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4c/w_grow_r_x_ok.npk`.
+func:mk_w_grow_r_x_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_w_grow_r_x_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_w_grow_r_x_ok = { List<int64>:own; List<int64>:a; };
+func:idp_w_grow_r_x_ok = HP2_w_grow_r_x_ok->(HP2_w_grow_r_x_ok->:w) never fails { pass w; };
+func:idwo_w_grow_r_x_ok = HP2_w_grow_r_x_ok->?(HP2_w_grow_r_x_ok->?:w) never fails { pass w; };
+func:growp_w_grow_r_x_ok = int64(HP2_w_grow_r_x_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-p).own), 1i64); } pass 7i64; };
+func:growpa_w_grow_r_x_ok = int64(HP2_w_grow_r_x_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-p).a), 1i64); } pass 7i64; };
+func:grow_r_w_grow_r_x_ok = int64(Result<HP2_w_grow_r_x_ok->>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ?! E5)).own), 1i64); } pass 7i64; };
+func:cast_r_w_grow_r_x_ok = int64(Result<HP2_w_grow_r_x_ok->>:o) never fails { HX_w_grow_r_x_ok->:x = (((o ?! E5) =>! any->) =>! HX_w_grow_r_x_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:on_r_w_grow_r_x_ok = int64(Result<HP2_w_grow_r_x_ok->>:o) never fails { HP2_w_grow_r_x_ok->:p = (o ?! E5); pass raw growp_w_grow_r_x_ok(p); };
+func:f_w_grow_r_x_ok = int64(int64:n) never fails {
+    HP2_w_grow_r_x_ok:m = HP2_w_grow_r_x_ok{ a: raw mk_w_grow_r_x_ok(), own: raw mk_w_grow_r_x_ok() };
+    HP2_w_grow_r_x_ok:m2 = HP2_w_grow_r_x_ok{ a: raw mk_w_grow_r_x_ok(), own: raw mk_w_grow_r_x_ok() };
+    Result<HP2_w_grow_r_x_ok->>:om = Result{ value: @m };
+    Result<HP2_w_grow_r_x_ok->>:om2 = Result{ value: @m2 };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_r_w_grow_r_x_ok(Result{ value: raw idp_w_grow_r_x_ok(@m) }));
+    pass (<-e) + 6i64;
+};
+func:cell_main_w_grow_r_x_ok = int32() never fails { pass (((raw f_w_grow_r_x_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4c/w_grow_ro_nm_ok.npk`.
+func:mk_w_grow_ro_nm_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_w_grow_ro_nm_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_w_grow_ro_nm_ok = { List<int64>:own; List<int64>:a; };
+func:idp_w_grow_ro_nm_ok = HP2_w_grow_ro_nm_ok->(HP2_w_grow_ro_nm_ok->:w) never fails { pass w; };
+func:idwo_w_grow_ro_nm_ok = HP2_w_grow_ro_nm_ok->?(HP2_w_grow_ro_nm_ok->?:w) never fails { pass w; };
+func:growp_w_grow_ro_nm_ok = int64(HP2_w_grow_ro_nm_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-p).own), 1i64); } pass 7i64; };
+func:growpa_w_grow_ro_nm_ok = int64(HP2_w_grow_ro_nm_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-p).a), 1i64); } pass 7i64; };
+func:grow_ro_w_grow_ro_nm_ok = int64(Result<HP2_w_grow_ro_nm_ok->?>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((o ?! E5) ??! E5)).own), 1i64); } pass 7i64; };
+func:cast_ro_w_grow_ro_nm_ok = int64(Result<HP2_w_grow_ro_nm_ok->?>:o) never fails { HX_w_grow_ro_nm_ok->:x = ((((o ?! E5) ??! E5) =>! any->) =>! HX_w_grow_ro_nm_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:on_ro_w_grow_ro_nm_ok = int64(Result<HP2_w_grow_ro_nm_ok->?>:o) never fails { HP2_w_grow_ro_nm_ok->:p = ((o ?! E5) ??! E5); pass raw growp_w_grow_ro_nm_ok(p); };
+func:f_w_grow_ro_nm_ok = int64(int64:n) never fails {
+    HP2_w_grow_ro_nm_ok:m = HP2_w_grow_ro_nm_ok{ a: raw mk_w_grow_ro_nm_ok(), own: raw mk_w_grow_ro_nm_ok() };
+    HP2_w_grow_ro_nm_ok:m2 = HP2_w_grow_ro_nm_ok{ a: raw mk_w_grow_ro_nm_ok(), own: raw mk_w_grow_ro_nm_ok() };
+    Result<HP2_w_grow_ro_nm_ok->?>:om = Result{ value: @m };
+    Result<HP2_w_grow_ro_nm_ok->?>:om2 = Result{ value: @m2 };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_ro_w_grow_ro_nm_ok(om));
+    pass (<-e) + 6i64;
+};
+func:cell_main_w_grow_ro_nm_ok = int32() never fails { pass (((raw f_w_grow_ro_nm_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4c/w_grow_ro_x_ok.npk`.
+func:mk_w_grow_ro_x_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_w_grow_ro_x_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_w_grow_ro_x_ok = { List<int64>:own; List<int64>:a; };
+func:idp_w_grow_ro_x_ok = HP2_w_grow_ro_x_ok->(HP2_w_grow_ro_x_ok->:w) never fails { pass w; };
+func:idwo_w_grow_ro_x_ok = HP2_w_grow_ro_x_ok->?(HP2_w_grow_ro_x_ok->?:w) never fails { pass w; };
+func:growp_w_grow_ro_x_ok = int64(HP2_w_grow_ro_x_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-p).own), 1i64); } pass 7i64; };
+func:growpa_w_grow_ro_x_ok = int64(HP2_w_grow_ro_x_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-p).a), 1i64); } pass 7i64; };
+func:grow_ro_w_grow_ro_x_ok = int64(Result<HP2_w_grow_ro_x_ok->?>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((o ?! E5) ??! E5)).own), 1i64); } pass 7i64; };
+func:cast_ro_w_grow_ro_x_ok = int64(Result<HP2_w_grow_ro_x_ok->?>:o) never fails { HX_w_grow_ro_x_ok->:x = ((((o ?! E5) ??! E5) =>! any->) =>! HX_w_grow_ro_x_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:on_ro_w_grow_ro_x_ok = int64(Result<HP2_w_grow_ro_x_ok->?>:o) never fails { HP2_w_grow_ro_x_ok->:p = ((o ?! E5) ??! E5); pass raw growp_w_grow_ro_x_ok(p); };
+func:f_w_grow_ro_x_ok = int64(int64:n) never fails {
+    HP2_w_grow_ro_x_ok:m = HP2_w_grow_ro_x_ok{ a: raw mk_w_grow_ro_x_ok(), own: raw mk_w_grow_ro_x_ok() };
+    HP2_w_grow_ro_x_ok:m2 = HP2_w_grow_ro_x_ok{ a: raw mk_w_grow_ro_x_ok(), own: raw mk_w_grow_ro_x_ok() };
+    Result<HP2_w_grow_ro_x_ok->?>:om = Result{ value: @m };
+    Result<HP2_w_grow_ro_x_ok->?>:om2 = Result{ value: @m2 };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_ro_w_grow_ro_x_ok(Result{ value: raw idwo_w_grow_ro_x_ok(@m) }));
+    pass (<-e) + 6i64;
+};
+func:cell_main_w_grow_ro_x_ok = int32() never fails { pass (((raw f_w_grow_ro_x_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4c/w_grow_rr_nm_ok.npk`.
+func:mk_w_grow_rr_nm_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_w_grow_rr_nm_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_w_grow_rr_nm_ok = { List<int64>:own; List<int64>:a; };
+func:idp_w_grow_rr_nm_ok = HP2_w_grow_rr_nm_ok->(HP2_w_grow_rr_nm_ok->:w) never fails { pass w; };
+func:idwo_w_grow_rr_nm_ok = HP2_w_grow_rr_nm_ok->?(HP2_w_grow_rr_nm_ok->?:w) never fails { pass w; };
+func:growp_w_grow_rr_nm_ok = int64(HP2_w_grow_rr_nm_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-p).own), 1i64); } pass 7i64; };
+func:growpa_w_grow_rr_nm_ok = int64(HP2_w_grow_rr_nm_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-p).a), 1i64); } pass 7i64; };
+func:grow_rr_w_grow_rr_nm_ok = int64(Result<Result<HP2_w_grow_rr_nm_ok->>>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((o ?! E5) ?! E5)).own), 1i64); } pass 7i64; };
+func:cast_rr_w_grow_rr_nm_ok = int64(Result<Result<HP2_w_grow_rr_nm_ok->>>:o) never fails { HX_w_grow_rr_nm_ok->:x = ((((o ?! E5) ?! E5) =>! any->) =>! HX_w_grow_rr_nm_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:on_rr_w_grow_rr_nm_ok = int64(Result<Result<HP2_w_grow_rr_nm_ok->>>:o) never fails { HP2_w_grow_rr_nm_ok->:p = ((o ?! E5) ?! E5); pass raw growp_w_grow_rr_nm_ok(p); };
+func:f_w_grow_rr_nm_ok = int64(int64:n) never fails {
+    HP2_w_grow_rr_nm_ok:m = HP2_w_grow_rr_nm_ok{ a: raw mk_w_grow_rr_nm_ok(), own: raw mk_w_grow_rr_nm_ok() };
+    HP2_w_grow_rr_nm_ok:m2 = HP2_w_grow_rr_nm_ok{ a: raw mk_w_grow_rr_nm_ok(), own: raw mk_w_grow_rr_nm_ok() };
+    Result<Result<HP2_w_grow_rr_nm_ok->>>:om = Result{ value: Result{ value: @m } };
+    Result<Result<HP2_w_grow_rr_nm_ok->>>:om2 = Result{ value: Result{ value: @m2 } };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_rr_w_grow_rr_nm_ok(om));
+    pass (<-e) + 6i64;
+};
+func:cell_main_w_grow_rr_nm_ok = int32() never fails { pass (((raw f_w_grow_rr_nm_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4c/w_grow_rr_x_ok.npk`.
+func:mk_w_grow_rr_x_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_w_grow_rr_x_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_w_grow_rr_x_ok = { List<int64>:own; List<int64>:a; };
+func:idp_w_grow_rr_x_ok = HP2_w_grow_rr_x_ok->(HP2_w_grow_rr_x_ok->:w) never fails { pass w; };
+func:idwo_w_grow_rr_x_ok = HP2_w_grow_rr_x_ok->?(HP2_w_grow_rr_x_ok->?:w) never fails { pass w; };
+func:growp_w_grow_rr_x_ok = int64(HP2_w_grow_rr_x_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-p).own), 1i64); } pass 7i64; };
+func:growpa_w_grow_rr_x_ok = int64(HP2_w_grow_rr_x_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-p).a), 1i64); } pass 7i64; };
+func:grow_rr_w_grow_rr_x_ok = int64(Result<Result<HP2_w_grow_rr_x_ok->>>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((o ?! E5) ?! E5)).own), 1i64); } pass 7i64; };
+func:cast_rr_w_grow_rr_x_ok = int64(Result<Result<HP2_w_grow_rr_x_ok->>>:o) never fails { HX_w_grow_rr_x_ok->:x = ((((o ?! E5) ?! E5) =>! any->) =>! HX_w_grow_rr_x_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:on_rr_w_grow_rr_x_ok = int64(Result<Result<HP2_w_grow_rr_x_ok->>>:o) never fails { HP2_w_grow_rr_x_ok->:p = ((o ?! E5) ?! E5); pass raw growp_w_grow_rr_x_ok(p); };
+func:f_w_grow_rr_x_ok = int64(int64:n) never fails {
+    HP2_w_grow_rr_x_ok:m = HP2_w_grow_rr_x_ok{ a: raw mk_w_grow_rr_x_ok(), own: raw mk_w_grow_rr_x_ok() };
+    HP2_w_grow_rr_x_ok:m2 = HP2_w_grow_rr_x_ok{ a: raw mk_w_grow_rr_x_ok(), own: raw mk_w_grow_rr_x_ok() };
+    Result<Result<HP2_w_grow_rr_x_ok->>>:om = Result{ value: Result{ value: @m } };
+    Result<Result<HP2_w_grow_rr_x_ok->>>:om2 = Result{ value: Result{ value: @m2 } };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_rr_w_grow_rr_x_ok(Result{ value: Result{ value: raw idp_w_grow_rr_x_ok(@m) } }));
+    pass (<-e) + 6i64;
+};
+func:cell_main_w_grow_rr_x_ok = int32() never fails { pass (((raw f_w_grow_rr_x_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4d/v_grow_o_a_ok.npk`.
+func:mk_v_grow_o_a_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_v_grow_o_a_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_v_grow_o_a_ok = { List<int64>:own; List<int64>:a; };
+func:idp_v_grow_o_a_ok = HP2_v_grow_o_a_ok->(HP2_v_grow_o_a_ok->:w) never fails { pass w; };
+func:idwo_v_grow_o_a_ok = HP2_v_grow_o_a_ok->?(HP2_v_grow_o_a_ok->?:w) never fails { pass w; };
+func:idwa_v_grow_o_a_ok = any->?(any->?:w) never fails { pass w; };
+func:idpa_v_grow_o_a_ok = any->(any->:w) never fails { pass w; };
+func:grow_o_v_grow_o_a_ok = int64(HP2_v_grow_o_a_ok->?:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ??! E5)).own), 1i64); } pass 7i64; };
+func:cast_o_v_grow_o_a_ok = int64(HP2_v_grow_o_a_ok->?:o) never fails { HX_v_grow_o_a_ok->:x = (((o ??! E5) =>! any->) =>! HX_v_grow_o_a_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:whole_o_v_grow_o_a_ok = int64(HP2_v_grow_o_a_ok->?:o) never fails { (<-(o ??! E5)) = HP2_v_grow_o_a_ok{ a: raw mk_v_grow_o_a_ok(), own: raw mk_v_grow_o_a_ok() }; pass 7i64; };
+struct:S_o_v_grow_o_a_ok = { HP2_v_grow_o_a_ok->?:oq; int64:z; };
+func:mks_o_v_grow_o_a_ok = S_o_v_grow_o_a_ok(HP2_v_grow_o_a_ok->?:w) never fails { pass S_o_v_grow_o_a_ok{ oq: w, z: 1i64 }; };
+func:f_v_grow_o_a_ok = int64(int64:n) never fails {
+    HP2_v_grow_o_a_ok:m = HP2_v_grow_o_a_ok{ a: raw mk_v_grow_o_a_ok(), own: raw mk_v_grow_o_a_ok() };
+    HP2_v_grow_o_a_ok:m2 = HP2_v_grow_o_a_ok{ a: raw mk_v_grow_o_a_ok(), own: raw mk_v_grow_o_a_ok() };
+    HP2_v_grow_o_a_ok->?:om = @m;
+    HP2_v_grow_o_a_ok->?:om2 = @m2;
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_o_v_grow_o_a_ok(raw idwo_v_grow_o_a_ok(@m)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_v_grow_o_a_ok = int32() never fails { pass (((raw f_v_grow_o_a_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4d/v_grow_o_d_ok.npk`.
+func:mk_v_grow_o_d_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_v_grow_o_d_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_v_grow_o_d_ok = { List<int64>:own; List<int64>:a; };
+func:idp_v_grow_o_d_ok = HP2_v_grow_o_d_ok->(HP2_v_grow_o_d_ok->:w) never fails { pass w; };
+func:idwo_v_grow_o_d_ok = HP2_v_grow_o_d_ok->?(HP2_v_grow_o_d_ok->?:w) never fails { pass w; };
+func:idwa_v_grow_o_d_ok = any->?(any->?:w) never fails { pass w; };
+func:idpa_v_grow_o_d_ok = any->(any->:w) never fails { pass w; };
+func:grow_o_v_grow_o_d_ok = int64(HP2_v_grow_o_d_ok->?:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ??! E5)).own), 1i64); } pass 7i64; };
+func:cast_o_v_grow_o_d_ok = int64(HP2_v_grow_o_d_ok->?:o) never fails { HX_v_grow_o_d_ok->:x = (((o ??! E5) =>! any->) =>! HX_v_grow_o_d_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:whole_o_v_grow_o_d_ok = int64(HP2_v_grow_o_d_ok->?:o) never fails { (<-(o ??! E5)) = HP2_v_grow_o_d_ok{ a: raw mk_v_grow_o_d_ok(), own: raw mk_v_grow_o_d_ok() }; pass 7i64; };
+struct:S_o_v_grow_o_d_ok = { HP2_v_grow_o_d_ok->?:oq; int64:z; };
+func:mks_o_v_grow_o_d_ok = S_o_v_grow_o_d_ok(HP2_v_grow_o_d_ok->?:w) never fails { pass S_o_v_grow_o_d_ok{ oq: w, z: 1i64 }; };
+func:f_v_grow_o_d_ok = int64(int64:n) never fails {
+    HP2_v_grow_o_d_ok:m = HP2_v_grow_o_d_ok{ a: raw mk_v_grow_o_d_ok(), own: raw mk_v_grow_o_d_ok() };
+    HP2_v_grow_o_d_ok:m2 = HP2_v_grow_o_d_ok{ a: raw mk_v_grow_o_d_ok(), own: raw mk_v_grow_o_d_ok() };
+    HP2_v_grow_o_d_ok->?:om = @m;
+    HP2_v_grow_o_d_ok->?:om2 = @m2;
+    Result<HP2_v_grow_o_d_ok->?>:rq = Result{ value: om };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_o_v_grow_o_d_ok((rq ?| om2)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_v_grow_o_d_ok = int32() never fails { pass (((raw f_v_grow_o_d_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4d/v_grow_o_f_ok.npk`.
+func:mk_v_grow_o_f_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_v_grow_o_f_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_v_grow_o_f_ok = { List<int64>:own; List<int64>:a; };
+func:idp_v_grow_o_f_ok = HP2_v_grow_o_f_ok->(HP2_v_grow_o_f_ok->:w) never fails { pass w; };
+func:idwo_v_grow_o_f_ok = HP2_v_grow_o_f_ok->?(HP2_v_grow_o_f_ok->?:w) never fails { pass w; };
+func:idwa_v_grow_o_f_ok = any->?(any->?:w) never fails { pass w; };
+func:idpa_v_grow_o_f_ok = any->(any->:w) never fails { pass w; };
+func:grow_o_v_grow_o_f_ok = int64(HP2_v_grow_o_f_ok->?:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ??! E5)).own), 1i64); } pass 7i64; };
+func:cast_o_v_grow_o_f_ok = int64(HP2_v_grow_o_f_ok->?:o) never fails { HX_v_grow_o_f_ok->:x = (((o ??! E5) =>! any->) =>! HX_v_grow_o_f_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:whole_o_v_grow_o_f_ok = int64(HP2_v_grow_o_f_ok->?:o) never fails { (<-(o ??! E5)) = HP2_v_grow_o_f_ok{ a: raw mk_v_grow_o_f_ok(), own: raw mk_v_grow_o_f_ok() }; pass 7i64; };
+struct:S_o_v_grow_o_f_ok = { HP2_v_grow_o_f_ok->?:oq; int64:z; };
+func:mks_o_v_grow_o_f_ok = S_o_v_grow_o_f_ok(HP2_v_grow_o_f_ok->?:w) never fails { pass S_o_v_grow_o_f_ok{ oq: w, z: 1i64 }; };
+func:f_v_grow_o_f_ok = int64(int64:n) never fails {
+    HP2_v_grow_o_f_ok:m = HP2_v_grow_o_f_ok{ a: raw mk_v_grow_o_f_ok(), own: raw mk_v_grow_o_f_ok() };
+    HP2_v_grow_o_f_ok:m2 = HP2_v_grow_o_f_ok{ a: raw mk_v_grow_o_f_ok(), own: raw mk_v_grow_o_f_ok() };
+    HP2_v_grow_o_f_ok->?:om = @m;
+    HP2_v_grow_o_f_ok->?:om2 = @m2;
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_o_v_grow_o_f_ok((raw mks_o_v_grow_o_f_ok(om)).oq));
+    pass (<-e) + 6i64;
+};
+func:cell_main_v_grow_o_f_ok = int32() never fails { pass (((raw f_v_grow_o_f_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4d/v_grow_o_nm_ok.npk`.
+func:mk_v_grow_o_nm_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_v_grow_o_nm_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_v_grow_o_nm_ok = { List<int64>:own; List<int64>:a; };
+func:idp_v_grow_o_nm_ok = HP2_v_grow_o_nm_ok->(HP2_v_grow_o_nm_ok->:w) never fails { pass w; };
+func:idwo_v_grow_o_nm_ok = HP2_v_grow_o_nm_ok->?(HP2_v_grow_o_nm_ok->?:w) never fails { pass w; };
+func:idwa_v_grow_o_nm_ok = any->?(any->?:w) never fails { pass w; };
+func:idpa_v_grow_o_nm_ok = any->(any->:w) never fails { pass w; };
+func:grow_o_v_grow_o_nm_ok = int64(HP2_v_grow_o_nm_ok->?:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ??! E5)).own), 1i64); } pass 7i64; };
+func:cast_o_v_grow_o_nm_ok = int64(HP2_v_grow_o_nm_ok->?:o) never fails { HX_v_grow_o_nm_ok->:x = (((o ??! E5) =>! any->) =>! HX_v_grow_o_nm_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:whole_o_v_grow_o_nm_ok = int64(HP2_v_grow_o_nm_ok->?:o) never fails { (<-(o ??! E5)) = HP2_v_grow_o_nm_ok{ a: raw mk_v_grow_o_nm_ok(), own: raw mk_v_grow_o_nm_ok() }; pass 7i64; };
+struct:S_o_v_grow_o_nm_ok = { HP2_v_grow_o_nm_ok->?:oq; int64:z; };
+func:mks_o_v_grow_o_nm_ok = S_o_v_grow_o_nm_ok(HP2_v_grow_o_nm_ok->?:w) never fails { pass S_o_v_grow_o_nm_ok{ oq: w, z: 1i64 }; };
+func:f_v_grow_o_nm_ok = int64(int64:n) never fails {
+    HP2_v_grow_o_nm_ok:m = HP2_v_grow_o_nm_ok{ a: raw mk_v_grow_o_nm_ok(), own: raw mk_v_grow_o_nm_ok() };
+    HP2_v_grow_o_nm_ok:m2 = HP2_v_grow_o_nm_ok{ a: raw mk_v_grow_o_nm_ok(), own: raw mk_v_grow_o_nm_ok() };
+    HP2_v_grow_o_nm_ok->?:om = @m;
+    HP2_v_grow_o_nm_ok->?:om2 = @m2;
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_o_v_grow_o_nm_ok(om));
+    pass (<-e) + 6i64;
+};
+func:cell_main_v_grow_o_nm_ok = int32() never fails { pass (((raw f_v_grow_o_nm_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4d/v_grow_o_t_ok.npk`.
+func:mk_v_grow_o_t_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_v_grow_o_t_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_v_grow_o_t_ok = { List<int64>:own; List<int64>:a; };
+func:idp_v_grow_o_t_ok = HP2_v_grow_o_t_ok->(HP2_v_grow_o_t_ok->:w) never fails { pass w; };
+func:idwo_v_grow_o_t_ok = HP2_v_grow_o_t_ok->?(HP2_v_grow_o_t_ok->?:w) never fails { pass w; };
+func:idwa_v_grow_o_t_ok = any->?(any->?:w) never fails { pass w; };
+func:idpa_v_grow_o_t_ok = any->(any->:w) never fails { pass w; };
+func:grow_o_v_grow_o_t_ok = int64(HP2_v_grow_o_t_ok->?:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ??! E5)).own), 1i64); } pass 7i64; };
+func:cast_o_v_grow_o_t_ok = int64(HP2_v_grow_o_t_ok->?:o) never fails { HX_v_grow_o_t_ok->:x = (((o ??! E5) =>! any->) =>! HX_v_grow_o_t_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:whole_o_v_grow_o_t_ok = int64(HP2_v_grow_o_t_ok->?:o) never fails { (<-(o ??! E5)) = HP2_v_grow_o_t_ok{ a: raw mk_v_grow_o_t_ok(), own: raw mk_v_grow_o_t_ok() }; pass 7i64; };
+struct:S_o_v_grow_o_t_ok = { HP2_v_grow_o_t_ok->?:oq; int64:z; };
+func:mks_o_v_grow_o_t_ok = S_o_v_grow_o_t_ok(HP2_v_grow_o_t_ok->?:w) never fails { pass S_o_v_grow_o_t_ok{ oq: w, z: 1i64 }; };
+func:f_v_grow_o_t_ok = int64(int64:n) never fails {
+    HP2_v_grow_o_t_ok:m = HP2_v_grow_o_t_ok{ a: raw mk_v_grow_o_t_ok(), own: raw mk_v_grow_o_t_ok() };
+    HP2_v_grow_o_t_ok:m2 = HP2_v_grow_o_t_ok{ a: raw mk_v_grow_o_t_ok(), own: raw mk_v_grow_o_t_ok() };
+    HP2_v_grow_o_t_ok->?:om = @m;
+    HP2_v_grow_o_t_ok->?:om2 = @m2;
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_o_v_grow_o_t_ok(is (n > 100i64) : om2 : om));
+    pass (<-e) + 6i64;
+};
+func:cell_main_v_grow_o_t_ok = int32() never fails { pass (((raw f_v_grow_o_t_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4d/v_grow_r_a_ok.npk`.
+func:mk_v_grow_r_a_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_v_grow_r_a_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_v_grow_r_a_ok = { List<int64>:own; List<int64>:a; };
+func:idp_v_grow_r_a_ok = HP2_v_grow_r_a_ok->(HP2_v_grow_r_a_ok->:w) never fails { pass w; };
+func:idwo_v_grow_r_a_ok = HP2_v_grow_r_a_ok->?(HP2_v_grow_r_a_ok->?:w) never fails { pass w; };
+func:idwa_v_grow_r_a_ok = any->?(any->?:w) never fails { pass w; };
+func:idpa_v_grow_r_a_ok = any->(any->:w) never fails { pass w; };
+func:grow_r_v_grow_r_a_ok = int64(Result<HP2_v_grow_r_a_ok->>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ?! E5)).own), 1i64); } pass 7i64; };
+func:cast_r_v_grow_r_a_ok = int64(Result<HP2_v_grow_r_a_ok->>:o) never fails { HX_v_grow_r_a_ok->:x = (((o ?! E5) =>! any->) =>! HX_v_grow_r_a_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:whole_r_v_grow_r_a_ok = int64(Result<HP2_v_grow_r_a_ok->>:o) never fails { (<-(o ?! E5)) = HP2_v_grow_r_a_ok{ a: raw mk_v_grow_r_a_ok(), own: raw mk_v_grow_r_a_ok() }; pass 7i64; };
+struct:S_r_v_grow_r_a_ok = { Result<HP2_v_grow_r_a_ok->>:oq; int64:z; };
+func:mks_r_v_grow_r_a_ok = S_r_v_grow_r_a_ok(Result<HP2_v_grow_r_a_ok->>:w) never fails { pass S_r_v_grow_r_a_ok{ oq: w, z: 1i64 }; };
+func:f_v_grow_r_a_ok = int64(int64:n) never fails {
+    HP2_v_grow_r_a_ok:m = HP2_v_grow_r_a_ok{ a: raw mk_v_grow_r_a_ok(), own: raw mk_v_grow_r_a_ok() };
+    HP2_v_grow_r_a_ok:m2 = HP2_v_grow_r_a_ok{ a: raw mk_v_grow_r_a_ok(), own: raw mk_v_grow_r_a_ok() };
+    Result<HP2_v_grow_r_a_ok->>:om = Result{ value: @m };
+    Result<HP2_v_grow_r_a_ok->>:om2 = Result{ value: @m2 };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_r_v_grow_r_a_ok(Result{ value: raw idp_v_grow_r_a_ok(@m) }));
+    pass (<-e) + 6i64;
+};
+func:cell_main_v_grow_r_a_ok = int32() never fails { pass (((raw f_v_grow_r_a_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4d/v_grow_r_d_ok.npk`.
+func:mk_v_grow_r_d_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_v_grow_r_d_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_v_grow_r_d_ok = { List<int64>:own; List<int64>:a; };
+func:idp_v_grow_r_d_ok = HP2_v_grow_r_d_ok->(HP2_v_grow_r_d_ok->:w) never fails { pass w; };
+func:idwo_v_grow_r_d_ok = HP2_v_grow_r_d_ok->?(HP2_v_grow_r_d_ok->?:w) never fails { pass w; };
+func:idwa_v_grow_r_d_ok = any->?(any->?:w) never fails { pass w; };
+func:idpa_v_grow_r_d_ok = any->(any->:w) never fails { pass w; };
+func:grow_r_v_grow_r_d_ok = int64(Result<HP2_v_grow_r_d_ok->>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ?! E5)).own), 1i64); } pass 7i64; };
+func:cast_r_v_grow_r_d_ok = int64(Result<HP2_v_grow_r_d_ok->>:o) never fails { HX_v_grow_r_d_ok->:x = (((o ?! E5) =>! any->) =>! HX_v_grow_r_d_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:whole_r_v_grow_r_d_ok = int64(Result<HP2_v_grow_r_d_ok->>:o) never fails { (<-(o ?! E5)) = HP2_v_grow_r_d_ok{ a: raw mk_v_grow_r_d_ok(), own: raw mk_v_grow_r_d_ok() }; pass 7i64; };
+struct:S_r_v_grow_r_d_ok = { Result<HP2_v_grow_r_d_ok->>:oq; int64:z; };
+func:mks_r_v_grow_r_d_ok = S_r_v_grow_r_d_ok(Result<HP2_v_grow_r_d_ok->>:w) never fails { pass S_r_v_grow_r_d_ok{ oq: w, z: 1i64 }; };
+func:f_v_grow_r_d_ok = int64(int64:n) never fails {
+    HP2_v_grow_r_d_ok:m = HP2_v_grow_r_d_ok{ a: raw mk_v_grow_r_d_ok(), own: raw mk_v_grow_r_d_ok() };
+    HP2_v_grow_r_d_ok:m2 = HP2_v_grow_r_d_ok{ a: raw mk_v_grow_r_d_ok(), own: raw mk_v_grow_r_d_ok() };
+    Result<HP2_v_grow_r_d_ok->>:om = Result{ value: @m };
+    Result<HP2_v_grow_r_d_ok->>:om2 = Result{ value: @m2 };
+    Result<Result<HP2_v_grow_r_d_ok->>>:rq = Result{ value: om };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_r_v_grow_r_d_ok((rq ?| om2)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_v_grow_r_d_ok = int32() never fails { pass (((raw f_v_grow_r_d_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4d/v_grow_r_f_ok.npk`.
+func:mk_v_grow_r_f_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_v_grow_r_f_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_v_grow_r_f_ok = { List<int64>:own; List<int64>:a; };
+func:idp_v_grow_r_f_ok = HP2_v_grow_r_f_ok->(HP2_v_grow_r_f_ok->:w) never fails { pass w; };
+func:idwo_v_grow_r_f_ok = HP2_v_grow_r_f_ok->?(HP2_v_grow_r_f_ok->?:w) never fails { pass w; };
+func:idwa_v_grow_r_f_ok = any->?(any->?:w) never fails { pass w; };
+func:idpa_v_grow_r_f_ok = any->(any->:w) never fails { pass w; };
+func:grow_r_v_grow_r_f_ok = int64(Result<HP2_v_grow_r_f_ok->>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ?! E5)).own), 1i64); } pass 7i64; };
+func:cast_r_v_grow_r_f_ok = int64(Result<HP2_v_grow_r_f_ok->>:o) never fails { HX_v_grow_r_f_ok->:x = (((o ?! E5) =>! any->) =>! HX_v_grow_r_f_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:whole_r_v_grow_r_f_ok = int64(Result<HP2_v_grow_r_f_ok->>:o) never fails { (<-(o ?! E5)) = HP2_v_grow_r_f_ok{ a: raw mk_v_grow_r_f_ok(), own: raw mk_v_grow_r_f_ok() }; pass 7i64; };
+struct:S_r_v_grow_r_f_ok = { Result<HP2_v_grow_r_f_ok->>:oq; int64:z; };
+func:mks_r_v_grow_r_f_ok = S_r_v_grow_r_f_ok(Result<HP2_v_grow_r_f_ok->>:w) never fails { pass S_r_v_grow_r_f_ok{ oq: w, z: 1i64 }; };
+func:f_v_grow_r_f_ok = int64(int64:n) never fails {
+    HP2_v_grow_r_f_ok:m = HP2_v_grow_r_f_ok{ a: raw mk_v_grow_r_f_ok(), own: raw mk_v_grow_r_f_ok() };
+    HP2_v_grow_r_f_ok:m2 = HP2_v_grow_r_f_ok{ a: raw mk_v_grow_r_f_ok(), own: raw mk_v_grow_r_f_ok() };
+    Result<HP2_v_grow_r_f_ok->>:om = Result{ value: @m };
+    Result<HP2_v_grow_r_f_ok->>:om2 = Result{ value: @m2 };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_r_v_grow_r_f_ok((raw mks_r_v_grow_r_f_ok(om)).oq));
+    pass (<-e) + 6i64;
+};
+func:cell_main_v_grow_r_f_ok = int32() never fails { pass (((raw f_v_grow_r_f_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4d/v_grow_r_nm_ok.npk`.
+func:mk_v_grow_r_nm_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_v_grow_r_nm_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_v_grow_r_nm_ok = { List<int64>:own; List<int64>:a; };
+func:idp_v_grow_r_nm_ok = HP2_v_grow_r_nm_ok->(HP2_v_grow_r_nm_ok->:w) never fails { pass w; };
+func:idwo_v_grow_r_nm_ok = HP2_v_grow_r_nm_ok->?(HP2_v_grow_r_nm_ok->?:w) never fails { pass w; };
+func:idwa_v_grow_r_nm_ok = any->?(any->?:w) never fails { pass w; };
+func:idpa_v_grow_r_nm_ok = any->(any->:w) never fails { pass w; };
+func:grow_r_v_grow_r_nm_ok = int64(Result<HP2_v_grow_r_nm_ok->>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ?! E5)).own), 1i64); } pass 7i64; };
+func:cast_r_v_grow_r_nm_ok = int64(Result<HP2_v_grow_r_nm_ok->>:o) never fails { HX_v_grow_r_nm_ok->:x = (((o ?! E5) =>! any->) =>! HX_v_grow_r_nm_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:whole_r_v_grow_r_nm_ok = int64(Result<HP2_v_grow_r_nm_ok->>:o) never fails { (<-(o ?! E5)) = HP2_v_grow_r_nm_ok{ a: raw mk_v_grow_r_nm_ok(), own: raw mk_v_grow_r_nm_ok() }; pass 7i64; };
+struct:S_r_v_grow_r_nm_ok = { Result<HP2_v_grow_r_nm_ok->>:oq; int64:z; };
+func:mks_r_v_grow_r_nm_ok = S_r_v_grow_r_nm_ok(Result<HP2_v_grow_r_nm_ok->>:w) never fails { pass S_r_v_grow_r_nm_ok{ oq: w, z: 1i64 }; };
+func:f_v_grow_r_nm_ok = int64(int64:n) never fails {
+    HP2_v_grow_r_nm_ok:m = HP2_v_grow_r_nm_ok{ a: raw mk_v_grow_r_nm_ok(), own: raw mk_v_grow_r_nm_ok() };
+    HP2_v_grow_r_nm_ok:m2 = HP2_v_grow_r_nm_ok{ a: raw mk_v_grow_r_nm_ok(), own: raw mk_v_grow_r_nm_ok() };
+    Result<HP2_v_grow_r_nm_ok->>:om = Result{ value: @m };
+    Result<HP2_v_grow_r_nm_ok->>:om2 = Result{ value: @m2 };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_r_v_grow_r_nm_ok(om));
+    pass (<-e) + 6i64;
+};
+func:cell_main_v_grow_r_nm_ok = int32() never fails { pass (((raw f_v_grow_r_nm_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4d/v_grow_r_t_ok.npk`.
+func:mk_v_grow_r_t_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_v_grow_r_t_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_v_grow_r_t_ok = { List<int64>:own; List<int64>:a; };
+func:idp_v_grow_r_t_ok = HP2_v_grow_r_t_ok->(HP2_v_grow_r_t_ok->:w) never fails { pass w; };
+func:idwo_v_grow_r_t_ok = HP2_v_grow_r_t_ok->?(HP2_v_grow_r_t_ok->?:w) never fails { pass w; };
+func:idwa_v_grow_r_t_ok = any->?(any->?:w) never fails { pass w; };
+func:idpa_v_grow_r_t_ok = any->(any->:w) never fails { pass w; };
+func:grow_r_v_grow_r_t_ok = int64(Result<HP2_v_grow_r_t_ok->>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ?! E5)).own), 1i64); } pass 7i64; };
+func:cast_r_v_grow_r_t_ok = int64(Result<HP2_v_grow_r_t_ok->>:o) never fails { HX_v_grow_r_t_ok->:x = (((o ?! E5) =>! any->) =>! HX_v_grow_r_t_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:whole_r_v_grow_r_t_ok = int64(Result<HP2_v_grow_r_t_ok->>:o) never fails { (<-(o ?! E5)) = HP2_v_grow_r_t_ok{ a: raw mk_v_grow_r_t_ok(), own: raw mk_v_grow_r_t_ok() }; pass 7i64; };
+struct:S_r_v_grow_r_t_ok = { Result<HP2_v_grow_r_t_ok->>:oq; int64:z; };
+func:mks_r_v_grow_r_t_ok = S_r_v_grow_r_t_ok(Result<HP2_v_grow_r_t_ok->>:w) never fails { pass S_r_v_grow_r_t_ok{ oq: w, z: 1i64 }; };
+func:f_v_grow_r_t_ok = int64(int64:n) never fails {
+    HP2_v_grow_r_t_ok:m = HP2_v_grow_r_t_ok{ a: raw mk_v_grow_r_t_ok(), own: raw mk_v_grow_r_t_ok() };
+    HP2_v_grow_r_t_ok:m2 = HP2_v_grow_r_t_ok{ a: raw mk_v_grow_r_t_ok(), own: raw mk_v_grow_r_t_ok() };
+    Result<HP2_v_grow_r_t_ok->>:om = Result{ value: @m };
+    Result<HP2_v_grow_r_t_ok->>:om2 = Result{ value: @m2 };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_r_v_grow_r_t_ok(is (n > 100i64) : om2 : om));
+    pass (<-e) + 6i64;
+};
+func:cell_main_v_grow_r_t_ok = int32() never fails { pass (((raw f_v_grow_r_t_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4d/v_grow_ro_a_ok.npk`.
+func:mk_v_grow_ro_a_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_v_grow_ro_a_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_v_grow_ro_a_ok = { List<int64>:own; List<int64>:a; };
+func:idp_v_grow_ro_a_ok = HP2_v_grow_ro_a_ok->(HP2_v_grow_ro_a_ok->:w) never fails { pass w; };
+func:idwo_v_grow_ro_a_ok = HP2_v_grow_ro_a_ok->?(HP2_v_grow_ro_a_ok->?:w) never fails { pass w; };
+func:idwa_v_grow_ro_a_ok = any->?(any->?:w) never fails { pass w; };
+func:idpa_v_grow_ro_a_ok = any->(any->:w) never fails { pass w; };
+func:grow_ro_v_grow_ro_a_ok = int64(Result<HP2_v_grow_ro_a_ok->?>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((o ?! E5) ??! E5)).own), 1i64); } pass 7i64; };
+func:cast_ro_v_grow_ro_a_ok = int64(Result<HP2_v_grow_ro_a_ok->?>:o) never fails { HX_v_grow_ro_a_ok->:x = ((((o ?! E5) ??! E5) =>! any->) =>! HX_v_grow_ro_a_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:whole_ro_v_grow_ro_a_ok = int64(Result<HP2_v_grow_ro_a_ok->?>:o) never fails { (<-((o ?! E5) ??! E5)) = HP2_v_grow_ro_a_ok{ a: raw mk_v_grow_ro_a_ok(), own: raw mk_v_grow_ro_a_ok() }; pass 7i64; };
+struct:S_ro_v_grow_ro_a_ok = { Result<HP2_v_grow_ro_a_ok->?>:oq; int64:z; };
+func:mks_ro_v_grow_ro_a_ok = S_ro_v_grow_ro_a_ok(Result<HP2_v_grow_ro_a_ok->?>:w) never fails { pass S_ro_v_grow_ro_a_ok{ oq: w, z: 1i64 }; };
+func:f_v_grow_ro_a_ok = int64(int64:n) never fails {
+    HP2_v_grow_ro_a_ok:m = HP2_v_grow_ro_a_ok{ a: raw mk_v_grow_ro_a_ok(), own: raw mk_v_grow_ro_a_ok() };
+    HP2_v_grow_ro_a_ok:m2 = HP2_v_grow_ro_a_ok{ a: raw mk_v_grow_ro_a_ok(), own: raw mk_v_grow_ro_a_ok() };
+    Result<HP2_v_grow_ro_a_ok->?>:om = Result{ value: @m };
+    Result<HP2_v_grow_ro_a_ok->?>:om2 = Result{ value: @m2 };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_ro_v_grow_ro_a_ok(Result{ value: raw idwo_v_grow_ro_a_ok(@m) }));
+    pass (<-e) + 6i64;
+};
+func:cell_main_v_grow_ro_a_ok = int32() never fails { pass (((raw f_v_grow_ro_a_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4d/v_grow_ro_d_ok.npk`.
+func:mk_v_grow_ro_d_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_v_grow_ro_d_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_v_grow_ro_d_ok = { List<int64>:own; List<int64>:a; };
+func:idp_v_grow_ro_d_ok = HP2_v_grow_ro_d_ok->(HP2_v_grow_ro_d_ok->:w) never fails { pass w; };
+func:idwo_v_grow_ro_d_ok = HP2_v_grow_ro_d_ok->?(HP2_v_grow_ro_d_ok->?:w) never fails { pass w; };
+func:idwa_v_grow_ro_d_ok = any->?(any->?:w) never fails { pass w; };
+func:idpa_v_grow_ro_d_ok = any->(any->:w) never fails { pass w; };
+func:grow_ro_v_grow_ro_d_ok = int64(Result<HP2_v_grow_ro_d_ok->?>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((o ?! E5) ??! E5)).own), 1i64); } pass 7i64; };
+func:cast_ro_v_grow_ro_d_ok = int64(Result<HP2_v_grow_ro_d_ok->?>:o) never fails { HX_v_grow_ro_d_ok->:x = ((((o ?! E5) ??! E5) =>! any->) =>! HX_v_grow_ro_d_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:whole_ro_v_grow_ro_d_ok = int64(Result<HP2_v_grow_ro_d_ok->?>:o) never fails { (<-((o ?! E5) ??! E5)) = HP2_v_grow_ro_d_ok{ a: raw mk_v_grow_ro_d_ok(), own: raw mk_v_grow_ro_d_ok() }; pass 7i64; };
+struct:S_ro_v_grow_ro_d_ok = { Result<HP2_v_grow_ro_d_ok->?>:oq; int64:z; };
+func:mks_ro_v_grow_ro_d_ok = S_ro_v_grow_ro_d_ok(Result<HP2_v_grow_ro_d_ok->?>:w) never fails { pass S_ro_v_grow_ro_d_ok{ oq: w, z: 1i64 }; };
+func:f_v_grow_ro_d_ok = int64(int64:n) never fails {
+    HP2_v_grow_ro_d_ok:m = HP2_v_grow_ro_d_ok{ a: raw mk_v_grow_ro_d_ok(), own: raw mk_v_grow_ro_d_ok() };
+    HP2_v_grow_ro_d_ok:m2 = HP2_v_grow_ro_d_ok{ a: raw mk_v_grow_ro_d_ok(), own: raw mk_v_grow_ro_d_ok() };
+    Result<HP2_v_grow_ro_d_ok->?>:om = Result{ value: @m };
+    Result<HP2_v_grow_ro_d_ok->?>:om2 = Result{ value: @m2 };
+    Result<Result<HP2_v_grow_ro_d_ok->?>>:rq = Result{ value: om };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_ro_v_grow_ro_d_ok((rq ?| om2)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_v_grow_ro_d_ok = int32() never fails { pass (((raw f_v_grow_ro_d_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4d/v_grow_ro_f_ok.npk`.
+func:mk_v_grow_ro_f_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_v_grow_ro_f_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_v_grow_ro_f_ok = { List<int64>:own; List<int64>:a; };
+func:idp_v_grow_ro_f_ok = HP2_v_grow_ro_f_ok->(HP2_v_grow_ro_f_ok->:w) never fails { pass w; };
+func:idwo_v_grow_ro_f_ok = HP2_v_grow_ro_f_ok->?(HP2_v_grow_ro_f_ok->?:w) never fails { pass w; };
+func:idwa_v_grow_ro_f_ok = any->?(any->?:w) never fails { pass w; };
+func:idpa_v_grow_ro_f_ok = any->(any->:w) never fails { pass w; };
+func:grow_ro_v_grow_ro_f_ok = int64(Result<HP2_v_grow_ro_f_ok->?>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((o ?! E5) ??! E5)).own), 1i64); } pass 7i64; };
+func:cast_ro_v_grow_ro_f_ok = int64(Result<HP2_v_grow_ro_f_ok->?>:o) never fails { HX_v_grow_ro_f_ok->:x = ((((o ?! E5) ??! E5) =>! any->) =>! HX_v_grow_ro_f_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:whole_ro_v_grow_ro_f_ok = int64(Result<HP2_v_grow_ro_f_ok->?>:o) never fails { (<-((o ?! E5) ??! E5)) = HP2_v_grow_ro_f_ok{ a: raw mk_v_grow_ro_f_ok(), own: raw mk_v_grow_ro_f_ok() }; pass 7i64; };
+struct:S_ro_v_grow_ro_f_ok = { Result<HP2_v_grow_ro_f_ok->?>:oq; int64:z; };
+func:mks_ro_v_grow_ro_f_ok = S_ro_v_grow_ro_f_ok(Result<HP2_v_grow_ro_f_ok->?>:w) never fails { pass S_ro_v_grow_ro_f_ok{ oq: w, z: 1i64 }; };
+func:f_v_grow_ro_f_ok = int64(int64:n) never fails {
+    HP2_v_grow_ro_f_ok:m = HP2_v_grow_ro_f_ok{ a: raw mk_v_grow_ro_f_ok(), own: raw mk_v_grow_ro_f_ok() };
+    HP2_v_grow_ro_f_ok:m2 = HP2_v_grow_ro_f_ok{ a: raw mk_v_grow_ro_f_ok(), own: raw mk_v_grow_ro_f_ok() };
+    Result<HP2_v_grow_ro_f_ok->?>:om = Result{ value: @m };
+    Result<HP2_v_grow_ro_f_ok->?>:om2 = Result{ value: @m2 };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_ro_v_grow_ro_f_ok((raw mks_ro_v_grow_ro_f_ok(om)).oq));
+    pass (<-e) + 6i64;
+};
+func:cell_main_v_grow_ro_f_ok = int32() never fails { pass (((raw f_v_grow_ro_f_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4d/v_grow_ro_nm_ok.npk`.
+func:mk_v_grow_ro_nm_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_v_grow_ro_nm_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_v_grow_ro_nm_ok = { List<int64>:own; List<int64>:a; };
+func:idp_v_grow_ro_nm_ok = HP2_v_grow_ro_nm_ok->(HP2_v_grow_ro_nm_ok->:w) never fails { pass w; };
+func:idwo_v_grow_ro_nm_ok = HP2_v_grow_ro_nm_ok->?(HP2_v_grow_ro_nm_ok->?:w) never fails { pass w; };
+func:idwa_v_grow_ro_nm_ok = any->?(any->?:w) never fails { pass w; };
+func:idpa_v_grow_ro_nm_ok = any->(any->:w) never fails { pass w; };
+func:grow_ro_v_grow_ro_nm_ok = int64(Result<HP2_v_grow_ro_nm_ok->?>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((o ?! E5) ??! E5)).own), 1i64); } pass 7i64; };
+func:cast_ro_v_grow_ro_nm_ok = int64(Result<HP2_v_grow_ro_nm_ok->?>:o) never fails { HX_v_grow_ro_nm_ok->:x = ((((o ?! E5) ??! E5) =>! any->) =>! HX_v_grow_ro_nm_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:whole_ro_v_grow_ro_nm_ok = int64(Result<HP2_v_grow_ro_nm_ok->?>:o) never fails { (<-((o ?! E5) ??! E5)) = HP2_v_grow_ro_nm_ok{ a: raw mk_v_grow_ro_nm_ok(), own: raw mk_v_grow_ro_nm_ok() }; pass 7i64; };
+struct:S_ro_v_grow_ro_nm_ok = { Result<HP2_v_grow_ro_nm_ok->?>:oq; int64:z; };
+func:mks_ro_v_grow_ro_nm_ok = S_ro_v_grow_ro_nm_ok(Result<HP2_v_grow_ro_nm_ok->?>:w) never fails { pass S_ro_v_grow_ro_nm_ok{ oq: w, z: 1i64 }; };
+func:f_v_grow_ro_nm_ok = int64(int64:n) never fails {
+    HP2_v_grow_ro_nm_ok:m = HP2_v_grow_ro_nm_ok{ a: raw mk_v_grow_ro_nm_ok(), own: raw mk_v_grow_ro_nm_ok() };
+    HP2_v_grow_ro_nm_ok:m2 = HP2_v_grow_ro_nm_ok{ a: raw mk_v_grow_ro_nm_ok(), own: raw mk_v_grow_ro_nm_ok() };
+    Result<HP2_v_grow_ro_nm_ok->?>:om = Result{ value: @m };
+    Result<HP2_v_grow_ro_nm_ok->?>:om2 = Result{ value: @m2 };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_ro_v_grow_ro_nm_ok(om));
+    pass (<-e) + 6i64;
+};
+func:cell_main_v_grow_ro_nm_ok = int32() never fails { pass (((raw f_v_grow_ro_nm_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4d/v_grow_ro_t_ok.npk`.
+func:mk_v_grow_ro_t_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_v_grow_ro_t_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_v_grow_ro_t_ok = { List<int64>:own; List<int64>:a; };
+func:idp_v_grow_ro_t_ok = HP2_v_grow_ro_t_ok->(HP2_v_grow_ro_t_ok->:w) never fails { pass w; };
+func:idwo_v_grow_ro_t_ok = HP2_v_grow_ro_t_ok->?(HP2_v_grow_ro_t_ok->?:w) never fails { pass w; };
+func:idwa_v_grow_ro_t_ok = any->?(any->?:w) never fails { pass w; };
+func:idpa_v_grow_ro_t_ok = any->(any->:w) never fails { pass w; };
+func:grow_ro_v_grow_ro_t_ok = int64(Result<HP2_v_grow_ro_t_ok->?>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((o ?! E5) ??! E5)).own), 1i64); } pass 7i64; };
+func:cast_ro_v_grow_ro_t_ok = int64(Result<HP2_v_grow_ro_t_ok->?>:o) never fails { HX_v_grow_ro_t_ok->:x = ((((o ?! E5) ??! E5) =>! any->) =>! HX_v_grow_ro_t_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:whole_ro_v_grow_ro_t_ok = int64(Result<HP2_v_grow_ro_t_ok->?>:o) never fails { (<-((o ?! E5) ??! E5)) = HP2_v_grow_ro_t_ok{ a: raw mk_v_grow_ro_t_ok(), own: raw mk_v_grow_ro_t_ok() }; pass 7i64; };
+struct:S_ro_v_grow_ro_t_ok = { Result<HP2_v_grow_ro_t_ok->?>:oq; int64:z; };
+func:mks_ro_v_grow_ro_t_ok = S_ro_v_grow_ro_t_ok(Result<HP2_v_grow_ro_t_ok->?>:w) never fails { pass S_ro_v_grow_ro_t_ok{ oq: w, z: 1i64 }; };
+func:f_v_grow_ro_t_ok = int64(int64:n) never fails {
+    HP2_v_grow_ro_t_ok:m = HP2_v_grow_ro_t_ok{ a: raw mk_v_grow_ro_t_ok(), own: raw mk_v_grow_ro_t_ok() };
+    HP2_v_grow_ro_t_ok:m2 = HP2_v_grow_ro_t_ok{ a: raw mk_v_grow_ro_t_ok(), own: raw mk_v_grow_ro_t_ok() };
+    Result<HP2_v_grow_ro_t_ok->?>:om = Result{ value: @m };
+    Result<HP2_v_grow_ro_t_ok->?>:om2 = Result{ value: @m2 };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_ro_v_grow_ro_t_ok(is (n > 100i64) : om2 : om));
+    pass (<-e) + 6i64;
+};
+func:cell_main_v_grow_ro_t_ok = int32() never fails { pass (((raw f_v_grow_ro_t_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4d/v_grow_rr_a_ok.npk`.
+func:mk_v_grow_rr_a_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_v_grow_rr_a_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_v_grow_rr_a_ok = { List<int64>:own; List<int64>:a; };
+func:idp_v_grow_rr_a_ok = HP2_v_grow_rr_a_ok->(HP2_v_grow_rr_a_ok->:w) never fails { pass w; };
+func:idwo_v_grow_rr_a_ok = HP2_v_grow_rr_a_ok->?(HP2_v_grow_rr_a_ok->?:w) never fails { pass w; };
+func:idwa_v_grow_rr_a_ok = any->?(any->?:w) never fails { pass w; };
+func:idpa_v_grow_rr_a_ok = any->(any->:w) never fails { pass w; };
+func:grow_rr_v_grow_rr_a_ok = int64(Result<Result<HP2_v_grow_rr_a_ok->>>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((o ?! E5) ?! E5)).own), 1i64); } pass 7i64; };
+func:cast_rr_v_grow_rr_a_ok = int64(Result<Result<HP2_v_grow_rr_a_ok->>>:o) never fails { HX_v_grow_rr_a_ok->:x = ((((o ?! E5) ?! E5) =>! any->) =>! HX_v_grow_rr_a_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:whole_rr_v_grow_rr_a_ok = int64(Result<Result<HP2_v_grow_rr_a_ok->>>:o) never fails { (<-((o ?! E5) ?! E5)) = HP2_v_grow_rr_a_ok{ a: raw mk_v_grow_rr_a_ok(), own: raw mk_v_grow_rr_a_ok() }; pass 7i64; };
+struct:S_rr_v_grow_rr_a_ok = { Result<Result<HP2_v_grow_rr_a_ok->>>:oq; int64:z; };
+func:mks_rr_v_grow_rr_a_ok = S_rr_v_grow_rr_a_ok(Result<Result<HP2_v_grow_rr_a_ok->>>:w) never fails { pass S_rr_v_grow_rr_a_ok{ oq: w, z: 1i64 }; };
+func:f_v_grow_rr_a_ok = int64(int64:n) never fails {
+    HP2_v_grow_rr_a_ok:m = HP2_v_grow_rr_a_ok{ a: raw mk_v_grow_rr_a_ok(), own: raw mk_v_grow_rr_a_ok() };
+    HP2_v_grow_rr_a_ok:m2 = HP2_v_grow_rr_a_ok{ a: raw mk_v_grow_rr_a_ok(), own: raw mk_v_grow_rr_a_ok() };
+    Result<Result<HP2_v_grow_rr_a_ok->>>:om = Result{ value: Result{ value: @m } };
+    Result<Result<HP2_v_grow_rr_a_ok->>>:om2 = Result{ value: Result{ value: @m2 } };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_rr_v_grow_rr_a_ok(Result{ value: Result{ value: raw idp_v_grow_rr_a_ok(@m) } }));
+    pass (<-e) + 6i64;
+};
+func:cell_main_v_grow_rr_a_ok = int32() never fails { pass (((raw f_v_grow_rr_a_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4d/v_grow_rr_f_ok.npk`.
+func:mk_v_grow_rr_f_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_v_grow_rr_f_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_v_grow_rr_f_ok = { List<int64>:own; List<int64>:a; };
+func:idp_v_grow_rr_f_ok = HP2_v_grow_rr_f_ok->(HP2_v_grow_rr_f_ok->:w) never fails { pass w; };
+func:idwo_v_grow_rr_f_ok = HP2_v_grow_rr_f_ok->?(HP2_v_grow_rr_f_ok->?:w) never fails { pass w; };
+func:idwa_v_grow_rr_f_ok = any->?(any->?:w) never fails { pass w; };
+func:idpa_v_grow_rr_f_ok = any->(any->:w) never fails { pass w; };
+func:grow_rr_v_grow_rr_f_ok = int64(Result<Result<HP2_v_grow_rr_f_ok->>>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((o ?! E5) ?! E5)).own), 1i64); } pass 7i64; };
+func:cast_rr_v_grow_rr_f_ok = int64(Result<Result<HP2_v_grow_rr_f_ok->>>:o) never fails { HX_v_grow_rr_f_ok->:x = ((((o ?! E5) ?! E5) =>! any->) =>! HX_v_grow_rr_f_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:whole_rr_v_grow_rr_f_ok = int64(Result<Result<HP2_v_grow_rr_f_ok->>>:o) never fails { (<-((o ?! E5) ?! E5)) = HP2_v_grow_rr_f_ok{ a: raw mk_v_grow_rr_f_ok(), own: raw mk_v_grow_rr_f_ok() }; pass 7i64; };
+struct:S_rr_v_grow_rr_f_ok = { Result<Result<HP2_v_grow_rr_f_ok->>>:oq; int64:z; };
+func:mks_rr_v_grow_rr_f_ok = S_rr_v_grow_rr_f_ok(Result<Result<HP2_v_grow_rr_f_ok->>>:w) never fails { pass S_rr_v_grow_rr_f_ok{ oq: w, z: 1i64 }; };
+func:f_v_grow_rr_f_ok = int64(int64:n) never fails {
+    HP2_v_grow_rr_f_ok:m = HP2_v_grow_rr_f_ok{ a: raw mk_v_grow_rr_f_ok(), own: raw mk_v_grow_rr_f_ok() };
+    HP2_v_grow_rr_f_ok:m2 = HP2_v_grow_rr_f_ok{ a: raw mk_v_grow_rr_f_ok(), own: raw mk_v_grow_rr_f_ok() };
+    Result<Result<HP2_v_grow_rr_f_ok->>>:om = Result{ value: Result{ value: @m } };
+    Result<Result<HP2_v_grow_rr_f_ok->>>:om2 = Result{ value: Result{ value: @m2 } };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_rr_v_grow_rr_f_ok((raw mks_rr_v_grow_rr_f_ok(om)).oq));
+    pass (<-e) + 6i64;
+};
+func:cell_main_v_grow_rr_f_ok = int32() never fails { pass (((raw f_v_grow_rr_f_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4d/v_grow_rr_nm_ok.npk`.
+func:mk_v_grow_rr_nm_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_v_grow_rr_nm_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_v_grow_rr_nm_ok = { List<int64>:own; List<int64>:a; };
+func:idp_v_grow_rr_nm_ok = HP2_v_grow_rr_nm_ok->(HP2_v_grow_rr_nm_ok->:w) never fails { pass w; };
+func:idwo_v_grow_rr_nm_ok = HP2_v_grow_rr_nm_ok->?(HP2_v_grow_rr_nm_ok->?:w) never fails { pass w; };
+func:idwa_v_grow_rr_nm_ok = any->?(any->?:w) never fails { pass w; };
+func:idpa_v_grow_rr_nm_ok = any->(any->:w) never fails { pass w; };
+func:grow_rr_v_grow_rr_nm_ok = int64(Result<Result<HP2_v_grow_rr_nm_ok->>>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((o ?! E5) ?! E5)).own), 1i64); } pass 7i64; };
+func:cast_rr_v_grow_rr_nm_ok = int64(Result<Result<HP2_v_grow_rr_nm_ok->>>:o) never fails { HX_v_grow_rr_nm_ok->:x = ((((o ?! E5) ?! E5) =>! any->) =>! HX_v_grow_rr_nm_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:whole_rr_v_grow_rr_nm_ok = int64(Result<Result<HP2_v_grow_rr_nm_ok->>>:o) never fails { (<-((o ?! E5) ?! E5)) = HP2_v_grow_rr_nm_ok{ a: raw mk_v_grow_rr_nm_ok(), own: raw mk_v_grow_rr_nm_ok() }; pass 7i64; };
+struct:S_rr_v_grow_rr_nm_ok = { Result<Result<HP2_v_grow_rr_nm_ok->>>:oq; int64:z; };
+func:mks_rr_v_grow_rr_nm_ok = S_rr_v_grow_rr_nm_ok(Result<Result<HP2_v_grow_rr_nm_ok->>>:w) never fails { pass S_rr_v_grow_rr_nm_ok{ oq: w, z: 1i64 }; };
+func:f_v_grow_rr_nm_ok = int64(int64:n) never fails {
+    HP2_v_grow_rr_nm_ok:m = HP2_v_grow_rr_nm_ok{ a: raw mk_v_grow_rr_nm_ok(), own: raw mk_v_grow_rr_nm_ok() };
+    HP2_v_grow_rr_nm_ok:m2 = HP2_v_grow_rr_nm_ok{ a: raw mk_v_grow_rr_nm_ok(), own: raw mk_v_grow_rr_nm_ok() };
+    Result<Result<HP2_v_grow_rr_nm_ok->>>:om = Result{ value: Result{ value: @m } };
+    Result<Result<HP2_v_grow_rr_nm_ok->>>:om2 = Result{ value: Result{ value: @m2 } };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_rr_v_grow_rr_nm_ok(om));
+    pass (<-e) + 6i64;
+};
+func:cell_main_v_grow_rr_nm_ok = int32() never fails { pass (((raw f_v_grow_rr_nm_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4d/v_grow_rr_t_ok.npk`.
+func:mk_v_grow_rr_t_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_v_grow_rr_t_ok = { List<int64>:a; List<int64>:own; };
+struct:HX_v_grow_rr_t_ok = { List<int64>:own; List<int64>:a; };
+func:idp_v_grow_rr_t_ok = HP2_v_grow_rr_t_ok->(HP2_v_grow_rr_t_ok->:w) never fails { pass w; };
+func:idwo_v_grow_rr_t_ok = HP2_v_grow_rr_t_ok->?(HP2_v_grow_rr_t_ok->?:w) never fails { pass w; };
+func:idwa_v_grow_rr_t_ok = any->?(any->?:w) never fails { pass w; };
+func:idpa_v_grow_rr_t_ok = any->(any->:w) never fails { pass w; };
+func:grow_rr_v_grow_rr_t_ok = int64(Result<Result<HP2_v_grow_rr_t_ok->>>:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((o ?! E5) ?! E5)).own), 1i64); } pass 7i64; };
+func:cast_rr_v_grow_rr_t_ok = int64(Result<Result<HP2_v_grow_rr_t_ok->>>:o) never fails { HX_v_grow_rr_t_ok->:x = ((((o ?! E5) ?! E5) =>! any->) =>! HX_v_grow_rr_t_ok->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:whole_rr_v_grow_rr_t_ok = int64(Result<Result<HP2_v_grow_rr_t_ok->>>:o) never fails { (<-((o ?! E5) ?! E5)) = HP2_v_grow_rr_t_ok{ a: raw mk_v_grow_rr_t_ok(), own: raw mk_v_grow_rr_t_ok() }; pass 7i64; };
+struct:S_rr_v_grow_rr_t_ok = { Result<Result<HP2_v_grow_rr_t_ok->>>:oq; int64:z; };
+func:mks_rr_v_grow_rr_t_ok = S_rr_v_grow_rr_t_ok(Result<Result<HP2_v_grow_rr_t_ok->>>:w) never fails { pass S_rr_v_grow_rr_t_ok{ oq: w, z: 1i64 }; };
+func:f_v_grow_rr_t_ok = int64(int64:n) never fails {
+    HP2_v_grow_rr_t_ok:m = HP2_v_grow_rr_t_ok{ a: raw mk_v_grow_rr_t_ok(), own: raw mk_v_grow_rr_t_ok() };
+    HP2_v_grow_rr_t_ok:m2 = HP2_v_grow_rr_t_ok{ a: raw mk_v_grow_rr_t_ok(), own: raw mk_v_grow_rr_t_ok() };
+    Result<Result<HP2_v_grow_rr_t_ok->>>:om = Result{ value: Result{ value: @m } };
+    Result<Result<HP2_v_grow_rr_t_ok->>>:om2 = Result{ value: Result{ value: @m2 } };
+    int64->:e = @(m.a[0i64]);
+    discard(raw grow_rr_v_grow_rr_t_ok(is (n > 100i64) : om2 : om));
+    pass (<-e) + 6i64;
+};
+func:cell_main_v_grow_rr_t_ok = int32() never fails { pass (((raw f_v_grow_rr_t_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_o_ha_g_a.npk`.
+func:mk_s_o_ha_g_a = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_o_ha_g_a = { List<int64>:a; List<int64>:own; };
+struct:HX_s_o_ha_g_a = { List<int64>:own; List<int64>:a; };
+struct:S_s_o_ha_g_a = { HP2_s_o_ha_g_a->?:oq; List<int64>:lst; };
+func:idps_s_o_ha_g_a = S_s_o_ha_g_a->(S_s_o_ha_g_a->:w) never fails { pass w; };
+func:idpo_s_o_ha_g_a = HP2_s_o_ha_g_a->?->(HP2_s_o_ha_g_a->?->:w) never fails { pass w; };
+func:idpa_s_o_ha_g_a = HP2_s_o_ha_g_a->?[2]->(HP2_s_o_ha_g_a->?[2]->:w) never fails { pass w; };
+func:wg_s_o_ha_g_a = int64(HP2_s_o_ha_g_a->?->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ??! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_o_ha_g_a = int64(HP2_s_o_ha_g_a->?->:pp) never fails { HX_s_o_ha_g_a->:x = ((((<-pp) ??! E5) =>! any->) =>! HX_s_o_ha_g_a->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_o_ha_g_a = int64(any->:a) never fails { pass raw wg_s_o_ha_g_a(a =>! HP2_s_o_ha_g_a->?->); };
+func:f_s_o_ha_g_a = int64(int64:n) never fails {
+    HP2_s_o_ha_g_a:m = HP2_s_o_ha_g_a{ a: raw mk_s_o_ha_g_a(), own: raw mk_s_o_ha_g_a() };
+    HP2_s_o_ha_g_a->?:o = @m;
+    S_s_o_ha_g_a:s = S_s_o_ha_g_a{ oq: @m, lst: raw mk_s_o_ha_g_a() };
+    HP2_s_o_ha_g_a->?[2]:arr = [@m, @m];
+    int64->:e = @(m.a[0i64]);
+    discard(raw wg_s_o_ha_g_a(@((<-(raw idpa_s_o_ha_g_a(@arr)))[0i64])));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_o_ha_g_a = int32() never fails { pass (((raw f_s_o_ha_g_a(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_o_ha_g_s.npk`.
+func:mk_s_o_ha_g_s = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_o_ha_g_s = { List<int64>:a; List<int64>:own; };
+struct:HX_s_o_ha_g_s = { List<int64>:own; List<int64>:a; };
+struct:S_s_o_ha_g_s = { HP2_s_o_ha_g_s->?:oq; List<int64>:lst; };
+func:idps_s_o_ha_g_s = S_s_o_ha_g_s->(S_s_o_ha_g_s->:w) never fails { pass w; };
+func:idpo_s_o_ha_g_s = HP2_s_o_ha_g_s->?->(HP2_s_o_ha_g_s->?->:w) never fails { pass w; };
+func:idpa_s_o_ha_g_s = HP2_s_o_ha_g_s->?[2]->(HP2_s_o_ha_g_s->?[2]->:w) never fails { pass w; };
+func:wg_s_o_ha_g_s = int64(HP2_s_o_ha_g_s->?->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ??! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_o_ha_g_s = int64(HP2_s_o_ha_g_s->?->:pp) never fails { HX_s_o_ha_g_s->:x = ((((<-pp) ??! E5) =>! any->) =>! HX_s_o_ha_g_s->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_o_ha_g_s = int64(any->:a) never fails { pass raw wg_s_o_ha_g_s(a =>! HP2_s_o_ha_g_s->?->); };
+func:f_s_o_ha_g_s = int64(int64:n) never fails {
+    HP2_s_o_ha_g_s:m = HP2_s_o_ha_g_s{ a: raw mk_s_o_ha_g_s(), own: raw mk_s_o_ha_g_s() };
+    HP2_s_o_ha_g_s->?:o = @m;
+    S_s_o_ha_g_s:s = S_s_o_ha_g_s{ oq: @m, lst: raw mk_s_o_ha_g_s() };
+    HP2_s_o_ha_g_s->?[2]:arr = [@m, @m];
+    int64->:e = @(s.lst[0i64]);
+    discard(raw wg_s_o_ha_g_s(@((<-(raw idpa_s_o_ha_g_s(@arr)))[0i64])));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_o_ha_g_s = int32() never fails { pass (((raw f_s_o_ha_g_s(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_o_ho_g_a.npk`.
+func:mk_s_o_ho_g_a = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_o_ho_g_a = { List<int64>:a; List<int64>:own; };
+struct:HX_s_o_ho_g_a = { List<int64>:own; List<int64>:a; };
+struct:S_s_o_ho_g_a = { HP2_s_o_ho_g_a->?:oq; List<int64>:lst; };
+func:idps_s_o_ho_g_a = S_s_o_ho_g_a->(S_s_o_ho_g_a->:w) never fails { pass w; };
+func:idpo_s_o_ho_g_a = HP2_s_o_ho_g_a->?->(HP2_s_o_ho_g_a->?->:w) never fails { pass w; };
+func:idpa_s_o_ho_g_a = HP2_s_o_ho_g_a->?[2]->(HP2_s_o_ho_g_a->?[2]->:w) never fails { pass w; };
+func:wg_s_o_ho_g_a = int64(HP2_s_o_ho_g_a->?->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ??! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_o_ho_g_a = int64(HP2_s_o_ho_g_a->?->:pp) never fails { HX_s_o_ho_g_a->:x = ((((<-pp) ??! E5) =>! any->) =>! HX_s_o_ho_g_a->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_o_ho_g_a = int64(any->:a) never fails { pass raw wg_s_o_ho_g_a(a =>! HP2_s_o_ho_g_a->?->); };
+func:f_s_o_ho_g_a = int64(int64:n) never fails {
+    HP2_s_o_ho_g_a:m = HP2_s_o_ho_g_a{ a: raw mk_s_o_ho_g_a(), own: raw mk_s_o_ho_g_a() };
+    HP2_s_o_ho_g_a->?:o = @m;
+    S_s_o_ho_g_a:s = S_s_o_ho_g_a{ oq: @m, lst: raw mk_s_o_ho_g_a() };
+    HP2_s_o_ho_g_a->?[2]:arr = [@m, @m];
+    int64->:e = @(m.a[0i64]);
+    discard(raw wg_s_o_ho_g_a(@(<-(raw idpo_s_o_ho_g_a(@o)))));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_o_ho_g_a = int32() never fails { pass (((raw f_s_o_ho_g_a(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_o_ho_g_s.npk`.
+func:mk_s_o_ho_g_s = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_o_ho_g_s = { List<int64>:a; List<int64>:own; };
+struct:HX_s_o_ho_g_s = { List<int64>:own; List<int64>:a; };
+struct:S_s_o_ho_g_s = { HP2_s_o_ho_g_s->?:oq; List<int64>:lst; };
+func:idps_s_o_ho_g_s = S_s_o_ho_g_s->(S_s_o_ho_g_s->:w) never fails { pass w; };
+func:idpo_s_o_ho_g_s = HP2_s_o_ho_g_s->?->(HP2_s_o_ho_g_s->?->:w) never fails { pass w; };
+func:idpa_s_o_ho_g_s = HP2_s_o_ho_g_s->?[2]->(HP2_s_o_ho_g_s->?[2]->:w) never fails { pass w; };
+func:wg_s_o_ho_g_s = int64(HP2_s_o_ho_g_s->?->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ??! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_o_ho_g_s = int64(HP2_s_o_ho_g_s->?->:pp) never fails { HX_s_o_ho_g_s->:x = ((((<-pp) ??! E5) =>! any->) =>! HX_s_o_ho_g_s->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_o_ho_g_s = int64(any->:a) never fails { pass raw wg_s_o_ho_g_s(a =>! HP2_s_o_ho_g_s->?->); };
+func:f_s_o_ho_g_s = int64(int64:n) never fails {
+    HP2_s_o_ho_g_s:m = HP2_s_o_ho_g_s{ a: raw mk_s_o_ho_g_s(), own: raw mk_s_o_ho_g_s() };
+    HP2_s_o_ho_g_s->?:o = @m;
+    S_s_o_ho_g_s:s = S_s_o_ho_g_s{ oq: @m, lst: raw mk_s_o_ho_g_s() };
+    HP2_s_o_ho_g_s->?[2]:arr = [@m, @m];
+    int64->:e = @(s.lst[0i64]);
+    discard(raw wg_s_o_ho_g_s(@(<-(raw idpo_s_o_ho_g_s(@o)))));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_o_ho_g_s = int32() never fails { pass (((raw f_s_o_ho_g_s(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_o_hs_g_a.npk`.
+func:mk_s_o_hs_g_a = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_o_hs_g_a = { List<int64>:a; List<int64>:own; };
+struct:HX_s_o_hs_g_a = { List<int64>:own; List<int64>:a; };
+struct:S_s_o_hs_g_a = { HP2_s_o_hs_g_a->?:oq; List<int64>:lst; };
+func:idps_s_o_hs_g_a = S_s_o_hs_g_a->(S_s_o_hs_g_a->:w) never fails { pass w; };
+func:idpo_s_o_hs_g_a = HP2_s_o_hs_g_a->?->(HP2_s_o_hs_g_a->?->:w) never fails { pass w; };
+func:idpa_s_o_hs_g_a = HP2_s_o_hs_g_a->?[2]->(HP2_s_o_hs_g_a->?[2]->:w) never fails { pass w; };
+func:wg_s_o_hs_g_a = int64(HP2_s_o_hs_g_a->?->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ??! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_o_hs_g_a = int64(HP2_s_o_hs_g_a->?->:pp) never fails { HX_s_o_hs_g_a->:x = ((((<-pp) ??! E5) =>! any->) =>! HX_s_o_hs_g_a->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_o_hs_g_a = int64(any->:a) never fails { pass raw wg_s_o_hs_g_a(a =>! HP2_s_o_hs_g_a->?->); };
+func:f_s_o_hs_g_a = int64(int64:n) never fails {
+    HP2_s_o_hs_g_a:m = HP2_s_o_hs_g_a{ a: raw mk_s_o_hs_g_a(), own: raw mk_s_o_hs_g_a() };
+    HP2_s_o_hs_g_a->?:o = @m;
+    S_s_o_hs_g_a:s = S_s_o_hs_g_a{ oq: @m, lst: raw mk_s_o_hs_g_a() };
+    HP2_s_o_hs_g_a->?[2]:arr = [@m, @m];
+    int64->:e = @(m.a[0i64]);
+    discard(raw wg_s_o_hs_g_a(@((<-(raw idps_s_o_hs_g_a(@s))).oq)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_o_hs_g_a = int32() never fails { pass (((raw f_s_o_hs_g_a(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_o_hs_g_s.npk`.
+func:mk_s_o_hs_g_s = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_o_hs_g_s = { List<int64>:a; List<int64>:own; };
+struct:HX_s_o_hs_g_s = { List<int64>:own; List<int64>:a; };
+struct:S_s_o_hs_g_s = { HP2_s_o_hs_g_s->?:oq; List<int64>:lst; };
+func:idps_s_o_hs_g_s = S_s_o_hs_g_s->(S_s_o_hs_g_s->:w) never fails { pass w; };
+func:idpo_s_o_hs_g_s = HP2_s_o_hs_g_s->?->(HP2_s_o_hs_g_s->?->:w) never fails { pass w; };
+func:idpa_s_o_hs_g_s = HP2_s_o_hs_g_s->?[2]->(HP2_s_o_hs_g_s->?[2]->:w) never fails { pass w; };
+func:wg_s_o_hs_g_s = int64(HP2_s_o_hs_g_s->?->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ??! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_o_hs_g_s = int64(HP2_s_o_hs_g_s->?->:pp) never fails { HX_s_o_hs_g_s->:x = ((((<-pp) ??! E5) =>! any->) =>! HX_s_o_hs_g_s->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_o_hs_g_s = int64(any->:a) never fails { pass raw wg_s_o_hs_g_s(a =>! HP2_s_o_hs_g_s->?->); };
+func:f_s_o_hs_g_s = int64(int64:n) never fails {
+    HP2_s_o_hs_g_s:m = HP2_s_o_hs_g_s{ a: raw mk_s_o_hs_g_s(), own: raw mk_s_o_hs_g_s() };
+    HP2_s_o_hs_g_s->?:o = @m;
+    S_s_o_hs_g_s:s = S_s_o_hs_g_s{ oq: @m, lst: raw mk_s_o_hs_g_s() };
+    HP2_s_o_hs_g_s->?[2]:arr = [@m, @m];
+    int64->:e = @(s.lst[0i64]);
+    discard(raw wg_s_o_hs_g_s(@((<-(raw idps_s_o_hs_g_s(@s))).oq)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_o_hs_g_s = int32() never fails { pass (((raw f_s_o_hs_g_s(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_o_na_g_a.npk`.
+func:mk_s_o_na_g_a = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_o_na_g_a = { List<int64>:a; List<int64>:own; };
+struct:HX_s_o_na_g_a = { List<int64>:own; List<int64>:a; };
+struct:S_s_o_na_g_a = { HP2_s_o_na_g_a->?:oq; List<int64>:lst; };
+func:idps_s_o_na_g_a = S_s_o_na_g_a->(S_s_o_na_g_a->:w) never fails { pass w; };
+func:idpo_s_o_na_g_a = HP2_s_o_na_g_a->?->(HP2_s_o_na_g_a->?->:w) never fails { pass w; };
+func:idpa_s_o_na_g_a = HP2_s_o_na_g_a->?[2]->(HP2_s_o_na_g_a->?[2]->:w) never fails { pass w; };
+func:wg_s_o_na_g_a = int64(HP2_s_o_na_g_a->?->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ??! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_o_na_g_a = int64(HP2_s_o_na_g_a->?->:pp) never fails { HX_s_o_na_g_a->:x = ((((<-pp) ??! E5) =>! any->) =>! HX_s_o_na_g_a->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_o_na_g_a = int64(any->:a) never fails { pass raw wg_s_o_na_g_a(a =>! HP2_s_o_na_g_a->?->); };
+func:f_s_o_na_g_a = int64(int64:n) never fails {
+    HP2_s_o_na_g_a:m = HP2_s_o_na_g_a{ a: raw mk_s_o_na_g_a(), own: raw mk_s_o_na_g_a() };
+    HP2_s_o_na_g_a->?:o = @m;
+    S_s_o_na_g_a:s = S_s_o_na_g_a{ oq: @m, lst: raw mk_s_o_na_g_a() };
+    HP2_s_o_na_g_a->?[2]:arr = [@m, @m];
+    int64->:e = @(m.a[0i64]);
+    discard(raw wg_s_o_na_g_a(@(arr[0i64])));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_o_na_g_a = int32() never fails { pass (((raw f_s_o_na_g_a(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_o_na_g_s.npk`.
+func:mk_s_o_na_g_s = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_o_na_g_s = { List<int64>:a; List<int64>:own; };
+struct:HX_s_o_na_g_s = { List<int64>:own; List<int64>:a; };
+struct:S_s_o_na_g_s = { HP2_s_o_na_g_s->?:oq; List<int64>:lst; };
+func:idps_s_o_na_g_s = S_s_o_na_g_s->(S_s_o_na_g_s->:w) never fails { pass w; };
+func:idpo_s_o_na_g_s = HP2_s_o_na_g_s->?->(HP2_s_o_na_g_s->?->:w) never fails { pass w; };
+func:idpa_s_o_na_g_s = HP2_s_o_na_g_s->?[2]->(HP2_s_o_na_g_s->?[2]->:w) never fails { pass w; };
+func:wg_s_o_na_g_s = int64(HP2_s_o_na_g_s->?->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ??! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_o_na_g_s = int64(HP2_s_o_na_g_s->?->:pp) never fails { HX_s_o_na_g_s->:x = ((((<-pp) ??! E5) =>! any->) =>! HX_s_o_na_g_s->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_o_na_g_s = int64(any->:a) never fails { pass raw wg_s_o_na_g_s(a =>! HP2_s_o_na_g_s->?->); };
+func:f_s_o_na_g_s = int64(int64:n) never fails {
+    HP2_s_o_na_g_s:m = HP2_s_o_na_g_s{ a: raw mk_s_o_na_g_s(), own: raw mk_s_o_na_g_s() };
+    HP2_s_o_na_g_s->?:o = @m;
+    S_s_o_na_g_s:s = S_s_o_na_g_s{ oq: @m, lst: raw mk_s_o_na_g_s() };
+    HP2_s_o_na_g_s->?[2]:arr = [@m, @m];
+    int64->:e = @(s.lst[0i64]);
+    discard(raw wg_s_o_na_g_s(@(arr[0i64])));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_o_na_g_s = int32() never fails { pass (((raw f_s_o_na_g_s(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_o_no_g_a.npk`.
+func:mk_s_o_no_g_a = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_o_no_g_a = { List<int64>:a; List<int64>:own; };
+struct:HX_s_o_no_g_a = { List<int64>:own; List<int64>:a; };
+struct:S_s_o_no_g_a = { HP2_s_o_no_g_a->?:oq; List<int64>:lst; };
+func:idps_s_o_no_g_a = S_s_o_no_g_a->(S_s_o_no_g_a->:w) never fails { pass w; };
+func:idpo_s_o_no_g_a = HP2_s_o_no_g_a->?->(HP2_s_o_no_g_a->?->:w) never fails { pass w; };
+func:idpa_s_o_no_g_a = HP2_s_o_no_g_a->?[2]->(HP2_s_o_no_g_a->?[2]->:w) never fails { pass w; };
+func:wg_s_o_no_g_a = int64(HP2_s_o_no_g_a->?->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ??! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_o_no_g_a = int64(HP2_s_o_no_g_a->?->:pp) never fails { HX_s_o_no_g_a->:x = ((((<-pp) ??! E5) =>! any->) =>! HX_s_o_no_g_a->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_o_no_g_a = int64(any->:a) never fails { pass raw wg_s_o_no_g_a(a =>! HP2_s_o_no_g_a->?->); };
+func:f_s_o_no_g_a = int64(int64:n) never fails {
+    HP2_s_o_no_g_a:m = HP2_s_o_no_g_a{ a: raw mk_s_o_no_g_a(), own: raw mk_s_o_no_g_a() };
+    HP2_s_o_no_g_a->?:o = @m;
+    S_s_o_no_g_a:s = S_s_o_no_g_a{ oq: @m, lst: raw mk_s_o_no_g_a() };
+    HP2_s_o_no_g_a->?[2]:arr = [@m, @m];
+    int64->:e = @(m.a[0i64]);
+    discard(raw wg_s_o_no_g_a(@(o)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_o_no_g_a = int32() never fails { pass (((raw f_s_o_no_g_a(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_o_no_g_s.npk`.
+func:mk_s_o_no_g_s = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_o_no_g_s = { List<int64>:a; List<int64>:own; };
+struct:HX_s_o_no_g_s = { List<int64>:own; List<int64>:a; };
+struct:S_s_o_no_g_s = { HP2_s_o_no_g_s->?:oq; List<int64>:lst; };
+func:idps_s_o_no_g_s = S_s_o_no_g_s->(S_s_o_no_g_s->:w) never fails { pass w; };
+func:idpo_s_o_no_g_s = HP2_s_o_no_g_s->?->(HP2_s_o_no_g_s->?->:w) never fails { pass w; };
+func:idpa_s_o_no_g_s = HP2_s_o_no_g_s->?[2]->(HP2_s_o_no_g_s->?[2]->:w) never fails { pass w; };
+func:wg_s_o_no_g_s = int64(HP2_s_o_no_g_s->?->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ??! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_o_no_g_s = int64(HP2_s_o_no_g_s->?->:pp) never fails { HX_s_o_no_g_s->:x = ((((<-pp) ??! E5) =>! any->) =>! HX_s_o_no_g_s->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_o_no_g_s = int64(any->:a) never fails { pass raw wg_s_o_no_g_s(a =>! HP2_s_o_no_g_s->?->); };
+func:f_s_o_no_g_s = int64(int64:n) never fails {
+    HP2_s_o_no_g_s:m = HP2_s_o_no_g_s{ a: raw mk_s_o_no_g_s(), own: raw mk_s_o_no_g_s() };
+    HP2_s_o_no_g_s->?:o = @m;
+    S_s_o_no_g_s:s = S_s_o_no_g_s{ oq: @m, lst: raw mk_s_o_no_g_s() };
+    HP2_s_o_no_g_s->?[2]:arr = [@m, @m];
+    int64->:e = @(s.lst[0i64]);
+    discard(raw wg_s_o_no_g_s(@(o)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_o_no_g_s = int32() never fails { pass (((raw f_s_o_no_g_s(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_o_ns_g_a.npk`.
+func:mk_s_o_ns_g_a = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_o_ns_g_a = { List<int64>:a; List<int64>:own; };
+struct:HX_s_o_ns_g_a = { List<int64>:own; List<int64>:a; };
+struct:S_s_o_ns_g_a = { HP2_s_o_ns_g_a->?:oq; List<int64>:lst; };
+func:idps_s_o_ns_g_a = S_s_o_ns_g_a->(S_s_o_ns_g_a->:w) never fails { pass w; };
+func:idpo_s_o_ns_g_a = HP2_s_o_ns_g_a->?->(HP2_s_o_ns_g_a->?->:w) never fails { pass w; };
+func:idpa_s_o_ns_g_a = HP2_s_o_ns_g_a->?[2]->(HP2_s_o_ns_g_a->?[2]->:w) never fails { pass w; };
+func:wg_s_o_ns_g_a = int64(HP2_s_o_ns_g_a->?->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ??! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_o_ns_g_a = int64(HP2_s_o_ns_g_a->?->:pp) never fails { HX_s_o_ns_g_a->:x = ((((<-pp) ??! E5) =>! any->) =>! HX_s_o_ns_g_a->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_o_ns_g_a = int64(any->:a) never fails { pass raw wg_s_o_ns_g_a(a =>! HP2_s_o_ns_g_a->?->); };
+func:f_s_o_ns_g_a = int64(int64:n) never fails {
+    HP2_s_o_ns_g_a:m = HP2_s_o_ns_g_a{ a: raw mk_s_o_ns_g_a(), own: raw mk_s_o_ns_g_a() };
+    HP2_s_o_ns_g_a->?:o = @m;
+    S_s_o_ns_g_a:s = S_s_o_ns_g_a{ oq: @m, lst: raw mk_s_o_ns_g_a() };
+    HP2_s_o_ns_g_a->?[2]:arr = [@m, @m];
+    int64->:e = @(m.a[0i64]);
+    discard(raw wg_s_o_ns_g_a(@(s.oq)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_o_ns_g_a = int32() never fails { pass (((raw f_s_o_ns_g_a(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_o_ns_g_s.npk`.
+func:mk_s_o_ns_g_s = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_o_ns_g_s = { List<int64>:a; List<int64>:own; };
+struct:HX_s_o_ns_g_s = { List<int64>:own; List<int64>:a; };
+struct:S_s_o_ns_g_s = { HP2_s_o_ns_g_s->?:oq; List<int64>:lst; };
+func:idps_s_o_ns_g_s = S_s_o_ns_g_s->(S_s_o_ns_g_s->:w) never fails { pass w; };
+func:idpo_s_o_ns_g_s = HP2_s_o_ns_g_s->?->(HP2_s_o_ns_g_s->?->:w) never fails { pass w; };
+func:idpa_s_o_ns_g_s = HP2_s_o_ns_g_s->?[2]->(HP2_s_o_ns_g_s->?[2]->:w) never fails { pass w; };
+func:wg_s_o_ns_g_s = int64(HP2_s_o_ns_g_s->?->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ??! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_o_ns_g_s = int64(HP2_s_o_ns_g_s->?->:pp) never fails { HX_s_o_ns_g_s->:x = ((((<-pp) ??! E5) =>! any->) =>! HX_s_o_ns_g_s->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_o_ns_g_s = int64(any->:a) never fails { pass raw wg_s_o_ns_g_s(a =>! HP2_s_o_ns_g_s->?->); };
+func:f_s_o_ns_g_s = int64(int64:n) never fails {
+    HP2_s_o_ns_g_s:m = HP2_s_o_ns_g_s{ a: raw mk_s_o_ns_g_s(), own: raw mk_s_o_ns_g_s() };
+    HP2_s_o_ns_g_s->?:o = @m;
+    S_s_o_ns_g_s:s = S_s_o_ns_g_s{ oq: @m, lst: raw mk_s_o_ns_g_s() };
+    HP2_s_o_ns_g_s->?[2]:arr = [@m, @m];
+    int64->:e = @(s.lst[0i64]);
+    discard(raw wg_s_o_ns_g_s(@(s.oq)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_o_ns_g_s = int32() never fails { pass (((raw f_s_o_ns_g_s(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_r_ha_g_a.npk`.
+func:mk_s_r_ha_g_a = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_r_ha_g_a = { List<int64>:a; List<int64>:own; };
+struct:HX_s_r_ha_g_a = { List<int64>:own; List<int64>:a; };
+struct:S_s_r_ha_g_a = { Result<HP2_s_r_ha_g_a->>:oq; List<int64>:lst; };
+func:idps_s_r_ha_g_a = S_s_r_ha_g_a->(S_s_r_ha_g_a->:w) never fails { pass w; };
+func:idpo_s_r_ha_g_a = Result<HP2_s_r_ha_g_a->>->(Result<HP2_s_r_ha_g_a->>->:w) never fails { pass w; };
+func:idpa_s_r_ha_g_a = Result<HP2_s_r_ha_g_a->>[2]->(Result<HP2_s_r_ha_g_a->>[2]->:w) never fails { pass w; };
+func:wg_s_r_ha_g_a = int64(Result<HP2_s_r_ha_g_a->>->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ?! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_r_ha_g_a = int64(Result<HP2_s_r_ha_g_a->>->:pp) never fails { HX_s_r_ha_g_a->:x = ((((<-pp) ?! E5) =>! any->) =>! HX_s_r_ha_g_a->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_r_ha_g_a = int64(any->:a) never fails { pass raw wg_s_r_ha_g_a(a =>! Result<HP2_s_r_ha_g_a->>->); };
+func:f_s_r_ha_g_a = int64(int64:n) never fails {
+    HP2_s_r_ha_g_a:m = HP2_s_r_ha_g_a{ a: raw mk_s_r_ha_g_a(), own: raw mk_s_r_ha_g_a() };
+    Result<HP2_s_r_ha_g_a->>:o = Result{ value: @m };
+    S_s_r_ha_g_a:s = S_s_r_ha_g_a{ oq: Result{ value: @m }, lst: raw mk_s_r_ha_g_a() };
+    Result<HP2_s_r_ha_g_a->>[2]:arr = [Result{ value: @m }, Result{ value: @m }];
+    int64->:e = @(m.a[0i64]);
+    discard(raw wg_s_r_ha_g_a(@((<-(raw idpa_s_r_ha_g_a(@arr)))[0i64])));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_r_ha_g_a = int32() never fails { pass (((raw f_s_r_ha_g_a(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_r_ha_g_s.npk`.
+func:mk_s_r_ha_g_s = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_r_ha_g_s = { List<int64>:a; List<int64>:own; };
+struct:HX_s_r_ha_g_s = { List<int64>:own; List<int64>:a; };
+struct:S_s_r_ha_g_s = { Result<HP2_s_r_ha_g_s->>:oq; List<int64>:lst; };
+func:idps_s_r_ha_g_s = S_s_r_ha_g_s->(S_s_r_ha_g_s->:w) never fails { pass w; };
+func:idpo_s_r_ha_g_s = Result<HP2_s_r_ha_g_s->>->(Result<HP2_s_r_ha_g_s->>->:w) never fails { pass w; };
+func:idpa_s_r_ha_g_s = Result<HP2_s_r_ha_g_s->>[2]->(Result<HP2_s_r_ha_g_s->>[2]->:w) never fails { pass w; };
+func:wg_s_r_ha_g_s = int64(Result<HP2_s_r_ha_g_s->>->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ?! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_r_ha_g_s = int64(Result<HP2_s_r_ha_g_s->>->:pp) never fails { HX_s_r_ha_g_s->:x = ((((<-pp) ?! E5) =>! any->) =>! HX_s_r_ha_g_s->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_r_ha_g_s = int64(any->:a) never fails { pass raw wg_s_r_ha_g_s(a =>! Result<HP2_s_r_ha_g_s->>->); };
+func:f_s_r_ha_g_s = int64(int64:n) never fails {
+    HP2_s_r_ha_g_s:m = HP2_s_r_ha_g_s{ a: raw mk_s_r_ha_g_s(), own: raw mk_s_r_ha_g_s() };
+    Result<HP2_s_r_ha_g_s->>:o = Result{ value: @m };
+    S_s_r_ha_g_s:s = S_s_r_ha_g_s{ oq: Result{ value: @m }, lst: raw mk_s_r_ha_g_s() };
+    Result<HP2_s_r_ha_g_s->>[2]:arr = [Result{ value: @m }, Result{ value: @m }];
+    int64->:e = @(s.lst[0i64]);
+    discard(raw wg_s_r_ha_g_s(@((<-(raw idpa_s_r_ha_g_s(@arr)))[0i64])));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_r_ha_g_s = int32() never fails { pass (((raw f_s_r_ha_g_s(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_r_ho_g_a.npk`.
+func:mk_s_r_ho_g_a = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_r_ho_g_a = { List<int64>:a; List<int64>:own; };
+struct:HX_s_r_ho_g_a = { List<int64>:own; List<int64>:a; };
+struct:S_s_r_ho_g_a = { Result<HP2_s_r_ho_g_a->>:oq; List<int64>:lst; };
+func:idps_s_r_ho_g_a = S_s_r_ho_g_a->(S_s_r_ho_g_a->:w) never fails { pass w; };
+func:idpo_s_r_ho_g_a = Result<HP2_s_r_ho_g_a->>->(Result<HP2_s_r_ho_g_a->>->:w) never fails { pass w; };
+func:idpa_s_r_ho_g_a = Result<HP2_s_r_ho_g_a->>[2]->(Result<HP2_s_r_ho_g_a->>[2]->:w) never fails { pass w; };
+func:wg_s_r_ho_g_a = int64(Result<HP2_s_r_ho_g_a->>->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ?! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_r_ho_g_a = int64(Result<HP2_s_r_ho_g_a->>->:pp) never fails { HX_s_r_ho_g_a->:x = ((((<-pp) ?! E5) =>! any->) =>! HX_s_r_ho_g_a->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_r_ho_g_a = int64(any->:a) never fails { pass raw wg_s_r_ho_g_a(a =>! Result<HP2_s_r_ho_g_a->>->); };
+func:f_s_r_ho_g_a = int64(int64:n) never fails {
+    HP2_s_r_ho_g_a:m = HP2_s_r_ho_g_a{ a: raw mk_s_r_ho_g_a(), own: raw mk_s_r_ho_g_a() };
+    Result<HP2_s_r_ho_g_a->>:o = Result{ value: @m };
+    S_s_r_ho_g_a:s = S_s_r_ho_g_a{ oq: Result{ value: @m }, lst: raw mk_s_r_ho_g_a() };
+    Result<HP2_s_r_ho_g_a->>[2]:arr = [Result{ value: @m }, Result{ value: @m }];
+    int64->:e = @(m.a[0i64]);
+    discard(raw wg_s_r_ho_g_a(@(<-(raw idpo_s_r_ho_g_a(@o)))));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_r_ho_g_a = int32() never fails { pass (((raw f_s_r_ho_g_a(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_r_ho_g_s.npk`.
+func:mk_s_r_ho_g_s = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_r_ho_g_s = { List<int64>:a; List<int64>:own; };
+struct:HX_s_r_ho_g_s = { List<int64>:own; List<int64>:a; };
+struct:S_s_r_ho_g_s = { Result<HP2_s_r_ho_g_s->>:oq; List<int64>:lst; };
+func:idps_s_r_ho_g_s = S_s_r_ho_g_s->(S_s_r_ho_g_s->:w) never fails { pass w; };
+func:idpo_s_r_ho_g_s = Result<HP2_s_r_ho_g_s->>->(Result<HP2_s_r_ho_g_s->>->:w) never fails { pass w; };
+func:idpa_s_r_ho_g_s = Result<HP2_s_r_ho_g_s->>[2]->(Result<HP2_s_r_ho_g_s->>[2]->:w) never fails { pass w; };
+func:wg_s_r_ho_g_s = int64(Result<HP2_s_r_ho_g_s->>->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ?! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_r_ho_g_s = int64(Result<HP2_s_r_ho_g_s->>->:pp) never fails { HX_s_r_ho_g_s->:x = ((((<-pp) ?! E5) =>! any->) =>! HX_s_r_ho_g_s->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_r_ho_g_s = int64(any->:a) never fails { pass raw wg_s_r_ho_g_s(a =>! Result<HP2_s_r_ho_g_s->>->); };
+func:f_s_r_ho_g_s = int64(int64:n) never fails {
+    HP2_s_r_ho_g_s:m = HP2_s_r_ho_g_s{ a: raw mk_s_r_ho_g_s(), own: raw mk_s_r_ho_g_s() };
+    Result<HP2_s_r_ho_g_s->>:o = Result{ value: @m };
+    S_s_r_ho_g_s:s = S_s_r_ho_g_s{ oq: Result{ value: @m }, lst: raw mk_s_r_ho_g_s() };
+    Result<HP2_s_r_ho_g_s->>[2]:arr = [Result{ value: @m }, Result{ value: @m }];
+    int64->:e = @(s.lst[0i64]);
+    discard(raw wg_s_r_ho_g_s(@(<-(raw idpo_s_r_ho_g_s(@o)))));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_r_ho_g_s = int32() never fails { pass (((raw f_s_r_ho_g_s(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_r_hs_g_a.npk`.
+func:mk_s_r_hs_g_a = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_r_hs_g_a = { List<int64>:a; List<int64>:own; };
+struct:HX_s_r_hs_g_a = { List<int64>:own; List<int64>:a; };
+struct:S_s_r_hs_g_a = { Result<HP2_s_r_hs_g_a->>:oq; List<int64>:lst; };
+func:idps_s_r_hs_g_a = S_s_r_hs_g_a->(S_s_r_hs_g_a->:w) never fails { pass w; };
+func:idpo_s_r_hs_g_a = Result<HP2_s_r_hs_g_a->>->(Result<HP2_s_r_hs_g_a->>->:w) never fails { pass w; };
+func:idpa_s_r_hs_g_a = Result<HP2_s_r_hs_g_a->>[2]->(Result<HP2_s_r_hs_g_a->>[2]->:w) never fails { pass w; };
+func:wg_s_r_hs_g_a = int64(Result<HP2_s_r_hs_g_a->>->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ?! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_r_hs_g_a = int64(Result<HP2_s_r_hs_g_a->>->:pp) never fails { HX_s_r_hs_g_a->:x = ((((<-pp) ?! E5) =>! any->) =>! HX_s_r_hs_g_a->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_r_hs_g_a = int64(any->:a) never fails { pass raw wg_s_r_hs_g_a(a =>! Result<HP2_s_r_hs_g_a->>->); };
+func:f_s_r_hs_g_a = int64(int64:n) never fails {
+    HP2_s_r_hs_g_a:m = HP2_s_r_hs_g_a{ a: raw mk_s_r_hs_g_a(), own: raw mk_s_r_hs_g_a() };
+    Result<HP2_s_r_hs_g_a->>:o = Result{ value: @m };
+    S_s_r_hs_g_a:s = S_s_r_hs_g_a{ oq: Result{ value: @m }, lst: raw mk_s_r_hs_g_a() };
+    Result<HP2_s_r_hs_g_a->>[2]:arr = [Result{ value: @m }, Result{ value: @m }];
+    int64->:e = @(m.a[0i64]);
+    discard(raw wg_s_r_hs_g_a(@((<-(raw idps_s_r_hs_g_a(@s))).oq)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_r_hs_g_a = int32() never fails { pass (((raw f_s_r_hs_g_a(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_r_hs_g_s.npk`.
+func:mk_s_r_hs_g_s = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_r_hs_g_s = { List<int64>:a; List<int64>:own; };
+struct:HX_s_r_hs_g_s = { List<int64>:own; List<int64>:a; };
+struct:S_s_r_hs_g_s = { Result<HP2_s_r_hs_g_s->>:oq; List<int64>:lst; };
+func:idps_s_r_hs_g_s = S_s_r_hs_g_s->(S_s_r_hs_g_s->:w) never fails { pass w; };
+func:idpo_s_r_hs_g_s = Result<HP2_s_r_hs_g_s->>->(Result<HP2_s_r_hs_g_s->>->:w) never fails { pass w; };
+func:idpa_s_r_hs_g_s = Result<HP2_s_r_hs_g_s->>[2]->(Result<HP2_s_r_hs_g_s->>[2]->:w) never fails { pass w; };
+func:wg_s_r_hs_g_s = int64(Result<HP2_s_r_hs_g_s->>->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ?! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_r_hs_g_s = int64(Result<HP2_s_r_hs_g_s->>->:pp) never fails { HX_s_r_hs_g_s->:x = ((((<-pp) ?! E5) =>! any->) =>! HX_s_r_hs_g_s->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_r_hs_g_s = int64(any->:a) never fails { pass raw wg_s_r_hs_g_s(a =>! Result<HP2_s_r_hs_g_s->>->); };
+func:f_s_r_hs_g_s = int64(int64:n) never fails {
+    HP2_s_r_hs_g_s:m = HP2_s_r_hs_g_s{ a: raw mk_s_r_hs_g_s(), own: raw mk_s_r_hs_g_s() };
+    Result<HP2_s_r_hs_g_s->>:o = Result{ value: @m };
+    S_s_r_hs_g_s:s = S_s_r_hs_g_s{ oq: Result{ value: @m }, lst: raw mk_s_r_hs_g_s() };
+    Result<HP2_s_r_hs_g_s->>[2]:arr = [Result{ value: @m }, Result{ value: @m }];
+    int64->:e = @(s.lst[0i64]);
+    discard(raw wg_s_r_hs_g_s(@((<-(raw idps_s_r_hs_g_s(@s))).oq)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_r_hs_g_s = int32() never fails { pass (((raw f_s_r_hs_g_s(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_r_na_g_a.npk`.
+func:mk_s_r_na_g_a = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_r_na_g_a = { List<int64>:a; List<int64>:own; };
+struct:HX_s_r_na_g_a = { List<int64>:own; List<int64>:a; };
+struct:S_s_r_na_g_a = { Result<HP2_s_r_na_g_a->>:oq; List<int64>:lst; };
+func:idps_s_r_na_g_a = S_s_r_na_g_a->(S_s_r_na_g_a->:w) never fails { pass w; };
+func:idpo_s_r_na_g_a = Result<HP2_s_r_na_g_a->>->(Result<HP2_s_r_na_g_a->>->:w) never fails { pass w; };
+func:idpa_s_r_na_g_a = Result<HP2_s_r_na_g_a->>[2]->(Result<HP2_s_r_na_g_a->>[2]->:w) never fails { pass w; };
+func:wg_s_r_na_g_a = int64(Result<HP2_s_r_na_g_a->>->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ?! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_r_na_g_a = int64(Result<HP2_s_r_na_g_a->>->:pp) never fails { HX_s_r_na_g_a->:x = ((((<-pp) ?! E5) =>! any->) =>! HX_s_r_na_g_a->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_r_na_g_a = int64(any->:a) never fails { pass raw wg_s_r_na_g_a(a =>! Result<HP2_s_r_na_g_a->>->); };
+func:f_s_r_na_g_a = int64(int64:n) never fails {
+    HP2_s_r_na_g_a:m = HP2_s_r_na_g_a{ a: raw mk_s_r_na_g_a(), own: raw mk_s_r_na_g_a() };
+    Result<HP2_s_r_na_g_a->>:o = Result{ value: @m };
+    S_s_r_na_g_a:s = S_s_r_na_g_a{ oq: Result{ value: @m }, lst: raw mk_s_r_na_g_a() };
+    Result<HP2_s_r_na_g_a->>[2]:arr = [Result{ value: @m }, Result{ value: @m }];
+    int64->:e = @(m.a[0i64]);
+    discard(raw wg_s_r_na_g_a(@(arr[0i64])));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_r_na_g_a = int32() never fails { pass (((raw f_s_r_na_g_a(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_r_na_g_s.npk`.
+func:mk_s_r_na_g_s = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_r_na_g_s = { List<int64>:a; List<int64>:own; };
+struct:HX_s_r_na_g_s = { List<int64>:own; List<int64>:a; };
+struct:S_s_r_na_g_s = { Result<HP2_s_r_na_g_s->>:oq; List<int64>:lst; };
+func:idps_s_r_na_g_s = S_s_r_na_g_s->(S_s_r_na_g_s->:w) never fails { pass w; };
+func:idpo_s_r_na_g_s = Result<HP2_s_r_na_g_s->>->(Result<HP2_s_r_na_g_s->>->:w) never fails { pass w; };
+func:idpa_s_r_na_g_s = Result<HP2_s_r_na_g_s->>[2]->(Result<HP2_s_r_na_g_s->>[2]->:w) never fails { pass w; };
+func:wg_s_r_na_g_s = int64(Result<HP2_s_r_na_g_s->>->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ?! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_r_na_g_s = int64(Result<HP2_s_r_na_g_s->>->:pp) never fails { HX_s_r_na_g_s->:x = ((((<-pp) ?! E5) =>! any->) =>! HX_s_r_na_g_s->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_r_na_g_s = int64(any->:a) never fails { pass raw wg_s_r_na_g_s(a =>! Result<HP2_s_r_na_g_s->>->); };
+func:f_s_r_na_g_s = int64(int64:n) never fails {
+    HP2_s_r_na_g_s:m = HP2_s_r_na_g_s{ a: raw mk_s_r_na_g_s(), own: raw mk_s_r_na_g_s() };
+    Result<HP2_s_r_na_g_s->>:o = Result{ value: @m };
+    S_s_r_na_g_s:s = S_s_r_na_g_s{ oq: Result{ value: @m }, lst: raw mk_s_r_na_g_s() };
+    Result<HP2_s_r_na_g_s->>[2]:arr = [Result{ value: @m }, Result{ value: @m }];
+    int64->:e = @(s.lst[0i64]);
+    discard(raw wg_s_r_na_g_s(@(arr[0i64])));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_r_na_g_s = int32() never fails { pass (((raw f_s_r_na_g_s(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_r_no_g_a.npk`.
+func:mk_s_r_no_g_a = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_r_no_g_a = { List<int64>:a; List<int64>:own; };
+struct:HX_s_r_no_g_a = { List<int64>:own; List<int64>:a; };
+struct:S_s_r_no_g_a = { Result<HP2_s_r_no_g_a->>:oq; List<int64>:lst; };
+func:idps_s_r_no_g_a = S_s_r_no_g_a->(S_s_r_no_g_a->:w) never fails { pass w; };
+func:idpo_s_r_no_g_a = Result<HP2_s_r_no_g_a->>->(Result<HP2_s_r_no_g_a->>->:w) never fails { pass w; };
+func:idpa_s_r_no_g_a = Result<HP2_s_r_no_g_a->>[2]->(Result<HP2_s_r_no_g_a->>[2]->:w) never fails { pass w; };
+func:wg_s_r_no_g_a = int64(Result<HP2_s_r_no_g_a->>->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ?! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_r_no_g_a = int64(Result<HP2_s_r_no_g_a->>->:pp) never fails { HX_s_r_no_g_a->:x = ((((<-pp) ?! E5) =>! any->) =>! HX_s_r_no_g_a->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_r_no_g_a = int64(any->:a) never fails { pass raw wg_s_r_no_g_a(a =>! Result<HP2_s_r_no_g_a->>->); };
+func:f_s_r_no_g_a = int64(int64:n) never fails {
+    HP2_s_r_no_g_a:m = HP2_s_r_no_g_a{ a: raw mk_s_r_no_g_a(), own: raw mk_s_r_no_g_a() };
+    Result<HP2_s_r_no_g_a->>:o = Result{ value: @m };
+    S_s_r_no_g_a:s = S_s_r_no_g_a{ oq: Result{ value: @m }, lst: raw mk_s_r_no_g_a() };
+    Result<HP2_s_r_no_g_a->>[2]:arr = [Result{ value: @m }, Result{ value: @m }];
+    int64->:e = @(m.a[0i64]);
+    discard(raw wg_s_r_no_g_a(@(o)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_r_no_g_a = int32() never fails { pass (((raw f_s_r_no_g_a(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_r_no_g_s.npk`.
+func:mk_s_r_no_g_s = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_r_no_g_s = { List<int64>:a; List<int64>:own; };
+struct:HX_s_r_no_g_s = { List<int64>:own; List<int64>:a; };
+struct:S_s_r_no_g_s = { Result<HP2_s_r_no_g_s->>:oq; List<int64>:lst; };
+func:idps_s_r_no_g_s = S_s_r_no_g_s->(S_s_r_no_g_s->:w) never fails { pass w; };
+func:idpo_s_r_no_g_s = Result<HP2_s_r_no_g_s->>->(Result<HP2_s_r_no_g_s->>->:w) never fails { pass w; };
+func:idpa_s_r_no_g_s = Result<HP2_s_r_no_g_s->>[2]->(Result<HP2_s_r_no_g_s->>[2]->:w) never fails { pass w; };
+func:wg_s_r_no_g_s = int64(Result<HP2_s_r_no_g_s->>->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ?! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_r_no_g_s = int64(Result<HP2_s_r_no_g_s->>->:pp) never fails { HX_s_r_no_g_s->:x = ((((<-pp) ?! E5) =>! any->) =>! HX_s_r_no_g_s->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_r_no_g_s = int64(any->:a) never fails { pass raw wg_s_r_no_g_s(a =>! Result<HP2_s_r_no_g_s->>->); };
+func:f_s_r_no_g_s = int64(int64:n) never fails {
+    HP2_s_r_no_g_s:m = HP2_s_r_no_g_s{ a: raw mk_s_r_no_g_s(), own: raw mk_s_r_no_g_s() };
+    Result<HP2_s_r_no_g_s->>:o = Result{ value: @m };
+    S_s_r_no_g_s:s = S_s_r_no_g_s{ oq: Result{ value: @m }, lst: raw mk_s_r_no_g_s() };
+    Result<HP2_s_r_no_g_s->>[2]:arr = [Result{ value: @m }, Result{ value: @m }];
+    int64->:e = @(s.lst[0i64]);
+    discard(raw wg_s_r_no_g_s(@(o)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_r_no_g_s = int32() never fails { pass (((raw f_s_r_no_g_s(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_r_ns_g_a.npk`.
+func:mk_s_r_ns_g_a = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_r_ns_g_a = { List<int64>:a; List<int64>:own; };
+struct:HX_s_r_ns_g_a = { List<int64>:own; List<int64>:a; };
+struct:S_s_r_ns_g_a = { Result<HP2_s_r_ns_g_a->>:oq; List<int64>:lst; };
+func:idps_s_r_ns_g_a = S_s_r_ns_g_a->(S_s_r_ns_g_a->:w) never fails { pass w; };
+func:idpo_s_r_ns_g_a = Result<HP2_s_r_ns_g_a->>->(Result<HP2_s_r_ns_g_a->>->:w) never fails { pass w; };
+func:idpa_s_r_ns_g_a = Result<HP2_s_r_ns_g_a->>[2]->(Result<HP2_s_r_ns_g_a->>[2]->:w) never fails { pass w; };
+func:wg_s_r_ns_g_a = int64(Result<HP2_s_r_ns_g_a->>->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ?! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_r_ns_g_a = int64(Result<HP2_s_r_ns_g_a->>->:pp) never fails { HX_s_r_ns_g_a->:x = ((((<-pp) ?! E5) =>! any->) =>! HX_s_r_ns_g_a->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_r_ns_g_a = int64(any->:a) never fails { pass raw wg_s_r_ns_g_a(a =>! Result<HP2_s_r_ns_g_a->>->); };
+func:f_s_r_ns_g_a = int64(int64:n) never fails {
+    HP2_s_r_ns_g_a:m = HP2_s_r_ns_g_a{ a: raw mk_s_r_ns_g_a(), own: raw mk_s_r_ns_g_a() };
+    Result<HP2_s_r_ns_g_a->>:o = Result{ value: @m };
+    S_s_r_ns_g_a:s = S_s_r_ns_g_a{ oq: Result{ value: @m }, lst: raw mk_s_r_ns_g_a() };
+    Result<HP2_s_r_ns_g_a->>[2]:arr = [Result{ value: @m }, Result{ value: @m }];
+    int64->:e = @(m.a[0i64]);
+    discard(raw wg_s_r_ns_g_a(@(s.oq)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_r_ns_g_a = int32() never fails { pass (((raw f_s_r_ns_g_a(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AR4's attack on R4-15 (l.19773),
+// `Team/TMP/atk-177d2d-r415-2026-11-19/cells/ar4e/s_r_ns_g_s.npk`.
+func:mk_s_r_ns_g_s = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:HP2_s_r_ns_g_s = { List<int64>:a; List<int64>:own; };
+struct:HX_s_r_ns_g_s = { List<int64>:own; List<int64>:a; };
+struct:S_s_r_ns_g_s = { Result<HP2_s_r_ns_g_s->>:oq; List<int64>:lst; };
+func:idps_s_r_ns_g_s = S_s_r_ns_g_s->(S_s_r_ns_g_s->:w) never fails { pass w; };
+func:idpo_s_r_ns_g_s = Result<HP2_s_r_ns_g_s->>->(Result<HP2_s_r_ns_g_s->>->:w) never fails { pass w; };
+func:idpa_s_r_ns_g_s = Result<HP2_s_r_ns_g_s->>[2]->(Result<HP2_s_r_ns_g_s->>[2]->:w) never fails { pass w; };
+func:wg_s_r_ns_g_s = int64(Result<HP2_s_r_ns_g_s->>->:pp) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-pp) ?! E5)).own), 1i64); } pass 7i64; };
+func:wc_s_r_ns_g_s = int64(Result<HP2_s_r_ns_g_s->>->:pp) never fails { HX_s_r_ns_g_s->:x = ((((<-pp) ?! E5) =>! any->) =>! HX_s_r_ns_g_s->); loop(0i64, 64i64, 1i64) { drop list_push(@((<-x).own), 1i64); } pass 7i64; };
+func:wk_s_r_ns_g_s = int64(any->:a) never fails { pass raw wg_s_r_ns_g_s(a =>! Result<HP2_s_r_ns_g_s->>->); };
+func:f_s_r_ns_g_s = int64(int64:n) never fails {
+    HP2_s_r_ns_g_s:m = HP2_s_r_ns_g_s{ a: raw mk_s_r_ns_g_s(), own: raw mk_s_r_ns_g_s() };
+    Result<HP2_s_r_ns_g_s->>:o = Result{ value: @m };
+    S_s_r_ns_g_s:s = S_s_r_ns_g_s{ oq: Result{ value: @m }, lst: raw mk_s_r_ns_g_s() };
+    Result<HP2_s_r_ns_g_s->>[2]:arr = [Result{ value: @m }, Result{ value: @m }];
+    int64->:e = @(s.lst[0i64]);
+    discard(raw wg_s_r_ns_g_s(@(s.oq)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_s_r_ns_g_s = int32() never fails { pass (((raw f_s_r_ns_g_s(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) {
+    if ((raw cell_main_w_grow_o_nm_ok()) != 67i32) { exit 1i32; }
+    if ((raw cell_main_w_grow_o_x_ok()) != 67i32) { exit 2i32; }
+    if ((raw cell_main_w_grow_r_nm_ok()) != 67i32) { exit 3i32; }
+    if ((raw cell_main_w_grow_r_x_ok()) != 67i32) { exit 4i32; }
+    if ((raw cell_main_w_grow_ro_nm_ok()) != 67i32) { exit 5i32; }
+    if ((raw cell_main_w_grow_ro_x_ok()) != 67i32) { exit 6i32; }
+    if ((raw cell_main_w_grow_rr_nm_ok()) != 67i32) { exit 7i32; }
+    if ((raw cell_main_w_grow_rr_x_ok()) != 67i32) { exit 8i32; }
+    if ((raw cell_main_v_grow_o_a_ok()) != 67i32) { exit 9i32; }
+    if ((raw cell_main_v_grow_o_d_ok()) != 67i32) { exit 10i32; }
+    if ((raw cell_main_v_grow_o_f_ok()) != 67i32) { exit 11i32; }
+    if ((raw cell_main_v_grow_o_nm_ok()) != 67i32) { exit 12i32; }
+    if ((raw cell_main_v_grow_o_t_ok()) != 67i32) { exit 13i32; }
+    if ((raw cell_main_v_grow_r_a_ok()) != 67i32) { exit 14i32; }
+    if ((raw cell_main_v_grow_r_d_ok()) != 67i32) { exit 15i32; }
+    if ((raw cell_main_v_grow_r_f_ok()) != 67i32) { exit 16i32; }
+    if ((raw cell_main_v_grow_r_nm_ok()) != 67i32) { exit 17i32; }
+    if ((raw cell_main_v_grow_r_t_ok()) != 67i32) { exit 18i32; }
+    if ((raw cell_main_v_grow_ro_a_ok()) != 67i32) { exit 19i32; }
+    if ((raw cell_main_v_grow_ro_d_ok()) != 67i32) { exit 20i32; }
+    if ((raw cell_main_v_grow_ro_f_ok()) != 67i32) { exit 21i32; }
+    if ((raw cell_main_v_grow_ro_nm_ok()) != 67i32) { exit 22i32; }
+    if ((raw cell_main_v_grow_ro_t_ok()) != 67i32) { exit 23i32; }
+    if ((raw cell_main_v_grow_rr_a_ok()) != 67i32) { exit 24i32; }
+    if ((raw cell_main_v_grow_rr_f_ok()) != 67i32) { exit 25i32; }
+    if ((raw cell_main_v_grow_rr_nm_ok()) != 67i32) { exit 26i32; }
+    if ((raw cell_main_v_grow_rr_t_ok()) != 67i32) { exit 27i32; }
+    if ((raw cell_main_s_o_ha_g_a()) != 67i32) { exit 28i32; }
+    if ((raw cell_main_s_o_ha_g_s()) != 67i32) { exit 29i32; }
+    if ((raw cell_main_s_o_ho_g_a()) != 67i32) { exit 30i32; }
+    if ((raw cell_main_s_o_ho_g_s()) != 67i32) { exit 31i32; }
+    if ((raw cell_main_s_o_hs_g_a()) != 67i32) { exit 32i32; }
+    if ((raw cell_main_s_o_hs_g_s()) != 67i32) { exit 33i32; }
+    if ((raw cell_main_s_o_na_g_a()) != 67i32) { exit 34i32; }
+    if ((raw cell_main_s_o_na_g_s()) != 67i32) { exit 35i32; }
+    if ((raw cell_main_s_o_no_g_a()) != 67i32) { exit 36i32; }
+    if ((raw cell_main_s_o_no_g_s()) != 67i32) { exit 37i32; }
+    if ((raw cell_main_s_o_ns_g_a()) != 67i32) { exit 38i32; }
+    if ((raw cell_main_s_o_ns_g_s()) != 67i32) { exit 39i32; }
+    if ((raw cell_main_s_r_ha_g_a()) != 67i32) { exit 40i32; }
+    if ((raw cell_main_s_r_ha_g_s()) != 67i32) { exit 41i32; }
+    if ((raw cell_main_s_r_ho_g_a()) != 67i32) { exit 42i32; }
+    if ((raw cell_main_s_r_ho_g_s()) != 67i32) { exit 43i32; }
+    if ((raw cell_main_s_r_hs_g_a()) != 67i32) { exit 44i32; }
+    if ((raw cell_main_s_r_hs_g_s()) != 67i32) { exit 45i32; }
+    if ((raw cell_main_s_r_na_g_a()) != 67i32) { exit 46i32; }
+    if ((raw cell_main_s_r_na_g_s()) != 67i32) { exit 47i32; }
+    if ((raw cell_main_s_r_no_g_a()) != 67i32) { exit 48i32; }
+    if ((raw cell_main_s_r_no_g_s()) != 67i32) { exit 49i32; }
+    if ((raw cell_main_s_r_ns_g_a()) != 67i32) { exit 50i32; }
+    if ((raw cell_main_s_r_ns_g_s()) != 67i32) { exit 51i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

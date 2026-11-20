@@ -1,0 +1,33 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 17:5
+// 2026-11-19 (landing 177d2d, row 8: DEF-709's row a, the return road, form T3-709b; rulings l.19874 item 2 and l.20020 item 2). A BY-VALUE PARAMETER
+// PASSED BACK WHOLE IS THE CALLER'S VALUE: `launder(move string:s) { pass s; }` handed a `string_from_bytes` view back with no refs, and its owner
+// was reassigned under it. In escape.npk a `pass` of a whole parameter that isn't a pointer collects the value's view refs (the parameter's PASS
+// bit), not the moved place's. FACE (T3-709b, refused here at BORROW-015@17:5): 98 on main (aefae6e) on every road 0-8, -O0 and -O2, and under the
+// detector (`failsafe`'s MachineFault: a read of freed storage). From seat A3S's attack on T3-708d, T3-709b and T3-711a (l.20020),
+// `Team/TMP/atk-177d2d-t3s-2026-11-19/cells/a709b/n_opt.npk`.
+mod:moved_string_view_n_opt;
+error:E9;
+func:lo = string?(move string?:s) never fails { pass s; };
+
+func:main = int32(cstring[]:_~argv) {
+    buffer:b = buffer_new(4096i64);
+    string?:o = raw lo(string_from_bytes(b.ptr, b.len));
+    string:v = (move(o)) ??! E9;
+    b = buffer_new(16i64);
+    if ((string_bytes(v))[0i64] == 99u8) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow) { exit 89i32; }, (E9) { exit 9i32; },
+        (StackExhausted) { exit 97i32; }, (MachineFault) { exit 98i32; },
+        (Unreachable) { exit 95i32; }, (HeapOom) { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; }, (WildLeak) { exit 96i32; },
+        (OutOfBounds) { exit 93i32; }, (DeadlineExceeded) { exit 90i32; },
+        (LimitViolated) { exit 88i32; }, (DecreasesViolated) { exit 87i32; },
+        (*) { exit 99i32; }
+    }
+    exit 99i32;
+};

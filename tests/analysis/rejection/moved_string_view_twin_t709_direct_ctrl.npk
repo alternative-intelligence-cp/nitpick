@@ -1,0 +1,31 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 18:5
+// 2026-11-19 (landing 177d2d, row 8: DEF-709's row a, the return road, form T3-709b; rulings l.19874 item 2 and l.20020 item 2). A BY-VALUE PARAMETER
+// PASSED BACK WHOLE IS THE CALLER'S VALUE: `launder(move string:s) { pass s; }` handed a `string_from_bytes` view back with no refs, and its owner
+// was reassigned under it. In escape.npk a `pass` of a whole parameter that isn't a pointer collects the value's view refs (the parameter's PASS
+// bit), not the moved place's. TWIN (refused on main (aefae6e) at BORROW-015@18:5, and here) of the prices beside it. From seat T3's cells (l.19843,
+// l.19874), `Team/TMP/plan-177d2d-t3-2026-11-19/cells/t709/t709_direct_ctrl.npk`.
+mod:moved_string_view_twin_t709_direct_ctrl;
+
+func:launder = string(move string:s) never fails {
+    pass s;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    buffer:b = buffer_new(4096i64);
+    string:v = string_from_bytes(b.ptr, b.len);
+    if ((string_bytes(v))[0i64] == 99u8) { exit 1i32; }
+    b = buffer_new(16i64);
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 97i32; }, (MachineFault)   { exit 98i32; },
+        (Unreachable)    { exit 95i32; }, (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; }, (WildLeak)       { exit 96i32; },
+        (OutOfBounds)    { exit 90i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};

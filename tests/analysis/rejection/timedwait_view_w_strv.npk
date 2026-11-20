@@ -1,0 +1,46 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 29:32
+// 2026-11-19 (landing 177d2d, row 9: DEF-711, form T3-711a; rulings l.19874 item 3 and l.20020 item 3). A WAIT RELEASES THE GUARD'S LOCK: another
+// task may replace the guarded value while `cv.timedwait(g, d)` sleeps, so a view of `g.value` taken before the wait reads freed bytes after it. The
+// aliasing pass takes a `CondVar`'s `timedwait` guard argument as written, for the views. FACE (T3-711a, refused here at BORROW-015@29:32): 98 on
+// main (aefae6e) on every road 0-8, -O0 and -O2, and under the detector (`failsafe`'s MachineFault: a read of freed storage). From seat A3S's attack
+// on T3-708d, T3-709b and T3-711a (l.20020), `Team/TMP/atk-177d2d-t3s-2026-11-19/cells/a711/w_strv.npk`.
+mod:timedwait_view_w_strv;
+error:E9;
+
+async func:replacer = NIL(Mutex<buffer, 1i32>->:m, CondVar<2i32>->:cv) {
+    Guard<buffer>:g2 = await m.acquire(raw duration_ms(1000i64)) ?! E9;
+    g2.value = buffer_new(4096i64);
+    cv.signal() ?! E9;
+    pass NIL;
+};
+
+async func:main = int32(cstring[]:_~argv) {
+    buffer:init = buffer_new(4096i64);
+    init[0i64] = 42u8;
+    Mutex<buffer, 1i32>:m = mutex(move(init)) ?! E9;
+    CondVar<2i32>:cv = condvar() ?! E9;
+    int32:v = 0i32;
+    {
+        drop replacer(@m, @cv);
+        {
+            Guard<buffer>:g = await m.acquire(raw duration_ms(1000i64)) ?! E9;
+            string:sv = string_from_bytes(g.value.ptr, g.value.len);
+            await cv.timedwait(g, raw duration_ms(1000i64)) ?! E9;
+            v = (string_bytes(sv))[0i64] => int32;
+        }
+    }
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (IntOverflow) { exit 89i32; }, (E9) { exit 9i32; },
+        (StackExhausted) { exit 97i32; }, (MachineFault) { exit 98i32; },
+        (Unreachable) { exit 95i32; }, (HeapOom) { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; }, (WildLeak) { exit 96i32; },
+        (OutOfBounds) { exit 93i32; }, (DeadlineExceeded) { exit 90i32; },
+        (*) { exit 99i32; }
+    }
+    exit 99i32;
+};

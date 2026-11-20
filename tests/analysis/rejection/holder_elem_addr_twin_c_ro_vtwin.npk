@@ -1,0 +1,33 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 18:25
+// 2026-11-19 (landing 177d2d, row 7: DEF-708, form T3-708d; rulings l.19843, l.19874 item 1, l.20020 item 1 and l.20239). A BY-VALUE holder of a
+// pointer to a `List` (`grow(w)`, `Wrap:w = Wrap{ lp: @l }`), handed to a callee while an element address into that `List` is live, is judged as a
+// view's holder is: `rejudge_holder` (alias.npk) raises the live element address beside the views when the argument is neither an address-of nor of
+// pointer type, an `Optional` or `Result` of a pointer unwrapped first (it is a pointer). TWIN (refused on main (aefae6e) at BORROW-015@18:25, and
+// here) of the prices beside it. From seat A3S's attack on T3-708d, T3-709b and T3-711a (l.20020),
+// `Team/TMP/atk-177d2d-t3s-2026-11-19/cells/a708c/c_ro_vtwin.npk`.
+mod:holder_elem_addr_twin_c_ro_vtwin;
+
+struct:WB = { buffer->:bp; };
+func:peekb = int64(WB:w) never fails { pass 7i64; };
+func:f = int64(int64:n) never fails {
+    buffer:b = buffer_new(64i64);
+    b[0i64] = 42u8;
+    WB:w = WB{ bp: @b };
+    string:v = string_from_bytes(b.ptr, b.len);
+    int64:r = raw peekb(w);
+    pass r + ((string_bytes(v))[0i64] => int64) - 42i64;
+};
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 97i32; }, (MachineFault)      { exit 98i32; },
+        (Unreachable)    { exit 95i32; }, (HeapOom)           { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; }, (WildLeak)          { exit 96i32; },
+        (OutOfBounds)    { exit 90i32; }, (IntOverflow)       { exit 89i32; },
+        (LimitViolated)  { exit 88i32; }, (DecreasesViolated) { exit 87i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};

@@ -1,0 +1,2552 @@
+// expect-exit: 0
+mod:hop_field_store_ok;
+// 2026-11-19 (landing 177d2d, row 3: DEF-348's row a, form RB-1s; rulings l.19728, l.19799, l.19904, l.20057, l.20380 and l.20445). A pointer FIELD
+// of a pointer PARAMETER's pointee written through, on the summary road: a callee's store at a composed path is re-resolved at each pointer-typed hop
+// (`escape_hop_mut`), and alias judges the written path through the hop's targets (`check_hop_written`, with a seen set keyed by the target's root,
+// its type and the rest path, keeping the best fuel). THE RIGHT PROGRAMS (90): the cells of seats ARB and ARS that are right on main and here, the
+// faces' near controls, and seat AFS's controls; each 67 on main and here; main() exits k at the k-th that isn't.
+error:E5;
+error:E4;
+error:E9;
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_a1_ok.npk`.
+struct:K_hb_a1_ok = { int64:k; };
+struct:H_hb_a1_ok = { List<int64>:l; int64:k; K_hb_a1_ok:kk; };
+func:mk_hb_a1_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_a1_ok = H_hb_a1_ok() never fails { pass H_hb_a1_ok{ l: raw mk_hb_a1_ok(), k: 2i64, kk: K_hb_a1_ok{ k: 3i64 } }; };
+struct:HPO_hb_a1_ok = { H_hb_a1_ok->:lp; List<int64>:own; };
+struct:SQP_hb_a1_ok = { HPO_hb_a1_ok->:q; List<int64>:own; };
+func:gw_hb_a1_ok = int64(SQP_hb_a1_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+func:gwb_hb_a1_ok = int64(SQP_hb_a1_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); drop list_push(@((<-o).own), 1i64); } pass 7i64; };
+func:f_hb_a1_ok = int64(int64:n) never fails {
+    H_hb_a1_ok:h0 = raw mkh_hb_a1_ok();
+    HPO_hb_a1_ok:m = HPO_hb_a1_ok{ lp: @h0, own: raw mk_hb_a1_ok() };
+    HPO_hb_a1_ok:m2 = HPO_hb_a1_ok{ lp: @h0, own: raw mk_hb_a1_ok() };
+    HPO_hb_a1_ok:m3 = HPO_hb_a1_ok{ lp: @h0, own: raw mk_hb_a1_ok() };
+    SQP_hb_a1_ok:s = SQP_hb_a1_ok{ q: @m2, own: raw mk_hb_a1_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gwb_hb_a1_ok(@s));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_a1_ok = int32() never fails { pass (((raw f_hb_a1_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_any_ok.npk`.
+struct:K_hb_any_ok = { int64:k; };
+struct:H_hb_any_ok = { List<int64>:l; int64:k; K_hb_any_ok:kk; };
+func:mk_hb_any_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_any_ok = H_hb_any_ok() never fails { pass H_hb_any_ok{ l: raw mk_hb_any_ok(), k: 2i64, kk: K_hb_any_ok{ k: 3i64 } }; };
+struct:HPO_hb_any_ok = { H_hb_any_ok->:lp; List<int64>:own; };
+struct:SQP_hb_any_ok = { HPO_hb_any_ok->:q; List<int64>:own; };
+func:gw_hb_any_ok = int64(SQP_hb_any_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:SQA_hb_any_ok = { any->:q; List<int64>:own; };
+func:gwa_hb_any_ok = int64(SQA_hb_any_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(((<-o).q) =>! HPO_hb_any_ok->)).own), 1i64); } pass 7i64; };
+func:f_hb_any_ok = int64(int64:n) never fails {
+    H_hb_any_ok:h0 = raw mkh_hb_any_ok();
+    HPO_hb_any_ok:m = HPO_hb_any_ok{ lp: @h0, own: raw mk_hb_any_ok() };
+    HPO_hb_any_ok:m2 = HPO_hb_any_ok{ lp: @h0, own: raw mk_hb_any_ok() };
+    HPO_hb_any_ok:m3 = HPO_hb_any_ok{ lp: @h0, own: raw mk_hb_any_ok() };
+    SQA_hb_any_ok:s = SQA_hb_any_ok{ q: (@m) =>! any->, own: raw mk_hb_any_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gwa_hb_any_ok(@s));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_any_ok = int32() never fails { pass (((raw f_hb_any_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_cr_ok.npk`.
+struct:K_hb_cr_ok = { int64:k; };
+struct:H_hb_cr_ok = { List<int64>:l; int64:k; K_hb_cr_ok:kk; };
+func:mk_hb_cr_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_cr_ok = H_hb_cr_ok() never fails { pass H_hb_cr_ok{ l: raw mk_hb_cr_ok(), k: 2i64, kk: K_hb_cr_ok{ k: 3i64 } }; };
+struct:HPO_hb_cr_ok = { H_hb_cr_ok->:lp; List<int64>:own; };
+struct:SQP_hb_cr_ok = { HPO_hb_cr_ok->:q; List<int64>:own; };
+func:gw_hb_cr_ok = int64(SQP_hb_cr_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+func:idp_hb_cr_ok = HPO_hb_cr_ok->(HPO_hb_cr_ok->:p) never fails { pass p; };
+func:f_hb_cr_ok = int64(int64:n) never fails {
+    H_hb_cr_ok:h0 = raw mkh_hb_cr_ok();
+    HPO_hb_cr_ok:m = HPO_hb_cr_ok{ lp: @h0, own: raw mk_hb_cr_ok() };
+    HPO_hb_cr_ok:m2 = HPO_hb_cr_ok{ lp: @h0, own: raw mk_hb_cr_ok() };
+    HPO_hb_cr_ok:m3 = HPO_hb_cr_ok{ lp: @h0, own: raw mk_hb_cr_ok() };
+    SQP_hb_cr_ok:s = SQP_hb_cr_ok{ q: raw idp_hb_cr_ok(@m), own: raw mk_hb_cr_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_hb_cr_ok(@s));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_cr_ok = int32() never fails { pass (((raw f_hb_cr_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_dn_ok.npk`.
+struct:K_hb_dn_ok = { int64:k; };
+struct:H_hb_dn_ok = { List<int64>:l; int64:k; K_hb_dn_ok:kk; };
+func:mk_hb_dn_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_dn_ok = H_hb_dn_ok() never fails { pass H_hb_dn_ok{ l: raw mk_hb_dn_ok(), k: 2i64, kk: K_hb_dn_ok{ k: 3i64 } }; };
+struct:HPO_hb_dn_ok = { H_hb_dn_ok->:lp; List<int64>:own; };
+struct:SQP_hb_dn_ok = { HPO_hb_dn_ok->:q; List<int64>:own; };
+func:gw_hb_dn_ok = int64(SQP_hb_dn_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+func:f_hb_dn_ok = int64(int64:n) never fails {
+    H_hb_dn_ok:h0 = raw mkh_hb_dn_ok();
+    HPO_hb_dn_ok:m = HPO_hb_dn_ok{ lp: @h0, own: raw mk_hb_dn_ok() };
+    HPO_hb_dn_ok:m2 = HPO_hb_dn_ok{ lp: @h0, own: raw mk_hb_dn_ok() };
+    HPO_hb_dn_ok:m3 = HPO_hb_dn_ok{ lp: @h0, own: raw mk_hb_dn_ok() };
+    SQP_hb_dn_ok:s = SQP_hb_dn_ok{ q: @m, own: raw mk_hb_dn_ok() };
+    SQP_hb_dn_ok->:sp = @s;
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_hb_dn_ok(@(<-sp)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_dn_ok = int32() never fails { pass (((raw f_hb_dn_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_gen_ok.npk`.
+struct:K_hb_gen_ok = { int64:k; };
+struct:H_hb_gen_ok = { List<int64>:l; int64:k; K_hb_gen_ok:kk; };
+func:mk_hb_gen_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_gen_ok = H_hb_gen_ok() never fails { pass H_hb_gen_ok{ l: raw mk_hb_gen_ok(), k: 2i64, kk: K_hb_gen_ok{ k: 3i64 } }; };
+struct:HPO_hb_gen_ok = { H_hb_gen_ok->:lp; List<int64>:own; };
+struct:SQP_hb_gen_ok = { HPO_hb_gen_ok->:q; List<int64>:own; };
+func:gw_hb_gen_ok = int64(SQP_hb_gen_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:GQ_hb_gen_ok<T> = { T:q; List<int64>:own; };
+func:gwg_hb_gen_ok = int64(GQ_hb_gen_ok<HPO_hb_gen_ok->>->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+func:f_hb_gen_ok = int64(int64:n) never fails {
+    H_hb_gen_ok:h0 = raw mkh_hb_gen_ok();
+    HPO_hb_gen_ok:m = HPO_hb_gen_ok{ lp: @h0, own: raw mk_hb_gen_ok() };
+    HPO_hb_gen_ok:m2 = HPO_hb_gen_ok{ lp: @h0, own: raw mk_hb_gen_ok() };
+    HPO_hb_gen_ok:m3 = HPO_hb_gen_ok{ lp: @h0, own: raw mk_hb_gen_ok() };
+    GQ_hb_gen_ok<HPO_hb_gen_ok->>:s = GQ_hb_gen_ok{ q: @m, own: raw mk_hb_gen_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gwg_hb_gen_ok(@s));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_gen_ok = int32() never fails { pass (((raw f_hb_gen_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_h2_ok.npk`.
+struct:K_hb_h2_ok = { int64:k; };
+struct:H_hb_h2_ok = { List<int64>:l; int64:k; K_hb_h2_ok:kk; };
+func:mk_hb_h2_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_h2_ok = H_hb_h2_ok() never fails { pass H_hb_h2_ok{ l: raw mk_hb_h2_ok(), k: 2i64, kk: K_hb_h2_ok{ k: 3i64 } }; };
+struct:HPO_hb_h2_ok = { H_hb_h2_ok->:lp; List<int64>:own; };
+struct:SQP_hb_h2_ok = { HPO_hb_h2_ok->:q; List<int64>:own; };
+func:gw_hb_h2_ok = int64(SQP_hb_h2_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:SQ2_hb_h2_ok = { SQP_hb_h2_ok->:q2; List<int64>:own; };
+func:gw2_hb_h2_ok = int64(SQ2_hb_h2_ok->:t) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-t).q2)).q)).own), 1i64); } pass 7i64; };
+func:f_hb_h2_ok = int64(int64:n) never fails {
+    H_hb_h2_ok:h0 = raw mkh_hb_h2_ok();
+    HPO_hb_h2_ok:m = HPO_hb_h2_ok{ lp: @h0, own: raw mk_hb_h2_ok() };
+    HPO_hb_h2_ok:m2 = HPO_hb_h2_ok{ lp: @h0, own: raw mk_hb_h2_ok() };
+    HPO_hb_h2_ok:m3 = HPO_hb_h2_ok{ lp: @h0, own: raw mk_hb_h2_ok() };
+    SQP_hb_h2_ok:s = SQP_hb_h2_ok{ q: @m, own: raw mk_hb_h2_ok() };
+    SQ2_hb_h2_ok:t = SQ2_hb_h2_ok{ q2: @s, own: raw mk_hb_h2_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw2_hb_h2_ok(@t));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_h2_ok = int32() never fails { pass (((raw f_hb_h2_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_h2f_ok.npk`.
+struct:K_hb_h2f_ok = { int64:k; };
+struct:H_hb_h2f_ok = { List<int64>:l; int64:k; K_hb_h2f_ok:kk; };
+func:mk_hb_h2f_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_h2f_ok = H_hb_h2f_ok() never fails { pass H_hb_h2f_ok{ l: raw mk_hb_h2f_ok(), k: 2i64, kk: K_hb_h2f_ok{ k: 3i64 } }; };
+struct:HPO_hb_h2f_ok = { H_hb_h2f_ok->:lp; List<int64>:own; };
+struct:SQP_hb_h2f_ok = { HPO_hb_h2f_ok->:q; List<int64>:own; };
+func:gw_hb_h2f_ok = int64(SQP_hb_h2f_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:SQ2_hb_h2f_ok = { SQP_hb_h2f_ok->:q2; List<int64>:own; };
+func:gw2_hb_h2f_ok = int64(SQ2_hb_h2f_ok->:t) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-t).q2)).q)).own), 1i64); } pass 7i64; };
+struct:SQ3_hb_h2f_ok = { SQP_hb_h2f_ok:in3; List<int64>:own; };
+func:f_hb_h2f_ok = int64(int64:n) never fails {
+    H_hb_h2f_ok:h0 = raw mkh_hb_h2f_ok();
+    HPO_hb_h2f_ok:m = HPO_hb_h2f_ok{ lp: @h0, own: raw mk_hb_h2f_ok() };
+    HPO_hb_h2f_ok:m2 = HPO_hb_h2f_ok{ lp: @h0, own: raw mk_hb_h2f_ok() };
+    HPO_hb_h2f_ok:m3 = HPO_hb_h2f_ok{ lp: @h0, own: raw mk_hb_h2f_ok() };
+    SQ3_hb_h2f_ok:w = SQ3_hb_h2f_ok{ in3: SQP_hb_h2f_ok{ q: @m, own: raw mk_hb_h2f_ok() }, own: raw mk_hb_h2f_ok() };
+    SQ2_hb_h2f_ok:t = SQ2_hb_h2f_ok{ q2: @(w.in3), own: raw mk_hb_h2f_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw2_hb_h2f_ok(@t));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_h2f_ok = int32() never fails { pass (((raw f_hb_h2f_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_h2v_ok.npk`.
+struct:K_hb_h2v_ok = { int64:k; };
+struct:H_hb_h2v_ok = { List<int64>:l; int64:k; K_hb_h2v_ok:kk; };
+func:mk_hb_h2v_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_h2v_ok = H_hb_h2v_ok() never fails { pass H_hb_h2v_ok{ l: raw mk_hb_h2v_ok(), k: 2i64, kk: K_hb_h2v_ok{ k: 3i64 } }; };
+struct:HPO_hb_h2v_ok = { H_hb_h2v_ok->:lp; List<int64>:own; };
+struct:SQP_hb_h2v_ok = { HPO_hb_h2v_ok->:q; List<int64>:own; };
+func:gw_hb_h2v_ok = int64(SQP_hb_h2v_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:SQ2_hb_h2v_ok = { SQP_hb_h2v_ok->:q2; List<int64>:own; };
+func:gw2_hb_h2v_ok = int64(SQ2_hb_h2v_ok->:t) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-t).q2)).q)).own), 1i64); } pass 7i64; };
+func:f_hb_h2v_ok = int64(int64:n) never fails {
+    H_hb_h2v_ok:h0 = raw mkh_hb_h2v_ok();
+    HPO_hb_h2v_ok:m = HPO_hb_h2v_ok{ lp: @h0, own: raw mk_hb_h2v_ok() };
+    HPO_hb_h2v_ok:m2 = HPO_hb_h2v_ok{ lp: @h0, own: raw mk_hb_h2v_ok() };
+    HPO_hb_h2v_ok:m3 = HPO_hb_h2v_ok{ lp: @h0, own: raw mk_hb_h2v_ok() };
+    SQP_hb_h2v_ok:s = SQP_hb_h2v_ok{ q: @m, own: raw mk_hb_h2v_ok() };
+    SQP_hb_h2v_ok->:sp = @s;
+    SQ2_hb_h2v_ok:t = SQ2_hb_h2v_ok{ q2: sp, own: raw mk_hb_h2v_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw2_hb_h2v_ok(@t));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_h2v_ok = int32() never fails { pass (((raw f_hb_h2v_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_lst_ok.npk`.
+struct:K_hb_lst_ok = { int64:k; };
+struct:H_hb_lst_ok = { List<int64>:l; int64:k; K_hb_lst_ok:kk; };
+func:mk_hb_lst_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_lst_ok = H_hb_lst_ok() never fails { pass H_hb_lst_ok{ l: raw mk_hb_lst_ok(), k: 2i64, kk: K_hb_lst_ok{ k: 3i64 } }; };
+struct:HPO_hb_lst_ok = { H_hb_lst_ok->:lp; List<int64>:own; };
+struct:SQP_hb_lst_ok = { HPO_hb_lst_ok->:q; List<int64>:own; };
+func:gw_hb_lst_ok = int64(SQP_hb_lst_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:SL_hb_lst_ok = { List<HPO_hb_lst_ok->>:l; List<int64>:own; };
+func:gwl_hb_lst_ok = int64(SL_hb_lst_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).l[0i64])).own), 1i64); } pass 7i64; };
+func:f_hb_lst_ok = int64(int64:n) never fails {
+    H_hb_lst_ok:h0 = raw mkh_hb_lst_ok();
+    HPO_hb_lst_ok:m = HPO_hb_lst_ok{ lp: @h0, own: raw mk_hb_lst_ok() };
+    HPO_hb_lst_ok:m2 = HPO_hb_lst_ok{ lp: @h0, own: raw mk_hb_lst_ok() };
+    HPO_hb_lst_ok:m3 = HPO_hb_lst_ok{ lp: @h0, own: raw mk_hb_lst_ok() };
+    SL_hb_lst_ok:s = SL_hb_lst_ok{ l: raw list_init::<HPO_hb_lst_ok->>(1i64), own: raw mk_hb_lst_ok() };
+    drop list_push(@s.l, @m);
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gwl_hb_lst_ok(@s));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_lst_ok = int32() never fails { pass (((raw f_hb_lst_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_memo_ok.npk`.
+struct:K_hb_memo_ok = { int64:k; };
+struct:H_hb_memo_ok = { List<int64>:l; int64:k; K_hb_memo_ok:kk; };
+func:mk_hb_memo_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_memo_ok = H_hb_memo_ok() never fails { pass H_hb_memo_ok{ l: raw mk_hb_memo_ok(), k: 2i64, kk: K_hb_memo_ok{ k: 3i64 } }; };
+struct:HPO_hb_memo_ok = { H_hb_memo_ok->:lp; List<int64>:own; };
+struct:SQP_hb_memo_ok = { HPO_hb_memo_ok->:q; List<int64>:own; };
+func:gw_hb_memo_ok = int64(SQP_hb_memo_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:HPY_hb_memo_ok = { List<int64>:own; int64:z; };
+struct:SQY_hb_memo_ok = { HPY_hb_memo_ok:q; List<int64>:own; };
+func:gwy_hb_memo_ok = int64(SQY_hb_memo_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-o).q.own), 1i64); } pass 7i64; };
+func:f_hb_memo_ok = int64(int64:n) never fails {
+    H_hb_memo_ok:h0 = raw mkh_hb_memo_ok();
+    HPO_hb_memo_ok:m = HPO_hb_memo_ok{ lp: @h0, own: raw mk_hb_memo_ok() };
+    HPO_hb_memo_ok:m2 = HPO_hb_memo_ok{ lp: @h0, own: raw mk_hb_memo_ok() };
+    HPO_hb_memo_ok:m3 = HPO_hb_memo_ok{ lp: @h0, own: raw mk_hb_memo_ok() };
+    SQY_hb_memo_ok:sy = SQY_hb_memo_ok{ q: HPY_hb_memo_ok{ own: raw mk_hb_memo_ok(), z: 1i64 }, own: raw mk_hb_memo_ok() };
+    discard(raw gwy_hb_memo_ok(@sy));
+    SQP_hb_memo_ok:s = SQP_hb_memo_ok{ q: @m, own: raw mk_hb_memo_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gwy_hb_memo_ok(@sy));
+    discard(raw gw_hb_memo_ok(@s));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_memo_ok = int32() never fails { pass (((raw f_hb_memo_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_mid_ok.npk`.
+struct:K_hb_mid_ok = { int64:k; };
+struct:H_hb_mid_ok = { List<int64>:l; int64:k; K_hb_mid_ok:kk; };
+func:mk_hb_mid_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_mid_ok = H_hb_mid_ok() never fails { pass H_hb_mid_ok{ l: raw mk_hb_mid_ok(), k: 2i64, kk: K_hb_mid_ok{ k: 3i64 } }; };
+struct:HPO_hb_mid_ok = { H_hb_mid_ok->:lp; List<int64>:own; };
+struct:SQP_hb_mid_ok = { HPO_hb_mid_ok->:q; List<int64>:own; };
+func:gw_hb_mid_ok = int64(SQP_hb_mid_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+func:mid_hb_mid_ok = int64(HPO_hb_mid_ok->:mp) never fails { SQP_hb_mid_ok:s = SQP_hb_mid_ok{ q: mp, own: raw mk_hb_mid_ok() }; SQP_hb_mid_ok->:sp = @s; pass raw gw_hb_mid_ok(sp); };
+func:f_hb_mid_ok = int64(int64:n) never fails {
+    H_hb_mid_ok:h0 = raw mkh_hb_mid_ok();
+    HPO_hb_mid_ok:m = HPO_hb_mid_ok{ lp: @h0, own: raw mk_hb_mid_ok() };
+    HPO_hb_mid_ok:m2 = HPO_hb_mid_ok{ lp: @h0, own: raw mk_hb_mid_ok() };
+    HPO_hb_mid_ok:m3 = HPO_hb_mid_ok{ lp: @h0, own: raw mk_hb_mid_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw mid_hb_mid_ok(@m));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_mid_ok = int32() never fails { pass (((raw f_hb_mid_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_midd_ok.npk`.
+struct:K_hb_midd_ok = { int64:k; };
+struct:H_hb_midd_ok = { List<int64>:l; int64:k; K_hb_midd_ok:kk; };
+func:mk_hb_midd_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_midd_ok = H_hb_midd_ok() never fails { pass H_hb_midd_ok{ l: raw mk_hb_midd_ok(), k: 2i64, kk: K_hb_midd_ok{ k: 3i64 } }; };
+struct:HPO_hb_midd_ok = { H_hb_midd_ok->:lp; List<int64>:own; };
+struct:SQP_hb_midd_ok = { HPO_hb_midd_ok->:q; List<int64>:own; };
+func:gw_hb_midd_ok = int64(SQP_hb_midd_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+func:midd_hb_midd_ok = int64(HPO_hb_midd_ok->:mp) never fails { SQP_hb_midd_ok:s = SQP_hb_midd_ok{ q: mp, own: raw mk_hb_midd_ok() }; SQP_hb_midd_ok->:sp = @s; pass raw gw_hb_midd_ok(@(<-sp)); };
+func:f_hb_midd_ok = int64(int64:n) never fails {
+    H_hb_midd_ok:h0 = raw mkh_hb_midd_ok();
+    HPO_hb_midd_ok:m = HPO_hb_midd_ok{ lp: @h0, own: raw mk_hb_midd_ok() };
+    HPO_hb_midd_ok:m2 = HPO_hb_midd_ok{ lp: @h0, own: raw mk_hb_midd_ok() };
+    HPO_hb_midd_ok:m3 = HPO_hb_midd_ok{ lp: @h0, own: raw mk_hb_midd_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw midd_hb_midd_ok(@m));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_midd_ok = int32() never fails { pass (((raw f_hb_midd_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_pl_ok.npk`.
+struct:K_hb_pl_ok = { int64:k; };
+struct:H_hb_pl_ok = { List<int64>:l; int64:k; K_hb_pl_ok:kk; };
+func:mk_hb_pl_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_pl_ok = H_hb_pl_ok() never fails { pass H_hb_pl_ok{ l: raw mk_hb_pl_ok(), k: 2i64, kk: K_hb_pl_ok{ k: 3i64 } }; };
+struct:HPO_hb_pl_ok = { H_hb_pl_ok->:lp; List<int64>:own; };
+struct:SQP_hb_pl_ok = { HPO_hb_pl_ok->:q; List<int64>:own; };
+func:gw_hb_pl_ok = int64(SQP_hb_pl_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+func:f_hb_pl_ok = int64(int64:n) never fails {
+    H_hb_pl_ok:h0 = raw mkh_hb_pl_ok();
+    HPO_hb_pl_ok:m = HPO_hb_pl_ok{ lp: @h0, own: raw mk_hb_pl_ok() };
+    HPO_hb_pl_ok:m2 = HPO_hb_pl_ok{ lp: @h0, own: raw mk_hb_pl_ok() };
+    HPO_hb_pl_ok:m3 = HPO_hb_pl_ok{ lp: @h0, own: raw mk_hb_pl_ok() };
+    SQP_hb_pl_ok:s = SQP_hb_pl_ok{ q: @m, own: raw mk_hb_pl_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_hb_pl_ok(@s));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_pl_ok = int32() never fails { pass (((raw f_hb_pl_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_pp_ok.npk`.
+struct:K_hb_pp_ok = { int64:k; };
+struct:H_hb_pp_ok = { List<int64>:l; int64:k; K_hb_pp_ok:kk; };
+func:mk_hb_pp_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_pp_ok = H_hb_pp_ok() never fails { pass H_hb_pp_ok{ l: raw mk_hb_pp_ok(), k: 2i64, kk: K_hb_pp_ok{ k: 3i64 } }; };
+struct:HPO_hb_pp_ok = { H_hb_pp_ok->:lp; List<int64>:own; };
+struct:SQP_hb_pp_ok = { HPO_hb_pp_ok->:q; List<int64>:own; };
+func:gw_hb_pp_ok = int64(SQP_hb_pp_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+func:g2_hb_pp_ok = int64(SQP_hb_pp_ok->:o) never fails { pass raw gw_hb_pp_ok(o); };
+func:f_hb_pp_ok = int64(int64:n) never fails {
+    H_hb_pp_ok:h0 = raw mkh_hb_pp_ok();
+    HPO_hb_pp_ok:m = HPO_hb_pp_ok{ lp: @h0, own: raw mk_hb_pp_ok() };
+    HPO_hb_pp_ok:m2 = HPO_hb_pp_ok{ lp: @h0, own: raw mk_hb_pp_ok() };
+    HPO_hb_pp_ok:m3 = HPO_hb_pp_ok{ lp: @h0, own: raw mk_hb_pp_ok() };
+    SQP_hb_pp_ok:s = SQP_hb_pp_ok{ q: @m, own: raw mk_hb_pp_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw g2_hb_pp_ok(@s));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_pp_ok = int32() never fails { pass (((raw f_hb_pp_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_ppl_ok.npk`.
+struct:K_hb_ppl_ok = { int64:k; };
+struct:H_hb_ppl_ok = { List<int64>:l; int64:k; K_hb_ppl_ok:kk; };
+func:mk_hb_ppl_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_ppl_ok = H_hb_ppl_ok() never fails { pass H_hb_ppl_ok{ l: raw mk_hb_ppl_ok(), k: 2i64, kk: K_hb_ppl_ok{ k: 3i64 } }; };
+struct:HPO_hb_ppl_ok = { H_hb_ppl_ok->:lp; List<int64>:own; };
+struct:SQP_hb_ppl_ok = { HPO_hb_ppl_ok->:q; List<int64>:own; };
+func:gw_hb_ppl_ok = int64(SQP_hb_ppl_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:SPP_hb_ppl_ok = { HPO_hb_ppl_ok->->:qq; int64:z; };
+func:pp1_hb_ppl_ok = int64(SPP_hb_ppl_ok->:s) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(<-((<-s).qq))).own), 1i64); } pass 7i64; };
+func:f_hb_ppl_ok = int64(int64:n) never fails {
+    H_hb_ppl_ok:h0 = raw mkh_hb_ppl_ok();
+    HPO_hb_ppl_ok:m = HPO_hb_ppl_ok{ lp: @h0, own: raw mk_hb_ppl_ok() };
+    HPO_hb_ppl_ok:m2 = HPO_hb_ppl_ok{ lp: @h0, own: raw mk_hb_ppl_ok() };
+    HPO_hb_ppl_ok:m3 = HPO_hb_ppl_ok{ lp: @h0, own: raw mk_hb_ppl_ok() };
+    HPO_hb_ppl_ok->:mp = @m;
+    SPP_hb_ppl_ok:s = SPP_hb_ppl_ok{ qq: @mp, z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw pp1_hb_ppl_ok(@s));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_ppl_ok = int32() never fails { pass (((raw f_hb_ppl_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_pv_ok.npk`.
+struct:K_hb_pv_ok = { int64:k; };
+struct:H_hb_pv_ok = { List<int64>:l; int64:k; K_hb_pv_ok:kk; };
+func:mk_hb_pv_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_pv_ok = H_hb_pv_ok() never fails { pass H_hb_pv_ok{ l: raw mk_hb_pv_ok(), k: 2i64, kk: K_hb_pv_ok{ k: 3i64 } }; };
+struct:HPO_hb_pv_ok = { H_hb_pv_ok->:lp; List<int64>:own; };
+struct:SQP_hb_pv_ok = { HPO_hb_pv_ok->:q; List<int64>:own; };
+func:gw_hb_pv_ok = int64(SQP_hb_pv_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+func:f_hb_pv_ok = int64(int64:n) never fails {
+    H_hb_pv_ok:h0 = raw mkh_hb_pv_ok();
+    HPO_hb_pv_ok:m = HPO_hb_pv_ok{ lp: @h0, own: raw mk_hb_pv_ok() };
+    HPO_hb_pv_ok:m2 = HPO_hb_pv_ok{ lp: @h0, own: raw mk_hb_pv_ok() };
+    HPO_hb_pv_ok:m3 = HPO_hb_pv_ok{ lp: @h0, own: raw mk_hb_pv_ok() };
+    SQP_hb_pv_ok:s = SQP_hb_pv_ok{ q: @m, own: raw mk_hb_pv_ok() };
+    SQP_hb_pv_ok->:sp = @s;
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_hb_pv_ok(sp));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_pv_ok = int32() never fails { pass (((raw f_hb_pv_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_rd_ok.npk`.
+struct:K_hb_rd_ok = { int64:k; };
+struct:H_hb_rd_ok = { List<int64>:l; int64:k; K_hb_rd_ok:kk; };
+func:mk_hb_rd_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_rd_ok = H_hb_rd_ok() never fails { pass H_hb_rd_ok{ l: raw mk_hb_rd_ok(), k: 2i64, kk: K_hb_rd_ok{ k: 3i64 } }; };
+struct:HPO_hb_rd_ok = { H_hb_rd_ok->:lp; List<int64>:own; };
+struct:SQP_hb_rd_ok = { HPO_hb_rd_ok->:q; List<int64>:own; };
+func:gw_hb_rd_ok = int64(SQP_hb_rd_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+func:f_hb_rd_ok = int64(int64:n) never fails {
+    H_hb_rd_ok:h0 = raw mkh_hb_rd_ok();
+    HPO_hb_rd_ok:m = HPO_hb_rd_ok{ lp: @h0, own: raw mk_hb_rd_ok() };
+    HPO_hb_rd_ok:m2 = HPO_hb_rd_ok{ lp: @h0, own: raw mk_hb_rd_ok() };
+    HPO_hb_rd_ok:m3 = HPO_hb_rd_ok{ lp: @h0, own: raw mk_hb_rd_ok() };
+    HPO_hb_rd_ok->:mp = @m;
+    SQP_hb_rd_ok:s = SQP_hb_rd_ok{ q: mp, own: raw mk_hb_rd_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_hb_rd_ok(@s));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_rd_ok = int32() never fails { pass (((raw f_hb_rd_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_rdo_ok.npk`.
+struct:K_hb_rdo_ok = { int64:k; };
+struct:H_hb_rdo_ok = { List<int64>:l; int64:k; K_hb_rdo_ok:kk; };
+func:mk_hb_rdo_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_rdo_ok = H_hb_rdo_ok() never fails { pass H_hb_rdo_ok{ l: raw mk_hb_rdo_ok(), k: 2i64, kk: K_hb_rdo_ok{ k: 3i64 } }; };
+struct:HPO_hb_rdo_ok = { H_hb_rdo_ok->:lp; List<int64>:own; };
+struct:SQP_hb_rdo_ok = { HPO_hb_rdo_ok->:q; List<int64>:own; };
+func:gw_hb_rdo_ok = int64(SQP_hb_rdo_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+func:f_hb_rdo_ok = int64(int64:n) never fails {
+    H_hb_rdo_ok:h0 = raw mkh_hb_rdo_ok();
+    HPO_hb_rdo_ok:m = HPO_hb_rdo_ok{ lp: @h0, own: raw mk_hb_rdo_ok() };
+    HPO_hb_rdo_ok:m2 = HPO_hb_rdo_ok{ lp: @h0, own: raw mk_hb_rdo_ok() };
+    HPO_hb_rdo_ok:m3 = HPO_hb_rdo_ok{ lp: @h0, own: raw mk_hb_rdo_ok() };
+    SQP_hb_rdo_ok:o = SQP_hb_rdo_ok{ q: @m, own: raw mk_hb_rdo_ok() };
+    SQP_hb_rdo_ok:s = SQP_hb_rdo_ok{ q: o.q, own: raw mk_hb_rdo_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_hb_rdo_ok(@s));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_rdo_ok = int32() never fails { pass (((raw f_hb_rdo_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_st_ok.npk`.
+struct:K_hb_st_ok = { int64:k; };
+struct:H_hb_st_ok = { List<int64>:l; int64:k; K_hb_st_ok:kk; };
+func:mk_hb_st_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_st_ok = H_hb_st_ok() never fails { pass H_hb_st_ok{ l: raw mk_hb_st_ok(), k: 2i64, kk: K_hb_st_ok{ k: 3i64 } }; };
+struct:HPO_hb_st_ok = { H_hb_st_ok->:lp; List<int64>:own; };
+struct:SQP_hb_st_ok = { HPO_hb_st_ok->:q; List<int64>:own; };
+func:gw_hb_st_ok = int64(SQP_hb_st_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+func:setq_hb_st_ok = int64(SQP_hb_st_ok->:o, HPO_hb_st_ok->:v) never fails { (<-o).q = v; pass 7i64; };
+func:f_hb_st_ok = int64(int64:n) never fails {
+    H_hb_st_ok:h0 = raw mkh_hb_st_ok();
+    HPO_hb_st_ok:m = HPO_hb_st_ok{ lp: @h0, own: raw mk_hb_st_ok() };
+    HPO_hb_st_ok:m2 = HPO_hb_st_ok{ lp: @h0, own: raw mk_hb_st_ok() };
+    HPO_hb_st_ok:m3 = HPO_hb_st_ok{ lp: @h0, own: raw mk_hb_st_ok() };
+    SQP_hb_st_ok:s = SQP_hb_st_ok{ q: @m2, own: raw mk_hb_st_ok() };
+    discard(raw setq_hb_st_ok(@s, @m));
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_hb_st_ok(@s));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_st_ok = int32() never fails { pass (((raw f_hb_st_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hb/hb_tern_ok.npk`.
+struct:K_hb_tern_ok = { int64:k; };
+struct:H_hb_tern_ok = { List<int64>:l; int64:k; K_hb_tern_ok:kk; };
+func:mk_hb_tern_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hb_tern_ok = H_hb_tern_ok() never fails { pass H_hb_tern_ok{ l: raw mk_hb_tern_ok(), k: 2i64, kk: K_hb_tern_ok{ k: 3i64 } }; };
+struct:HPO_hb_tern_ok = { H_hb_tern_ok->:lp; List<int64>:own; };
+struct:SQP_hb_tern_ok = { HPO_hb_tern_ok->:q; List<int64>:own; };
+func:gw_hb_tern_ok = int64(SQP_hb_tern_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+func:f_hb_tern_ok = int64(int64:n) never fails {
+    H_hb_tern_ok:h0 = raw mkh_hb_tern_ok();
+    HPO_hb_tern_ok:m = HPO_hb_tern_ok{ lp: @h0, own: raw mk_hb_tern_ok() };
+    HPO_hb_tern_ok:m2 = HPO_hb_tern_ok{ lp: @h0, own: raw mk_hb_tern_ok() };
+    HPO_hb_tern_ok:m3 = HPO_hb_tern_ok{ lp: @h0, own: raw mk_hb_tern_ok() };
+    SQP_hb_tern_ok:s = SQP_hb_tern_ok{ q: is (n > 100i64) : @m2 : @m, own: raw mk_hb_tern_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_hb_tern_ok(@s));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hb_tern_ok = int32() never fails { pass (((raw f_hb_tern_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hc/hc_dn2_ok.npk`.
+struct:K_hc_dn2_ok = { int64:k; };
+struct:H_hc_dn2_ok = { List<int64>:l; int64:k; K_hc_dn2_ok:kk; };
+func:mk_hc_dn2_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hc_dn2_ok = H_hc_dn2_ok() never fails { pass H_hc_dn2_ok{ l: raw mk_hc_dn2_ok(), k: 2i64, kk: K_hc_dn2_ok{ k: 3i64 } }; };
+struct:HPO_hc_dn2_ok = { H_hc_dn2_ok->:lp; List<int64>:own; };
+struct:SQP_hc_dn2_ok = { HPO_hc_dn2_ok->:q; List<int64>:own; };
+func:gw_hc_dn2_ok = int64(SQP_hc_dn2_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:SQ2_hc_dn2_ok = { SQP_hc_dn2_ok->:q2; List<int64>:own; };
+func:gw2_hc_dn2_ok = int64(SQ2_hc_dn2_ok->:t) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-t).q2)).q)).own), 1i64); } pass 7i64; };
+struct:WP_hc_dn2_ok = { SQP_hc_dn2_ok->:p; int64:z; };
+func:ids_hc_dn2_ok = SQP_hc_dn2_ok->(SQP_hc_dn2_ok->:p) never fails { pass p; };
+func:f_hc_dn2_ok = int64(int64:n) never fails {
+    H_hc_dn2_ok:h0 = raw mkh_hc_dn2_ok();
+    HPO_hc_dn2_ok:m = HPO_hc_dn2_ok{ lp: @h0, own: raw mk_hc_dn2_ok() };
+    HPO_hc_dn2_ok:m2 = HPO_hc_dn2_ok{ lp: @h0, own: raw mk_hc_dn2_ok() };
+    HPO_hc_dn2_ok:m3 = HPO_hc_dn2_ok{ lp: @h0, own: raw mk_hc_dn2_ok() };
+    SQP_hc_dn2_ok:s = SQP_hc_dn2_ok{ q: @m, own: raw mk_hc_dn2_ok() };
+    SQP_hc_dn2_ok:s2 = SQP_hc_dn2_ok{ q: @m2, own: raw mk_hc_dn2_ok() };
+    WP_hc_dn2_ok:w = WP_hc_dn2_ok{ p: @s, z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_hc_dn2_ok(@(<-(w.p))));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hc_dn2_ok = int32() never fails { pass (((raw f_hc_dn2_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hc/hc_gpv_ok.npk`.
+struct:K_hc_gpv_ok = { int64:k; };
+struct:H_hc_gpv_ok = { List<int64>:l; int64:k; K_hc_gpv_ok:kk; };
+func:mk_hc_gpv_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hc_gpv_ok = H_hc_gpv_ok() never fails { pass H_hc_gpv_ok{ l: raw mk_hc_gpv_ok(), k: 2i64, kk: K_hc_gpv_ok{ k: 3i64 } }; };
+struct:HPO_hc_gpv_ok = { H_hc_gpv_ok->:lp; List<int64>:own; };
+struct:SQP_hc_gpv_ok = { HPO_hc_gpv_ok->:q; List<int64>:own; };
+func:gw_hc_gpv_ok = int64(SQP_hc_gpv_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:SQ2_hc_gpv_ok = { SQP_hc_gpv_ok->:q2; List<int64>:own; };
+func:gw2_hc_gpv_ok = int64(SQ2_hc_gpv_ok->:t) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-t).q2)).q)).own), 1i64); } pass 7i64; };
+struct:WP_hc_gpv_ok = { SQP_hc_gpv_ok->:p; int64:z; };
+func:ids_hc_gpv_ok = SQP_hc_gpv_ok->(SQP_hc_gpv_ok->:p) never fails { pass p; };
+func:gpv_hc_gpv_ok = int64(HPO_hc_gpv_ok->:mp, HPO_hc_gpv_ok->:xp) never fails { SQP_hc_gpv_ok:t = SQP_hc_gpv_ok{ q: mp, own: raw mk_hc_gpv_ok() }; SQP_hc_gpv_ok->:tp = @t; int64->:e = @((<-xp).own[0i64]); discard(raw gw_hc_gpv_ok(tp)); pass (<-e) + 6i64; };
+func:f_hc_gpv_ok = int64(int64:n) never fails {
+    H_hc_gpv_ok:h0 = raw mkh_hc_gpv_ok();
+    HPO_hc_gpv_ok:m = HPO_hc_gpv_ok{ lp: @h0, own: raw mk_hc_gpv_ok() };
+    HPO_hc_gpv_ok:m2 = HPO_hc_gpv_ok{ lp: @h0, own: raw mk_hc_gpv_ok() };
+    HPO_hc_gpv_ok:m3 = HPO_hc_gpv_ok{ lp: @h0, own: raw mk_hc_gpv_ok() };
+    SQP_hc_gpv_ok:s = SQP_hc_gpv_ok{ q: @m, own: raw mk_hc_gpv_ok() };
+    SQP_hc_gpv_ok:s2 = SQP_hc_gpv_ok{ q: @m2, own: raw mk_hc_gpv_ok() };
+    pass raw gpv_hc_gpv_ok(@m, @m3);
+};
+func:cell_main_hc_gpv_ok = int32() never fails { pass (((raw f_hc_gpv_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hc/hc_pm2_ok.npk`.
+struct:K_hc_pm2_ok = { int64:k; };
+struct:H_hc_pm2_ok = { List<int64>:l; int64:k; K_hc_pm2_ok:kk; };
+func:mk_hc_pm2_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hc_pm2_ok = H_hc_pm2_ok() never fails { pass H_hc_pm2_ok{ l: raw mk_hc_pm2_ok(), k: 2i64, kk: K_hc_pm2_ok{ k: 3i64 } }; };
+struct:HPO_hc_pm2_ok = { H_hc_pm2_ok->:lp; List<int64>:own; };
+struct:SQP_hc_pm2_ok = { HPO_hc_pm2_ok->:q; List<int64>:own; };
+func:gw_hc_pm2_ok = int64(SQP_hc_pm2_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:SQ2_hc_pm2_ok = { SQP_hc_pm2_ok->:q2; List<int64>:own; };
+func:gw2_hc_pm2_ok = int64(SQ2_hc_pm2_ok->:t) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-t).q2)).q)).own), 1i64); } pass 7i64; };
+struct:WP_hc_pm2_ok = { SQP_hc_pm2_ok->:p; int64:z; };
+func:ids_hc_pm2_ok = SQP_hc_pm2_ok->(SQP_hc_pm2_ok->:p) never fails { pass p; };
+func:gpm2_hc_pm2_ok = int64(SQP_hc_pm2_ok->:sp, HPO_hc_pm2_ok->:xp) never fails { SQ2_hc_pm2_ok:t = SQ2_hc_pm2_ok{ q2: sp, own: raw mk_hc_pm2_ok() }; int64->:e = @((<-xp).own[0i64]); discard(raw gw2_hc_pm2_ok(@t)); pass (<-e) + 6i64; };
+func:f_hc_pm2_ok = int64(int64:n) never fails {
+    H_hc_pm2_ok:h0 = raw mkh_hc_pm2_ok();
+    HPO_hc_pm2_ok:m = HPO_hc_pm2_ok{ lp: @h0, own: raw mk_hc_pm2_ok() };
+    HPO_hc_pm2_ok:m2 = HPO_hc_pm2_ok{ lp: @h0, own: raw mk_hc_pm2_ok() };
+    HPO_hc_pm2_ok:m3 = HPO_hc_pm2_ok{ lp: @h0, own: raw mk_hc_pm2_ok() };
+    SQP_hc_pm2_ok:s = SQP_hc_pm2_ok{ q: @m, own: raw mk_hc_pm2_ok() };
+    SQP_hc_pm2_ok:s2 = SQP_hc_pm2_ok{ q: @m2, own: raw mk_hc_pm2_ok() };
+    pass raw gpm2_hc_pm2_ok(@s, @m3);
+};
+func:cell_main_hc_pm2_ok = int32() never fails { pass (((raw f_hc_pm2_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hc/hc_pm_ok.npk`.
+struct:K_hc_pm_ok = { int64:k; };
+struct:H_hc_pm_ok = { List<int64>:l; int64:k; K_hc_pm_ok:kk; };
+func:mk_hc_pm_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hc_pm_ok = H_hc_pm_ok() never fails { pass H_hc_pm_ok{ l: raw mk_hc_pm_ok(), k: 2i64, kk: K_hc_pm_ok{ k: 3i64 } }; };
+struct:HPO_hc_pm_ok = { H_hc_pm_ok->:lp; List<int64>:own; };
+struct:SQP_hc_pm_ok = { HPO_hc_pm_ok->:q; List<int64>:own; };
+func:gw_hc_pm_ok = int64(SQP_hc_pm_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:SQ2_hc_pm_ok = { SQP_hc_pm_ok->:q2; List<int64>:own; };
+func:gw2_hc_pm_ok = int64(SQ2_hc_pm_ok->:t) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-t).q2)).q)).own), 1i64); } pass 7i64; };
+struct:WP_hc_pm_ok = { SQP_hc_pm_ok->:p; int64:z; };
+func:ids_hc_pm_ok = SQP_hc_pm_ok->(SQP_hc_pm_ok->:p) never fails { pass p; };
+func:gpm_hc_pm_ok = int64(HPO_hc_pm_ok->:mp, HPO_hc_pm_ok->:xp) never fails { SQP_hc_pm_ok:t = SQP_hc_pm_ok{ q: mp, own: raw mk_hc_pm_ok() }; int64->:e = @((<-xp).own[0i64]); discard(raw gw_hc_pm_ok(@t)); pass (<-e) + 6i64; };
+func:f_hc_pm_ok = int64(int64:n) never fails {
+    H_hc_pm_ok:h0 = raw mkh_hc_pm_ok();
+    HPO_hc_pm_ok:m = HPO_hc_pm_ok{ lp: @h0, own: raw mk_hc_pm_ok() };
+    HPO_hc_pm_ok:m2 = HPO_hc_pm_ok{ lp: @h0, own: raw mk_hc_pm_ok() };
+    HPO_hc_pm_ok:m3 = HPO_hc_pm_ok{ lp: @h0, own: raw mk_hc_pm_ok() };
+    SQP_hc_pm_ok:s = SQP_hc_pm_ok{ q: @m, own: raw mk_hc_pm_ok() };
+    SQP_hc_pm_ok:s2 = SQP_hc_pm_ok{ q: @m2, own: raw mk_hc_pm_ok() };
+    pass raw gpm_hc_pm_ok(@m, @m3);
+};
+func:cell_main_hc_pm_ok = int32() never fails { pass (((raw f_hc_pm_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hc/hc_pv2_ok.npk`.
+struct:K_hc_pv2_ok = { int64:k; };
+struct:H_hc_pv2_ok = { List<int64>:l; int64:k; K_hc_pv2_ok:kk; };
+func:mk_hc_pv2_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hc_pv2_ok = H_hc_pv2_ok() never fails { pass H_hc_pv2_ok{ l: raw mk_hc_pv2_ok(), k: 2i64, kk: K_hc_pv2_ok{ k: 3i64 } }; };
+struct:HPO_hc_pv2_ok = { H_hc_pv2_ok->:lp; List<int64>:own; };
+struct:SQP_hc_pv2_ok = { HPO_hc_pv2_ok->:q; List<int64>:own; };
+func:gw_hc_pv2_ok = int64(SQP_hc_pv2_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:SQ2_hc_pv2_ok = { SQP_hc_pv2_ok->:q2; List<int64>:own; };
+func:gw2_hc_pv2_ok = int64(SQ2_hc_pv2_ok->:t) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-t).q2)).q)).own), 1i64); } pass 7i64; };
+struct:WP_hc_pv2_ok = { SQP_hc_pv2_ok->:p; int64:z; };
+func:ids_hc_pv2_ok = SQP_hc_pv2_ok->(SQP_hc_pv2_ok->:p) never fails { pass p; };
+func:f_hc_pv2_ok = int64(int64:n) never fails {
+    H_hc_pv2_ok:h0 = raw mkh_hc_pv2_ok();
+    HPO_hc_pv2_ok:m = HPO_hc_pv2_ok{ lp: @h0, own: raw mk_hc_pv2_ok() };
+    HPO_hc_pv2_ok:m2 = HPO_hc_pv2_ok{ lp: @h0, own: raw mk_hc_pv2_ok() };
+    HPO_hc_pv2_ok:m3 = HPO_hc_pv2_ok{ lp: @h0, own: raw mk_hc_pv2_ok() };
+    SQP_hc_pv2_ok:s = SQP_hc_pv2_ok{ q: @m, own: raw mk_hc_pv2_ok() };
+    SQP_hc_pv2_ok:s2 = SQP_hc_pv2_ok{ q: @m2, own: raw mk_hc_pv2_ok() };
+    WP_hc_pv2_ok:w = WP_hc_pv2_ok{ p: @s, z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_hc_pv2_ok(w.p));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hc_pv2_ok = int32() never fails { pass (((raw f_hc_pv2_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hc/hc_pva_ok.npk`.
+struct:K_hc_pva_ok = { int64:k; };
+struct:H_hc_pva_ok = { List<int64>:l; int64:k; K_hc_pva_ok:kk; };
+func:mk_hc_pva_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hc_pva_ok = H_hc_pva_ok() never fails { pass H_hc_pva_ok{ l: raw mk_hc_pva_ok(), k: 2i64, kk: K_hc_pva_ok{ k: 3i64 } }; };
+struct:HPO_hc_pva_ok = { H_hc_pva_ok->:lp; List<int64>:own; };
+struct:SQP_hc_pva_ok = { HPO_hc_pva_ok->:q; List<int64>:own; };
+func:gw_hc_pva_ok = int64(SQP_hc_pva_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:SQ2_hc_pva_ok = { SQP_hc_pva_ok->:q2; List<int64>:own; };
+func:gw2_hc_pva_ok = int64(SQ2_hc_pva_ok->:t) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-t).q2)).q)).own), 1i64); } pass 7i64; };
+struct:WP_hc_pva_ok = { SQP_hc_pva_ok->:p; int64:z; };
+func:ids_hc_pva_ok = SQP_hc_pva_ok->(SQP_hc_pva_ok->:p) never fails { pass p; };
+func:f_hc_pva_ok = int64(int64:n) never fails {
+    H_hc_pva_ok:h0 = raw mkh_hc_pva_ok();
+    HPO_hc_pva_ok:m = HPO_hc_pva_ok{ lp: @h0, own: raw mk_hc_pva_ok() };
+    HPO_hc_pva_ok:m2 = HPO_hc_pva_ok{ lp: @h0, own: raw mk_hc_pva_ok() };
+    HPO_hc_pva_ok:m3 = HPO_hc_pva_ok{ lp: @h0, own: raw mk_hc_pva_ok() };
+    SQP_hc_pva_ok:s = SQP_hc_pva_ok{ q: @m, own: raw mk_hc_pva_ok() };
+    SQP_hc_pva_ok:s2 = SQP_hc_pva_ok{ q: @m2, own: raw mk_hc_pva_ok() };
+    SQP_hc_pva_ok->:sp = @s;
+    SQP_hc_pva_ok->:sq = sp;
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_hc_pva_ok(sq));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hc_pva_ok = int32() never fails { pass (((raw f_hc_pva_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hc/hc_pvc_ok.npk`.
+struct:K_hc_pvc_ok = { int64:k; };
+struct:H_hc_pvc_ok = { List<int64>:l; int64:k; K_hc_pvc_ok:kk; };
+func:mk_hc_pvc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hc_pvc_ok = H_hc_pvc_ok() never fails { pass H_hc_pvc_ok{ l: raw mk_hc_pvc_ok(), k: 2i64, kk: K_hc_pvc_ok{ k: 3i64 } }; };
+struct:HPO_hc_pvc_ok = { H_hc_pvc_ok->:lp; List<int64>:own; };
+struct:SQP_hc_pvc_ok = { HPO_hc_pvc_ok->:q; List<int64>:own; };
+func:gw_hc_pvc_ok = int64(SQP_hc_pvc_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:SQ2_hc_pvc_ok = { SQP_hc_pvc_ok->:q2; List<int64>:own; };
+func:gw2_hc_pvc_ok = int64(SQ2_hc_pvc_ok->:t) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-t).q2)).q)).own), 1i64); } pass 7i64; };
+struct:WP_hc_pvc_ok = { SQP_hc_pvc_ok->:p; int64:z; };
+func:ids_hc_pvc_ok = SQP_hc_pvc_ok->(SQP_hc_pvc_ok->:p) never fails { pass p; };
+func:f_hc_pvc_ok = int64(int64:n) never fails {
+    H_hc_pvc_ok:h0 = raw mkh_hc_pvc_ok();
+    HPO_hc_pvc_ok:m = HPO_hc_pvc_ok{ lp: @h0, own: raw mk_hc_pvc_ok() };
+    HPO_hc_pvc_ok:m2 = HPO_hc_pvc_ok{ lp: @h0, own: raw mk_hc_pvc_ok() };
+    HPO_hc_pvc_ok:m3 = HPO_hc_pvc_ok{ lp: @h0, own: raw mk_hc_pvc_ok() };
+    SQP_hc_pvc_ok:s = SQP_hc_pvc_ok{ q: @m, own: raw mk_hc_pvc_ok() };
+    SQP_hc_pvc_ok:s2 = SQP_hc_pvc_ok{ q: @m2, own: raw mk_hc_pvc_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_hc_pvc_ok(raw ids_hc_pvc_ok(@s)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hc_pvc_ok = int32() never fails { pass (((raw f_hc_pvc_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/hc/hc_pvt_ok.npk`.
+struct:K_hc_pvt_ok = { int64:k; };
+struct:H_hc_pvt_ok = { List<int64>:l; int64:k; K_hc_pvt_ok:kk; };
+func:mk_hc_pvt_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_hc_pvt_ok = H_hc_pvt_ok() never fails { pass H_hc_pvt_ok{ l: raw mk_hc_pvt_ok(), k: 2i64, kk: K_hc_pvt_ok{ k: 3i64 } }; };
+struct:HPO_hc_pvt_ok = { H_hc_pvt_ok->:lp; List<int64>:own; };
+struct:SQP_hc_pvt_ok = { HPO_hc_pvt_ok->:q; List<int64>:own; };
+func:gw_hc_pvt_ok = int64(SQP_hc_pvt_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:SQ2_hc_pvt_ok = { SQP_hc_pvt_ok->:q2; List<int64>:own; };
+func:gw2_hc_pvt_ok = int64(SQ2_hc_pvt_ok->:t) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-t).q2)).q)).own), 1i64); } pass 7i64; };
+struct:WP_hc_pvt_ok = { SQP_hc_pvt_ok->:p; int64:z; };
+func:ids_hc_pvt_ok = SQP_hc_pvt_ok->(SQP_hc_pvt_ok->:p) never fails { pass p; };
+func:f_hc_pvt_ok = int64(int64:n) never fails {
+    H_hc_pvt_ok:h0 = raw mkh_hc_pvt_ok();
+    HPO_hc_pvt_ok:m = HPO_hc_pvt_ok{ lp: @h0, own: raw mk_hc_pvt_ok() };
+    HPO_hc_pvt_ok:m2 = HPO_hc_pvt_ok{ lp: @h0, own: raw mk_hc_pvt_ok() };
+    HPO_hc_pvt_ok:m3 = HPO_hc_pvt_ok{ lp: @h0, own: raw mk_hc_pvt_ok() };
+    SQP_hc_pvt_ok:s = SQP_hc_pvt_ok{ q: @m, own: raw mk_hc_pvt_ok() };
+    SQP_hc_pvt_ok:s2 = SQP_hc_pvt_ok{ q: @m2, own: raw mk_hc_pvt_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_hc_pvt_ok(is (n > 100i64) : @s2 : @s));
+    pass (<-e) + 6i64;
+};
+func:cell_main_hc_pvt_ok = int32() never fails { pass (((raw f_hc_pvt_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/he/he_meth_ok.npk`.
+struct:K_he_meth_ok = { int64:k; };
+struct:H_he_meth_ok = { List<int64>:l; int64:k; K_he_meth_ok:kk; };
+func:mk_he_meth_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_he_meth_ok = H_he_meth_ok() never fails { pass H_he_meth_ok{ l: raw mk_he_meth_ok(), k: 2i64, kk: K_he_meth_ok{ k: 3i64 } }; };
+struct:HPO_he_meth_ok = { H_he_meth_ok->:lp; List<int64>:own; };
+struct:SQP_he_meth_ok = { HPO_he_meth_ok->:q; List<int64>:own; };
+func:gw_he_meth_ok = int64(SQP_he_meth_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:SQ2_he_meth_ok = { SQP_he_meth_ok->:q2; List<int64>:own; };
+func:gw2_he_meth_ok = int64(SQ2_he_meth_ok->:t) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-t).q2)).q)).own), 1i64); } pass 7i64; };
+struct:WP_he_meth_ok = { SQP_he_meth_ok->:p; int64:z; };
+func:ids_he_meth_ok = SQP_he_meth_ok->(SQP_he_meth_ok->:p) never fails { pass p; };
+impl:SQP_he_meth_ok = { func:gm = int64(SQP_he_meth_ok->:self) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(self.q)).own), 1i64); } pass 7i64; }; };
+func:f_he_meth_ok = int64(int64:n) never fails {
+    H_he_meth_ok:h0 = raw mkh_he_meth_ok();
+    HPO_he_meth_ok:m = HPO_he_meth_ok{ lp: @h0, own: raw mk_he_meth_ok() };
+    HPO_he_meth_ok:m2 = HPO_he_meth_ok{ lp: @h0, own: raw mk_he_meth_ok() };
+    HPO_he_meth_ok:m3 = HPO_he_meth_ok{ lp: @h0, own: raw mk_he_meth_ok() };
+    SQP_he_meth_ok:s = SQP_he_meth_ok{ q: @m, own: raw mk_he_meth_ok() };
+    SQP_he_meth_ok:s2 = SQP_he_meth_ok{ q: @m2, own: raw mk_he_meth_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw s.gm());
+    pass (<-e) + 6i64;
+};
+func:cell_main_he_meth_ok = int32() never fails { pass (((raw f_he_meth_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/he/he_methp_ok.npk`.
+struct:K_he_methp_ok = { int64:k; };
+struct:H_he_methp_ok = { List<int64>:l; int64:k; K_he_methp_ok:kk; };
+func:mk_he_methp_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_he_methp_ok = H_he_methp_ok() never fails { pass H_he_methp_ok{ l: raw mk_he_methp_ok(), k: 2i64, kk: K_he_methp_ok{ k: 3i64 } }; };
+struct:HPO_he_methp_ok = { H_he_methp_ok->:lp; List<int64>:own; };
+struct:SQP_he_methp_ok = { HPO_he_methp_ok->:q; List<int64>:own; };
+func:gw_he_methp_ok = int64(SQP_he_methp_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:SQ2_he_methp_ok = { SQP_he_methp_ok->:q2; List<int64>:own; };
+func:gw2_he_methp_ok = int64(SQ2_he_methp_ok->:t) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-t).q2)).q)).own), 1i64); } pass 7i64; };
+struct:WP_he_methp_ok = { SQP_he_methp_ok->:p; int64:z; };
+func:ids_he_methp_ok = SQP_he_methp_ok->(SQP_he_methp_ok->:p) never fails { pass p; };
+impl:SQP_he_methp_ok = { func:gm = int64(SQP_he_methp_ok->:self) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(self.q)).own), 1i64); } pass 7i64; }; };
+func:f_he_methp_ok = int64(int64:n) never fails {
+    H_he_methp_ok:h0 = raw mkh_he_methp_ok();
+    HPO_he_methp_ok:m = HPO_he_methp_ok{ lp: @h0, own: raw mk_he_methp_ok() };
+    HPO_he_methp_ok:m2 = HPO_he_methp_ok{ lp: @h0, own: raw mk_he_methp_ok() };
+    HPO_he_methp_ok:m3 = HPO_he_methp_ok{ lp: @h0, own: raw mk_he_methp_ok() };
+    SQP_he_methp_ok:s = SQP_he_methp_ok{ q: @m, own: raw mk_he_methp_ok() };
+    SQP_he_methp_ok:s2 = SQP_he_methp_ok{ q: @m2, own: raw mk_he_methp_ok() };
+    SQP_he_methp_ok->:sp = @s;
+    int64->:e = @(m3.own[0i64]);
+    discard(raw sp.gm());
+    pass (<-e) + 6i64;
+};
+func:cell_main_he_methp_ok = int32() never fails { pass (((raw f_he_methp_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/he/he_mg2_ok.npk`.
+struct:K_he_mg2_ok = { int64:k; };
+struct:H_he_mg2_ok = { List<int64>:l; int64:k; K_he_mg2_ok:kk; };
+func:mk_he_mg2_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_he_mg2_ok = H_he_mg2_ok() never fails { pass H_he_mg2_ok{ l: raw mk_he_mg2_ok(), k: 2i64, kk: K_he_mg2_ok{ k: 3i64 } }; };
+struct:HPO_he_mg2_ok = { H_he_mg2_ok->:lp; List<int64>:own; };
+struct:SQP_he_mg2_ok = { HPO_he_mg2_ok->:q; List<int64>:own; };
+func:gw_he_mg2_ok = int64(SQP_he_mg2_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:SQ2_he_mg2_ok = { SQP_he_mg2_ok->:q2; List<int64>:own; };
+func:gw2_he_mg2_ok = int64(SQ2_he_mg2_ok->:t) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-t).q2)).q)).own), 1i64); } pass 7i64; };
+struct:WP_he_mg2_ok = { SQP_he_mg2_ok->:p; int64:z; };
+func:ids_he_mg2_ok = SQP_he_mg2_ok->(SQP_he_mg2_ok->:p) never fails { pass p; };
+struct:GQ_he_mg2_ok<T> = { T:q; List<int64>:own; };
+func:gwg_he_mg2_ok = int64(GQ_he_mg2_ok<HPO_he_mg2_ok->>->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:HPZ_he_mg2_ok = { List<int64>:own; int64:z; };
+func:gwgz_he_mg2_ok = int64(GQ_he_mg2_ok<HPZ_he_mg2_ok->>->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+func:a1_he_mg2_ok = int64(int64:n) never fails { HPZ_he_mg2_ok:z = HPZ_he_mg2_ok{ own: raw mk_he_mg2_ok(), z: 1i64 }; GQ_he_mg2_ok<HPZ_he_mg2_ok->>:y = GQ_he_mg2_ok{ q: @z, own: raw mk_he_mg2_ok() }; pass raw gwgz_he_mg2_ok(@y); };
+func:f_he_mg2_ok = int64(int64:n) never fails {
+    H_he_mg2_ok:h0 = raw mkh_he_mg2_ok();
+    HPO_he_mg2_ok:m = HPO_he_mg2_ok{ lp: @h0, own: raw mk_he_mg2_ok() };
+    HPO_he_mg2_ok:m2 = HPO_he_mg2_ok{ lp: @h0, own: raw mk_he_mg2_ok() };
+    HPO_he_mg2_ok:m3 = HPO_he_mg2_ok{ lp: @h0, own: raw mk_he_mg2_ok() };
+    SQP_he_mg2_ok:s = SQP_he_mg2_ok{ q: @m, own: raw mk_he_mg2_ok() };
+    SQP_he_mg2_ok:s2 = SQP_he_mg2_ok{ q: @m2, own: raw mk_he_mg2_ok() };
+    discard(raw a1_he_mg2_ok(n));
+    GQ_he_mg2_ok<HPO_he_mg2_ok->>:s9 = GQ_he_mg2_ok{ q: @m, own: raw mk_he_mg2_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gwg_he_mg2_ok(@s9));
+    pass (<-e) + 6i64;
+};
+func:cell_main_he_mg2_ok = int32() never fails { pass (((raw f_he_mg2_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/he/he_mg3_ok.npk`.
+struct:K_he_mg3_ok = { int64:k; };
+struct:H_he_mg3_ok = { List<int64>:l; int64:k; K_he_mg3_ok:kk; };
+func:mk_he_mg3_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_he_mg3_ok = H_he_mg3_ok() never fails { pass H_he_mg3_ok{ l: raw mk_he_mg3_ok(), k: 2i64, kk: K_he_mg3_ok{ k: 3i64 } }; };
+struct:HPO_he_mg3_ok = { H_he_mg3_ok->:lp; List<int64>:own; };
+struct:SQP_he_mg3_ok = { HPO_he_mg3_ok->:q; List<int64>:own; };
+func:gw_he_mg3_ok = int64(SQP_he_mg3_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:SQ2_he_mg3_ok = { SQP_he_mg3_ok->:q2; List<int64>:own; };
+func:gw2_he_mg3_ok = int64(SQ2_he_mg3_ok->:t) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-t).q2)).q)).own), 1i64); } pass 7i64; };
+struct:WP_he_mg3_ok = { SQP_he_mg3_ok->:p; int64:z; };
+func:ids_he_mg3_ok = SQP_he_mg3_ok->(SQP_he_mg3_ok->:p) never fails { pass p; };
+struct:GQ_he_mg3_ok<T> = { T:q; List<int64>:own; };
+func:gwg_he_mg3_ok = int64(GQ_he_mg3_ok<HPO_he_mg3_ok->>->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:HPZ_he_mg3_ok = { List<int64>:own; int64:z; };
+func:gwgz_he_mg3_ok = int64(GQ_he_mg3_ok<HPZ_he_mg3_ok->>->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+func:a1_he_mg3_ok = int64(int64:n) never fails { HPZ_he_mg3_ok:z = HPZ_he_mg3_ok{ own: raw mk_he_mg3_ok(), z: 1i64 }; GQ_he_mg3_ok<HPZ_he_mg3_ok->>:y = GQ_he_mg3_ok{ q: @z, own: raw mk_he_mg3_ok() }; pass raw gwgz_he_mg3_ok(@y); };
+func:f_he_mg3_ok = int64(int64:n) never fails {
+    H_he_mg3_ok:h0 = raw mkh_he_mg3_ok();
+    HPO_he_mg3_ok:m = HPO_he_mg3_ok{ lp: @h0, own: raw mk_he_mg3_ok() };
+    HPO_he_mg3_ok:m2 = HPO_he_mg3_ok{ lp: @h0, own: raw mk_he_mg3_ok() };
+    HPO_he_mg3_ok:m3 = HPO_he_mg3_ok{ lp: @h0, own: raw mk_he_mg3_ok() };
+    SQP_he_mg3_ok:s = SQP_he_mg3_ok{ q: @m, own: raw mk_he_mg3_ok() };
+    SQP_he_mg3_ok:s2 = SQP_he_mg3_ok{ q: @m2, own: raw mk_he_mg3_ok() };
+    HPZ_he_mg3_ok:z = HPZ_he_mg3_ok{ own: raw mk_he_mg3_ok(), z: 1i64 };
+    GQ_he_mg3_ok<HPZ_he_mg3_ok->>:y = GQ_he_mg3_ok{ q: @z, own: raw mk_he_mg3_ok() };
+    discard(raw gwgz_he_mg3_ok(@y));
+    GQ_he_mg3_ok<HPO_he_mg3_ok->>:s9 = GQ_he_mg3_ok{ q: @m, own: raw mk_he_mg3_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gwg_he_mg3_ok(@s9));
+    discard(raw gwgz_he_mg3_ok(@y));
+    pass (<-e) + 6i64;
+};
+func:cell_main_he_mg3_ok = int32() never fails { pass (((raw f_he_mg3_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/he/he_mg_ok.npk`.
+struct:K_he_mg_ok = { int64:k; };
+struct:H_he_mg_ok = { List<int64>:l; int64:k; K_he_mg_ok:kk; };
+func:mk_he_mg_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_he_mg_ok = H_he_mg_ok() never fails { pass H_he_mg_ok{ l: raw mk_he_mg_ok(), k: 2i64, kk: K_he_mg_ok{ k: 3i64 } }; };
+struct:HPO_he_mg_ok = { H_he_mg_ok->:lp; List<int64>:own; };
+struct:SQP_he_mg_ok = { HPO_he_mg_ok->:q; List<int64>:own; };
+func:gw_he_mg_ok = int64(SQP_he_mg_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:SQ2_he_mg_ok = { SQP_he_mg_ok->:q2; List<int64>:own; };
+func:gw2_he_mg_ok = int64(SQ2_he_mg_ok->:t) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-t).q2)).q)).own), 1i64); } pass 7i64; };
+struct:WP_he_mg_ok = { SQP_he_mg_ok->:p; int64:z; };
+func:ids_he_mg_ok = SQP_he_mg_ok->(SQP_he_mg_ok->:p) never fails { pass p; };
+struct:GQ_he_mg_ok<T> = { T:q; List<int64>:own; };
+func:gwg_he_mg_ok = int64(GQ_he_mg_ok<HPO_he_mg_ok->>->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q)).own), 1i64); } pass 7i64; };
+struct:HPY_he_mg_ok = { List<int64>:own; int64:z; };
+func:gwgy_he_mg_ok = int64(GQ_he_mg_ok<HPY_he_mg_ok>->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-o).q.own), 1i64); } pass 7i64; };
+func:a1_he_mg_ok = int64(int64:n) never fails { GQ_he_mg_ok<HPY_he_mg_ok>:y = GQ_he_mg_ok{ q: HPY_he_mg_ok{ own: raw mk_he_mg_ok(), z: 1i64 }, own: raw mk_he_mg_ok() }; pass raw gwgy_he_mg_ok(@y); };
+func:f_he_mg_ok = int64(int64:n) never fails {
+    H_he_mg_ok:h0 = raw mkh_he_mg_ok();
+    HPO_he_mg_ok:m = HPO_he_mg_ok{ lp: @h0, own: raw mk_he_mg_ok() };
+    HPO_he_mg_ok:m2 = HPO_he_mg_ok{ lp: @h0, own: raw mk_he_mg_ok() };
+    HPO_he_mg_ok:m3 = HPO_he_mg_ok{ lp: @h0, own: raw mk_he_mg_ok() };
+    SQP_he_mg_ok:s = SQP_he_mg_ok{ q: @m, own: raw mk_he_mg_ok() };
+    SQP_he_mg_ok:s2 = SQP_he_mg_ok{ q: @m2, own: raw mk_he_mg_ok() };
+    discard(raw a1_he_mg_ok(n));
+    GQ_he_mg_ok<HPO_he_mg_ok->>:s9 = GQ_he_mg_ok{ q: @m, own: raw mk_he_mg_ok() };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gwg_he_mg_ok(@s9));
+    pass (<-e) + 6i64;
+};
+func:cell_main_he_mg_ok = int32() never fails { pass (((raw f_he_mg_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/k348/b_get_ok.npk`.
+struct:K_b_get_ok = { int64:k; };
+struct:H_b_get_ok = { List<int64>:l; int64:k; K_b_get_ok:kk; };
+func:mk_b_get_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_b_get_ok = H_b_get_ok() never fails { pass H_b_get_ok{ l: raw mk_b_get_ok(), k: 2i64, kk: K_b_get_ok{ k: 3i64 } }; };
+func:growh_b_get_ok = int64(H_b_get_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_b_get_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_b_get_ok = int64->(H_b_get_ok->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_b_get_ok = H_b_get_ok->(H_b_get_ok->:q) never fails { pass q; };
+func:getl_b_get_ok = List<int64>->(H_b_get_ok->:w) never fails { pass @w.l; };
+struct:HPO_b_get_ok = { H_b_get_ok->:lp; List<int64>:own; };
+struct:SQ_b_get_ok = { HPO_b_get_ok->:q; int64:z; };
+struct:SR_b_get_ok = { SQ_b_get_ok->:sq; int64:z; };
+struct:SL_b_get_ok = { List<int64>->:l; int64:z; };
+struct:SL2_b_get_ok = { SL_b_get_ok:s; int64:z; };
+struct:SLP_b_get_ok = { SL_b_get_ok->:sp; int64:z; };
+struct:SQB_b_get_ok = { HPO_b_get_ok->:q; int64:z; };
+struct:HPB_b_get_ok = { H_b_get_ok->:lp; List<int64>:own; };
+struct:PV_b_get_ok = { H_b_get_ok->:p; int64:v; };
+struct:HPV_b_get_ok = { H_b_get_ok->:lp; List<PV_b_get_ok>:own; };
+struct:SLV_b_get_ok = { List<PV_b_get_ok>->:l; int64:z; };
+struct:SQV_b_get_ok = { HPV_b_get_ok->:q; int64:z; };
+func:getown_b_get_ok = List<int64>->(HPO_b_get_ok->:w) never fails { pass @w.own; };
+func:getownv_b_get_ok = List<PV_b_get_ok>->(HPV_b_get_ok->:w) never fails { pass @w.own; };
+func:mkv_b_get_ok = List<PV_b_get_ok>(H_b_get_ok->:h) never fails { List<PV_b_get_ok>:l = raw list_init::<PV_b_get_ok>(1i64); drop list_push(@l, PV_b_get_ok{ p: h, v: 1i64 }); pass l; };
+func:idp_b_get_ok = HPO_b_get_ok->(HPO_b_get_ok->:w) never fails { pass w; };
+func:cvq_b_get_ok = SQ_b_get_ok->(SQB_b_get_ok->:b) never fails { pass ((b =>! any->) =>! SQ_b_get_ok->); };
+func:put_b_get_ok = int64(HPO_b_get_ok->:p, H_b_get_ok->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_b_get_ok = { SQ_b_get_ok->:sq; int64:z; };
+struct:ST_b_get_ok = { SR_b_get_ok->:sr; int64:z; };
+struct:SPP_b_get_ok = { HPO_b_get_ok->->:qq; int64:z; };
+struct:SPPP_b_get_ok = { HPO_b_get_ok->->->:qqq; int64:z; };
+struct:SQX_b_get_ok = { HPB_b_get_ok->:q; int64:z; };
+struct:HN_b_get_ok = { int64:a; int64:b; };
+struct:SN_b_get_ok = { HN_b_get_ok->:q; int64:z; };
+struct:SA_b_get_ok = { any->:q; int64:z; };
+func:put2_b_get_ok = int64(SQ_b_get_ok->:p, H_b_get_ok->:v) never fails { (<-((<-p).q)).lp = v; pass 7i64; };
+func:getq_b_get_ok = HPO_b_get_ok->(SQ_b_get_ok->:w) never fails { pass (<-w).q; };
+func:putgrow_b_get_ok = int64(HPO_b_get_ok->:p, H_b_get_ok->:v) never fails { p.lp = v; loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:g_b_get_ok = int64(H_b_get_ok->:h0p, H_b_get_ok->:hq, H_b_get_ok->:hz, int64:n) never fails {
+    int64->:e = raw fp_b_get_ok(hz);
+    HPO_b_get_ok:m = HPO_b_get_ok{ lp: h0p, own: raw mk_b_get_ok() }; SQ_b_get_ok:s = SQ_b_get_ok{ q: @m, z: 1i64 };
+    discard(raw put_b_get_ok(raw getq_b_get_ok(@s), hq));
+    e = raw fp_b_get_ok(m.lp);
+    pass (<-e) + 6i64;
+};
+func:f_b_get_ok = int64(int64:n) never fails {
+    H_b_get_ok:hz = raw mkh_b_get_ok(); H_b_get_ok:h0 = raw mkh_b_get_ok(); H_b_get_ok:h2 = raw mkh_b_get_ok();
+    pass raw g_b_get_ok(@h0, @h2, @hz, n);
+};
+func:cell_main_b_get_ok = int32() never fails { pass (((raw f_b_get_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/k348/b_getn_ok.npk`.
+struct:K_b_getn_ok = { int64:k; };
+struct:H_b_getn_ok = { List<int64>:l; int64:k; K_b_getn_ok:kk; };
+func:mk_b_getn_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_b_getn_ok = H_b_getn_ok() never fails { pass H_b_getn_ok{ l: raw mk_b_getn_ok(), k: 2i64, kk: K_b_getn_ok{ k: 3i64 } }; };
+func:growh_b_getn_ok = int64(H_b_getn_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_b_getn_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_b_getn_ok = int64->(H_b_getn_ok->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_b_getn_ok = H_b_getn_ok->(H_b_getn_ok->:q) never fails { pass q; };
+func:getl_b_getn_ok = List<int64>->(H_b_getn_ok->:w) never fails { pass @w.l; };
+struct:HPO_b_getn_ok = { H_b_getn_ok->:lp; List<int64>:own; };
+struct:SQ_b_getn_ok = { HPO_b_getn_ok->:q; int64:z; };
+struct:SR_b_getn_ok = { SQ_b_getn_ok->:sq; int64:z; };
+struct:SL_b_getn_ok = { List<int64>->:l; int64:z; };
+struct:SL2_b_getn_ok = { SL_b_getn_ok:s; int64:z; };
+struct:SLP_b_getn_ok = { SL_b_getn_ok->:sp; int64:z; };
+struct:SQB_b_getn_ok = { HPO_b_getn_ok->:q; int64:z; };
+struct:HPB_b_getn_ok = { H_b_getn_ok->:lp; List<int64>:own; };
+struct:PV_b_getn_ok = { H_b_getn_ok->:p; int64:v; };
+struct:HPV_b_getn_ok = { H_b_getn_ok->:lp; List<PV_b_getn_ok>:own; };
+struct:SLV_b_getn_ok = { List<PV_b_getn_ok>->:l; int64:z; };
+struct:SQV_b_getn_ok = { HPV_b_getn_ok->:q; int64:z; };
+func:getown_b_getn_ok = List<int64>->(HPO_b_getn_ok->:w) never fails { pass @w.own; };
+func:getownv_b_getn_ok = List<PV_b_getn_ok>->(HPV_b_getn_ok->:w) never fails { pass @w.own; };
+func:mkv_b_getn_ok = List<PV_b_getn_ok>(H_b_getn_ok->:h) never fails { List<PV_b_getn_ok>:l = raw list_init::<PV_b_getn_ok>(1i64); drop list_push(@l, PV_b_getn_ok{ p: h, v: 1i64 }); pass l; };
+func:idp_b_getn_ok = HPO_b_getn_ok->(HPO_b_getn_ok->:w) never fails { pass w; };
+func:cvq_b_getn_ok = SQ_b_getn_ok->(SQB_b_getn_ok->:b) never fails { pass ((b =>! any->) =>! SQ_b_getn_ok->); };
+func:put_b_getn_ok = int64(HPO_b_getn_ok->:p, H_b_getn_ok->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_b_getn_ok = { SQ_b_getn_ok->:sq; int64:z; };
+struct:ST_b_getn_ok = { SR_b_getn_ok->:sr; int64:z; };
+struct:SPP_b_getn_ok = { HPO_b_getn_ok->->:qq; int64:z; };
+struct:SPPP_b_getn_ok = { HPO_b_getn_ok->->->:qqq; int64:z; };
+struct:SQX_b_getn_ok = { HPB_b_getn_ok->:q; int64:z; };
+struct:HN_b_getn_ok = { int64:a; int64:b; };
+struct:SN_b_getn_ok = { HN_b_getn_ok->:q; int64:z; };
+struct:SA_b_getn_ok = { any->:q; int64:z; };
+func:put2_b_getn_ok = int64(SQ_b_getn_ok->:p, H_b_getn_ok->:v) never fails { (<-((<-p).q)).lp = v; pass 7i64; };
+func:getq_b_getn_ok = HPO_b_getn_ok->(SQ_b_getn_ok->:w) never fails { pass (<-w).q; };
+func:putgrow_b_getn_ok = int64(HPO_b_getn_ok->:p, H_b_getn_ok->:v) never fails { p.lp = v; loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:g_b_getn_ok = int64(H_b_getn_ok->:h0p, H_b_getn_ok->:hq, H_b_getn_ok->:hz, int64:n) never fails {
+    int64->:e = raw fp_b_getn_ok(hz);
+    HPO_b_getn_ok:m = HPO_b_getn_ok{ lp: h0p, own: raw mk_b_getn_ok() }; SQ_b_getn_ok:s = SQ_b_getn_ok{ q: @m, z: 1i64 }; HPO_b_getn_ok->:tq = raw getq_b_getn_ok(@s);
+    discard(raw put_b_getn_ok(tq, hq));
+    e = raw fp_b_getn_ok(m.lp);
+    pass (<-e) + 6i64;
+};
+func:f_b_getn_ok = int64(int64:n) never fails {
+    H_b_getn_ok:hz = raw mkh_b_getn_ok(); H_b_getn_ok:h0 = raw mkh_b_getn_ok(); H_b_getn_ok:h2 = raw mkh_b_getn_ok();
+    pass raw g_b_getn_ok(@h0, @h2, @hz, n);
+};
+func:cell_main_b_getn_ok = int32() never fails { pass (((raw f_b_getn_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/k348/b_lvl2_ok.npk`.
+struct:K_b_lvl2_ok = { int64:k; };
+struct:H_b_lvl2_ok = { List<int64>:l; int64:k; K_b_lvl2_ok:kk; };
+func:mk_b_lvl2_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_b_lvl2_ok = H_b_lvl2_ok() never fails { pass H_b_lvl2_ok{ l: raw mk_b_lvl2_ok(), k: 2i64, kk: K_b_lvl2_ok{ k: 3i64 } }; };
+func:growh_b_lvl2_ok = int64(H_b_lvl2_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_b_lvl2_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_b_lvl2_ok = int64->(H_b_lvl2_ok->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_b_lvl2_ok = H_b_lvl2_ok->(H_b_lvl2_ok->:q) never fails { pass q; };
+func:getl_b_lvl2_ok = List<int64>->(H_b_lvl2_ok->:w) never fails { pass @w.l; };
+struct:HPO_b_lvl2_ok = { H_b_lvl2_ok->:lp; List<int64>:own; };
+struct:SQ_b_lvl2_ok = { HPO_b_lvl2_ok->:q; int64:z; };
+struct:SR_b_lvl2_ok = { SQ_b_lvl2_ok->:sq; int64:z; };
+struct:SL_b_lvl2_ok = { List<int64>->:l; int64:z; };
+struct:SL2_b_lvl2_ok = { SL_b_lvl2_ok:s; int64:z; };
+struct:SLP_b_lvl2_ok = { SL_b_lvl2_ok->:sp; int64:z; };
+struct:SQB_b_lvl2_ok = { HPO_b_lvl2_ok->:q; int64:z; };
+struct:HPB_b_lvl2_ok = { H_b_lvl2_ok->:lp; List<int64>:own; };
+struct:PV_b_lvl2_ok = { H_b_lvl2_ok->:p; int64:v; };
+struct:HPV_b_lvl2_ok = { H_b_lvl2_ok->:lp; List<PV_b_lvl2_ok>:own; };
+struct:SLV_b_lvl2_ok = { List<PV_b_lvl2_ok>->:l; int64:z; };
+struct:SQV_b_lvl2_ok = { HPV_b_lvl2_ok->:q; int64:z; };
+func:getown_b_lvl2_ok = List<int64>->(HPO_b_lvl2_ok->:w) never fails { pass @w.own; };
+func:getownv_b_lvl2_ok = List<PV_b_lvl2_ok>->(HPV_b_lvl2_ok->:w) never fails { pass @w.own; };
+func:mkv_b_lvl2_ok = List<PV_b_lvl2_ok>(H_b_lvl2_ok->:h) never fails { List<PV_b_lvl2_ok>:l = raw list_init::<PV_b_lvl2_ok>(1i64); drop list_push(@l, PV_b_lvl2_ok{ p: h, v: 1i64 }); pass l; };
+func:idp_b_lvl2_ok = HPO_b_lvl2_ok->(HPO_b_lvl2_ok->:w) never fails { pass w; };
+func:cvq_b_lvl2_ok = SQ_b_lvl2_ok->(SQB_b_lvl2_ok->:b) never fails { pass ((b =>! any->) =>! SQ_b_lvl2_ok->); };
+func:put_b_lvl2_ok = int64(HPO_b_lvl2_ok->:p, H_b_lvl2_ok->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_b_lvl2_ok = { SQ_b_lvl2_ok->:sq; int64:z; };
+struct:ST_b_lvl2_ok = { SR_b_lvl2_ok->:sr; int64:z; };
+struct:SPP_b_lvl2_ok = { HPO_b_lvl2_ok->->:qq; int64:z; };
+struct:SPPP_b_lvl2_ok = { HPO_b_lvl2_ok->->->:qqq; int64:z; };
+struct:SQX_b_lvl2_ok = { HPB_b_lvl2_ok->:q; int64:z; };
+struct:HN_b_lvl2_ok = { int64:a; int64:b; };
+struct:SN_b_lvl2_ok = { HN_b_lvl2_ok->:q; int64:z; };
+struct:SA_b_lvl2_ok = { any->:q; int64:z; };
+func:put2_b_lvl2_ok = int64(SQ_b_lvl2_ok->:p, H_b_lvl2_ok->:v) never fails { (<-((<-p).q)).lp = v; pass 7i64; };
+func:getq_b_lvl2_ok = HPO_b_lvl2_ok->(SQ_b_lvl2_ok->:w) never fails { pass (<-w).q; };
+func:putgrow_b_lvl2_ok = int64(HPO_b_lvl2_ok->:p, H_b_lvl2_ok->:v) never fails { p.lp = v; loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:g_b_lvl2_ok = int64(H_b_lvl2_ok->:h0p, H_b_lvl2_ok->:hq, H_b_lvl2_ok->:hz, int64:n) never fails {
+    int64->:e = raw fp_b_lvl2_ok(hz);
+    HPO_b_lvl2_ok:m = HPO_b_lvl2_ok{ lp: h0p, own: raw mk_b_lvl2_ok() }; SQ_b_lvl2_ok:s = SQ_b_lvl2_ok{ q: @m, z: 1i64 }; SR_b_lvl2_ok:r = SR_b_lvl2_ok{ sq: @s, z: 1i64 }; SR_b_lvl2_ok->:rp = @r;
+    discard(raw put2_b_lvl2_ok(r.sq, hq));
+    e = raw fp_b_lvl2_ok(m.lp);
+    pass (<-e) + 6i64;
+};
+func:f_b_lvl2_ok = int64(int64:n) never fails {
+    H_b_lvl2_ok:hz = raw mkh_b_lvl2_ok(); H_b_lvl2_ok:h0 = raw mkh_b_lvl2_ok(); H_b_lvl2_ok:h2 = raw mkh_b_lvl2_ok();
+    pass raw g_b_lvl2_ok(@h0, @h2, @hz, n);
+};
+func:cell_main_b_lvl2_ok = int32() never fails { pass (((raw f_b_lvl2_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/k348/b_lvl2d_ok.npk`.
+struct:K_b_lvl2d_ok = { int64:k; };
+struct:H_b_lvl2d_ok = { List<int64>:l; int64:k; K_b_lvl2d_ok:kk; };
+func:mk_b_lvl2d_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_b_lvl2d_ok = H_b_lvl2d_ok() never fails { pass H_b_lvl2d_ok{ l: raw mk_b_lvl2d_ok(), k: 2i64, kk: K_b_lvl2d_ok{ k: 3i64 } }; };
+func:growh_b_lvl2d_ok = int64(H_b_lvl2d_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_b_lvl2d_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_b_lvl2d_ok = int64->(H_b_lvl2d_ok->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_b_lvl2d_ok = H_b_lvl2d_ok->(H_b_lvl2d_ok->:q) never fails { pass q; };
+func:getl_b_lvl2d_ok = List<int64>->(H_b_lvl2d_ok->:w) never fails { pass @w.l; };
+struct:HPO_b_lvl2d_ok = { H_b_lvl2d_ok->:lp; List<int64>:own; };
+struct:SQ_b_lvl2d_ok = { HPO_b_lvl2d_ok->:q; int64:z; };
+struct:SR_b_lvl2d_ok = { SQ_b_lvl2d_ok->:sq; int64:z; };
+struct:SL_b_lvl2d_ok = { List<int64>->:l; int64:z; };
+struct:SL2_b_lvl2d_ok = { SL_b_lvl2d_ok:s; int64:z; };
+struct:SLP_b_lvl2d_ok = { SL_b_lvl2d_ok->:sp; int64:z; };
+struct:SQB_b_lvl2d_ok = { HPO_b_lvl2d_ok->:q; int64:z; };
+struct:HPB_b_lvl2d_ok = { H_b_lvl2d_ok->:lp; List<int64>:own; };
+struct:PV_b_lvl2d_ok = { H_b_lvl2d_ok->:p; int64:v; };
+struct:HPV_b_lvl2d_ok = { H_b_lvl2d_ok->:lp; List<PV_b_lvl2d_ok>:own; };
+struct:SLV_b_lvl2d_ok = { List<PV_b_lvl2d_ok>->:l; int64:z; };
+struct:SQV_b_lvl2d_ok = { HPV_b_lvl2d_ok->:q; int64:z; };
+func:getown_b_lvl2d_ok = List<int64>->(HPO_b_lvl2d_ok->:w) never fails { pass @w.own; };
+func:getownv_b_lvl2d_ok = List<PV_b_lvl2d_ok>->(HPV_b_lvl2d_ok->:w) never fails { pass @w.own; };
+func:mkv_b_lvl2d_ok = List<PV_b_lvl2d_ok>(H_b_lvl2d_ok->:h) never fails { List<PV_b_lvl2d_ok>:l = raw list_init::<PV_b_lvl2d_ok>(1i64); drop list_push(@l, PV_b_lvl2d_ok{ p: h, v: 1i64 }); pass l; };
+func:idp_b_lvl2d_ok = HPO_b_lvl2d_ok->(HPO_b_lvl2d_ok->:w) never fails { pass w; };
+func:cvq_b_lvl2d_ok = SQ_b_lvl2d_ok->(SQB_b_lvl2d_ok->:b) never fails { pass ((b =>! any->) =>! SQ_b_lvl2d_ok->); };
+func:put_b_lvl2d_ok = int64(HPO_b_lvl2d_ok->:p, H_b_lvl2d_ok->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_b_lvl2d_ok = { SQ_b_lvl2d_ok->:sq; int64:z; };
+struct:ST_b_lvl2d_ok = { SR_b_lvl2d_ok->:sr; int64:z; };
+struct:SPP_b_lvl2d_ok = { HPO_b_lvl2d_ok->->:qq; int64:z; };
+struct:SPPP_b_lvl2d_ok = { HPO_b_lvl2d_ok->->->:qqq; int64:z; };
+struct:SQX_b_lvl2d_ok = { HPB_b_lvl2d_ok->:q; int64:z; };
+struct:HN_b_lvl2d_ok = { int64:a; int64:b; };
+struct:SN_b_lvl2d_ok = { HN_b_lvl2d_ok->:q; int64:z; };
+struct:SA_b_lvl2d_ok = { any->:q; int64:z; };
+func:put2_b_lvl2d_ok = int64(SQ_b_lvl2d_ok->:p, H_b_lvl2d_ok->:v) never fails { (<-((<-p).q)).lp = v; pass 7i64; };
+func:getq_b_lvl2d_ok = HPO_b_lvl2d_ok->(SQ_b_lvl2d_ok->:w) never fails { pass (<-w).q; };
+func:putgrow_b_lvl2d_ok = int64(HPO_b_lvl2d_ok->:p, H_b_lvl2d_ok->:v) never fails { p.lp = v; loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:g_b_lvl2d_ok = int64(H_b_lvl2d_ok->:h0p, H_b_lvl2d_ok->:hq, H_b_lvl2d_ok->:hz, int64:n) never fails {
+    int64->:e = raw fp_b_lvl2d_ok(hz);
+    HPO_b_lvl2d_ok:m = HPO_b_lvl2d_ok{ lp: h0p, own: raw mk_b_lvl2d_ok() }; SQ_b_lvl2d_ok:s = SQ_b_lvl2d_ok{ q: @m, z: 1i64 }; SR_b_lvl2d_ok:r = SR_b_lvl2d_ok{ sq: @s, z: 1i64 }; SR_b_lvl2d_ok->:rp = @r;
+    discard(raw put2_b_lvl2d_ok(@s, hq));
+    e = raw fp_b_lvl2d_ok(m.lp);
+    pass (<-e) + 6i64;
+};
+func:f_b_lvl2d_ok = int64(int64:n) never fails {
+    H_b_lvl2d_ok:hz = raw mkh_b_lvl2d_ok(); H_b_lvl2d_ok:h0 = raw mkh_b_lvl2d_ok(); H_b_lvl2d_ok:h2 = raw mkh_b_lvl2d_ok();
+    pass raw g_b_lvl2d_ok(@h0, @h2, @hz, n);
+};
+func:cell_main_b_lvl2d_ok = int32() never fails { pass (((raw f_b_lvl2d_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/k348/b_lvl2n_ok.npk`.
+struct:K_b_lvl2n_ok = { int64:k; };
+struct:H_b_lvl2n_ok = { List<int64>:l; int64:k; K_b_lvl2n_ok:kk; };
+func:mk_b_lvl2n_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_b_lvl2n_ok = H_b_lvl2n_ok() never fails { pass H_b_lvl2n_ok{ l: raw mk_b_lvl2n_ok(), k: 2i64, kk: K_b_lvl2n_ok{ k: 3i64 } }; };
+func:growh_b_lvl2n_ok = int64(H_b_lvl2n_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_b_lvl2n_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_b_lvl2n_ok = int64->(H_b_lvl2n_ok->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_b_lvl2n_ok = H_b_lvl2n_ok->(H_b_lvl2n_ok->:q) never fails { pass q; };
+func:getl_b_lvl2n_ok = List<int64>->(H_b_lvl2n_ok->:w) never fails { pass @w.l; };
+struct:HPO_b_lvl2n_ok = { H_b_lvl2n_ok->:lp; List<int64>:own; };
+struct:SQ_b_lvl2n_ok = { HPO_b_lvl2n_ok->:q; int64:z; };
+struct:SR_b_lvl2n_ok = { SQ_b_lvl2n_ok->:sq; int64:z; };
+struct:SL_b_lvl2n_ok = { List<int64>->:l; int64:z; };
+struct:SL2_b_lvl2n_ok = { SL_b_lvl2n_ok:s; int64:z; };
+struct:SLP_b_lvl2n_ok = { SL_b_lvl2n_ok->:sp; int64:z; };
+struct:SQB_b_lvl2n_ok = { HPO_b_lvl2n_ok->:q; int64:z; };
+struct:HPB_b_lvl2n_ok = { H_b_lvl2n_ok->:lp; List<int64>:own; };
+struct:PV_b_lvl2n_ok = { H_b_lvl2n_ok->:p; int64:v; };
+struct:HPV_b_lvl2n_ok = { H_b_lvl2n_ok->:lp; List<PV_b_lvl2n_ok>:own; };
+struct:SLV_b_lvl2n_ok = { List<PV_b_lvl2n_ok>->:l; int64:z; };
+struct:SQV_b_lvl2n_ok = { HPV_b_lvl2n_ok->:q; int64:z; };
+func:getown_b_lvl2n_ok = List<int64>->(HPO_b_lvl2n_ok->:w) never fails { pass @w.own; };
+func:getownv_b_lvl2n_ok = List<PV_b_lvl2n_ok>->(HPV_b_lvl2n_ok->:w) never fails { pass @w.own; };
+func:mkv_b_lvl2n_ok = List<PV_b_lvl2n_ok>(H_b_lvl2n_ok->:h) never fails { List<PV_b_lvl2n_ok>:l = raw list_init::<PV_b_lvl2n_ok>(1i64); drop list_push(@l, PV_b_lvl2n_ok{ p: h, v: 1i64 }); pass l; };
+func:idp_b_lvl2n_ok = HPO_b_lvl2n_ok->(HPO_b_lvl2n_ok->:w) never fails { pass w; };
+func:cvq_b_lvl2n_ok = SQ_b_lvl2n_ok->(SQB_b_lvl2n_ok->:b) never fails { pass ((b =>! any->) =>! SQ_b_lvl2n_ok->); };
+func:put_b_lvl2n_ok = int64(HPO_b_lvl2n_ok->:p, H_b_lvl2n_ok->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_b_lvl2n_ok = { SQ_b_lvl2n_ok->:sq; int64:z; };
+struct:ST_b_lvl2n_ok = { SR_b_lvl2n_ok->:sr; int64:z; };
+struct:SPP_b_lvl2n_ok = { HPO_b_lvl2n_ok->->:qq; int64:z; };
+struct:SPPP_b_lvl2n_ok = { HPO_b_lvl2n_ok->->->:qqq; int64:z; };
+struct:SQX_b_lvl2n_ok = { HPB_b_lvl2n_ok->:q; int64:z; };
+struct:HN_b_lvl2n_ok = { int64:a; int64:b; };
+struct:SN_b_lvl2n_ok = { HN_b_lvl2n_ok->:q; int64:z; };
+struct:SA_b_lvl2n_ok = { any->:q; int64:z; };
+func:put2_b_lvl2n_ok = int64(SQ_b_lvl2n_ok->:p, H_b_lvl2n_ok->:v) never fails { (<-((<-p).q)).lp = v; pass 7i64; };
+func:getq_b_lvl2n_ok = HPO_b_lvl2n_ok->(SQ_b_lvl2n_ok->:w) never fails { pass (<-w).q; };
+func:putgrow_b_lvl2n_ok = int64(HPO_b_lvl2n_ok->:p, H_b_lvl2n_ok->:v) never fails { p.lp = v; loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:g_b_lvl2n_ok = int64(H_b_lvl2n_ok->:h0p, H_b_lvl2n_ok->:hq, H_b_lvl2n_ok->:hz, int64:n) never fails {
+    int64->:e = raw fp_b_lvl2n_ok(hz);
+    HPO_b_lvl2n_ok:m = HPO_b_lvl2n_ok{ lp: h0p, own: raw mk_b_lvl2n_ok() }; SQ_b_lvl2n_ok:s = SQ_b_lvl2n_ok{ q: @m, z: 1i64 }; SR_b_lvl2n_ok:r = SR_b_lvl2n_ok{ sq: @s, z: 1i64 }; SR_b_lvl2n_ok->:rp = @r; SQ_b_lvl2n_ok->:tq = r.sq;
+    discard(raw put2_b_lvl2n_ok(tq, hq));
+    e = raw fp_b_lvl2n_ok(m.lp);
+    pass (<-e) + 6i64;
+};
+func:f_b_lvl2n_ok = int64(int64:n) never fails {
+    H_b_lvl2n_ok:hz = raw mkh_b_lvl2n_ok(); H_b_lvl2n_ok:h0 = raw mkh_b_lvl2n_ok(); H_b_lvl2n_ok:h2 = raw mkh_b_lvl2n_ok();
+    pass raw g_b_lvl2n_ok(@h0, @h2, @hz, n);
+};
+func:cell_main_b_lvl2n_ok = int32() never fails { pass (((raw f_b_lvl2n_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/k348/b_ter2_ok.npk`.
+struct:K_b_ter2_ok = { int64:k; };
+struct:H_b_ter2_ok = { List<int64>:l; int64:k; K_b_ter2_ok:kk; };
+func:mk_b_ter2_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_b_ter2_ok = H_b_ter2_ok() never fails { pass H_b_ter2_ok{ l: raw mk_b_ter2_ok(), k: 2i64, kk: K_b_ter2_ok{ k: 3i64 } }; };
+func:growh_b_ter2_ok = int64(H_b_ter2_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_b_ter2_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_b_ter2_ok = int64->(H_b_ter2_ok->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_b_ter2_ok = H_b_ter2_ok->(H_b_ter2_ok->:q) never fails { pass q; };
+func:getl_b_ter2_ok = List<int64>->(H_b_ter2_ok->:w) never fails { pass @w.l; };
+struct:HPO_b_ter2_ok = { H_b_ter2_ok->:lp; List<int64>:own; };
+struct:SQ_b_ter2_ok = { HPO_b_ter2_ok->:q; int64:z; };
+struct:SR_b_ter2_ok = { SQ_b_ter2_ok->:sq; int64:z; };
+struct:SL_b_ter2_ok = { List<int64>->:l; int64:z; };
+struct:SL2_b_ter2_ok = { SL_b_ter2_ok:s; int64:z; };
+struct:SLP_b_ter2_ok = { SL_b_ter2_ok->:sp; int64:z; };
+struct:SQB_b_ter2_ok = { HPO_b_ter2_ok->:q; int64:z; };
+struct:HPB_b_ter2_ok = { H_b_ter2_ok->:lp; List<int64>:own; };
+struct:PV_b_ter2_ok = { H_b_ter2_ok->:p; int64:v; };
+struct:HPV_b_ter2_ok = { H_b_ter2_ok->:lp; List<PV_b_ter2_ok>:own; };
+struct:SLV_b_ter2_ok = { List<PV_b_ter2_ok>->:l; int64:z; };
+struct:SQV_b_ter2_ok = { HPV_b_ter2_ok->:q; int64:z; };
+func:getown_b_ter2_ok = List<int64>->(HPO_b_ter2_ok->:w) never fails { pass @w.own; };
+func:getownv_b_ter2_ok = List<PV_b_ter2_ok>->(HPV_b_ter2_ok->:w) never fails { pass @w.own; };
+func:mkv_b_ter2_ok = List<PV_b_ter2_ok>(H_b_ter2_ok->:h) never fails { List<PV_b_ter2_ok>:l = raw list_init::<PV_b_ter2_ok>(1i64); drop list_push(@l, PV_b_ter2_ok{ p: h, v: 1i64 }); pass l; };
+func:idp_b_ter2_ok = HPO_b_ter2_ok->(HPO_b_ter2_ok->:w) never fails { pass w; };
+func:cvq_b_ter2_ok = SQ_b_ter2_ok->(SQB_b_ter2_ok->:b) never fails { pass ((b =>! any->) =>! SQ_b_ter2_ok->); };
+func:put_b_ter2_ok = int64(HPO_b_ter2_ok->:p, H_b_ter2_ok->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_b_ter2_ok = { SQ_b_ter2_ok->:sq; int64:z; };
+struct:ST_b_ter2_ok = { SR_b_ter2_ok->:sr; int64:z; };
+struct:SPP_b_ter2_ok = { HPO_b_ter2_ok->->:qq; int64:z; };
+struct:SPPP_b_ter2_ok = { HPO_b_ter2_ok->->->:qqq; int64:z; };
+struct:SQX_b_ter2_ok = { HPB_b_ter2_ok->:q; int64:z; };
+struct:HN_b_ter2_ok = { int64:a; int64:b; };
+struct:SN_b_ter2_ok = { HN_b_ter2_ok->:q; int64:z; };
+struct:SA_b_ter2_ok = { any->:q; int64:z; };
+func:put2_b_ter2_ok = int64(SQ_b_ter2_ok->:p, H_b_ter2_ok->:v) never fails { (<-((<-p).q)).lp = v; pass 7i64; };
+func:getq_b_ter2_ok = HPO_b_ter2_ok->(SQ_b_ter2_ok->:w) never fails { pass (<-w).q; };
+func:putgrow_b_ter2_ok = int64(HPO_b_ter2_ok->:p, H_b_ter2_ok->:v) never fails { p.lp = v; loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:g_b_ter2_ok = int64(H_b_ter2_ok->:h0p, H_b_ter2_ok->:hq, H_b_ter2_ok->:hz, int64:n) never fails {
+    int64->:e = raw fp_b_ter2_ok(hz);
+    HPO_b_ter2_ok:m = HPO_b_ter2_ok{ lp: h0p, own: raw mk_b_ter2_ok() }; SQ_b_ter2_ok:s = SQ_b_ter2_ok{ q: @m, z: 1i64 }; SR_b_ter2_ok:r = SR_b_ter2_ok{ sq: @s, z: 1i64 }; SR_b_ter2_ok->:rp = @r; HPO_b_ter2_ok:m2 = HPO_b_ter2_ok{ lp: h0p, own: raw mk_b_ter2_ok() }; SQ_b_ter2_ok:s2 = SQ_b_ter2_ok{ q: @m2, z: 1i64 };
+    discard(raw put2_b_ter2_ok(is (n > 100i64) : @s2 : @s, hq));
+    e = raw fp_b_ter2_ok(m.lp);
+    pass (<-e) + 6i64;
+};
+func:f_b_ter2_ok = int64(int64:n) never fails {
+    H_b_ter2_ok:hz = raw mkh_b_ter2_ok(); H_b_ter2_ok:h0 = raw mkh_b_ter2_ok(); H_b_ter2_ok:h2 = raw mkh_b_ter2_ok();
+    pass raw g_b_ter2_ok(@h0, @h2, @hz, n);
+};
+func:cell_main_b_ter2_ok = int32() never fails { pass (((raw f_b_ter2_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/k348/wa_dir_ok.npk`.
+struct:K_wa_dir_ok = { int64:k; };
+struct:H_wa_dir_ok = { List<int64>:l; int64:k; K_wa_dir_ok:kk; };
+func:mk_wa_dir_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_wa_dir_ok = H_wa_dir_ok() never fails { pass H_wa_dir_ok{ l: raw mk_wa_dir_ok(), k: 2i64, kk: K_wa_dir_ok{ k: 3i64 } }; };
+func:growh_wa_dir_ok = int64(H_wa_dir_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_wa_dir_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_wa_dir_ok = int64->(H_wa_dir_ok->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_wa_dir_ok = H_wa_dir_ok->(H_wa_dir_ok->:q) never fails { pass q; };
+func:getl_wa_dir_ok = List<int64>->(H_wa_dir_ok->:w) never fails { pass @w.l; };
+struct:HPO_wa_dir_ok = { H_wa_dir_ok->:lp; List<int64>:own; };
+struct:SQ_wa_dir_ok = { HPO_wa_dir_ok->:q; int64:z; };
+struct:SR_wa_dir_ok = { SQ_wa_dir_ok->:sq; int64:z; };
+func:w2_wa_dir_ok = int64(SQ_wa_dir_ok->:spar) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-spar).q)).own), 9i64); } pass 7i64; };
+func:g_wa_dir_ok = int64(H_wa_dir_ok->:h0p, H_wa_dir_ok->:hq, H_wa_dir_ok->:hz, int64:n) never fails {
+    HPO_wa_dir_ok:m = HPO_wa_dir_ok{ lp: h0p, own: raw mk_wa_dir_ok() }; SQ_wa_dir_ok:s = SQ_wa_dir_ok{ q: @m, z: 1i64 }; SR_wa_dir_ok:r = SR_wa_dir_ok{ sq: @s, z: 1i64 };
+    discard(raw w2_wa_dir_ok(@s));
+    int64->:e = @m.own[0i64];
+    pass (<-e) + 6i64;
+};
+func:f_wa_dir_ok = int64(int64:n) never fails {
+    H_wa_dir_ok:hz = raw mkh_wa_dir_ok(); H_wa_dir_ok:h0 = raw mkh_wa_dir_ok(); H_wa_dir_ok:h2 = raw mkh_wa_dir_ok();
+    pass raw g_wa_dir_ok(@h0, @h2, @hz, n);
+};
+func:cell_main_wa_dir_ok = int32() never fails { pass (((raw f_wa_dir_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/k348/wa_fld_ok.npk`.
+struct:K_wa_fld_ok = { int64:k; };
+struct:H_wa_fld_ok = { List<int64>:l; int64:k; K_wa_fld_ok:kk; };
+func:mk_wa_fld_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_wa_fld_ok = H_wa_fld_ok() never fails { pass H_wa_fld_ok{ l: raw mk_wa_fld_ok(), k: 2i64, kk: K_wa_fld_ok{ k: 3i64 } }; };
+func:growh_wa_fld_ok = int64(H_wa_fld_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_wa_fld_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_wa_fld_ok = int64->(H_wa_fld_ok->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_wa_fld_ok = H_wa_fld_ok->(H_wa_fld_ok->:q) never fails { pass q; };
+func:getl_wa_fld_ok = List<int64>->(H_wa_fld_ok->:w) never fails { pass @w.l; };
+struct:HPO_wa_fld_ok = { H_wa_fld_ok->:lp; List<int64>:own; };
+struct:SQ_wa_fld_ok = { HPO_wa_fld_ok->:q; int64:z; };
+struct:SR_wa_fld_ok = { SQ_wa_fld_ok->:sq; int64:z; };
+func:w2_wa_fld_ok = int64(SQ_wa_fld_ok->:spar) never fails { SR_wa_fld_ok:r2 = SR_wa_fld_ok{ sq: spar, z: 0i64 }; loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-(r2.sq)).q)).own), 9i64); } pass 7i64; };
+func:g_wa_fld_ok = int64(H_wa_fld_ok->:h0p, H_wa_fld_ok->:hq, H_wa_fld_ok->:hz, int64:n) never fails {
+    HPO_wa_fld_ok:m = HPO_wa_fld_ok{ lp: h0p, own: raw mk_wa_fld_ok() }; SQ_wa_fld_ok:s = SQ_wa_fld_ok{ q: @m, z: 1i64 }; SR_wa_fld_ok:r = SR_wa_fld_ok{ sq: @s, z: 1i64 };
+    discard(raw w2_wa_fld_ok(@s));
+    int64->:e = @m.own[0i64];
+    pass (<-e) + 6i64;
+};
+func:f_wa_fld_ok = int64(int64:n) never fails {
+    H_wa_fld_ok:hz = raw mkh_wa_fld_ok(); H_wa_fld_ok:h0 = raw mkh_wa_fld_ok(); H_wa_fld_ok:h2 = raw mkh_wa_fld_ok();
+    pass raw g_wa_fld_ok(@h0, @h2, @hz, n);
+};
+func:cell_main_wa_fld_ok = int32() never fails { pass (((raw f_wa_fld_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/k348/wa_loc_ok.npk`.
+struct:K_wa_loc_ok = { int64:k; };
+struct:H_wa_loc_ok = { List<int64>:l; int64:k; K_wa_loc_ok:kk; };
+func:mk_wa_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_wa_loc_ok = H_wa_loc_ok() never fails { pass H_wa_loc_ok{ l: raw mk_wa_loc_ok(), k: 2i64, kk: K_wa_loc_ok{ k: 3i64 } }; };
+func:growh_wa_loc_ok = int64(H_wa_loc_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_wa_loc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_wa_loc_ok = int64->(H_wa_loc_ok->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_wa_loc_ok = H_wa_loc_ok->(H_wa_loc_ok->:q) never fails { pass q; };
+func:getl_wa_loc_ok = List<int64>->(H_wa_loc_ok->:w) never fails { pass @w.l; };
+struct:HPO_wa_loc_ok = { H_wa_loc_ok->:lp; List<int64>:own; };
+struct:SQ_wa_loc_ok = { HPO_wa_loc_ok->:q; int64:z; };
+struct:SR_wa_loc_ok = { SQ_wa_loc_ok->:sq; int64:z; };
+func:w2_wa_loc_ok = int64(SQ_wa_loc_ok->:spar) never fails { SQ_wa_loc_ok->:sp2 = spar; loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-sp2).q)).own), 9i64); } pass 7i64; };
+func:g_wa_loc_ok = int64(H_wa_loc_ok->:h0p, H_wa_loc_ok->:hq, H_wa_loc_ok->:hz, int64:n) never fails {
+    HPO_wa_loc_ok:m = HPO_wa_loc_ok{ lp: h0p, own: raw mk_wa_loc_ok() }; SQ_wa_loc_ok:s = SQ_wa_loc_ok{ q: @m, z: 1i64 }; SR_wa_loc_ok:r = SR_wa_loc_ok{ sq: @s, z: 1i64 };
+    discard(raw w2_wa_loc_ok(@s));
+    int64->:e = @m.own[0i64];
+    pass (<-e) + 6i64;
+};
+func:f_wa_loc_ok = int64(int64:n) never fails {
+    H_wa_loc_ok:hz = raw mkh_wa_loc_ok(); H_wa_loc_ok:h0 = raw mkh_wa_loc_ok(); H_wa_loc_ok:h2 = raw mkh_wa_loc_ok();
+    pass raw g_wa_loc_ok(@h0, @h2, @hz, n);
+};
+func:cell_main_wa_loc_ok = int32() never fails { pass (((raw f_wa_loc_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARB's attack on RB-1m (rulings l.19799),
+// `Team/TMP/atk-177d2d-rb1m-2026-11-19/cells/k348/wa_rp_ok.npk`.
+struct:K_wa_rp_ok = { int64:k; };
+struct:H_wa_rp_ok = { List<int64>:l; int64:k; K_wa_rp_ok:kk; };
+func:mk_wa_rp_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_wa_rp_ok = H_wa_rp_ok() never fails { pass H_wa_rp_ok{ l: raw mk_wa_rp_ok(), k: 2i64, kk: K_wa_rp_ok{ k: 3i64 } }; };
+func:growh_wa_rp_ok = int64(H_wa_rp_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_wa_rp_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_wa_rp_ok = int64->(H_wa_rp_ok->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_wa_rp_ok = H_wa_rp_ok->(H_wa_rp_ok->:q) never fails { pass q; };
+func:getl_wa_rp_ok = List<int64>->(H_wa_rp_ok->:w) never fails { pass @w.l; };
+struct:HPO_wa_rp_ok = { H_wa_rp_ok->:lp; List<int64>:own; };
+struct:SQ_wa_rp_ok = { HPO_wa_rp_ok->:q; int64:z; };
+struct:SR_wa_rp_ok = { SQ_wa_rp_ok->:sq; int64:z; };
+func:w2_wa_rp_ok = int64(SR_wa_rp_ok->:rpar) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-rpar).sq)).q)).own), 9i64); } pass 7i64; };
+func:g_wa_rp_ok = int64(H_wa_rp_ok->:h0p, H_wa_rp_ok->:hq, H_wa_rp_ok->:hz, int64:n) never fails {
+    HPO_wa_rp_ok:m = HPO_wa_rp_ok{ lp: h0p, own: raw mk_wa_rp_ok() }; SQ_wa_rp_ok:s = SQ_wa_rp_ok{ q: @m, z: 1i64 }; SR_wa_rp_ok:r = SR_wa_rp_ok{ sq: @s, z: 1i64 };
+    discard(raw w2_wa_rp_ok(@r));
+    int64->:e = @m.own[0i64];
+    pass (<-e) + 6i64;
+};
+func:f_wa_rp_ok = int64(int64:n) never fails {
+    H_wa_rp_ok:hz = raw mkh_wa_rp_ok(); H_wa_rp_ok:h0 = raw mkh_wa_rp_ok(); H_wa_rp_ok:h2 = raw mkh_wa_rp_ok();
+    pass raw g_wa_rp_ok(@h0, @h2, @hz, n);
+};
+func:cell_main_wa_rp_ok = int32() never fails { pass (((raw f_wa_rp_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/sa/sa_back2_ok.npk`.
+func:mk_sa_back2_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_sa_back2_ok = { List<int64>:own; int64:z; };
+struct:MM_sa_back2_ok = { LF_sa_back2_ok->:r; LF_sa_back2_ok:lf; int64:z; };
+struct:B_sa_back2_ok = { MM_sa_back2_ok->:r; int64:z; };
+struct:A_sa_back2_ok = { B_sa_back2_ok->:q; MM_sa_back2_ok:inner; int64:z; };
+func:gb_sa_back2_ok = int64(A_sa_back2_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:f_sa_back2_ok = int64(int64:n) never fails {
+    LF_sa_back2_ok:fz = LF_sa_back2_ok{ own: raw mk_sa_back2_ok(), z: 1i64 };
+    MM_sa_back2_ok:mm = MM_sa_back2_ok{ r: @fz, lf: LF_sa_back2_ok{ own: raw mk_sa_back2_ok(), z: 1i64 }, z: 1i64 };
+    B_sa_back2_ok:b = B_sa_back2_ok{ r: @mm, z: 1i64 };
+    A_sa_back2_ok:a = A_sa_back2_ok{ q: @b, inner: MM_sa_back2_ok{ r: @fz, lf: LF_sa_back2_ok{ own: raw mk_sa_back2_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    b.r = @a.inner;
+    LF_sa_back2_ok:m3 = LF_sa_back2_ok{ own: raw mk_sa_back2_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_sa_back2_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_sa_back2_ok = int32() never fails { pass (((raw f_sa_back2_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/sa/sa_back_ok.npk`.
+func:mk_sa_back_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_sa_back_ok = { List<int64>:own; int64:z; };
+struct:N_sa_back_ok = { LF_sa_back_ok->:r2; int64:z; };
+struct:MM_sa_back_ok = { N_sa_back_ok->:r; LF_sa_back_ok:lf; int64:z; };
+struct:B_sa_back_ok = { MM_sa_back_ok->:r; int64:z; };
+struct:A_sa_back_ok = { B_sa_back_ok->:q; MM_sa_back_ok:inner; int64:z; };
+func:gb_sa_back_ok = int64(A_sa_back_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-((<-o).q)).r)).r)).r2)).own), 1i64); } pass 7i64; };
+func:f_sa_back_ok = int64(int64:n) never fails {
+    LF_sa_back_ok:fA = LF_sa_back_ok{ own: raw mk_sa_back_ok(), z: 1i64 };
+    LF_sa_back_ok:fB = LF_sa_back_ok{ own: raw mk_sa_back_ok(), z: 1i64 };
+    N_sa_back_ok:n0 = N_sa_back_ok{ r2: @fA, z: 1i64 };
+    N_sa_back_ok:n1 = N_sa_back_ok{ r2: @fB, z: 1i64 };
+    MM_sa_back_ok:mm = MM_sa_back_ok{ r: @n0, lf: LF_sa_back_ok{ own: raw mk_sa_back_ok(), z: 1i64 }, z: 1i64 };
+    B_sa_back_ok:b = B_sa_back_ok{ r: @mm, z: 1i64 };
+    A_sa_back_ok:a = A_sa_back_ok{ q: @b, inner: MM_sa_back_ok{ r: @n1, lf: LF_sa_back_ok{ own: raw mk_sa_back_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    b.r = @a.inner;
+    LF_sa_back_ok:m3 = LF_sa_back_ok{ own: raw mk_sa_back_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_sa_back_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_sa_back_ok = int32() never fails { pass (((raw f_sa_back_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/sb/sb_dia2_ok.npk`.
+func:mk_sb_dia2_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_sb_dia2_ok = { List<int64>:own; int64:z; };
+struct:L3_sb_dia2_ok = { LF_sb_dia2_ok->:p; int64:z; };
+struct:L2_sb_dia2_ok = { L3_sb_dia2_ok->:p; int64:z; };
+struct:L1_sb_dia2_ok = { L2_sb_dia2_ok->:p; int64:z; };
+func:gw_sb_dia2_ok = int64(L1_sb_dia2_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+func:f_sb_dia2_ok = int64(int64:n) never fails {
+    LF_sb_dia2_ok:fA = LF_sb_dia2_ok{ own: raw mk_sb_dia2_ok(), z: 1i64 };
+    LF_sb_dia2_ok:fB = LF_sb_dia2_ok{ own: raw mk_sb_dia2_ok(), z: 1i64 };
+    L3_sb_dia2_ok:v3 = L3_sb_dia2_ok{ p: @fA, z: 1i64 };
+    v3.p = @fB;
+    L2_sb_dia2_ok:v2a = L2_sb_dia2_ok{ p: @v3, z: 1i64 };
+    L2_sb_dia2_ok:v2b = L2_sb_dia2_ok{ p: @v3, z: 1i64 };
+    L1_sb_dia2_ok:v1 = L1_sb_dia2_ok{ p: @v2a, z: 1i64 };
+    v1.p = @v2b;
+    LF_sb_dia2_ok:m3 = LF_sb_dia2_ok{ own: raw mk_sb_dia2_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_sb_dia2_ok(@v1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_sb_dia2_ok = int32() never fails { pass (((raw f_sb_dia2_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/sb/sb_dia_ok.npk`.
+func:mk_sb_dia_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_sb_dia_ok = { List<int64>:own; int64:z; };
+struct:L3_sb_dia_ok = { LF_sb_dia_ok->:p; int64:z; };
+struct:L2_sb_dia_ok = { L3_sb_dia_ok->:p; int64:z; };
+struct:L1_sb_dia_ok = { L2_sb_dia_ok->:p; int64:z; };
+func:gw_sb_dia_ok = int64(L1_sb_dia_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+func:f_sb_dia_ok = int64(int64:n) never fails {
+    LF_sb_dia_ok:fA = LF_sb_dia_ok{ own: raw mk_sb_dia_ok(), z: 1i64 };
+    LF_sb_dia_ok:fB = LF_sb_dia_ok{ own: raw mk_sb_dia_ok(), z: 1i64 };
+    L3_sb_dia_ok:v3 = L3_sb_dia_ok{ p: @fA, z: 1i64 };
+    L3_sb_dia_ok:v3b = L3_sb_dia_ok{ p: @fB, z: 1i64 };
+    L2_sb_dia_ok:v2a = L2_sb_dia_ok{ p: @v3, z: 1i64 };
+    L2_sb_dia_ok:v2b = L2_sb_dia_ok{ p: @v3, z: 1i64 };
+    v2b.p = @v3b;
+    L1_sb_dia_ok:v1 = L1_sb_dia_ok{ p: @v2a, z: 1i64 };
+    v1.p = @v2b;
+    LF_sb_dia_ok:m3 = LF_sb_dia_ok{ own: raw mk_sb_dia_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_sb_dia_ok(@v1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_sb_dia_ok = int32() never fails { pass (((raw f_sb_dia_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/sb/sb_fan_ok.npk`.
+func:mk_sb_fan_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_sb_fan_ok = { List<int64>:own; int64:z; };
+struct:L3_sb_fan_ok = { LF_sb_fan_ok->:p; int64:z; };
+struct:L2_sb_fan_ok = { L3_sb_fan_ok->:p; int64:z; };
+struct:L1_sb_fan_ok = { L2_sb_fan_ok->:p; int64:z; };
+func:gw_sb_fan_ok = int64(L1_sb_fan_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+func:f_sb_fan_ok = int64(int64:n) never fails {
+    LF_sb_fan_ok:fA = LF_sb_fan_ok{ own: raw mk_sb_fan_ok(), z: 1i64 };
+    LF_sb_fan_ok:fB = LF_sb_fan_ok{ own: raw mk_sb_fan_ok(), z: 1i64 };
+    L3_sb_fan_ok:v3 = L3_sb_fan_ok{ p: @fA, z: 1i64 };
+    L3_sb_fan_ok:v3b = L3_sb_fan_ok{ p: @fB, z: 1i64 };
+    L2_sb_fan_ok:w0 = L2_sb_fan_ok{ p: @v3, z: 1i64 };
+    L2_sb_fan_ok:w1 = L2_sb_fan_ok{ p: @v3, z: 1i64 };
+    L2_sb_fan_ok:w2 = L2_sb_fan_ok{ p: @v3, z: 1i64 };
+    L2_sb_fan_ok:w3 = L2_sb_fan_ok{ p: @v3, z: 1i64 };
+    L2_sb_fan_ok:w4 = L2_sb_fan_ok{ p: @v3, z: 1i64 };
+    L2_sb_fan_ok:w5 = L2_sb_fan_ok{ p: @v3, z: 1i64 };
+    w5.p = @v3b;
+    L1_sb_fan_ok:v1 = L1_sb_fan_ok{ p: @w0, z: 1i64 };
+    v1.p = @w1;
+    v1.p = @w2;
+    v1.p = @w3;
+    v1.p = @w4;
+    v1.p = @w5;
+    LF_sb_fan_ok:m3 = LF_sb_fan_ok{ own: raw mk_sb_fan_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_sb_fan_ok(@v1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_sb_fan_ok = int32() never fails { pass (((raw f_sb_fan_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/sb/sb_same_ok.npk`.
+func:mk_sb_same_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_sb_same_ok = { List<int64>:own; int64:z; };
+struct:L3_sb_same_ok = { LF_sb_same_ok->:p; int64:z; };
+struct:L2_sb_same_ok = { L3_sb_same_ok->:p; int64:z; };
+struct:L1_sb_same_ok = { L2_sb_same_ok->:p; int64:z; };
+func:gw_sb_same_ok = int64(L1_sb_same_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+func:f_sb_same_ok = int64(int64:n) never fails {
+    LF_sb_same_ok:fA = LF_sb_same_ok{ own: raw mk_sb_same_ok(), z: 1i64 };
+    L3_sb_same_ok:v3 = L3_sb_same_ok{ p: @fA, z: 1i64 };
+    L2_sb_same_ok:v2 = L2_sb_same_ok{ p: @v3, z: 1i64 };
+    L1_sb_same_ok:v1 = L1_sb_same_ok{ p: @v2, z: 1i64 };
+    v1.p = @v2;
+    v1.p = @v2;
+    LF_sb_same_ok:m3 = LF_sb_same_ok{ own: raw mk_sb_same_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_sb_same_ok(@v1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_sb_same_ok = int32() never fails { pass (((raw f_sb_same_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/sc/sc_one_ok.npk`.
+func:mk_sc_one_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_sc_one_ok = { List<int64>:own; int64:z; };
+struct:L3_sc_one_ok = { LF_sc_one_ok->:p; int64:z; };
+struct:L2_sc_one_ok = { L3_sc_one_ok->:p; int64:z; };
+struct:L1_sc_one_ok = { L2_sc_one_ok->:p; int64:z; };
+func:gw_sc_one_ok = int64(L1_sc_one_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+struct:P2_sc_one_ok = { L2_sc_one_ok:a; L2_sc_one_ok:b; };
+func:f_sc_one_ok = int64(int64:n) never fails {
+    LF_sc_one_ok:fA = LF_sc_one_ok{ own: raw mk_sc_one_ok(), z: 1i64 };
+    LF_sc_one_ok:fB = LF_sc_one_ok{ own: raw mk_sc_one_ok(), z: 1i64 };
+    L3_sc_one_ok:v3a = L3_sc_one_ok{ p: @fA, z: 1i64 };
+    L3_sc_one_ok:v3b = L3_sc_one_ok{ p: @fB, z: 1i64 };
+    P2_sc_one_ok:pp = P2_sc_one_ok{ a: L2_sc_one_ok{ p: @v3a, z: 1i64 }, b: L2_sc_one_ok{ p: @v3b, z: 1i64 } };
+    L1_sc_one_ok:v1 = L1_sc_one_ok{ p: @pp.a, z: 1i64 };
+    LF_sc_one_ok:m3 = LF_sc_one_ok{ own: raw mk_sc_one_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_sc_one_ok(@v1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_sc_one_ok = int32() never fails { pass (((raw f_sc_one_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/sc/sc_ptrv_ok.npk`.
+func:mk_sc_ptrv_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_sc_ptrv_ok = { List<int64>:own; int64:z; };
+struct:L3_sc_ptrv_ok = { LF_sc_ptrv_ok->:p; int64:z; };
+struct:L2_sc_ptrv_ok = { L3_sc_ptrv_ok->:p; int64:z; };
+struct:L1_sc_ptrv_ok = { L2_sc_ptrv_ok->:p; int64:z; };
+func:gw_sc_ptrv_ok = int64(L1_sc_ptrv_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+struct:P2_sc_ptrv_ok = { L2_sc_ptrv_ok:a; L2_sc_ptrv_ok:b; };
+func:f_sc_ptrv_ok = int64(int64:n) never fails {
+    LF_sc_ptrv_ok:fA = LF_sc_ptrv_ok{ own: raw mk_sc_ptrv_ok(), z: 1i64 };
+    LF_sc_ptrv_ok:fB = LF_sc_ptrv_ok{ own: raw mk_sc_ptrv_ok(), z: 1i64 };
+    L3_sc_ptrv_ok:v3a = L3_sc_ptrv_ok{ p: @fA, z: 1i64 };
+    L3_sc_ptrv_ok:v3b = L3_sc_ptrv_ok{ p: @fB, z: 1i64 };
+    L2_sc_ptrv_ok:v2 = L2_sc_ptrv_ok{ p: @v3a, z: 1i64 };
+    L2_sc_ptrv_ok->:pv = @v2;
+    v2.p = @v3b;
+    L1_sc_ptrv_ok:v1 = L1_sc_ptrv_ok{ p: @v2, z: 1i64 };
+    v1.p = @(<-pv);
+    LF_sc_ptrv_ok:m3 = LF_sc_ptrv_ok{ own: raw mk_sc_ptrv_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_sc_ptrv_ok(@v1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_sc_ptrv_ok = int32() never fails { pass (((raw f_sc_ptrv_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/sc/sc_two_ok.npk`.
+func:mk_sc_two_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_sc_two_ok = { List<int64>:own; int64:z; };
+struct:L3_sc_two_ok = { LF_sc_two_ok->:p; int64:z; };
+struct:L2_sc_two_ok = { L3_sc_two_ok->:p; int64:z; };
+struct:L1_sc_two_ok = { L2_sc_two_ok->:p; int64:z; };
+func:gw_sc_two_ok = int64(L1_sc_two_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+struct:P2_sc_two_ok = { L2_sc_two_ok:a; L2_sc_two_ok:b; };
+func:f_sc_two_ok = int64(int64:n) never fails {
+    LF_sc_two_ok:fA = LF_sc_two_ok{ own: raw mk_sc_two_ok(), z: 1i64 };
+    LF_sc_two_ok:fB = LF_sc_two_ok{ own: raw mk_sc_two_ok(), z: 1i64 };
+    L3_sc_two_ok:v3a = L3_sc_two_ok{ p: @fA, z: 1i64 };
+    L3_sc_two_ok:v3b = L3_sc_two_ok{ p: @fB, z: 1i64 };
+    P2_sc_two_ok:pp = P2_sc_two_ok{ a: L2_sc_two_ok{ p: @v3a, z: 1i64 }, b: L2_sc_two_ok{ p: @v3b, z: 1i64 } };
+    L1_sc_two_ok:v1 = L1_sc_two_ok{ p: @pp.a, z: 1i64 };
+    v1.p = @pp.b;
+    LF_sc_two_ok:m3 = LF_sc_two_ok{ own: raw mk_sc_two_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_sc_two_ok(@v1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_sc_two_ok = int32() never fails { pass (((raw f_sc_two_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/sc/sc_two_r_ok.npk`.
+func:mk_sc_two_r_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_sc_two_r_ok = { List<int64>:own; int64:z; };
+struct:L3_sc_two_r_ok = { LF_sc_two_r_ok->:p; int64:z; };
+struct:L2_sc_two_r_ok = { L3_sc_two_r_ok->:p; int64:z; };
+struct:L1_sc_two_r_ok = { L2_sc_two_r_ok->:p; int64:z; };
+func:gw_sc_two_r_ok = int64(L1_sc_two_r_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+struct:P2_sc_two_r_ok = { L2_sc_two_r_ok:a; L2_sc_two_r_ok:b; };
+func:f_sc_two_r_ok = int64(int64:n) never fails {
+    LF_sc_two_r_ok:fA = LF_sc_two_r_ok{ own: raw mk_sc_two_r_ok(), z: 1i64 };
+    LF_sc_two_r_ok:fB = LF_sc_two_r_ok{ own: raw mk_sc_two_r_ok(), z: 1i64 };
+    L3_sc_two_r_ok:v3a = L3_sc_two_r_ok{ p: @fA, z: 1i64 };
+    L3_sc_two_r_ok:v3b = L3_sc_two_r_ok{ p: @fB, z: 1i64 };
+    P2_sc_two_r_ok:pp = P2_sc_two_r_ok{ a: L2_sc_two_r_ok{ p: @v3a, z: 1i64 }, b: L2_sc_two_r_ok{ p: @v3b, z: 1i64 } };
+    L1_sc_two_r_ok:v1 = L1_sc_two_r_ok{ p: @pp.b, z: 1i64 };
+    v1.p = @pp.a;
+    LF_sc_two_r_ok:m3 = LF_sc_two_r_ok{ own: raw mk_sc_two_r_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_sc_two_r_ok(@v1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_sc_two_r_ok = int32() never fails { pass (((raw f_sc_two_r_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/sc/sc_two_sep_ok.npk`.
+func:mk_sc_two_sep_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_sc_two_sep_ok = { List<int64>:own; int64:z; };
+struct:L3_sc_two_sep_ok = { LF_sc_two_sep_ok->:p; int64:z; };
+struct:L2_sc_two_sep_ok = { L3_sc_two_sep_ok->:p; int64:z; };
+struct:L1_sc_two_sep_ok = { L2_sc_two_sep_ok->:p; int64:z; };
+func:gw_sc_two_sep_ok = int64(L1_sc_two_sep_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+struct:P2_sc_two_sep_ok = { L2_sc_two_sep_ok:a; L2_sc_two_sep_ok:b; };
+func:f_sc_two_sep_ok = int64(int64:n) never fails {
+    LF_sc_two_sep_ok:fA = LF_sc_two_sep_ok{ own: raw mk_sc_two_sep_ok(), z: 1i64 };
+    LF_sc_two_sep_ok:fB = LF_sc_two_sep_ok{ own: raw mk_sc_two_sep_ok(), z: 1i64 };
+    L3_sc_two_sep_ok:v3a = L3_sc_two_sep_ok{ p: @fA, z: 1i64 };
+    L3_sc_two_sep_ok:v3b = L3_sc_two_sep_ok{ p: @fB, z: 1i64 };
+    P2_sc_two_sep_ok:pp = P2_sc_two_sep_ok{ a: L2_sc_two_sep_ok{ p: @v3a, z: 1i64 }, b: L2_sc_two_sep_ok{ p: @v3b, z: 1i64 } };
+    L1_sc_two_sep_ok:v1 = L1_sc_two_sep_ok{ p: @pp.a, z: 1i64 };
+    L1_sc_two_sep_ok:u1 = L1_sc_two_sep_ok{ p: @pp.b, z: 1i64 };
+    LF_sc_two_sep_ok:m3 = LF_sc_two_sep_ok{ own: raw mk_sc_two_sep_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_sc_two_sep_ok(@u1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_sc_two_sep_ok = int32() never fails { pass (((raw f_sc_two_sep_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/se/se_cp_ok.npk`.
+func:mk_se_cp_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_se_cp_ok = { List<int64>:own; int64:z; };
+struct:L3_se_cp_ok = { LF_se_cp_ok->:p; int64:z; };
+struct:L2_se_cp_ok = { L3_se_cp_ok->:p; int64:z; };
+struct:L1_se_cp_ok = { L2_se_cp_ok->:p; int64:z; };
+func:gw_se_cp_ok = int64(L1_se_cp_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+func:f_se_cp_ok = int64(int64:n) never fails {
+    LF_se_cp_ok:fA = LF_se_cp_ok{ own: raw mk_se_cp_ok(), z: 1i64 };
+    LF_se_cp_ok:fB = LF_se_cp_ok{ own: raw mk_se_cp_ok(), z: 1i64 };
+    L3_se_cp_ok:v3a = L3_se_cp_ok{ p: @fA, z: 1i64 };
+    L3_se_cp_ok:v3b = L3_se_cp_ok{ p: @fB, z: 1i64 };
+    L2_se_cp_ok:v2 = L2_se_cp_ok{ p: @v3b, z: 1i64 };
+    L2_se_cp_ok->:q2 = @v2;
+    L1_se_cp_ok:v1 = L1_se_cp_ok{ p: q2, z: 1i64 };
+    LF_se_cp_ok:m3 = LF_se_cp_ok{ own: raw mk_se_cp_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_se_cp_ok(@v1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_se_cp_ok = int32() never fails { pass (((raw f_se_cp_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/se/se_dn1_ok.npk`.
+func:mk_se_dn1_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_se_dn1_ok = { List<int64>:own; int64:z; };
+struct:L3_se_dn1_ok = { LF_se_dn1_ok->:p; int64:z; };
+struct:L2_se_dn1_ok = { L3_se_dn1_ok->:p; int64:z; };
+struct:L1_se_dn1_ok = { L2_se_dn1_ok->:p; int64:z; };
+func:gw_se_dn1_ok = int64(L1_se_dn1_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+func:f_se_dn1_ok = int64(int64:n) never fails {
+    LF_se_dn1_ok:fA = LF_se_dn1_ok{ own: raw mk_se_dn1_ok(), z: 1i64 };
+    LF_se_dn1_ok:fB = LF_se_dn1_ok{ own: raw mk_se_dn1_ok(), z: 1i64 };
+    L3_se_dn1_ok:v3a = L3_se_dn1_ok{ p: @fA, z: 1i64 };
+    L3_se_dn1_ok:v3b = L3_se_dn1_ok{ p: @fB, z: 1i64 };
+    L2_se_dn1_ok:v2 = L2_se_dn1_ok{ p: @v3b, z: 1i64 };
+    L2_se_dn1_ok->:pv = @v2;
+    L1_se_dn1_ok:v1 = L1_se_dn1_ok{ p: @(<-pv), z: 1i64 };
+    LF_se_dn1_ok:m3 = LF_se_dn1_ok{ own: raw mk_se_dn1_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_se_dn1_ok(@v1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_se_dn1_ok = int32() never fails { pass (((raw f_se_dn1_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/se/se_dn2_ok.npk`.
+func:mk_se_dn2_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_se_dn2_ok = { List<int64>:own; int64:z; };
+struct:L3_se_dn2_ok = { LF_se_dn2_ok->:p; int64:z; };
+struct:L2_se_dn2_ok = { L3_se_dn2_ok->:p; int64:z; };
+struct:L1_se_dn2_ok = { L2_se_dn2_ok->:p; int64:z; };
+func:gw_se_dn2_ok = int64(L1_se_dn2_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+func:f_se_dn2_ok = int64(int64:n) never fails {
+    LF_se_dn2_ok:fA = LF_se_dn2_ok{ own: raw mk_se_dn2_ok(), z: 1i64 };
+    LF_se_dn2_ok:fB = LF_se_dn2_ok{ own: raw mk_se_dn2_ok(), z: 1i64 };
+    L3_se_dn2_ok:v3a = L3_se_dn2_ok{ p: @fA, z: 1i64 };
+    L3_se_dn2_ok:v3b = L3_se_dn2_ok{ p: @fB, z: 1i64 };
+    L3_se_dn2_ok->:p3 = @v3b;
+    L2_se_dn2_ok:v2 = L2_se_dn2_ok{ p: @(<-p3), z: 1i64 };
+    L1_se_dn2_ok:v1 = L1_se_dn2_ok{ p: @v2, z: 1i64 };
+    LF_se_dn2_ok:m3 = LF_se_dn2_ok{ own: raw mk_se_dn2_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_se_dn2_ok(@v1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_se_dn2_ok = int32() never fails { pass (((raw f_se_dn2_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/se/se_mix_ok.npk`.
+func:mk_se_mix_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_se_mix_ok = { List<int64>:own; int64:z; };
+struct:L3_se_mix_ok = { LF_se_mix_ok->:p; int64:z; };
+struct:L2_se_mix_ok = { L3_se_mix_ok->:p; int64:z; };
+struct:L1_se_mix_ok = { L2_se_mix_ok->:p; int64:z; };
+func:gw_se_mix_ok = int64(L1_se_mix_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+func:f_se_mix_ok = int64(int64:n) never fails {
+    LF_se_mix_ok:fA = LF_se_mix_ok{ own: raw mk_se_mix_ok(), z: 1i64 };
+    LF_se_mix_ok:fB = LF_se_mix_ok{ own: raw mk_se_mix_ok(), z: 1i64 };
+    L3_se_mix_ok:v3a = L3_se_mix_ok{ p: @fA, z: 1i64 };
+    L3_se_mix_ok:v3b = L3_se_mix_ok{ p: @fB, z: 1i64 };
+    L2_se_mix_ok:v2 = L2_se_mix_ok{ p: @v3b, z: 1i64 };
+    L2_se_mix_ok->:pv = @v2;
+    L1_se_mix_ok:v1 = L1_se_mix_ok{ p: @v2, z: 1i64 };
+    v1.p = @(<-pv);
+    LF_se_mix_ok:m3 = LF_se_mix_ok{ own: raw mk_se_mix_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_se_mix_ok(@v1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_se_mix_ok = int32() never fails { pass (((raw f_se_mix_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/se/se_mix_r_ok.npk`.
+func:mk_se_mix_r_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_se_mix_r_ok = { List<int64>:own; int64:z; };
+struct:L3_se_mix_r_ok = { LF_se_mix_r_ok->:p; int64:z; };
+struct:L2_se_mix_r_ok = { L3_se_mix_r_ok->:p; int64:z; };
+struct:L1_se_mix_r_ok = { L2_se_mix_r_ok->:p; int64:z; };
+func:gw_se_mix_r_ok = int64(L1_se_mix_r_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+func:f_se_mix_r_ok = int64(int64:n) never fails {
+    LF_se_mix_r_ok:fA = LF_se_mix_r_ok{ own: raw mk_se_mix_r_ok(), z: 1i64 };
+    LF_se_mix_r_ok:fB = LF_se_mix_r_ok{ own: raw mk_se_mix_r_ok(), z: 1i64 };
+    L3_se_mix_r_ok:v3a = L3_se_mix_r_ok{ p: @fA, z: 1i64 };
+    L3_se_mix_r_ok:v3b = L3_se_mix_r_ok{ p: @fB, z: 1i64 };
+    L2_se_mix_r_ok:v2 = L2_se_mix_r_ok{ p: @v3b, z: 1i64 };
+    L2_se_mix_r_ok->:pv = @v2;
+    L1_se_mix_r_ok:v1 = L1_se_mix_r_ok{ p: @(<-pv), z: 1i64 };
+    v1.p = @v2;
+    LF_se_mix_r_ok:m3 = LF_se_mix_r_ok{ own: raw mk_se_mix_r_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_se_mix_r_ok(@v1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_se_mix_r_ok = int32() never fails { pass (((raw f_se_mix_r_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/se/se_two_calls_ok.npk`.
+func:mk_se_two_calls_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_se_two_calls_ok = { List<int64>:own; int64:z; };
+struct:L3_se_two_calls_ok = { LF_se_two_calls_ok->:p; int64:z; };
+struct:L2_se_two_calls_ok = { L3_se_two_calls_ok->:p; int64:z; };
+struct:L1_se_two_calls_ok = { L2_se_two_calls_ok->:p; int64:z; };
+func:gw_se_two_calls_ok = int64(L1_se_two_calls_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+func:f_se_two_calls_ok = int64(int64:n) never fails {
+    LF_se_two_calls_ok:fA = LF_se_two_calls_ok{ own: raw mk_se_two_calls_ok(), z: 1i64 };
+    LF_se_two_calls_ok:fB = LF_se_two_calls_ok{ own: raw mk_se_two_calls_ok(), z: 1i64 };
+    L3_se_two_calls_ok:v3a = L3_se_two_calls_ok{ p: @fA, z: 1i64 };
+    L3_se_two_calls_ok:v3b = L3_se_two_calls_ok{ p: @fB, z: 1i64 };
+    L2_se_two_calls_ok:v2 = L2_se_two_calls_ok{ p: @v3a, z: 1i64 };
+    L2_se_two_calls_ok:w2 = L2_se_two_calls_ok{ p: @v3b, z: 1i64 };
+    L1_se_two_calls_ok:v1 = L1_se_two_calls_ok{ p: @v2, z: 1i64 };
+    L1_se_two_calls_ok:u1 = L1_se_two_calls_ok{ p: @v2, z: 1i64 };
+    u1.p = @w2;
+    discard(raw gw_se_two_calls_ok(@v1));
+    LF_se_two_calls_ok:m3 = LF_se_two_calls_ok{ own: raw mk_se_two_calls_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_se_two_calls_ok(@u1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_se_two_calls_ok = int32() never fails { pass (((raw f_se_two_calls_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/sg/sg_box_ok.npk`.
+func:mk_sg_box_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_sg_box_ok = { List<int64>:own; int64:z; };
+struct:L3_sg_box_ok = { LF_sg_box_ok->:p; int64:z; };
+struct:L2_sg_box_ok = { L3_sg_box_ok->:p; int64:z; };
+struct:L1_sg_box_ok = { L2_sg_box_ok->:p; int64:z; };
+func:gw_sg_box_ok = int64(L1_sg_box_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+struct:Box_sg_box_ok<T> = { T:t; L3_sg_box_ok:l3; };
+func:f_sg_box_ok = int64(int64:n) never fails {
+    LF_sg_box_ok:fA = LF_sg_box_ok{ own: raw mk_sg_box_ok(), z: 1i64 };
+    LF_sg_box_ok:fB = LF_sg_box_ok{ own: raw mk_sg_box_ok(), z: 1i64 };
+    Box_sg_box_ok<int64>:bx = Box_sg_box_ok{ t: 1i64, l3: L3_sg_box_ok{ p: @fA, z: 1i64 } };
+    Box_sg_box_ok<int32>:by = Box_sg_box_ok{ t: 1i32, l3: L3_sg_box_ok{ p: @fB, z: 1i64 } };
+    L2_sg_box_ok:v2 = L2_sg_box_ok{ p: @bx.l3, z: 1i64 };
+    v2.p = @by.l3;
+    L1_sg_box_ok:v1 = L1_sg_box_ok{ p: @v2, z: 1i64 };
+    LF_sg_box_ok:m3 = LF_sg_box_ok{ own: raw mk_sg_box_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_sg_box_ok(@v1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_sg_box_ok = int32() never fails { pass (((raw f_sg_box_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/sl/sl_d7_ok.npk`.
+func:mk_sl_d7_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_sl_d7_ok = { List<int64>:own; int64:z; };
+struct:L7_sl_d7_ok = { LF_sl_d7_ok->:p; int64:z; };
+struct:L6_sl_d7_ok = { L7_sl_d7_ok->:p; int64:z; };
+struct:L5_sl_d7_ok = { L6_sl_d7_ok->:p; int64:z; };
+struct:L4_sl_d7_ok = { L5_sl_d7_ok->:p; int64:z; };
+struct:L3_sl_d7_ok = { L4_sl_d7_ok->:p; int64:z; };
+struct:L2_sl_d7_ok = { L3_sl_d7_ok->:p; int64:z; };
+struct:L1_sl_d7_ok = { L2_sl_d7_ok->:p; int64:z; };
+func:gw_sl_d7_ok = int64(L1_sl_d7_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-((<-((<-((<-((<-o).p)).p)).p)).p)).p)).p)).p)).own), 1i64); } pass 7i64; };
+func:f_sl_d7_ok = int64(int64:n) never fails {
+    LF_sl_d7_ok:fA = LF_sl_d7_ok{ own: raw mk_sl_d7_ok(), z: 1i64 };
+    LF_sl_d7_ok:fB = LF_sl_d7_ok{ own: raw mk_sl_d7_ok(), z: 1i64 };
+    L7_sl_d7_ok:v7_0 = L7_sl_d7_ok{ p: @fA, z: 1i64 };
+    v7_0.p = @fB;
+    L7_sl_d7_ok:v7_1 = L7_sl_d7_ok{ p: @fA, z: 1i64 };
+    v7_1.p = @fB;
+    L6_sl_d7_ok:v6_0 = L6_sl_d7_ok{ p: @v7_0, z: 1i64 };
+    v6_0.p = @v7_1;
+    L6_sl_d7_ok:v6_1 = L6_sl_d7_ok{ p: @v7_0, z: 1i64 };
+    v6_1.p = @v7_1;
+    L5_sl_d7_ok:v5_0 = L5_sl_d7_ok{ p: @v6_0, z: 1i64 };
+    v5_0.p = @v6_1;
+    L5_sl_d7_ok:v5_1 = L5_sl_d7_ok{ p: @v6_0, z: 1i64 };
+    v5_1.p = @v6_1;
+    L4_sl_d7_ok:v4_0 = L4_sl_d7_ok{ p: @v5_0, z: 1i64 };
+    v4_0.p = @v5_1;
+    L4_sl_d7_ok:v4_1 = L4_sl_d7_ok{ p: @v5_0, z: 1i64 };
+    v4_1.p = @v5_1;
+    L3_sl_d7_ok:v3_0 = L3_sl_d7_ok{ p: @v4_0, z: 1i64 };
+    v3_0.p = @v4_1;
+    L3_sl_d7_ok:v3_1 = L3_sl_d7_ok{ p: @v4_0, z: 1i64 };
+    v3_1.p = @v4_1;
+    L2_sl_d7_ok:v2_0 = L2_sl_d7_ok{ p: @v3_0, z: 1i64 };
+    v2_0.p = @v3_1;
+    L2_sl_d7_ok:v2_1 = L2_sl_d7_ok{ p: @v3_0, z: 1i64 };
+    v2_1.p = @v3_1;
+    L1_sl_d7_ok:v1_0 = L1_sl_d7_ok{ p: @v2_0, z: 1i64 };
+    v1_0.p = @v2_1;
+    LF_sl_d7_ok:m3 = LF_sl_d7_ok{ own: raw mk_sl_d7_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_sl_d7_ok(@v1_0));
+    pass (<-e) + 6i64;
+};
+func:cell_main_sl_d7_ok = int32() never fails { pass (((raw f_sl_d7_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/sl/sl_d8_ok.npk`.
+func:mk_sl_d8_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_sl_d8_ok = { List<int64>:own; int64:z; };
+struct:L8_sl_d8_ok = { LF_sl_d8_ok->:p; int64:z; };
+struct:L7_sl_d8_ok = { L8_sl_d8_ok->:p; int64:z; };
+struct:L6_sl_d8_ok = { L7_sl_d8_ok->:p; int64:z; };
+struct:L5_sl_d8_ok = { L6_sl_d8_ok->:p; int64:z; };
+struct:L4_sl_d8_ok = { L5_sl_d8_ok->:p; int64:z; };
+struct:L3_sl_d8_ok = { L4_sl_d8_ok->:p; int64:z; };
+struct:L2_sl_d8_ok = { L3_sl_d8_ok->:p; int64:z; };
+struct:L1_sl_d8_ok = { L2_sl_d8_ok->:p; int64:z; };
+func:gw_sl_d8_ok = int64(L1_sl_d8_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-((<-((<-((<-((<-((<-o).p)).p)).p)).p)).p)).p)).p)).p)).own), 1i64); } pass 7i64; };
+func:f_sl_d8_ok = int64(int64:n) never fails {
+    LF_sl_d8_ok:fA = LF_sl_d8_ok{ own: raw mk_sl_d8_ok(), z: 1i64 };
+    LF_sl_d8_ok:fB = LF_sl_d8_ok{ own: raw mk_sl_d8_ok(), z: 1i64 };
+    L8_sl_d8_ok:v8_0 = L8_sl_d8_ok{ p: @fA, z: 1i64 };
+    v8_0.p = @fB;
+    L8_sl_d8_ok:v8_1 = L8_sl_d8_ok{ p: @fA, z: 1i64 };
+    v8_1.p = @fB;
+    L7_sl_d8_ok:v7_0 = L7_sl_d8_ok{ p: @v8_0, z: 1i64 };
+    v7_0.p = @v8_1;
+    L7_sl_d8_ok:v7_1 = L7_sl_d8_ok{ p: @v8_0, z: 1i64 };
+    v7_1.p = @v8_1;
+    L6_sl_d8_ok:v6_0 = L6_sl_d8_ok{ p: @v7_0, z: 1i64 };
+    v6_0.p = @v7_1;
+    L6_sl_d8_ok:v6_1 = L6_sl_d8_ok{ p: @v7_0, z: 1i64 };
+    v6_1.p = @v7_1;
+    L5_sl_d8_ok:v5_0 = L5_sl_d8_ok{ p: @v6_0, z: 1i64 };
+    v5_0.p = @v6_1;
+    L5_sl_d8_ok:v5_1 = L5_sl_d8_ok{ p: @v6_0, z: 1i64 };
+    v5_1.p = @v6_1;
+    L4_sl_d8_ok:v4_0 = L4_sl_d8_ok{ p: @v5_0, z: 1i64 };
+    v4_0.p = @v5_1;
+    L4_sl_d8_ok:v4_1 = L4_sl_d8_ok{ p: @v5_0, z: 1i64 };
+    v4_1.p = @v5_1;
+    L3_sl_d8_ok:v3_0 = L3_sl_d8_ok{ p: @v4_0, z: 1i64 };
+    v3_0.p = @v4_1;
+    L3_sl_d8_ok:v3_1 = L3_sl_d8_ok{ p: @v4_0, z: 1i64 };
+    v3_1.p = @v4_1;
+    L2_sl_d8_ok:v2_0 = L2_sl_d8_ok{ p: @v3_0, z: 1i64 };
+    v2_0.p = @v3_1;
+    L2_sl_d8_ok:v2_1 = L2_sl_d8_ok{ p: @v3_0, z: 1i64 };
+    v2_1.p = @v3_1;
+    L1_sl_d8_ok:v1_0 = L1_sl_d8_ok{ p: @v2_0, z: 1i64 };
+    v1_0.p = @v2_1;
+    LF_sl_d8_ok:m3 = LF_sl_d8_ok{ own: raw mk_sl_d8_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_sl_d8_ok(@v1_0));
+    pass (<-e) + 6i64;
+};
+func:cell_main_sl_d8_ok = int32() never fails { pass (((raw f_sl_d8_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat ARS's attack on RB-1s's seen set (l.20057),
+// `Team/TMP/atk-177d2d-rb1s-2026-11-19/cells/sl/sl_d9_ok.npk`.
+func:mk_sl_d9_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_sl_d9_ok = { List<int64>:own; int64:z; };
+struct:L9_sl_d9_ok = { LF_sl_d9_ok->:p; int64:z; };
+struct:L8_sl_d9_ok = { L9_sl_d9_ok->:p; int64:z; };
+struct:L7_sl_d9_ok = { L8_sl_d9_ok->:p; int64:z; };
+struct:L6_sl_d9_ok = { L7_sl_d9_ok->:p; int64:z; };
+struct:L5_sl_d9_ok = { L6_sl_d9_ok->:p; int64:z; };
+struct:L4_sl_d9_ok = { L5_sl_d9_ok->:p; int64:z; };
+struct:L3_sl_d9_ok = { L4_sl_d9_ok->:p; int64:z; };
+struct:L2_sl_d9_ok = { L3_sl_d9_ok->:p; int64:z; };
+struct:L1_sl_d9_ok = { L2_sl_d9_ok->:p; int64:z; };
+func:gw_sl_d9_ok = int64(L1_sl_d9_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-((<-((<-((<-((<-((<-((<-o).p)).p)).p)).p)).p)).p)).p)).p)).p)).own), 1i64); } pass 7i64; };
+func:f_sl_d9_ok = int64(int64:n) never fails {
+    LF_sl_d9_ok:fA = LF_sl_d9_ok{ own: raw mk_sl_d9_ok(), z: 1i64 };
+    LF_sl_d9_ok:fB = LF_sl_d9_ok{ own: raw mk_sl_d9_ok(), z: 1i64 };
+    L9_sl_d9_ok:v9_0 = L9_sl_d9_ok{ p: @fA, z: 1i64 };
+    v9_0.p = @fB;
+    L9_sl_d9_ok:v9_1 = L9_sl_d9_ok{ p: @fA, z: 1i64 };
+    v9_1.p = @fB;
+    L8_sl_d9_ok:v8_0 = L8_sl_d9_ok{ p: @v9_0, z: 1i64 };
+    v8_0.p = @v9_1;
+    L8_sl_d9_ok:v8_1 = L8_sl_d9_ok{ p: @v9_0, z: 1i64 };
+    v8_1.p = @v9_1;
+    L7_sl_d9_ok:v7_0 = L7_sl_d9_ok{ p: @v8_0, z: 1i64 };
+    v7_0.p = @v8_1;
+    L7_sl_d9_ok:v7_1 = L7_sl_d9_ok{ p: @v8_0, z: 1i64 };
+    v7_1.p = @v8_1;
+    L6_sl_d9_ok:v6_0 = L6_sl_d9_ok{ p: @v7_0, z: 1i64 };
+    v6_0.p = @v7_1;
+    L6_sl_d9_ok:v6_1 = L6_sl_d9_ok{ p: @v7_0, z: 1i64 };
+    v6_1.p = @v7_1;
+    L5_sl_d9_ok:v5_0 = L5_sl_d9_ok{ p: @v6_0, z: 1i64 };
+    v5_0.p = @v6_1;
+    L5_sl_d9_ok:v5_1 = L5_sl_d9_ok{ p: @v6_0, z: 1i64 };
+    v5_1.p = @v6_1;
+    L4_sl_d9_ok:v4_0 = L4_sl_d9_ok{ p: @v5_0, z: 1i64 };
+    v4_0.p = @v5_1;
+    L4_sl_d9_ok:v4_1 = L4_sl_d9_ok{ p: @v5_0, z: 1i64 };
+    v4_1.p = @v5_1;
+    L3_sl_d9_ok:v3_0 = L3_sl_d9_ok{ p: @v4_0, z: 1i64 };
+    v3_0.p = @v4_1;
+    L3_sl_d9_ok:v3_1 = L3_sl_d9_ok{ p: @v4_0, z: 1i64 };
+    v3_1.p = @v4_1;
+    L2_sl_d9_ok:v2_0 = L2_sl_d9_ok{ p: @v3_0, z: 1i64 };
+    v2_0.p = @v3_1;
+    L2_sl_d9_ok:v2_1 = L2_sl_d9_ok{ p: @v3_0, z: 1i64 };
+    v2_1.p = @v3_1;
+    L1_sl_d9_ok:v1_0 = L1_sl_d9_ok{ p: @v2_0, z: 1i64 };
+    v1_0.p = @v2_1;
+    LF_sl_d9_ok:m3 = LF_sl_d9_ok{ own: raw mk_sl_d9_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_sl_d9_ok(@v1_0));
+    pass (<-e) + 6i64;
+};
+func:cell_main_sl_d9_ok = int32() never fails { pass (((raw f_sl_d9_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat AR's cells, closed by RB-1m (`r2f_hq3_wa` and its
+// twins, l.19728), `Team/TMP/atk-177d2d-r34-2026-11-19/cells/wr_nr/r2f_hq3_wa_nr_ok.npk`.
+struct:K_r2f_hq3_wa_nr_ok = { int64:k; };
+struct:H_r2f_hq3_wa_nr_ok = { List<int64>:l; int64:k; K_r2f_hq3_wa_nr_ok:kk; };
+func:mk_r2f_hq3_wa_nr_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_r2f_hq3_wa_nr_ok = H_r2f_hq3_wa_nr_ok() never fails { pass H_r2f_hq3_wa_nr_ok{ l: raw mk_r2f_hq3_wa_nr_ok(), k: 2i64, kk: K_r2f_hq3_wa_nr_ok{ k: 3i64 } }; };
+func:growh_r2f_hq3_wa_nr_ok = int64(H_r2f_hq3_wa_nr_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_r2f_hq3_wa_nr_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_r2f_hq3_wa_nr_ok = int64->(H_r2f_hq3_wa_nr_ok->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_r2f_hq3_wa_nr_ok = H_r2f_hq3_wa_nr_ok->(H_r2f_hq3_wa_nr_ok->:q) never fails { pass q; };
+func:getl_r2f_hq3_wa_nr_ok = List<int64>->(H_r2f_hq3_wa_nr_ok->:w) never fails { pass @w.l; };
+struct:HPO_r2f_hq3_wa_nr_ok = { H_r2f_hq3_wa_nr_ok->:lp; List<int64>:own; };
+struct:SQ_r2f_hq3_wa_nr_ok = { HPO_r2f_hq3_wa_nr_ok->:q; int64:z; };
+struct:SR_r2f_hq3_wa_nr_ok = { SQ_r2f_hq3_wa_nr_ok->:sq; int64:z; };
+struct:SL_r2f_hq3_wa_nr_ok = { List<int64>->:l; int64:z; };
+struct:SL2_r2f_hq3_wa_nr_ok = { SL_r2f_hq3_wa_nr_ok:s; int64:z; };
+struct:SLP_r2f_hq3_wa_nr_ok = { SL_r2f_hq3_wa_nr_ok->:sp; int64:z; };
+struct:SQB_r2f_hq3_wa_nr_ok = { HPO_r2f_hq3_wa_nr_ok->:q; int64:z; };
+struct:HPB_r2f_hq3_wa_nr_ok = { H_r2f_hq3_wa_nr_ok->:lp; List<int64>:own; };
+struct:PV_r2f_hq3_wa_nr_ok = { H_r2f_hq3_wa_nr_ok->:p; int64:v; };
+struct:HPV_r2f_hq3_wa_nr_ok = { H_r2f_hq3_wa_nr_ok->:lp; List<PV_r2f_hq3_wa_nr_ok>:own; };
+struct:SLV_r2f_hq3_wa_nr_ok = { List<PV_r2f_hq3_wa_nr_ok>->:l; int64:z; };
+struct:SQV_r2f_hq3_wa_nr_ok = { HPV_r2f_hq3_wa_nr_ok->:q; int64:z; };
+func:getown_r2f_hq3_wa_nr_ok = List<int64>->(HPO_r2f_hq3_wa_nr_ok->:w) never fails { pass @w.own; };
+func:getownv_r2f_hq3_wa_nr_ok = List<PV_r2f_hq3_wa_nr_ok>->(HPV_r2f_hq3_wa_nr_ok->:w) never fails { pass @w.own; };
+func:mkv_r2f_hq3_wa_nr_ok = List<PV_r2f_hq3_wa_nr_ok>(H_r2f_hq3_wa_nr_ok->:h) never fails { List<PV_r2f_hq3_wa_nr_ok>:l = raw list_init::<PV_r2f_hq3_wa_nr_ok>(1i64); drop list_push(@l, PV_r2f_hq3_wa_nr_ok{ p: h, v: 1i64 }); pass l; };
+func:idp_r2f_hq3_wa_nr_ok = HPO_r2f_hq3_wa_nr_ok->(HPO_r2f_hq3_wa_nr_ok->:w) never fails { pass w; };
+func:cvq_r2f_hq3_wa_nr_ok = SQ_r2f_hq3_wa_nr_ok->(SQB_r2f_hq3_wa_nr_ok->:b) never fails { pass ((b =>! any->) =>! SQ_r2f_hq3_wa_nr_ok->); };
+func:put_r2f_hq3_wa_nr_ok = int64(HPO_r2f_hq3_wa_nr_ok->:p, H_r2f_hq3_wa_nr_ok->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_r2f_hq3_wa_nr_ok = { SQ_r2f_hq3_wa_nr_ok->:sq; int64:z; };
+struct:ST_r2f_hq3_wa_nr_ok = { SR_r2f_hq3_wa_nr_ok->:sr; int64:z; };
+struct:SPP_r2f_hq3_wa_nr_ok = { HPO_r2f_hq3_wa_nr_ok->->:qq; int64:z; };
+struct:SPPP_r2f_hq3_wa_nr_ok = { HPO_r2f_hq3_wa_nr_ok->->->:qqq; int64:z; };
+struct:SQX_r2f_hq3_wa_nr_ok = { HPB_r2f_hq3_wa_nr_ok->:q; int64:z; };
+struct:HN_r2f_hq3_wa_nr_ok = { int64:a; int64:b; };
+struct:SN_r2f_hq3_wa_nr_ok = { HN_r2f_hq3_wa_nr_ok->:q; int64:z; };
+struct:SA_r2f_hq3_wa_nr_ok = { any->:q; int64:z; };
+func:put2_r2f_hq3_wa_nr_ok = int64(SQ_r2f_hq3_wa_nr_ok->:p, H_r2f_hq3_wa_nr_ok->:v) never fails { (<-((<-p).q)).lp = v; pass 7i64; };
+func:getq_r2f_hq3_wa_nr_ok = HPO_r2f_hq3_wa_nr_ok->(SQ_r2f_hq3_wa_nr_ok->:w) never fails { pass (<-w).q; };
+func:putgrow_r2f_hq3_wa_nr_ok = int64(HPO_r2f_hq3_wa_nr_ok->:p, H_r2f_hq3_wa_nr_ok->:v) never fails { p.lp = v; loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:mksq_r2f_hq3_wa_nr_ok = SQ_r2f_hq3_wa_nr_ok(HPO_r2f_hq3_wa_nr_ok->:p) never fails { pass SQ_r2f_hq3_wa_nr_ok{ q: p, z: 1i64 }; };
+func:cpsq_r2f_hq3_wa_nr_ok = SQ_r2f_hq3_wa_nr_ok(SQ_r2f_hq3_wa_nr_ok->:w) never fails { pass SQ_r2f_hq3_wa_nr_ok{ q: (<-w).q, z: 2i64 }; };
+struct:SO_r2f_hq3_wa_nr_ok = { HPO_r2f_hq3_wa_nr_ok->?:oq; int64:z; };
+struct:SRO_r2f_hq3_wa_nr_ok = { SO_r2f_hq3_wa_nr_ok->:so; int64:z; };
+func:setp_r2f_hq3_wa_nr_ok = int64(HPO_r2f_hq3_wa_nr_ok->->:sp, HPO_r2f_hq3_wa_nr_ok->:v) never fails { <-sp = v; pass 7i64; };
+func:idpp_r2f_hq3_wa_nr_ok = HPO_r2f_hq3_wa_nr_ok->->(HPO_r2f_hq3_wa_nr_ok->->:p) never fails { pass p; };
+func:put2pp_r2f_hq3_wa_nr_ok = int64(HPO_r2f_hq3_wa_nr_ok->->:pp, H_r2f_hq3_wa_nr_ok->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
+func:getqq_r2f_hq3_wa_nr_ok = HPO_r2f_hq3_wa_nr_ok->->(SPP_r2f_hq3_wa_nr_ok->:w) never fails { pass w.qq; };
+func:po1_r2f_hq3_wa_nr_ok = int64(HPO_r2f_hq3_wa_nr_ok->:p) never fails { p.own = raw mk_r2f_hq3_wa_nr_ok(); pass 7i64; };
+func:po2_r2f_hq3_wa_nr_ok = int64(HPO_r2f_hq3_wa_nr_ok->->:p) never fails { (<-(<-p)).own = raw mk_r2f_hq3_wa_nr_ok(); pass 7i64; };
+func:pv1_r2f_hq3_wa_nr_ok = int64(HPO_r2f_hq3_wa_nr_ok->:p, H_r2f_hq3_wa_nr_ok->:v) never fails { p.lp = v; pass 7i64; };
+func:pv2_r2f_hq3_wa_nr_ok = int64(HPO_r2f_hq3_wa_nr_ok->->:p, H_r2f_hq3_wa_nr_ok->:v) never fails { (<-(<-p)).lp = v; pass 7i64; };
+func:ps1_r2f_hq3_wa_nr_ok = int64(HPO_r2f_hq3_wa_nr_ok->->:sp, HPO_r2f_hq3_wa_nr_ok->:x) never fails { <-sp = x; pass 7i64; };
+func:pq1_r2f_hq3_wa_nr_ok = int64(SQ_r2f_hq3_wa_nr_ok->:s) never fails { (<-((<-s).q)).own = raw mk_r2f_hq3_wa_nr_ok(); pass 7i64; };
+func:pqv_r2f_hq3_wa_nr_ok = int64(SQ_r2f_hq3_wa_nr_ok->:s, H_r2f_hq3_wa_nr_ok->:v) never fails { (<-((<-s).q)).lp = v; pass 7i64; };
+func:pp1_r2f_hq3_wa_nr_ok = int64(SPP_r2f_hq3_wa_nr_ok->:s) never fails { (<-(<-((<-s).qq))).own = raw mk_r2f_hq3_wa_nr_ok(); pass 7i64; };
+func:ppv_r2f_hq3_wa_nr_ok = int64(SPP_r2f_hq3_wa_nr_ok->:s, H_r2f_hq3_wa_nr_ok->:v) never fails { (<-(<-((<-s).qq))).lp = v; pass 7i64; };
+func:W1_r2f_hq3_wa_nr_ok = int64(HPO_r2f_hq3_wa_nr_ok->->:pp, H_r2f_hq3_wa_nr_ok->:v) never fails { SPP_r2f_hq3_wa_nr_ok:s = SPP_r2f_hq3_wa_nr_ok{ qq: pp, z: 1i64 }; discard(raw pp1_r2f_hq3_wa_nr_ok(@s)); pass 7i64; };
+func:W_r2f_hq3_wa_nr_ok = int64(HPO_r2f_hq3_wa_nr_ok->->:pp, H_r2f_hq3_wa_nr_ok->:v) never fails { SPP_r2f_hq3_wa_nr_ok:s = SPP_r2f_hq3_wa_nr_ok{ qq: pp, z: 1i64 }; discard(raw pp1_r2f_hq3_wa_nr_ok(@s)); pass 7i64; };
+func:gx_r2f_hq3_wa_nr_ok = int64(HPO_r2f_hq3_wa_nr_ok->:pp, HPO_r2f_hq3_wa_nr_ok->:p2, HPO_r2f_hq3_wa_nr_ok->:p3, H_r2f_hq3_wa_nr_ok->:v, int64:n) never fails { HPO_r2f_hq3_wa_nr_ok->->:q0 = @pp; HPO_r2f_hq3_wa_nr_ok->->:r = @(<-q0); discard(raw W_r2f_hq3_wa_nr_ok(r, v)); pass 7i64; };
+func:g_r2f_hq3_wa_nr_ok = int64(H_r2f_hq3_wa_nr_ok->:h0p, H_r2f_hq3_wa_nr_ok->:hq, H_r2f_hq3_wa_nr_ok->:hz, int64:n) never fails {
+    int64->:e = raw fp_r2f_hq3_wa_nr_ok(hz);
+    HPO_r2f_hq3_wa_nr_ok:m = HPO_r2f_hq3_wa_nr_ok{ lp: h0p, own: raw mk_r2f_hq3_wa_nr_ok() };
+    HPO_r2f_hq3_wa_nr_ok:m0 = HPO_r2f_hq3_wa_nr_ok{ lp: h0p, own: raw mk_r2f_hq3_wa_nr_ok() };
+    HPO_r2f_hq3_wa_nr_ok:m3 = HPO_r2f_hq3_wa_nr_ok{ lp: h0p, own: raw mk_r2f_hq3_wa_nr_ok() };
+    discard(raw gx_r2f_hq3_wa_nr_ok(@m, @m0, @m3, hq, n));
+    pass (<-e) + 6i64;
+};
+func:f_r2f_hq3_wa_nr_ok = int64(int64:n) never fails {
+    H_r2f_hq3_wa_nr_ok:hz = raw mkh_r2f_hq3_wa_nr_ok(); H_r2f_hq3_wa_nr_ok:h0 = raw mkh_r2f_hq3_wa_nr_ok(); H_r2f_hq3_wa_nr_ok:h2 = raw mkh_r2f_hq3_wa_nr_ok();
+    pass raw g_r2f_hq3_wa_nr_ok(@h0, @h2, @hz, n);
+};
+func:cell_main_r2f_hq3_wa_nr_ok = int32() never fails { pass (((raw f_r2f_hq3_wa_nr_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat AR's cells, closed by RB-1m (`r2f_hq3_wa` and its
+// twins, l.19728), `Team/TMP/atk-177d2d-r34-2026-11-19/cells/wr_r2ftw/r2f_hq3_wa_a1_ok.npk`.
+struct:K_r2f_hq3_wa_a1_ok = { int64:k; };
+struct:H_r2f_hq3_wa_a1_ok = { List<int64>:l; int64:k; K_r2f_hq3_wa_a1_ok:kk; };
+func:mk_r2f_hq3_wa_a1_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_r2f_hq3_wa_a1_ok = H_r2f_hq3_wa_a1_ok() never fails { pass H_r2f_hq3_wa_a1_ok{ l: raw mk_r2f_hq3_wa_a1_ok(), k: 2i64, kk: K_r2f_hq3_wa_a1_ok{ k: 3i64 } }; };
+func:growh_r2f_hq3_wa_a1_ok = int64(H_r2f_hq3_wa_a1_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_r2f_hq3_wa_a1_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_r2f_hq3_wa_a1_ok = int64->(H_r2f_hq3_wa_a1_ok->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_r2f_hq3_wa_a1_ok = H_r2f_hq3_wa_a1_ok->(H_r2f_hq3_wa_a1_ok->:q) never fails { pass q; };
+func:getl_r2f_hq3_wa_a1_ok = List<int64>->(H_r2f_hq3_wa_a1_ok->:w) never fails { pass @w.l; };
+struct:HPO_r2f_hq3_wa_a1_ok = { H_r2f_hq3_wa_a1_ok->:lp; List<int64>:own; };
+struct:SQ_r2f_hq3_wa_a1_ok = { HPO_r2f_hq3_wa_a1_ok->:q; int64:z; };
+struct:SR_r2f_hq3_wa_a1_ok = { SQ_r2f_hq3_wa_a1_ok->:sq; int64:z; };
+struct:SL_r2f_hq3_wa_a1_ok = { List<int64>->:l; int64:z; };
+struct:SL2_r2f_hq3_wa_a1_ok = { SL_r2f_hq3_wa_a1_ok:s; int64:z; };
+struct:SLP_r2f_hq3_wa_a1_ok = { SL_r2f_hq3_wa_a1_ok->:sp; int64:z; };
+struct:SQB_r2f_hq3_wa_a1_ok = { HPO_r2f_hq3_wa_a1_ok->:q; int64:z; };
+struct:HPB_r2f_hq3_wa_a1_ok = { H_r2f_hq3_wa_a1_ok->:lp; List<int64>:own; };
+struct:PV_r2f_hq3_wa_a1_ok = { H_r2f_hq3_wa_a1_ok->:p; int64:v; };
+struct:HPV_r2f_hq3_wa_a1_ok = { H_r2f_hq3_wa_a1_ok->:lp; List<PV_r2f_hq3_wa_a1_ok>:own; };
+struct:SLV_r2f_hq3_wa_a1_ok = { List<PV_r2f_hq3_wa_a1_ok>->:l; int64:z; };
+struct:SQV_r2f_hq3_wa_a1_ok = { HPV_r2f_hq3_wa_a1_ok->:q; int64:z; };
+func:getown_r2f_hq3_wa_a1_ok = List<int64>->(HPO_r2f_hq3_wa_a1_ok->:w) never fails { pass @w.own; };
+func:getownv_r2f_hq3_wa_a1_ok = List<PV_r2f_hq3_wa_a1_ok>->(HPV_r2f_hq3_wa_a1_ok->:w) never fails { pass @w.own; };
+func:mkv_r2f_hq3_wa_a1_ok = List<PV_r2f_hq3_wa_a1_ok>(H_r2f_hq3_wa_a1_ok->:h) never fails { List<PV_r2f_hq3_wa_a1_ok>:l = raw list_init::<PV_r2f_hq3_wa_a1_ok>(1i64); drop list_push(@l, PV_r2f_hq3_wa_a1_ok{ p: h, v: 1i64 }); pass l; };
+func:idp_r2f_hq3_wa_a1_ok = HPO_r2f_hq3_wa_a1_ok->(HPO_r2f_hq3_wa_a1_ok->:w) never fails { pass w; };
+func:cvq_r2f_hq3_wa_a1_ok = SQ_r2f_hq3_wa_a1_ok->(SQB_r2f_hq3_wa_a1_ok->:b) never fails { pass ((b =>! any->) =>! SQ_r2f_hq3_wa_a1_ok->); };
+func:put_r2f_hq3_wa_a1_ok = int64(HPO_r2f_hq3_wa_a1_ok->:p, H_r2f_hq3_wa_a1_ok->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_r2f_hq3_wa_a1_ok = { SQ_r2f_hq3_wa_a1_ok->:sq; int64:z; };
+struct:ST_r2f_hq3_wa_a1_ok = { SR_r2f_hq3_wa_a1_ok->:sr; int64:z; };
+struct:SPP_r2f_hq3_wa_a1_ok = { HPO_r2f_hq3_wa_a1_ok->->:qq; int64:z; };
+struct:SPPP_r2f_hq3_wa_a1_ok = { HPO_r2f_hq3_wa_a1_ok->->->:qqq; int64:z; };
+struct:SQX_r2f_hq3_wa_a1_ok = { HPB_r2f_hq3_wa_a1_ok->:q; int64:z; };
+struct:HN_r2f_hq3_wa_a1_ok = { int64:a; int64:b; };
+struct:SN_r2f_hq3_wa_a1_ok = { HN_r2f_hq3_wa_a1_ok->:q; int64:z; };
+struct:SA_r2f_hq3_wa_a1_ok = { any->:q; int64:z; };
+func:put2_r2f_hq3_wa_a1_ok = int64(SQ_r2f_hq3_wa_a1_ok->:p, H_r2f_hq3_wa_a1_ok->:v) never fails { (<-((<-p).q)).lp = v; pass 7i64; };
+func:getq_r2f_hq3_wa_a1_ok = HPO_r2f_hq3_wa_a1_ok->(SQ_r2f_hq3_wa_a1_ok->:w) never fails { pass (<-w).q; };
+func:putgrow_r2f_hq3_wa_a1_ok = int64(HPO_r2f_hq3_wa_a1_ok->:p, H_r2f_hq3_wa_a1_ok->:v) never fails { p.lp = v; loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:mksq_r2f_hq3_wa_a1_ok = SQ_r2f_hq3_wa_a1_ok(HPO_r2f_hq3_wa_a1_ok->:p) never fails { pass SQ_r2f_hq3_wa_a1_ok{ q: p, z: 1i64 }; };
+func:cpsq_r2f_hq3_wa_a1_ok = SQ_r2f_hq3_wa_a1_ok(SQ_r2f_hq3_wa_a1_ok->:w) never fails { pass SQ_r2f_hq3_wa_a1_ok{ q: (<-w).q, z: 2i64 }; };
+struct:SO_r2f_hq3_wa_a1_ok = { HPO_r2f_hq3_wa_a1_ok->?:oq; int64:z; };
+struct:SRO_r2f_hq3_wa_a1_ok = { SO_r2f_hq3_wa_a1_ok->:so; int64:z; };
+func:setp_r2f_hq3_wa_a1_ok = int64(HPO_r2f_hq3_wa_a1_ok->->:sp, HPO_r2f_hq3_wa_a1_ok->:v) never fails { <-sp = v; pass 7i64; };
+func:idpp_r2f_hq3_wa_a1_ok = HPO_r2f_hq3_wa_a1_ok->->(HPO_r2f_hq3_wa_a1_ok->->:p) never fails { pass p; };
+func:put2pp_r2f_hq3_wa_a1_ok = int64(HPO_r2f_hq3_wa_a1_ok->->:pp, H_r2f_hq3_wa_a1_ok->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
+func:getqq_r2f_hq3_wa_a1_ok = HPO_r2f_hq3_wa_a1_ok->->(SPP_r2f_hq3_wa_a1_ok->:w) never fails { pass w.qq; };
+func:po1_r2f_hq3_wa_a1_ok = int64(HPO_r2f_hq3_wa_a1_ok->:p) never fails { p.own = raw mk_r2f_hq3_wa_a1_ok(); pass 7i64; };
+func:po2_r2f_hq3_wa_a1_ok = int64(HPO_r2f_hq3_wa_a1_ok->->:p) never fails { (<-(<-p)).own = raw mk_r2f_hq3_wa_a1_ok(); pass 7i64; };
+func:pv1_r2f_hq3_wa_a1_ok = int64(HPO_r2f_hq3_wa_a1_ok->:p, H_r2f_hq3_wa_a1_ok->:v) never fails { p.lp = v; pass 7i64; };
+func:pv2_r2f_hq3_wa_a1_ok = int64(HPO_r2f_hq3_wa_a1_ok->->:p, H_r2f_hq3_wa_a1_ok->:v) never fails { (<-(<-p)).lp = v; pass 7i64; };
+func:ps1_r2f_hq3_wa_a1_ok = int64(HPO_r2f_hq3_wa_a1_ok->->:sp, HPO_r2f_hq3_wa_a1_ok->:x) never fails { <-sp = x; pass 7i64; };
+func:pq1_r2f_hq3_wa_a1_ok = int64(SQ_r2f_hq3_wa_a1_ok->:s) never fails { (<-((<-s).q)).own = raw mk_r2f_hq3_wa_a1_ok(); pass 7i64; };
+func:pqv_r2f_hq3_wa_a1_ok = int64(SQ_r2f_hq3_wa_a1_ok->:s, H_r2f_hq3_wa_a1_ok->:v) never fails { (<-((<-s).q)).lp = v; pass 7i64; };
+func:pp1_r2f_hq3_wa_a1_ok = int64(SPP_r2f_hq3_wa_a1_ok->:s) never fails { (<-(<-((<-s).qq))).own = raw mk_r2f_hq3_wa_a1_ok(); pass 7i64; };
+func:ppv_r2f_hq3_wa_a1_ok = int64(SPP_r2f_hq3_wa_a1_ok->:s, H_r2f_hq3_wa_a1_ok->:v) never fails { (<-(<-((<-s).qq))).lp = v; pass 7i64; };
+func:W1_r2f_hq3_wa_a1_ok = int64(HPO_r2f_hq3_wa_a1_ok->->:pp, H_r2f_hq3_wa_a1_ok->:v) never fails { SPP_r2f_hq3_wa_a1_ok:s = SPP_r2f_hq3_wa_a1_ok{ qq: pp, z: 1i64 }; discard(raw pp1_r2f_hq3_wa_a1_ok(@s)); pass 7i64; };
+func:W_r2f_hq3_wa_a1_ok = int64(HPO_r2f_hq3_wa_a1_ok->->:pp, H_r2f_hq3_wa_a1_ok->:v) never fails { SPP_r2f_hq3_wa_a1_ok:s = SPP_r2f_hq3_wa_a1_ok{ qq: pp, z: 1i64 }; discard(raw pp1_r2f_hq3_wa_a1_ok(@s)); pass 7i64; };
+func:gx_r2f_hq3_wa_a1_ok = int64(HPO_r2f_hq3_wa_a1_ok->:pp, HPO_r2f_hq3_wa_a1_ok->:p2, HPO_r2f_hq3_wa_a1_ok->:p3, H_r2f_hq3_wa_a1_ok->:v, int64:n) never fails { pp = p2; HPO_r2f_hq3_wa_a1_ok->->:q0 = @pp; HPO_r2f_hq3_wa_a1_ok->->:r = @(<-q0); discard(raw W_r2f_hq3_wa_a1_ok(r, v)); pass 7i64; };
+func:g_r2f_hq3_wa_a1_ok = int64(H_r2f_hq3_wa_a1_ok->:h0p, H_r2f_hq3_wa_a1_ok->:hq, H_r2f_hq3_wa_a1_ok->:hz, int64:n) never fails {
+    int64->:e = raw fp_r2f_hq3_wa_a1_ok(hz);
+    HPO_r2f_hq3_wa_a1_ok:m = HPO_r2f_hq3_wa_a1_ok{ lp: h0p, own: raw mk_r2f_hq3_wa_a1_ok() };
+    HPO_r2f_hq3_wa_a1_ok:m0 = HPO_r2f_hq3_wa_a1_ok{ lp: h0p, own: raw mk_r2f_hq3_wa_a1_ok() };
+    HPO_r2f_hq3_wa_a1_ok:m3 = HPO_r2f_hq3_wa_a1_ok{ lp: h0p, own: raw mk_r2f_hq3_wa_a1_ok() };
+    discard(raw gx_r2f_hq3_wa_a1_ok(@m0, @m, @m3, hq, n));
+    pass (<-e) + 6i64;
+};
+func:f_r2f_hq3_wa_a1_ok = int64(int64:n) never fails {
+    H_r2f_hq3_wa_a1_ok:hz = raw mkh_r2f_hq3_wa_a1_ok(); H_r2f_hq3_wa_a1_ok:h0 = raw mkh_r2f_hq3_wa_a1_ok(); H_r2f_hq3_wa_a1_ok:h2 = raw mkh_r2f_hq3_wa_a1_ok();
+    pass raw g_r2f_hq3_wa_a1_ok(@h0, @h2, @hz, n);
+};
+func:cell_main_r2f_hq3_wa_a1_ok = int32() never fails { pass (((raw f_r2f_hq3_wa_a1_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From seat A4's plain-pointer faces, closed by RB-1m (l.19728),
+// `Team/TMP/plan-177d2d-r4c-2026-11-19/cells/a4/b2/a4_pf_s_ok.npk`.
+struct:K_a4_pf_s_ok = { int64:k; };
+struct:H_a4_pf_s_ok = { List<int64>:l; int64:k; K_a4_pf_s_ok:kk; };
+func:mk_a4_pf_s_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_a4_pf_s_ok = H_a4_pf_s_ok() never fails { pass H_a4_pf_s_ok{ l: raw mk_a4_pf_s_ok(), k: 2i64, kk: K_a4_pf_s_ok{ k: 3i64 } }; };
+func:growh_a4_pf_s_ok = int64(H_a4_pf_s_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_a4_pf_s_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_a4_pf_s_ok = int64->(H_a4_pf_s_ok->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_a4_pf_s_ok = { H_a4_pf_s_ok->:lp; List<int64>:own; };
+func:growp_a4_pf_s_ok = int64(HPO_a4_pf_s_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:growo_a4_pf_s_ok = int64(HPO_a4_pf_s_ok->?:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ??! E5)).own), 1i64); } pass 7i64; };
+func:growr_a4_pf_s_ok = int64(Result<HPO_a4_pf_s_ok->>:r) never fails { if (r.is_error) { pass 7i64; } loop(0i64, 64i64, 1i64) { drop list_push(@((<-(r.value)).own), 1i64); } pass 7i64; };
+func:mknone_a4_pf_s_ok = HPO_a4_pf_s_ok->?() never fails { pass NIL; };
+struct:SR1_a4_pf_s_ok = { Result<HPO_a4_pf_s_ok->>:q; List<int64>:own; };
+func:gw_a4_pf_s_ok = int64(SR1_a4_pf_s_ok->:p, HPO_a4_pf_s_ok->:d) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-p).q ?| d)).own), 1i64); } pass 7i64; };
+func:f_a4_pf_s_ok = int64(int64:n) never fails {
+    H_a4_pf_s_ok:h0 = raw mkh_a4_pf_s_ok();
+    HPO_a4_pf_s_ok:m = HPO_a4_pf_s_ok{ lp: @h0, own: raw mk_a4_pf_s_ok() };
+    HPO_a4_pf_s_ok:m0 = HPO_a4_pf_s_ok{ lp: @h0, own: raw mk_a4_pf_s_ok() };
+    Result<HPO_a4_pf_s_ok->>:rq = Result{ value: @m };
+    SR1_a4_pf_s_ok:s = SR1_a4_pf_s_ok{ q: rq, own: raw mk_a4_pf_s_ok() };
+    discard(raw gw_a4_pf_s_ok(@s, @m0));
+    int64->:e = @(m.own[0i64]);
+    pass (<-e) + 6i64;
+};
+func:cell_main_a4_pf_s_ok = int32() never fails { pass (((raw f_a4_pf_s_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rb_v00_ok.npk`.
+func:mk_rb_v00_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rb_v00_ok = { List<int64>:own; int64:z; };
+struct:MM_rb_v00_ok = { LF_rb_v00_ok->:r; LF_rb_v00_ok:lf; int64:z; };
+struct:B_rb_v00_ok = { MM_rb_v00_ok->:r; int64:z; };
+struct:A_rb_v00_ok = { B_rb_v00_ok->:q; MM_rb_v00_ok:inner; int64:z; };
+func:gb_rb_v00_ok = int64(A_rb_v00_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:f_rb_v00_ok = int64(int64:n) never fails {
+    LF_rb_v00_ok:fz = LF_rb_v00_ok{ own: raw mk_rb_v00_ok(), z: 1i64 };
+    MM_rb_v00_ok:mm = MM_rb_v00_ok{ r: @fz, lf: LF_rb_v00_ok{ own: raw mk_rb_v00_ok(), z: 1i64 }, z: 1i64 };
+    B_rb_v00_ok:b = B_rb_v00_ok{ r: @mm, z: 1i64 };
+    A_rb_v00_ok:a = A_rb_v00_ok{ q: @b, inner: MM_rb_v00_ok{ r: @fz, lf: LF_rb_v00_ok{ own: raw mk_rb_v00_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    b.r = @a.inner;
+    LF_rb_v00_ok:m3 = LF_rb_v00_ok{ own: raw mk_rb_v00_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_rb_v00_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rb_v00_ok = int32() never fails { pass (((raw f_rb_v00_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rb_v01_ok.npk`.
+func:mk_rb_v01_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rb_v01_ok = { List<int64>:own; int64:z; };
+struct:MM_rb_v01_ok = { LF_rb_v01_ok->:r; LF_rb_v01_ok:lf; int64:z; };
+struct:B_rb_v01_ok = { MM_rb_v01_ok->:r; int64:z; };
+struct:A_rb_v01_ok = { B_rb_v01_ok->:q; MM_rb_v01_ok:inner; int64:z; };
+func:gb_rb_v01_ok = int64(A_rb_v01_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:f_rb_v01_ok = int64(int64:n) never fails {
+    LF_rb_v01_ok:fz = LF_rb_v01_ok{ own: raw mk_rb_v01_ok(), z: 1i64 };
+    MM_rb_v01_ok:mm = MM_rb_v01_ok{ r: @fz, lf: LF_rb_v01_ok{ own: raw mk_rb_v01_ok(), z: 1i64 }, z: 1i64 };
+    B_rb_v01_ok:b = B_rb_v01_ok{ r: @mm, z: 1i64 };
+    A_rb_v01_ok:a = A_rb_v01_ok{ q: @b, inner: MM_rb_v01_ok{ r: @fz, lf: LF_rb_v01_ok{ own: raw mk_rb_v01_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    A_rb_v01_ok->:ap = @a; b.r = @((<-ap).inner);
+    LF_rb_v01_ok:m3 = LF_rb_v01_ok{ own: raw mk_rb_v01_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_rb_v01_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rb_v01_ok = int32() never fails { pass (((raw f_rb_v01_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rb_v02_ok.npk`.
+func:mk_rb_v02_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rb_v02_ok = { List<int64>:own; int64:z; };
+struct:MM_rb_v02_ok = { LF_rb_v02_ok->:r; LF_rb_v02_ok:lf; int64:z; };
+struct:B_rb_v02_ok = { MM_rb_v02_ok->:r; int64:z; };
+struct:A_rb_v02_ok = { B_rb_v02_ok->:q; MM_rb_v02_ok:inner; int64:z; };
+func:gb_rb_v02_ok = int64(A_rb_v02_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:f_rb_v02_ok = int64(int64:n) never fails {
+    LF_rb_v02_ok:fz = LF_rb_v02_ok{ own: raw mk_rb_v02_ok(), z: 1i64 };
+    MM_rb_v02_ok:mm = MM_rb_v02_ok{ r: @fz, lf: LF_rb_v02_ok{ own: raw mk_rb_v02_ok(), z: 1i64 }, z: 1i64 };
+    B_rb_v02_ok:b = B_rb_v02_ok{ r: @mm, z: 1i64 };
+    A_rb_v02_ok:a = A_rb_v02_ok{ q: @b, inner: MM_rb_v02_ok{ r: @fz, lf: LF_rb_v02_ok{ own: raw mk_rb_v02_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    A_rb_v02_ok->:ap = @a; A_rb_v02_ok->->:app = @ap; b.r = @((<-(<-app)).inner);
+    LF_rb_v02_ok:m3 = LF_rb_v02_ok{ own: raw mk_rb_v02_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_rb_v02_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rb_v02_ok = int32() never fails { pass (((raw f_rb_v02_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rb_v03_ok.npk`.
+func:mk_rb_v03_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rb_v03_ok = { List<int64>:own; int64:z; };
+struct:MM_rb_v03_ok = { LF_rb_v03_ok->:r; LF_rb_v03_ok:lf; int64:z; };
+struct:B_rb_v03_ok = { MM_rb_v03_ok->:r; int64:z; };
+struct:A_rb_v03_ok = { B_rb_v03_ok->:q; MM_rb_v03_ok:inner; int64:z; };
+func:gb_rb_v03_ok = int64(A_rb_v03_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+struct:H_rb_v03_ok = { A_rb_v03_ok->:pa; int64:z; };
+func:f_rb_v03_ok = int64(int64:n) never fails {
+    LF_rb_v03_ok:fz = LF_rb_v03_ok{ own: raw mk_rb_v03_ok(), z: 1i64 };
+    MM_rb_v03_ok:mm = MM_rb_v03_ok{ r: @fz, lf: LF_rb_v03_ok{ own: raw mk_rb_v03_ok(), z: 1i64 }, z: 1i64 };
+    B_rb_v03_ok:b = B_rb_v03_ok{ r: @mm, z: 1i64 };
+    A_rb_v03_ok:a = A_rb_v03_ok{ q: @b, inner: MM_rb_v03_ok{ r: @fz, lf: LF_rb_v03_ok{ own: raw mk_rb_v03_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    H_rb_v03_ok:h = H_rb_v03_ok{ pa: @a, z: 1i64 }; b.r = @((<-(h.pa)).inner);
+    LF_rb_v03_ok:m3 = LF_rb_v03_ok{ own: raw mk_rb_v03_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_rb_v03_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rb_v03_ok = int32() never fails { pass (((raw f_rb_v03_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rb_v04_ok.npk`.
+func:mk_rb_v04_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rb_v04_ok = { List<int64>:own; int64:z; };
+struct:MM_rb_v04_ok = { LF_rb_v04_ok->:r; LF_rb_v04_ok:lf; int64:z; };
+struct:B_rb_v04_ok = { MM_rb_v04_ok->:r; int64:z; };
+struct:A_rb_v04_ok = { B_rb_v04_ok->:q; MM_rb_v04_ok:inner; int64:z; };
+func:gb_rb_v04_ok = int64(A_rb_v04_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+struct:H_rb_v04_ok = { A_rb_v04_ok->:pa; int64:z; };
+func:f_rb_v04_ok = int64(int64:n) never fails {
+    LF_rb_v04_ok:fz = LF_rb_v04_ok{ own: raw mk_rb_v04_ok(), z: 1i64 };
+    MM_rb_v04_ok:mm = MM_rb_v04_ok{ r: @fz, lf: LF_rb_v04_ok{ own: raw mk_rb_v04_ok(), z: 1i64 }, z: 1i64 };
+    B_rb_v04_ok:b = B_rb_v04_ok{ r: @mm, z: 1i64 };
+    A_rb_v04_ok:a = A_rb_v04_ok{ q: @b, inner: MM_rb_v04_ok{ r: @fz, lf: LF_rb_v04_ok{ own: raw mk_rb_v04_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    H_rb_v04_ok:h = H_rb_v04_ok{ pa: @a, z: 1i64 }; H_rb_v04_ok->:hp = @h; b.r = @((<-((<-hp).pa)).inner);
+    LF_rb_v04_ok:m3 = LF_rb_v04_ok{ own: raw mk_rb_v04_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_rb_v04_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rb_v04_ok = int32() never fails { pass (((raw f_rb_v04_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rb_v05_ok.npk`.
+func:mk_rb_v05_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rb_v05_ok = { List<int64>:own; int64:z; };
+struct:MM_rb_v05_ok = { LF_rb_v05_ok->:r; LF_rb_v05_ok:lf; int64:z; };
+struct:B_rb_v05_ok = { MM_rb_v05_ok->:r; int64:z; };
+struct:A_rb_v05_ok = { B_rb_v05_ok->:q; MM_rb_v05_ok:inner; int64:z; };
+func:gb_rb_v05_ok = int64(A_rb_v05_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:idp_rb_v05_ok = A_rb_v05_ok->(A_rb_v05_ok->:p) never fails { pass p; };
+func:f_rb_v05_ok = int64(int64:n) never fails {
+    LF_rb_v05_ok:fz = LF_rb_v05_ok{ own: raw mk_rb_v05_ok(), z: 1i64 };
+    MM_rb_v05_ok:mm = MM_rb_v05_ok{ r: @fz, lf: LF_rb_v05_ok{ own: raw mk_rb_v05_ok(), z: 1i64 }, z: 1i64 };
+    B_rb_v05_ok:b = B_rb_v05_ok{ r: @mm, z: 1i64 };
+    A_rb_v05_ok:a = A_rb_v05_ok{ q: @b, inner: MM_rb_v05_ok{ r: @fz, lf: LF_rb_v05_ok{ own: raw mk_rb_v05_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    b.r = @((<-(raw idp_rb_v05_ok(@a))).inner);
+    LF_rb_v05_ok:m3 = LF_rb_v05_ok{ own: raw mk_rb_v05_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_rb_v05_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rb_v05_ok = int32() never fails { pass (((raw f_rb_v05_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rb_v06_ok.npk`.
+func:mk_rb_v06_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rb_v06_ok = { List<int64>:own; int64:z; };
+struct:MM_rb_v06_ok = { LF_rb_v06_ok->:r; LF_rb_v06_ok:lf; int64:z; };
+struct:B_rb_v06_ok = { MM_rb_v06_ok->:r; int64:z; };
+struct:A_rb_v06_ok = { B_rb_v06_ok->:q; MM_rb_v06_ok:inner; int64:z; };
+func:gb_rb_v06_ok = int64(A_rb_v06_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:f_rb_v06_ok = int64(int64:n) never fails {
+    LF_rb_v06_ok:fz = LF_rb_v06_ok{ own: raw mk_rb_v06_ok(), z: 1i64 };
+    MM_rb_v06_ok:mm = MM_rb_v06_ok{ r: @fz, lf: LF_rb_v06_ok{ own: raw mk_rb_v06_ok(), z: 1i64 }, z: 1i64 };
+    B_rb_v06_ok:b = B_rb_v06_ok{ r: @mm, z: 1i64 };
+    A_rb_v06_ok:a = A_rb_v06_ok{ q: @b, inner: MM_rb_v06_ok{ r: @fz, lf: LF_rb_v06_ok{ own: raw mk_rb_v06_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    A_rb_v06_ok->:ap = @a; A_rb_v06_ok->[2]:arr = [ap, ap]; b.r = @((<-(arr[0i64])).inner);
+    LF_rb_v06_ok:m3 = LF_rb_v06_ok{ own: raw mk_rb_v06_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_rb_v06_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rb_v06_ok = int32() never fails { pass (((raw f_rb_v06_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rb_v07_ok.npk`.
+func:mk_rb_v07_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rb_v07_ok = { List<int64>:own; int64:z; };
+struct:MM_rb_v07_ok = { LF_rb_v07_ok->:r; LF_rb_v07_ok:lf; int64:z; };
+struct:B_rb_v07_ok = { MM_rb_v07_ok->:r; int64:z; };
+struct:A_rb_v07_ok = { B_rb_v07_ok->:q; MM_rb_v07_ok:inner; int64:z; };
+func:gb_rb_v07_ok = int64(A_rb_v07_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:f_rb_v07_ok = int64(int64:n) never fails {
+    LF_rb_v07_ok:fz = LF_rb_v07_ok{ own: raw mk_rb_v07_ok(), z: 1i64 };
+    MM_rb_v07_ok:mm = MM_rb_v07_ok{ r: @fz, lf: LF_rb_v07_ok{ own: raw mk_rb_v07_ok(), z: 1i64 }, z: 1i64 };
+    B_rb_v07_ok:b = B_rb_v07_ok{ r: @mm, z: 1i64 };
+    A_rb_v07_ok:a = A_rb_v07_ok{ q: @b, inner: MM_rb_v07_ok{ r: @fz, lf: LF_rb_v07_ok{ own: raw mk_rb_v07_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    MM_rb_v07_ok->:mp = @a.inner; b.r = mp;
+    LF_rb_v07_ok:m3 = LF_rb_v07_ok{ own: raw mk_rb_v07_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_rb_v07_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rb_v07_ok = int32() never fails { pass (((raw f_rb_v07_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rb_v08_ok.npk`.
+func:mk_rb_v08_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rb_v08_ok = { List<int64>:own; int64:z; };
+struct:MM_rb_v08_ok = { LF_rb_v08_ok->:r; LF_rb_v08_ok:lf; int64:z; };
+struct:B_rb_v08_ok = { MM_rb_v08_ok->:r; int64:z; };
+struct:A_rb_v08_ok = { B_rb_v08_ok->:q; MM_rb_v08_ok:inner; int64:z; };
+func:gb_rb_v08_ok = int64(A_rb_v08_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:f_rb_v08_ok = int64(int64:n) never fails {
+    LF_rb_v08_ok:fz = LF_rb_v08_ok{ own: raw mk_rb_v08_ok(), z: 1i64 };
+    MM_rb_v08_ok:mm = MM_rb_v08_ok{ r: @fz, lf: LF_rb_v08_ok{ own: raw mk_rb_v08_ok(), z: 1i64 }, z: 1i64 };
+    B_rb_v08_ok:b = B_rb_v08_ok{ r: @mm, z: 1i64 };
+    A_rb_v08_ok:a = A_rb_v08_ok{ q: @b, inner: MM_rb_v08_ok{ r: @fz, lf: LF_rb_v08_ok{ own: raw mk_rb_v08_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    A_rb_v08_ok->:ap = @a; MM_rb_v08_ok->:mp = @((<-ap).inner); b.r = mp;
+    LF_rb_v08_ok:m3 = LF_rb_v08_ok{ own: raw mk_rb_v08_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_rb_v08_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rb_v08_ok = int32() never fails { pass (((raw f_rb_v08_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rb_v09_ok.npk`.
+func:mk_rb_v09_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rb_v09_ok = { List<int64>:own; int64:z; };
+struct:MM_rb_v09_ok = { LF_rb_v09_ok->:r; LF_rb_v09_ok:lf; int64:z; };
+struct:B_rb_v09_ok = { MM_rb_v09_ok->:r; int64:z; };
+struct:A_rb_v09_ok = { B_rb_v09_ok->:q; MM_rb_v09_ok:inner; int64:z; };
+func:gb_rb_v09_ok = int64(A_rb_v09_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:f_rb_v09_ok = int64(int64:n) never fails {
+    LF_rb_v09_ok:fz = LF_rb_v09_ok{ own: raw mk_rb_v09_ok(), z: 1i64 };
+    MM_rb_v09_ok:mm = MM_rb_v09_ok{ r: @fz, lf: LF_rb_v09_ok{ own: raw mk_rb_v09_ok(), z: 1i64 }, z: 1i64 };
+    B_rb_v09_ok:b = B_rb_v09_ok{ r: @mm, z: 1i64 };
+    A_rb_v09_ok:a = A_rb_v09_ok{ q: @b, inner: MM_rb_v09_ok{ r: @fz, lf: LF_rb_v09_ok{ own: raw mk_rb_v09_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    A_rb_v09_ok->:ap = @a; A_rb_v09_ok->->:app = @ap; MM_rb_v09_ok->:mp = @((<-(<-app)).inner); b.r = mp;
+    LF_rb_v09_ok:m3 = LF_rb_v09_ok{ own: raw mk_rb_v09_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_rb_v09_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rb_v09_ok = int32() never fails { pass (((raw f_rb_v09_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rb_v10_ok.npk`.
+func:mk_rb_v10_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rb_v10_ok = { List<int64>:own; int64:z; };
+struct:MM_rb_v10_ok = { LF_rb_v10_ok->:r; LF_rb_v10_ok:lf; int64:z; };
+struct:B_rb_v10_ok = { MM_rb_v10_ok->:r; int64:z; };
+struct:A_rb_v10_ok = { B_rb_v10_ok->:q; MM_rb_v10_ok:inner; int64:z; };
+func:gb_rb_v10_ok = int64(A_rb_v10_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:f_rb_v10_ok = int64(int64:n) never fails {
+    LF_rb_v10_ok:fz = LF_rb_v10_ok{ own: raw mk_rb_v10_ok(), z: 1i64 };
+    MM_rb_v10_ok:mm = MM_rb_v10_ok{ r: @fz, lf: LF_rb_v10_ok{ own: raw mk_rb_v10_ok(), z: 1i64 }, z: 1i64 };
+    B_rb_v10_ok:b = B_rb_v10_ok{ r: @mm, z: 1i64 };
+    A_rb_v10_ok:a = A_rb_v10_ok{ q: @b, inner: MM_rb_v10_ok{ r: @fz, lf: LF_rb_v10_ok{ own: raw mk_rb_v10_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    b.r = @mm; A_rb_v10_ok->:ap = @a; b.r = @((<-ap).inner);
+    LF_rb_v10_ok:m3 = LF_rb_v10_ok{ own: raw mk_rb_v10_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_rb_v10_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rb_v10_ok = int32() never fails { pass (((raw f_rb_v10_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rb_v11_ok.npk`.
+func:mk_rb_v11_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rb_v11_ok = { List<int64>:own; int64:z; };
+struct:MM_rb_v11_ok = { LF_rb_v11_ok->:r; LF_rb_v11_ok:lf; int64:z; };
+struct:B_rb_v11_ok = { MM_rb_v11_ok->:r; int64:z; };
+struct:A_rb_v11_ok = { B_rb_v11_ok->:q; MM_rb_v11_ok:inner; int64:z; };
+func:gb_rb_v11_ok = int64(A_rb_v11_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:f_rb_v11_ok = int64(int64:n) never fails {
+    LF_rb_v11_ok:fz = LF_rb_v11_ok{ own: raw mk_rb_v11_ok(), z: 1i64 };
+    MM_rb_v11_ok:mm = MM_rb_v11_ok{ r: @fz, lf: LF_rb_v11_ok{ own: raw mk_rb_v11_ok(), z: 1i64 }, z: 1i64 };
+    B_rb_v11_ok:b = B_rb_v11_ok{ r: @mm, z: 1i64 };
+    A_rb_v11_ok:a = A_rb_v11_ok{ q: @b, inner: MM_rb_v11_ok{ r: @fz, lf: LF_rb_v11_ok{ own: raw mk_rb_v11_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    A_rb_v11_ok->:ap = @a; b.r = @(ap.inner);
+    LF_rb_v11_ok:m3 = LF_rb_v11_ok{ own: raw mk_rb_v11_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_rb_v11_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rb_v11_ok = int32() never fails { pass (((raw f_rb_v11_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rb_v12_ok.npk`.
+func:mk_rb_v12_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rb_v12_ok = { List<int64>:own; int64:z; };
+struct:MM_rb_v12_ok = { LF_rb_v12_ok->:r; LF_rb_v12_ok:lf; int64:z; };
+struct:B_rb_v12_ok = { MM_rb_v12_ok->:r; int64:z; };
+struct:A_rb_v12_ok = { B_rb_v12_ok->:q; MM_rb_v12_ok:inner; int64:z; };
+func:gb_rb_v12_ok = int64(A_rb_v12_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:f_rb_v12_ok = int64(int64:n) never fails {
+    LF_rb_v12_ok:fz = LF_rb_v12_ok{ own: raw mk_rb_v12_ok(), z: 1i64 };
+    MM_rb_v12_ok:mm = MM_rb_v12_ok{ r: @fz, lf: LF_rb_v12_ok{ own: raw mk_rb_v12_ok(), z: 1i64 }, z: 1i64 };
+    B_rb_v12_ok:b = B_rb_v12_ok{ r: @mm, z: 1i64 };
+    A_rb_v12_ok:a = A_rb_v12_ok{ q: @b, inner: MM_rb_v12_ok{ r: @fz, lf: LF_rb_v12_ok{ own: raw mk_rb_v12_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    A_rb_v12_ok->:ap = @a; A_rb_v12_ok->->:app = @ap; b.r = @((<-app).inner);
+    LF_rb_v12_ok:m3 = LF_rb_v12_ok{ own: raw mk_rb_v12_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_rb_v12_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rb_v12_ok = int32() never fails { pass (((raw f_rb_v12_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rb_v13_ok.npk`.
+func:mk_rb_v13_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rb_v13_ok = { List<int64>:own; int64:z; };
+struct:MM_rb_v13_ok = { LF_rb_v13_ok->:r; LF_rb_v13_ok:lf; int64:z; };
+struct:B_rb_v13_ok = { MM_rb_v13_ok->:r; int64:z; };
+struct:A_rb_v13_ok = { B_rb_v13_ok->:q; MM_rb_v13_ok:inner; int64:z; };
+func:gb_rb_v13_ok = int64(A_rb_v13_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+struct:H_rb_v13_ok = { A_rb_v13_ok->:pa; int64:z; };
+func:f_rb_v13_ok = int64(int64:n) never fails {
+    LF_rb_v13_ok:fz = LF_rb_v13_ok{ own: raw mk_rb_v13_ok(), z: 1i64 };
+    MM_rb_v13_ok:mm = MM_rb_v13_ok{ r: @fz, lf: LF_rb_v13_ok{ own: raw mk_rb_v13_ok(), z: 1i64 }, z: 1i64 };
+    B_rb_v13_ok:b = B_rb_v13_ok{ r: @mm, z: 1i64 };
+    A_rb_v13_ok:a = A_rb_v13_ok{ q: @b, inner: MM_rb_v13_ok{ r: @fz, lf: LF_rb_v13_ok{ own: raw mk_rb_v13_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    H_rb_v13_ok:h = H_rb_v13_ok{ pa: @a, z: 1i64 }; H_rb_v13_ok->:hp = @h; H_rb_v13_ok->->:hpp = @hp; b.r = @((<-((<-(<-hpp)).pa)).inner);
+    LF_rb_v13_ok:m3 = LF_rb_v13_ok{ own: raw mk_rb_v13_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_rb_v13_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rb_v13_ok = int32() never fails { pass (((raw f_rb_v13_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rb_v16_ok.npk`.
+func:mk_rb_v16_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rb_v16_ok = { List<int64>:own; int64:z; };
+struct:MM_rb_v16_ok = { LF_rb_v16_ok->:r; LF_rb_v16_ok:lf; int64:z; };
+struct:B_rb_v16_ok = { MM_rb_v16_ok->:r; int64:z; };
+struct:A_rb_v16_ok = { B_rb_v16_ok->:q; MM_rb_v16_ok:inner; int64:z; };
+func:gb_rb_v16_ok = int64(A_rb_v16_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:f_rb_v16_ok = int64(int64:n) never fails {
+    LF_rb_v16_ok:fz = LF_rb_v16_ok{ own: raw mk_rb_v16_ok(), z: 1i64 };
+    MM_rb_v16_ok:mm = MM_rb_v16_ok{ r: @fz, lf: LF_rb_v16_ok{ own: raw mk_rb_v16_ok(), z: 1i64 }, z: 1i64 };
+    B_rb_v16_ok:b = B_rb_v16_ok{ r: @mm, z: 1i64 };
+    A_rb_v16_ok:a = A_rb_v16_ok{ q: @b, inner: MM_rb_v16_ok{ r: @fz, lf: LF_rb_v16_ok{ own: raw mk_rb_v16_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    A_rb_v16_ok->:ap = @a; MM_rb_v16_ok->:mp = @((<-ap).inner); MM_rb_v16_ok->->:mpp = @mp; b.r = <-mpp;
+    LF_rb_v16_ok:m3 = LF_rb_v16_ok{ own: raw mk_rb_v16_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_rb_v16_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rb_v16_ok = int32() never fails { pass (((raw f_rb_v16_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rb_v17_ok.npk`.
+func:mk_rb_v17_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rb_v17_ok = { List<int64>:own; int64:z; };
+struct:MM_rb_v17_ok = { LF_rb_v17_ok->:r; LF_rb_v17_ok:lf; int64:z; };
+struct:B_rb_v17_ok = { MM_rb_v17_ok->:r; int64:z; };
+struct:A_rb_v17_ok = { B_rb_v17_ok->:q; MM_rb_v17_ok:inner; int64:z; };
+func:gb_rb_v17_ok = int64(A_rb_v17_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:idp_rb_v17_ok = A_rb_v17_ok->(A_rb_v17_ok->:p) never fails { pass p; };
+func:f_rb_v17_ok = int64(int64:n) never fails {
+    LF_rb_v17_ok:fz = LF_rb_v17_ok{ own: raw mk_rb_v17_ok(), z: 1i64 };
+    MM_rb_v17_ok:mm = MM_rb_v17_ok{ r: @fz, lf: LF_rb_v17_ok{ own: raw mk_rb_v17_ok(), z: 1i64 }, z: 1i64 };
+    B_rb_v17_ok:b = B_rb_v17_ok{ r: @mm, z: 1i64 };
+    A_rb_v17_ok:a = A_rb_v17_ok{ q: @b, inner: MM_rb_v17_ok{ r: @fz, lf: LF_rb_v17_ok{ own: raw mk_rb_v17_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    A_rb_v17_ok->:ap = raw idp_rb_v17_ok(@a); A_rb_v17_ok->->:app = @ap; b.r = @((<-(<-app)).inner);
+    LF_rb_v17_ok:m3 = LF_rb_v17_ok{ own: raw mk_rb_v17_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_rb_v17_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rb_v17_ok = int32() never fails { pass (((raw f_rb_v17_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rba_cr_ok.npk`.
+func:mk_rba_cr_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rba_cr_ok = { List<int64>:own; int64:z; };
+struct:MM_rba_cr_ok = { LF_rba_cr_ok->:r; LF_rba_cr_ok:lf; int64:z; };
+struct:B_rba_cr_ok = { MM_rba_cr_ok->:r; int64:z; };
+struct:A_rba_cr_ok = { B_rba_cr_ok->:q; MM_rba_cr_ok:inner; int64:z; };
+func:gb_rba_cr_ok = int64(A_rba_cr_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:ida_rba_cr_ok = A_rba_cr_ok->(A_rba_cr_ok->:o) never fails { pass o; };
+func:f_rba_cr_ok = int64(int64:n) never fails {
+    LF_rba_cr_ok:fz = LF_rba_cr_ok{ own: raw mk_rba_cr_ok(), z: 1i64 };
+    MM_rba_cr_ok:mm = MM_rba_cr_ok{ r: @fz, lf: LF_rba_cr_ok{ own: raw mk_rba_cr_ok(), z: 1i64 }, z: 1i64 };
+    B_rba_cr_ok:b = B_rba_cr_ok{ r: @mm, z: 1i64 };
+    A_rba_cr_ok:a = A_rba_cr_ok{ q: @b, inner: MM_rba_cr_ok{ r: @fz, lf: LF_rba_cr_ok{ own: raw mk_rba_cr_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    b.r = @a.inner;
+    LF_rba_cr_ok:m3 = LF_rba_cr_ok{ own: raw mk_rba_cr_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_rba_cr_ok(raw ida_rba_cr_ok(@a)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rba_cr_ok = int32() never fails { pass (((raw f_rba_cr_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rba_pl_ok.npk`.
+func:mk_rba_pl_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rba_pl_ok = { List<int64>:own; int64:z; };
+struct:MM_rba_pl_ok = { LF_rba_pl_ok->:r; LF_rba_pl_ok:lf; int64:z; };
+struct:B_rba_pl_ok = { MM_rba_pl_ok->:r; int64:z; };
+struct:A_rba_pl_ok = { B_rba_pl_ok->:q; MM_rba_pl_ok:inner; int64:z; };
+func:gb_rba_pl_ok = int64(A_rba_pl_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:ida_rba_pl_ok = A_rba_pl_ok->(A_rba_pl_ok->:o) never fails { pass o; };
+func:f_rba_pl_ok = int64(int64:n) never fails {
+    LF_rba_pl_ok:fz = LF_rba_pl_ok{ own: raw mk_rba_pl_ok(), z: 1i64 };
+    MM_rba_pl_ok:mm = MM_rba_pl_ok{ r: @fz, lf: LF_rba_pl_ok{ own: raw mk_rba_pl_ok(), z: 1i64 }, z: 1i64 };
+    B_rba_pl_ok:b = B_rba_pl_ok{ r: @mm, z: 1i64 };
+    A_rba_pl_ok:a = A_rba_pl_ok{ q: @b, inner: MM_rba_pl_ok{ r: @fz, lf: LF_rba_pl_ok{ own: raw mk_rba_pl_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    b.r = @a.inner;
+    LF_rba_pl_ok:m3 = LF_rba_pl_ok{ own: raw mk_rba_pl_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    A_rba_pl_ok->:ap = @a; discard(raw gb_rba_pl_ok(ap));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rba_pl_ok = int32() never fails { pass (((raw f_rba_pl_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rba_pp_ok.npk`.
+func:mk_rba_pp_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rba_pp_ok = { List<int64>:own; int64:z; };
+struct:MM_rba_pp_ok = { LF_rba_pp_ok->:r; LF_rba_pp_ok:lf; int64:z; };
+struct:B_rba_pp_ok = { MM_rba_pp_ok->:r; int64:z; };
+struct:A_rba_pp_ok = { B_rba_pp_ok->:q; MM_rba_pp_ok:inner; int64:z; };
+func:gb_rba_pp_ok = int64(A_rba_pp_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:ida_rba_pp_ok = A_rba_pp_ok->(A_rba_pp_ok->:o) never fails { pass o; };
+func:f_rba_pp_ok = int64(int64:n) never fails {
+    LF_rba_pp_ok:fz = LF_rba_pp_ok{ own: raw mk_rba_pp_ok(), z: 1i64 };
+    MM_rba_pp_ok:mm = MM_rba_pp_ok{ r: @fz, lf: LF_rba_pp_ok{ own: raw mk_rba_pp_ok(), z: 1i64 }, z: 1i64 };
+    B_rba_pp_ok:b = B_rba_pp_ok{ r: @mm, z: 1i64 };
+    A_rba_pp_ok:a = A_rba_pp_ok{ q: @b, inner: MM_rba_pp_ok{ r: @fz, lf: LF_rba_pp_ok{ own: raw mk_rba_pp_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    b.r = @a.inner;
+    LF_rba_pp_ok:m3 = LF_rba_pp_ok{ own: raw mk_rba_pp_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    A_rba_pp_ok->:ap = @a; A_rba_pp_ok->->:app = @ap; discard(raw gb_rba_pp_ok(<-app));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rba_pp_ok = int32() never fails { pass (((raw f_rba_pp_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rbw2_v00_ok.npk`.
+func:mk_rbw2_v00_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rbw2_v00_ok = { List<int64>:own; int64:z; };
+struct:MM_rbw2_v00_ok = { LF_rbw2_v00_ok->:r; LF_rbw2_v00_ok:lf; int64:z; };
+struct:B_rbw2_v00_ok = { MM_rbw2_v00_ok->:r; int64:z; };
+struct:A_rbw2_v00_ok = { B_rbw2_v00_ok->:q; MM_rbw2_v00_ok:inner; int64:z; };
+func:gb_rbw2_v00_ok = int64(A_rbw2_v00_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:gw_rbw2_v00_ok = int64(A_rbw2_v00_ok->:o) never fails { pass (raw gb_rbw2_v00_ok(o)); };
+func:gw2_rbw2_v00_ok = int64(A_rbw2_v00_ok->:o) never fails { A_rbw2_v00_ok->:o2 = o; pass (raw gb_rbw2_v00_ok(o2)); };
+func:f_rbw2_v00_ok = int64(int64:n) never fails {
+    LF_rbw2_v00_ok:fz = LF_rbw2_v00_ok{ own: raw mk_rbw2_v00_ok(), z: 1i64 };
+    MM_rbw2_v00_ok:mm = MM_rbw2_v00_ok{ r: @fz, lf: LF_rbw2_v00_ok{ own: raw mk_rbw2_v00_ok(), z: 1i64 }, z: 1i64 };
+    B_rbw2_v00_ok:b = B_rbw2_v00_ok{ r: @mm, z: 1i64 };
+    A_rbw2_v00_ok:a = A_rbw2_v00_ok{ q: @b, inner: MM_rbw2_v00_ok{ r: @fz, lf: LF_rbw2_v00_ok{ own: raw mk_rbw2_v00_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    b.r = @a.inner;
+    LF_rbw2_v00_ok:m3 = LF_rbw2_v00_ok{ own: raw mk_rbw2_v00_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw2_rbw2_v00_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rbw2_v00_ok = int32() never fails { pass (((raw f_rbw2_v00_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rbw2_v07_ok.npk`.
+func:mk_rbw2_v07_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rbw2_v07_ok = { List<int64>:own; int64:z; };
+struct:MM_rbw2_v07_ok = { LF_rbw2_v07_ok->:r; LF_rbw2_v07_ok:lf; int64:z; };
+struct:B_rbw2_v07_ok = { MM_rbw2_v07_ok->:r; int64:z; };
+struct:A_rbw2_v07_ok = { B_rbw2_v07_ok->:q; MM_rbw2_v07_ok:inner; int64:z; };
+func:gb_rbw2_v07_ok = int64(A_rbw2_v07_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:gw_rbw2_v07_ok = int64(A_rbw2_v07_ok->:o) never fails { pass (raw gb_rbw2_v07_ok(o)); };
+func:gw2_rbw2_v07_ok = int64(A_rbw2_v07_ok->:o) never fails { A_rbw2_v07_ok->:o2 = o; pass (raw gb_rbw2_v07_ok(o2)); };
+func:f_rbw2_v07_ok = int64(int64:n) never fails {
+    LF_rbw2_v07_ok:fz = LF_rbw2_v07_ok{ own: raw mk_rbw2_v07_ok(), z: 1i64 };
+    MM_rbw2_v07_ok:mm = MM_rbw2_v07_ok{ r: @fz, lf: LF_rbw2_v07_ok{ own: raw mk_rbw2_v07_ok(), z: 1i64 }, z: 1i64 };
+    B_rbw2_v07_ok:b = B_rbw2_v07_ok{ r: @mm, z: 1i64 };
+    A_rbw2_v07_ok:a = A_rbw2_v07_ok{ q: @b, inner: MM_rbw2_v07_ok{ r: @fz, lf: LF_rbw2_v07_ok{ own: raw mk_rbw2_v07_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    MM_rbw2_v07_ok->:mp = @a.inner; b.r = mp;
+    LF_rbw2_v07_ok:m3 = LF_rbw2_v07_ok{ own: raw mk_rbw2_v07_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw2_rbw2_v07_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rbw2_v07_ok = int32() never fails { pass (((raw f_rbw2_v07_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rbw_v00_ok.npk`.
+func:mk_rbw_v00_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rbw_v00_ok = { List<int64>:own; int64:z; };
+struct:MM_rbw_v00_ok = { LF_rbw_v00_ok->:r; LF_rbw_v00_ok:lf; int64:z; };
+struct:B_rbw_v00_ok = { MM_rbw_v00_ok->:r; int64:z; };
+struct:A_rbw_v00_ok = { B_rbw_v00_ok->:q; MM_rbw_v00_ok:inner; int64:z; };
+func:gb_rbw_v00_ok = int64(A_rbw_v00_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:gw_rbw_v00_ok = int64(A_rbw_v00_ok->:o) never fails { pass (raw gb_rbw_v00_ok(o)); };
+func:gw2_rbw_v00_ok = int64(A_rbw_v00_ok->:o) never fails { A_rbw_v00_ok->:o2 = o; pass (raw gb_rbw_v00_ok(o2)); };
+func:f_rbw_v00_ok = int64(int64:n) never fails {
+    LF_rbw_v00_ok:fz = LF_rbw_v00_ok{ own: raw mk_rbw_v00_ok(), z: 1i64 };
+    MM_rbw_v00_ok:mm = MM_rbw_v00_ok{ r: @fz, lf: LF_rbw_v00_ok{ own: raw mk_rbw_v00_ok(), z: 1i64 }, z: 1i64 };
+    B_rbw_v00_ok:b = B_rbw_v00_ok{ r: @mm, z: 1i64 };
+    A_rbw_v00_ok:a = A_rbw_v00_ok{ q: @b, inner: MM_rbw_v00_ok{ r: @fz, lf: LF_rbw_v00_ok{ own: raw mk_rbw_v00_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    b.r = @a.inner;
+    LF_rbw_v00_ok:m3 = LF_rbw_v00_ok{ own: raw mk_rbw_v00_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_rbw_v00_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rbw_v00_ok = int32() never fails { pass (((raw f_rbw_v00_ok(1i64)) + 60i64) =>! int32); };
+// RIGHT PROGRAM (177d2d row 3): 67 on main (aefae6e) and on RB-1s on every road 0-8. From
+// `MANAGEMENT/probes/177d2d-plan/afs-faces/def348-rbv/rbw_v07_ok.npk`.
+func:mk_rbw_v07_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_rbw_v07_ok = { List<int64>:own; int64:z; };
+struct:MM_rbw_v07_ok = { LF_rbw_v07_ok->:r; LF_rbw_v07_ok:lf; int64:z; };
+struct:B_rbw_v07_ok = { MM_rbw_v07_ok->:r; int64:z; };
+struct:A_rbw_v07_ok = { B_rbw_v07_ok->:q; MM_rbw_v07_ok:inner; int64:z; };
+func:gb_rbw_v07_ok = int64(A_rbw_v07_ok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:gw_rbw_v07_ok = int64(A_rbw_v07_ok->:o) never fails { pass (raw gb_rbw_v07_ok(o)); };
+func:gw2_rbw_v07_ok = int64(A_rbw_v07_ok->:o) never fails { A_rbw_v07_ok->:o2 = o; pass (raw gb_rbw_v07_ok(o2)); };
+func:f_rbw_v07_ok = int64(int64:n) never fails {
+    LF_rbw_v07_ok:fz = LF_rbw_v07_ok{ own: raw mk_rbw_v07_ok(), z: 1i64 };
+    MM_rbw_v07_ok:mm = MM_rbw_v07_ok{ r: @fz, lf: LF_rbw_v07_ok{ own: raw mk_rbw_v07_ok(), z: 1i64 }, z: 1i64 };
+    B_rbw_v07_ok:b = B_rbw_v07_ok{ r: @mm, z: 1i64 };
+    A_rbw_v07_ok:a = A_rbw_v07_ok{ q: @b, inner: MM_rbw_v07_ok{ r: @fz, lf: LF_rbw_v07_ok{ own: raw mk_rbw_v07_ok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    MM_rbw_v07_ok->:mp = @a.inner; b.r = mp;
+    LF_rbw_v07_ok:m3 = LF_rbw_v07_ok{ own: raw mk_rbw_v07_ok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gw_rbw_v07_ok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_rbw_v07_ok = int32() never fails { pass (((raw f_rbw_v07_ok(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) {
+    if ((raw cell_main_hb_a1_ok()) != 67i32) { exit 1i32; }
+    if ((raw cell_main_hb_any_ok()) != 67i32) { exit 2i32; }
+    if ((raw cell_main_hb_cr_ok()) != 67i32) { exit 3i32; }
+    if ((raw cell_main_hb_dn_ok()) != 67i32) { exit 4i32; }
+    if ((raw cell_main_hb_gen_ok()) != 67i32) { exit 5i32; }
+    if ((raw cell_main_hb_h2_ok()) != 67i32) { exit 6i32; }
+    if ((raw cell_main_hb_h2f_ok()) != 67i32) { exit 7i32; }
+    if ((raw cell_main_hb_h2v_ok()) != 67i32) { exit 8i32; }
+    if ((raw cell_main_hb_lst_ok()) != 67i32) { exit 9i32; }
+    if ((raw cell_main_hb_memo_ok()) != 67i32) { exit 10i32; }
+    if ((raw cell_main_hb_mid_ok()) != 67i32) { exit 11i32; }
+    if ((raw cell_main_hb_midd_ok()) != 67i32) { exit 12i32; }
+    if ((raw cell_main_hb_pl_ok()) != 67i32) { exit 13i32; }
+    if ((raw cell_main_hb_pp_ok()) != 67i32) { exit 14i32; }
+    if ((raw cell_main_hb_ppl_ok()) != 67i32) { exit 15i32; }
+    if ((raw cell_main_hb_pv_ok()) != 67i32) { exit 16i32; }
+    if ((raw cell_main_hb_rd_ok()) != 67i32) { exit 17i32; }
+    if ((raw cell_main_hb_rdo_ok()) != 67i32) { exit 18i32; }
+    if ((raw cell_main_hb_st_ok()) != 67i32) { exit 19i32; }
+    if ((raw cell_main_hb_tern_ok()) != 67i32) { exit 20i32; }
+    if ((raw cell_main_hc_dn2_ok()) != 67i32) { exit 21i32; }
+    if ((raw cell_main_hc_gpv_ok()) != 67i32) { exit 22i32; }
+    if ((raw cell_main_hc_pm2_ok()) != 67i32) { exit 23i32; }
+    if ((raw cell_main_hc_pm_ok()) != 67i32) { exit 24i32; }
+    if ((raw cell_main_hc_pv2_ok()) != 67i32) { exit 25i32; }
+    if ((raw cell_main_hc_pva_ok()) != 67i32) { exit 26i32; }
+    if ((raw cell_main_hc_pvc_ok()) != 67i32) { exit 27i32; }
+    if ((raw cell_main_hc_pvt_ok()) != 67i32) { exit 28i32; }
+    if ((raw cell_main_he_meth_ok()) != 67i32) { exit 29i32; }
+    if ((raw cell_main_he_methp_ok()) != 67i32) { exit 30i32; }
+    if ((raw cell_main_he_mg2_ok()) != 67i32) { exit 31i32; }
+    if ((raw cell_main_he_mg3_ok()) != 67i32) { exit 32i32; }
+    if ((raw cell_main_he_mg_ok()) != 67i32) { exit 33i32; }
+    if ((raw cell_main_b_get_ok()) != 67i32) { exit 34i32; }
+    if ((raw cell_main_b_getn_ok()) != 67i32) { exit 35i32; }
+    if ((raw cell_main_b_lvl2_ok()) != 67i32) { exit 36i32; }
+    if ((raw cell_main_b_lvl2d_ok()) != 67i32) { exit 37i32; }
+    if ((raw cell_main_b_lvl2n_ok()) != 67i32) { exit 38i32; }
+    if ((raw cell_main_b_ter2_ok()) != 67i32) { exit 39i32; }
+    if ((raw cell_main_wa_dir_ok()) != 67i32) { exit 40i32; }
+    if ((raw cell_main_wa_fld_ok()) != 67i32) { exit 41i32; }
+    if ((raw cell_main_wa_loc_ok()) != 67i32) { exit 42i32; }
+    if ((raw cell_main_wa_rp_ok()) != 67i32) { exit 43i32; }
+    if ((raw cell_main_sa_back2_ok()) != 67i32) { exit 44i32; }
+    if ((raw cell_main_sa_back_ok()) != 67i32) { exit 45i32; }
+    if ((raw cell_main_sb_dia2_ok()) != 67i32) { exit 46i32; }
+    if ((raw cell_main_sb_dia_ok()) != 67i32) { exit 47i32; }
+    if ((raw cell_main_sb_fan_ok()) != 67i32) { exit 48i32; }
+    if ((raw cell_main_sb_same_ok()) != 67i32) { exit 49i32; }
+    if ((raw cell_main_sc_one_ok()) != 67i32) { exit 50i32; }
+    if ((raw cell_main_sc_ptrv_ok()) != 67i32) { exit 51i32; }
+    if ((raw cell_main_sc_two_ok()) != 67i32) { exit 52i32; }
+    if ((raw cell_main_sc_two_r_ok()) != 67i32) { exit 53i32; }
+    if ((raw cell_main_sc_two_sep_ok()) != 67i32) { exit 54i32; }
+    if ((raw cell_main_se_cp_ok()) != 67i32) { exit 55i32; }
+    if ((raw cell_main_se_dn1_ok()) != 67i32) { exit 56i32; }
+    if ((raw cell_main_se_dn2_ok()) != 67i32) { exit 57i32; }
+    if ((raw cell_main_se_mix_ok()) != 67i32) { exit 58i32; }
+    if ((raw cell_main_se_mix_r_ok()) != 67i32) { exit 59i32; }
+    if ((raw cell_main_se_two_calls_ok()) != 67i32) { exit 60i32; }
+    if ((raw cell_main_sg_box_ok()) != 67i32) { exit 61i32; }
+    if ((raw cell_main_sl_d7_ok()) != 67i32) { exit 62i32; }
+    if ((raw cell_main_sl_d8_ok()) != 67i32) { exit 63i32; }
+    if ((raw cell_main_sl_d9_ok()) != 67i32) { exit 64i32; }
+    if ((raw cell_main_r2f_hq3_wa_nr_ok()) != 67i32) { exit 65i32; }
+    if ((raw cell_main_r2f_hq3_wa_a1_ok()) != 67i32) { exit 66i32; }
+    if ((raw cell_main_a4_pf_s_ok()) != 67i32) { exit 67i32; }
+    if ((raw cell_main_rb_v00_ok()) != 67i32) { exit 68i32; }
+    if ((raw cell_main_rb_v01_ok()) != 67i32) { exit 69i32; }
+    if ((raw cell_main_rb_v02_ok()) != 67i32) { exit 70i32; }
+    if ((raw cell_main_rb_v03_ok()) != 67i32) { exit 71i32; }
+    if ((raw cell_main_rb_v04_ok()) != 67i32) { exit 72i32; }
+    if ((raw cell_main_rb_v05_ok()) != 67i32) { exit 73i32; }
+    if ((raw cell_main_rb_v06_ok()) != 67i32) { exit 74i32; }
+    if ((raw cell_main_rb_v07_ok()) != 67i32) { exit 75i32; }
+    if ((raw cell_main_rb_v08_ok()) != 67i32) { exit 76i32; }
+    if ((raw cell_main_rb_v09_ok()) != 67i32) { exit 77i32; }
+    if ((raw cell_main_rb_v10_ok()) != 67i32) { exit 78i32; }
+    if ((raw cell_main_rb_v11_ok()) != 67i32) { exit 79i32; }
+    if ((raw cell_main_rb_v12_ok()) != 67i32) { exit 80i32; }
+    if ((raw cell_main_rb_v13_ok()) != 67i32) { exit 81i32; }
+    if ((raw cell_main_rb_v16_ok()) != 67i32) { exit 82i32; }
+    if ((raw cell_main_rb_v17_ok()) != 67i32) { exit 83i32; }
+    if ((raw cell_main_rba_cr_ok()) != 67i32) { exit 84i32; }
+    if ((raw cell_main_rba_pl_ok()) != 67i32) { exit 85i32; }
+    if ((raw cell_main_rba_pp_ok()) != 67i32) { exit 86i32; }
+    if ((raw cell_main_rbw2_v00_ok()) != 67i32) { exit 87i32; }
+    if ((raw cell_main_rbw2_v07_ok()) != 67i32) { exit 88i32; }
+    if ((raw cell_main_rbw_v00_ok()) != 67i32) { exit 89i32; }
+    if ((raw cell_main_rbw_v07_ok()) != 67i32) { exit 90i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -39,9 +39,9 @@ pub error:EShmMap;
 // A sealed shared-memory region: the fd (kept, so it can be sent to the
 // driver via SCM_RIGHTS at spawn) and the runtime's own mapping.
 pub struct:Shm = {
-    fd:          memfd;
-    wild int8->: base;
-    int64:       size;
+    sealed fd:          memfd;
+    sealed wild int8->: base;
+    sealed int64:       size;
 };
 
 // Create a memfd of exactly `size` bytes, seal it against shrink and grow
@@ -287,20 +287,20 @@ struct:SpawnBlk = {
 // channel. One Bridge per driver process; GPU and GUI are DIFFERENT
 // Bridges (D-055 requirement 4).
 pub struct:Bridge = {
-    pid:     child;          // diagnostic; every signal travels the pidfd
-    OwnedFd: pidfd;          // THE kill handle — drop closes it (never the process)
-    OwnedFd: ctrl;           // control socketpair, our end (NONBLOCK)
-    OwnedFd: child_stderr;   // stderr pipe, read end (NONBLOCK)
-    Shm:     shm;            // the sealed region; memfd kept for teardown
-    int64:   ring_cap;       // descriptor slots — power of two (§6.1), enforced at spawn
-    int64:   reg_slot;       // the registry entry teardown retires LAST
-    int64:   next_seq;       // dispatch sequence, free-running; the wire sees its low 32
-    bool:    closed;         // set by close/reap's release phase; guards every resource
-    bool:    poisoned;       // set by any dispatch fault (§4.4): the ring state is
+    sealed pid:     child;          // diagnostic; every signal travels the pidfd
+    sealed OwnedFd: pidfd;          // THE kill handle — drop closes it (never the process)
+    sealed OwnedFd: ctrl;           // control socketpair, our end (NONBLOCK)
+    sealed OwnedFd: child_stderr;   // stderr pipe, read end (NONBLOCK)
+    sealed Shm:     shm;            // the sealed region; memfd kept for teardown
+    sealed int64:   ring_cap;       // descriptor slots — power of two (§6.1), enforced at spawn
+    sealed int64:   reg_slot;       // the registry entry teardown retires LAST
+    sealed int64:   next_seq;       // dispatch sequence, free-running; the wire sees its low 32
+    sealed bool:    closed;         // set by close/reap's release phase; guards every resource
+    sealed bool:    poisoned;       // set by any dispatch fault (§4.4): the ring state is
                              // unknown, so every later dispatch refuses until the
                              // caller tears down and respawns — no partial results
-    wild int8->: errbuf;     // the stderr tail: 8 KiB drop-oldest ring (§10)
-    int64:   err_w;          // total stderr bytes ever drained (the ring cursor)
+    sealed wild int8->: errbuf;     // the stderr tail: 8 KiB drop-oldest ring (§10)
+    sealed int64:   err_w;          // total stderr bytes ever drained (the ring cursor)
 };
 
 // Read `need` bytes exactly, under the absolute deadline — the ByteReader
@@ -544,9 +544,11 @@ pub func:bridge_reap = NIL(Bridge->:b) never fails {
     wild int8->:sb = b.shm.base;
     Result<int64>:um = sys(raw SYS_MUNMAP(), sb, b.shm.size);
     if (um.is_error) { }
+    b.shm.base = #wild_ptr<int8>(0i64);   // DEF-706: no stale base past the unmap
     Result<NIL>:cm = close(b.shm.memfd);
     if (cm.is_error) { }
     dalloc(b.errbuf);
+    b.err_w = 0i64;                       // DEF-712: the tail has nothing to read
     driver_retire(b.reg_slot);
     pass NIL;
 };
@@ -618,6 +620,7 @@ func:bridge_drain_stderr = NIL(Bridge->:b) never fails {
 // errors are nominal and carry no payload, so the tail is READ from the
 // bridge instead — poisoned bridges keep it until teardown).
 pub func:bridge_stderr_tail = string(Bridge->:b) {
+    if (b.closed) { fail EBridgePoisoned; }   // DEF-712: close and the reap free the ring
     int64:len = b.err_w;
     if (len > 8192i64) { len = 8192i64; }
     if (len == 0i64) { pass ""; }
@@ -681,6 +684,15 @@ pub async func:dispatch = int32(Bridge->:b, int64:kernel_id, int64:arg_len,
     wild int8->:base = b.shm.base;
     int64:head = atomic_from_ptr::<int64>((#ptr_add<int8>(base, 64i64)) =>! wild int64->).load();
     int64:tail = atomic_from_ptr::<int64>((#ptr_add<int8>(base, 128i64)) =>! wild int64->).load();
+    // DEF-707: both indices are driver-writable; range-check before any arithmetic
+    if (head < 0i64)                    { drop bridge_kill(b); b.poisoned = true; fail EDriverProtocol; }
+    if (head > 4611686018427387903i64)  { drop bridge_kill(b); b.poisoned = true; fail EDriverProtocol; }
+    if (tail < 0i64)                    { drop bridge_kill(b); b.poisoned = true; fail EDriverProtocol; }
+    // stack-f: line 0 is read-only after init (v3 §6.1); a driver that rewrote the bulk offset or size is
+    // hostile. Read only to compare with the Bridge's own values, never used.
+    int64:own_off = 256i64 + (b.ring_cap * 32i64);
+    if ((<-(#ptr_add<int64>(base, 2i64))) != own_off)                { drop bridge_kill(b); b.poisoned = true; fail EDriverProtocol; }
+    if ((<-(#ptr_add<int64>(base, 3i64))) != (b.shm.size - own_off)) { drop bridge_kill(b); b.poisoned = true; fail EDriverProtocol; }
     int64:used = head - tail;
     if (used < 0i64)        { drop bridge_kill(b); b.poisoned = true; fail EDriverProtocol; }
     if (used > b.ring_cap)  { drop bridge_kill(b); b.poisoned = true; fail EDriverProtocol; }
@@ -693,7 +705,7 @@ pub async func:dispatch = int32(Bridge->:b, int64:kernel_id, int64:arg_len,
     // ONLY the return size it sized there — a driver can scribble anywhere
     // in the shared mapping regardless, so the response contract is about
     // where WE read, never a bound on the driver.
-    int64:boff = <-(#ptr_add<int64>(base, 2i64));
+    int64:boff = 256i64 + (b.ring_cap * 32i64);   // DEF-704: the Bridge's own (its ring_cap), never the region's
     int64:resp_off = (boff + arg_len + 7i64) & (0i64 - 8i64);
     wild int8->:d = #ptr_add<int8>(base, 256i64 + ((head & (b.ring_cap - 1i64)) * 32i64));
     <-(#ptr_add<int32>(d, 0i64)) = seq32 =>! int32;
@@ -861,9 +873,11 @@ pub async func:bridge_close = NIL(Bridge->:b, Duration:within) {
     wild int8->:sb = b.shm.base;
     Result<int64>:um = sys(raw SYS_MUNMAP(), sb, b.shm.size);
     if (um.is_error) { }
+    b.shm.base = #wild_ptr<int8>(0i64);   // DEF-706: no stale base past the unmap
     Result<NIL>:cm = close(b.shm.memfd);
     if (cm.is_error) { }
     dalloc(b.errbuf);
+    b.err_w = 0i64;                       // DEF-712: the tail has nothing to read
     driver_retire(b.reg_slot);
     pass NIL;
 };

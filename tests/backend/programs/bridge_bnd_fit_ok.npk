@@ -1,0 +1,79 @@
+// expect-exit: 60
+// argv: REF_DRIVER
+// 2026-11-19 (landing 177d2d, row 10: the Bridge, form BR-5g, closing DEF-704, DEF-705, DEF-706, DEF-707 and DEF-712; rulings l.18410, l.19234,
+// l.19307, l.19443, l.20202 and l.20254). A stub takes its bulk offset from the Bridge's own `ring_cap`, never from the region (DEF-704); refuses a
+// call whose slots, slice bytes or return word don't fit the bulk area, as `OutOfBounds`, before any write (DEF-705); checks `closed` and `poisoned`
+// first (DEF-706); `dispatch` range-checks the driver's indices before any arithmetic and kills a driver that rewrote line 0 (DEF-707); close and the
+// reap clear the base and the stderr tail's cursor, and the tail refuses a closed Bridge (DEF-706, DEF-712); and every field of `Shm` and `Bridge` is
+// `sealed` (D-313; DEF-467's fix for these two structs, l.19307). RIGHT PROGRAM: `bnd_over`'s control, one byte smaller, at the exact fit (l.19234
+// item 5, l.20202 item 4). Exit 60 here on every road, -O0 and -O2, and under the detector, with the tree's `ref_driver` fixture; main (aefae6e): 60
+// on every road. From seat BR's Bridge planning (l.19234), `Team/TMP/plan-177d2d-bridge-2026-11-19/cells/`, `bnd_fit.npk`, by `cat`, its `mod:` line
+// and library path changed.
+// BOUNDARY CELL bnd_fit (seat BR, 177d2d planning; from RR's P-b, size and mod: changed, and a value check):
+// one call with a 65128-byte uint8[] over a 65536-byte region with a 4-slot ring (bulk 65152).
+// The call needs ((16 + 65128 + 7) & -8) + 8 = 65152 bytes. Kernel 0 returns 16 + len = 65144.
+// Exit 66: served with a wrong value. The
+// driver is the unmodified reference driver, spawned with interface hash 0
+// ("no interface", which npkdrv_init accepts), so `put` rides kernel 0.
+// Exits: 60 the call succeeded, 61 EDriverFault, 62 EDriverProtocol,
+// 63 EDriverError, 64 EDriverDeadline, 65 another error; traps go to failsafe.
+mod:bridge_bnd_fit_ok;
+use "../../../lib/nbridge.npk".*;
+error:E9;
+
+extern:"bdrv" = {
+    func:put = int64(Bridge->:b, uint8[]:data, Duration:within);
+};
+
+async func:main = int32(cstring[]:argv) {
+    if (argv.len < 2i64) { exit 7i32; }
+    string:mp = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+    Path:p = path_parse(mp) ?! E9;
+    Result<Bridge>:br = await spawn_driver(p, 65536i64, 4i64, 0i64, raw duration_secs(5i64));
+    Bridge:b = move(br) ?! E9;
+    wild int8->:raw_bytes = calloc(1i64, 65128i64);
+    wild uint8->:u = raw_bytes =>! wild uint8->;
+    uint8[]:v = #wild_slice<uint8>(u, 65128i64);
+    Result<int64>:r = await put(@b, v, raw duration_secs(5i64));
+    int32:code = 65i32;
+    if (!r.is_error) { code = 60i32; if (r.value != 65144i64) { code = 66i32; } }
+    if (r.is_error) {
+        if (r.err == EDriverFault)    { code = 61i32; }
+        if (r.err == EDriverProtocol) { code = 62i32; }
+        if (r.err == EDriverError)    { code = 63i32; }
+        if (r.err == EDriverDeadline) { code = 64i32; }
+    }
+    drop bridge_reap(@b);
+    dalloc(raw_bytes);
+    exit code;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (BadPath)          { exit 92i32; },
+        (EDriverSpawn)     { exit 93i32; },
+        (EDriverFault)     { exit 94i32; },
+        (EDriverProtocol)  { exit 95i32; },
+        (EDriverDeadline)  { exit 96i32; },
+        (EDriverError)     { exit 84i32; },
+        (ERingFull)        { exit 85i32; },
+        (EBridgePoisoned)  { exit 83i32; },
+        (EShmCreate)       { exit 97i32; },
+        (EShmSeal)         { exit 97i32; },
+        (EShmMap)          { exit 97i32; },
+        (DeadlineExceeded) { exit 98i32; },
+        (DriverLeak)       { exit 89i32; },
+        (IntOverflow)      { exit 75i32; },
+        (OutOfBounds)      { exit 76i32; },
+        (MachineFault)     { exit 77i32; },
+        (WildLeak)         { exit 88i32; },
+        (Unreachable)      { exit 87i32; },
+        (HeapOom)          { exit 87i32; },
+        (HeapBadRequest)   { exit 87i32; },
+        (StackExhausted)   { exit 78i32; },
+        (DecreasesViolated) { exit 79i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 90i32;
+};

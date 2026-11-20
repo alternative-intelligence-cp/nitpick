@@ -1,0 +1,39 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 24:15
+// 2026-11-19 (landing 177d2d, row 7: DEF-708, form T3-708d; rulings l.19843, l.19874 item 1, l.20020 item 1 and l.20239). A BY-VALUE holder of a
+// pointer to a `List` (`grow(w)`, `Wrap:w = Wrap{ lp: @l }`), handed to a callee while an element address into that `List` is live, is judged as a
+// view's holder is: `rejudge_holder` (alias.npk) raises the live element address beside the views when the argument is neither an address-of nor of
+// pointer type, an `Optional` or `Result` of a pointer unwrapped first (it is a pointer). FACE (T3-708d, refused here at BORROW-015@24:15): 98 on
+// main (aefae6e) on every road 0-8, -O0 and -O2, and under the detector (`failsafe`'s MachineFault: a read of freed storage). From seat A3S's attack
+// on T3-708d, T3-709b and T3-711a (l.20020), `Team/TMP/atk-177d2d-t3s-2026-11-19/cells/a708c/c_tern.npk`.
+mod:holder_elem_addr_c_tern;
+
+struct:Wrap = { List<int64>->:lp; };
+func:grow = NIL(Wrap:w) never fails {
+    drop list_reserve(w.lp, 1024i64);
+    pass NIL;
+};
+
+func:main = int32(cstring[]:argv) {
+    List<int64>:l = raw list_init::<int64>(512i64);
+    drop list_push(@l, 42i64);
+    List<int64>:l2 = raw list_init::<int64>(4i64);
+    Wrap:w = Wrap{ lp: @l };
+    Wrap:w2 = Wrap{ lp: @l2 };
+    int64->:ep = @l[0i64];
+    drop grow(is (argv.len > 0i64) : w : w2);
+    if ((<-ep) == 99i64) { exit 1i32; }
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 97i32; }, (MachineFault)      { exit 98i32; },
+        (Unreachable)    { exit 95i32; }, (HeapOom)           { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; }, (WildLeak)          { exit 96i32; },
+        (OutOfBounds)    { exit 90i32; }, (IntOverflow)       { exit 89i32; },
+        (LimitViolated)  { exit 88i32; }, (DecreasesViolated) { exit 87i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};

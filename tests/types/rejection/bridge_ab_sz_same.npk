@@ -1,0 +1,77 @@
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 33:5
+// 2026-11-19 (landing 177d2d, row 10: the Bridge, form BR-5g, closing DEF-704, DEF-705, DEF-706, DEF-707 and DEF-712; rulings l.18410, l.19234,
+// l.19307, l.19443, l.20202 and l.20254). A stub takes its bulk offset from the Bridge's own `ring_cap`, never from the region (DEF-704); refuses a
+// call whose slots, slice bytes or return word don't fit the bulk area, as `OutOfBounds`, before any write (DEF-705); checks `closed` and `poisoned`
+// first (DEF-706); `dispatch` range-checks the driver's indices before any arithmetic and kills a driver that rewrote line 0 (DEF-707); close and the
+// reap clear the base and the stderr tail's cursor, and the tail refuses a closed Bridge (DEF-706, DEF-712); and every field of `Shm` and `Bridge` is
+// `sealed` (D-313; DEF-467's fix for these two structs, l.19307). DEF-705's face with a `shm.size` store of its own value (l.19443): 66/66/77 on
+// main. Refused at the store by the seal. From seat AB's release hunt on BR-5f and BR-5g (l.19307, l.19443),
+// `Team/TMP/atk-177d2d-bridge-2026-11-19/cells/ab/`, `ab_sz_same.npk`, by `cat`, its `mod:` line and library path changed.
+// seat AB (Ailp-team_215), 2026-11-19, P1 other-field (shm.size): a plain store to the Bridge's own `shm.size`
+// (no `wild` in this program; the payload is a `buffer` range view), then a `put` of a 66000-byte uint8[] over a
+// 65536-byte region with a 4-slot ring (true bulk 65152). The call needs ((16 + 66000 + 7) & -8) + 8 = 66016
+// bytes. BR-5f's fit check reads `b.shm.size - boff`; the store (1<<30) makes it pass, so the byte copy runs past
+// the region. M's stub has no fit check (DEF-705), so M overruns regardless of the store.
+// The driver is the unmodified reference driver, interface hash 0; `put` rides kernel 0.
+// Exits: 60 served, 66 served with a wrong value, 61 EDriverFault, 62 EDriverProtocol, 63 EDriverError,
+// 64 OutOfBounds (refused), 65 another error; traps go to failsafe (77 MachineFault).
+mod:bridge_ab_sz_same;
+use "../../../lib/nbridge.npk".*;
+error:E9;
+
+extern:"bdrv" = {
+    func:put = int64(Bridge->:b, uint8[]:data, Duration:within);
+};
+
+async func:main = int32(cstring[]:argv) {
+    if (argv.len < 2i64) { exit 7i32; }
+    string:mp = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+    Path:p = path_parse(mp) ?! E9;
+    Result<Bridge>:br = await spawn_driver(p, 65536i64, 4i64, 0i64, raw duration_secs(5i64));
+    Bridge:b = move(br) ?! E9;
+    b.shm.size = 65536i64;
+    buffer:bf = buffer_new(66000i64);
+    uint8[]:v = bf[0i64...66000i64];
+    Result<int64>:r = await put(@b, v, raw duration_secs(5i64));
+    int32:code = 65i32;
+    if (!r.is_error) { code = 60i32; if (r.value != 66016i64) { code = 66i32; } }
+    if (r.is_error) {
+        if (r.err == EDriverFault)    { code = 61i32; }
+        if (r.err == EDriverProtocol) { code = 62i32; }
+        if (r.err == EDriverError)    { code = 63i32; }
+        if (r.err == OutOfBounds)     { code = 64i32; }
+    }
+    drop bridge_reap(@b);
+    exit code;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (BadPath)          { exit 92i32; },
+        (EDriverSpawn)     { exit 93i32; },
+        (EDriverFault)     { exit 94i32; },
+        (EDriverProtocol)  { exit 95i32; },
+        (EDriverDeadline)  { exit 96i32; },
+        (EDriverError)     { exit 84i32; },
+        (ERingFull)        { exit 85i32; },
+        (EBridgePoisoned)  { exit 83i32; },
+        (EShmCreate)       { exit 86i32; },
+        (EShmSeal)         { exit 86i32; },
+        (EShmMap)          { exit 86i32; },
+        (DeadlineExceeded) { exit 98i32; },
+        (DriverLeak)       { exit 89i32; },
+        (IntOverflow)      { exit 75i32; },
+        (OutOfBounds)      { exit 76i32; },
+        (MachineFault)     { exit 77i32; },
+        (WildLeak)         { exit 88i32; },
+        (Unreachable)      { exit 87i32; },
+        (HeapOom)          { exit 87i32; },
+        (HeapBadRequest)   { exit 87i32; },
+        (StackExhausted)   { exit 78i32; },
+        (DecreasesViolated) { exit 79i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 90i32;
+};

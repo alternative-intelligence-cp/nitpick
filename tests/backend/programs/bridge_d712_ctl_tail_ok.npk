@@ -1,0 +1,81 @@
+// expect-exit: 44
+// argv: REF_DRIVER
+// 2026-11-19 (landing 177d2d, row 10: the Bridge, form BR-5g, closing DEF-704, DEF-705, DEF-706, DEF-707 and DEF-712; rulings l.18410, l.19234,
+// l.19307, l.19443, l.20202 and l.20254). A stub takes its bulk offset from the Bridge's own `ring_cap`, never from the region (DEF-704); refuses a
+// call whose slots, slice bytes or return word don't fit the bulk area, as `OutOfBounds`, before any write (DEF-705); checks `closed` and `poisoned`
+// first (DEF-706); `dispatch` range-checks the driver's indices before any arithmetic and kills a driver that rewrote line 0 (DEF-707); close and the
+// reap clear the base and the stderr tail's cursor, and the tail refuses a closed Bridge (DEF-706, DEF-712); and every field of `Shm` and `Bridge` is
+// `sealed` (D-313; DEF-467's fix for these two structs, l.19307). RIGHT PROGRAM: the d712 cells' control, the tail read while the Bridge is open.
+// Exit 44 here on every road, -O0 and -O2, and under the detector, with the tree's `ref_driver` fixture; main (aefae6e): 44 on every road. From seat
+// BR's Bridge planning (l.19234), `Team/TMP/plan-177d2d-bridge-2026-11-19/cells/`, `d712_ctl_tail.npk`, by `cat`, its `mod:` line and library path
+// changed.
+// CONTROL for DEF-712's probes (seat BR, 177d2d planning; management_67's brief, Part BR item 2): the reference
+// driver writes to stderr (kernel 2 refuses on purpose, status 55), then `bridge_stderr_tail` reads the
+// tail BEFORE `bridge_close`. Exits: 44 the tail came back non-empty and the close passed, 45 it came
+// back empty, 42 it failed
+// EBridgePoisoned, 43 another error; 21-23 a setup step went wrong; traps go to failsafe.
+mod:bridge_d712_ctl_tail_ok;
+use "../../../lib/nbridge.npk".*;
+use "../../../lib/nstr.npk".*;
+error:E9;
+
+extern:"cdrv" = {
+    func:echo_add     = int64(Bridge->:b, int64:x, int64:y, Duration:within);
+    func:hostile_tail = NIL(Bridge->:b, Duration:within);
+    func:refuses      = int64(Bridge->:b, Duration:within);
+};
+
+async func:main = int32(cstring[]:argv) {
+    if (argv.len < 2i64) { exit 7i32; }
+    string:mp = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+    Path:p = path_parse(mp) ?! E9;
+    int64:h = raw cdrv_iface_hash();
+    Result<Bridge>:br = await spawn_driver(p, 65536i64, 64i64, h, raw duration_secs(5i64));
+    Bridge:b = move(br) ?! E9;
+    Result<int64>:r0 = await refuses(@b, raw duration_secs(5i64));
+    if (!r0.is_error)            { exit 21i32; }
+    if (r0.err != EDriverError)  { exit 21i32; }
+    Result<int64>:r1 = await echo_add(@b, 40i64, 2i64, raw duration_secs(5i64));
+    if (r1.is_error)       { exit 22i32; }
+    if (r1.value != 42i64) { exit 22i32; }
+    // the honest order: the tail first, then the close
+    Result<string>:t = bridge_stderr_tail(@b);
+    Result<NIL>:c = await bridge_close(@b, raw duration_secs(3i64));
+    if (c.is_error) { exit 23i32; }
+    if (t.is_error) {
+        if (t.err == EBridgePoisoned) { exit 42i32; }
+        exit 43i32;
+    }
+    if (raw nstr_contains(t.value, "refusing")) { exit 44i32; }
+    exit 45i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (BadPath)          { exit 92i32; },
+        (EDriverSpawn)     { exit 93i32; },
+        (EDriverFault)     { exit 94i32; },
+        (EDriverProtocol)  { exit 95i32; },
+        (EDriverDeadline)  { exit 96i32; },
+        (EDriverError)     { exit 84i32; },
+        (ERingFull)        { exit 85i32; },
+        (EBridgePoisoned)  { exit 83i32; },
+        (EShmCreate)       { exit 86i32; },
+        (EShmSeal)         { exit 86i32; },
+        (EShmMap)          { exit 86i32; },
+        (DeadlineExceeded) { exit 98i32; },
+        (DriverLeak)       { exit 89i32; },
+        (IntOverflow)      { exit 75i32; },
+        (OutOfBounds)      { exit 76i32; },
+        (MachineFault)     { exit 77i32; },
+        (WildLeak)         { exit 88i32; },
+        (Unreachable)      { exit 87i32; },
+        (HeapOom)          { exit 87i32; },
+        (HeapBadRequest)   { exit 87i32; },
+        (StackExhausted)   { exit 78i32; },
+        (DecreasesViolated) { exit 79i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 90i32;
+};

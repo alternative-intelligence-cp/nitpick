@@ -1,0 +1,51 @@
+// expect-exit: 67
+// 2026-11-19 (landing 177d2d, row 7: DEF-708, form T3-708d; rulings l.19843, l.19874 item 1, l.20020 item 1 and l.20239). A BY-VALUE holder of a
+// pointer to a `List` (`grow(w)`, `Wrap:w = Wrap{ lp: @l }`), handed to a callee while an element address into that `List` is live, is judged as a
+// view's holder is: `rejudge_holder` (alias.npk) raises the live element address beside the views when the argument is neither an address-of nor of
+// pointer type, an `Optional` or `Result` of a pointer unwrapped first (it is a pointer). RIGHT PROGRAM (T3-708d): exit 67 on main (aefae6e) and here
+// on every road 0-8, -O0 and -O2, and under the detector; one of the 4 programs row 1's R4-15 was built to accept, which T3-708c refused again
+// (l.19843 item 2); accepted by T3-708d (l.19874 item 1). Its siblings `a4_r4c_okx` and `m_r4c_rooted` are in unwrap_param_roots_ok.npk. From seat
+// R4C's A4 cells, T3-708d's gate (l.19843 item 2, l.19874 item 1), `Team/TMP/plan-177d2d-r4c-2026-11-19/cells/a4/b5/a4_r4c_okxa.npk`.
+mod:holder_elem_addr_a4_r4c_okxa_ok;
+error:E5;
+struct:K = { int64:k; };
+struct:H = { List<int64>:l; int64:k; K:kk; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO = { H->:lp; List<int64>:own; };
+func:growp = int64(HPO->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:growo = int64(HPO->?:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ??! E5)).own), 1i64); } pass 7i64; };
+func:growr = int64(Result<HPO->>:r) never fails { if (r.is_error) { pass 7i64; } loop(0i64, 64i64, 1i64) { drop list_push(@((<-(r.value)).own), 1i64); } pass 7i64; };
+func:mknone = HPO->?() never fails { pass NIL; };
+struct:HP2 = { List<int64>:a; List<int64>:own; };
+func:growo2 = int64(HP2->?:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ??! E5)).own), 1i64); } pass 7i64; };
+func:idw2 = HP2->?(HP2->:w) never fails { pass w; };
+func:f = int64(int64:n) never fails {
+    HP2:m = HP2{ a: raw mk(), own: raw mk() };
+    int64->:e = @(m.a[0i64]);
+    discard(raw growo2(raw idw2(@m)));   // grows m.own, not m.a; the call wraps a plain address
+    pass (<-e) + 6i64;
+};
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

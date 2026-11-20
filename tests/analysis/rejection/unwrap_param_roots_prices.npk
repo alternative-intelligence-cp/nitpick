@@ -1,0 +1,336 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 61:30
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 86:33
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 112:29
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 138:31
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 138:31
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 158:72
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 165:35
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 192:37
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 213:66
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 238:109
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 261:33
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 278:36
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 295:33
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 312:36
+mod:unwrap_param_roots_prices;
+// 2026-11-19 (landing 177d2d, row 1: DEF-671's roots 1, 2 and 4, form R4-15; rulings l.19266, l.19501, l.19687, l.19773 and l.20408). A function
+// handed an `Optional` or `Result` pointer that stores a pointer or a view through it after unwrapping it: alias asks a wrapped pointer as the
+// pointer (root 1, with seat AA's `target_is_pointee` line), the wrapped parameter's MUT and stores are walked on P11's road (root 2), and alias's
+// rootless arms read the wrapped pointee (root 4, with R4-15's one line in `check_pointer_targets`' rootless block). THE PRICES (6), each at parity
+// with the twin beside it (rulings l.19266, l.19501): a right program refused here, whose twin on the row's own variable main already refuses at the
+// same site.
+error:E5;
+// PRICE AT PARITY (177d2d row 1, R4-15): a right program, 67 on main on every road, refused here. l.19501 item 1: its half twin `a4_nw_okx_pf`
+// differs only in the outer wrapper (`SQO->?` against `SQO->`), R4-2's own variable, and main refuses it at the same statement (one line higher for
+// the added local). The cost is main's own: `path_rel_compute` stops at the outermost unwrap. From seat A4's attack on R4-13 (l.19501),
+// `Team/TMP/plan-177d2d-r4c-2026-11-19/cells/a4/b1/a4_nw_okx.npk`.
+struct:K_a4_nw_okx = { int64:k; };
+struct:H_a4_nw_okx = { List<int64>:l; int64:k; K_a4_nw_okx:kk; };
+func:mk_a4_nw_okx = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_a4_nw_okx = H_a4_nw_okx() never fails { pass H_a4_nw_okx{ l: raw mk_a4_nw_okx(), k: 2i64, kk: K_a4_nw_okx{ k: 3i64 } }; };
+func:growh_a4_nw_okx = int64(H_a4_nw_okx->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_a4_nw_okx = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_a4_nw_okx = int64->(H_a4_nw_okx->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_a4_nw_okx = { H_a4_nw_okx->:lp; List<int64>:own; };
+func:growp_a4_nw_okx = int64(HPO_a4_nw_okx->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:growo_a4_nw_okx = int64(HPO_a4_nw_okx->?:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ??! E5)).own), 1i64); } pass 7i64; };
+func:growr_a4_nw_okx = int64(Result<HPO_a4_nw_okx->>:r) never fails { if (r.is_error) { pass 7i64; } loop(0i64, 64i64, 1i64) { drop list_push(@((<-(r.value)).own), 1i64); } pass 7i64; };
+func:mknone_a4_nw_okx = HPO_a4_nw_okx->?() never fails { pass NIL; };
+struct:SQO_a4_nw_okx = { HPO_a4_nw_okx->?:q; List<int64>:own; };
+func:gw_a4_nw_okx = int64(SQO_a4_nw_okx->?:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-(o ??! E5)).q ??! E5)).own), 1i64); } pass 7i64; };
+func:f_a4_nw_okx = int64(int64:n) never fails {
+    H_a4_nw_okx:h0 = raw mkh_a4_nw_okx();
+    HPO_a4_nw_okx:m = HPO_a4_nw_okx{ lp: @h0, own: raw mk_a4_nw_okx() };
+    SQO_a4_nw_okx:s = SQO_a4_nw_okx{ q: @m, own: raw mk_a4_nw_okx() };
+    SQO_a4_nw_okx->?:os = @s;
+    int64->:e = @(s.own[0i64]);
+    discard(raw gw_a4_nw_okx(os));   // grows m.own, not s.own
+    pass (<-e) + 6i64;
+};
+func:cell_main_a4_nw_okx = int32() never fails { pass (((raw f_a4_nw_okx(1i64)) + 60i64) =>! int32); };
+// TWIN of `a4_nw_okx`: refused on main (aefae6e) and here at the same site. From seat A4's attack on R4-13 (l.19501),
+// `Team/TMP/plan-177d2d-r4c-2026-11-19/cells/a4/b2/a4_nw_okx_pf.npk`.
+struct:K_a4_nw_okx_pf = { int64:k; };
+struct:H_a4_nw_okx_pf = { List<int64>:l; int64:k; K_a4_nw_okx_pf:kk; };
+func:mk_a4_nw_okx_pf = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_a4_nw_okx_pf = H_a4_nw_okx_pf() never fails { pass H_a4_nw_okx_pf{ l: raw mk_a4_nw_okx_pf(), k: 2i64, kk: K_a4_nw_okx_pf{ k: 3i64 } }; };
+func:growh_a4_nw_okx_pf = int64(H_a4_nw_okx_pf->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_a4_nw_okx_pf = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_a4_nw_okx_pf = int64->(H_a4_nw_okx_pf->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_a4_nw_okx_pf = { H_a4_nw_okx_pf->:lp; List<int64>:own; };
+func:growp_a4_nw_okx_pf = int64(HPO_a4_nw_okx_pf->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:growo_a4_nw_okx_pf = int64(HPO_a4_nw_okx_pf->?:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ??! E5)).own), 1i64); } pass 7i64; };
+func:growr_a4_nw_okx_pf = int64(Result<HPO_a4_nw_okx_pf->>:r) never fails { if (r.is_error) { pass 7i64; } loop(0i64, 64i64, 1i64) { drop list_push(@((<-(r.value)).own), 1i64); } pass 7i64; };
+func:mknone_a4_nw_okx_pf = HPO_a4_nw_okx_pf->?() never fails { pass NIL; };
+struct:SQO_a4_nw_okx_pf = { HPO_a4_nw_okx_pf->?:q; List<int64>:own; };
+func:gw_a4_nw_okx_pf = int64(SQO_a4_nw_okx_pf->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-o).q ??! E5)).own), 1i64); } pass 7i64; };
+func:f_a4_nw_okx_pf = int64(int64:n) never fails {
+    H_a4_nw_okx_pf:h0 = raw mkh_a4_nw_okx_pf();
+    HPO_a4_nw_okx_pf:m = HPO_a4_nw_okx_pf{ lp: @h0, own: raw mk_a4_nw_okx_pf() };
+    SQO_a4_nw_okx_pf:s = SQO_a4_nw_okx_pf{ q: @m, own: raw mk_a4_nw_okx_pf() };
+    int64->:e = @(s.own[0i64]);
+    discard(raw gw_a4_nw_okx_pf(@s));   // grows m.own, not s.own
+    pass (<-e) + 6i64;
+};
+func:cell_main_a4_nw_okx_pf = int32() never fails { pass (((raw f_a4_nw_okx_pf(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (177d2d row 1, R4-15): a right program, 67 on main on every road, refused here. l.19501 item 4: its plain twin `a4_rp2_okpl` is
+// refused on main at the same site. From seat A4's attack on R4-13 (l.19501), `Team/TMP/plan-177d2d-r4c-2026-11-19/cells/a4/b3/a4_rp2_ok.npk`.
+struct:K_a4_rp2_ok = { int64:k; };
+struct:H_a4_rp2_ok = { List<int64>:l; int64:k; K_a4_rp2_ok:kk; };
+func:mk_a4_rp2_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_a4_rp2_ok = H_a4_rp2_ok() never fails { pass H_a4_rp2_ok{ l: raw mk_a4_rp2_ok(), k: 2i64, kk: K_a4_rp2_ok{ k: 3i64 } }; };
+func:growh_a4_rp2_ok = int64(H_a4_rp2_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_a4_rp2_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_a4_rp2_ok = int64->(H_a4_rp2_ok->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_a4_rp2_ok = { H_a4_rp2_ok->:lp; List<int64>:own; };
+func:growp_a4_rp2_ok = int64(HPO_a4_rp2_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:growo_a4_rp2_ok = int64(HPO_a4_rp2_ok->?:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ??! E5)).own), 1i64); } pass 7i64; };
+func:growr_a4_rp2_ok = int64(Result<HPO_a4_rp2_ok->>:r) never fails { if (r.is_error) { pass 7i64; } loop(0i64, 64i64, 1i64) { drop list_push(@((<-(r.value)).own), 1i64); } pass 7i64; };
+func:mknone_a4_rp2_ok = HPO_a4_rp2_ok->?() never fails { pass NIL; };
+func:g_a4_rp2_ok = int64(HPO_a4_rp2_ok->?:o, HPO_a4_rp2_ok->?:o2) never fails { o = o2; pass raw growo_a4_rp2_ok(o); };
+func:f_a4_rp2_ok = int64(int64:n) never fails {
+    H_a4_rp2_ok:h0 = raw mkh_a4_rp2_ok();
+    HPO_a4_rp2_ok:m1 = HPO_a4_rp2_ok{ lp: @h0, own: raw mk_a4_rp2_ok() };
+    HPO_a4_rp2_ok:m2 = HPO_a4_rp2_ok{ lp: @h0, own: raw mk_a4_rp2_ok() };
+    HPO_a4_rp2_ok->?:a = @m1;
+    HPO_a4_rp2_ok->?:b = @m2;
+    int64->:e = @(m1.own[0i64]);
+    discard(raw g_a4_rp2_ok(a, b));   // grows m2.own, not m1.own
+    pass (<-e) + 6i64;
+};
+func:cell_main_a4_rp2_ok = int32() never fails { pass (((raw f_a4_rp2_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `a4_rp2_ok`: refused on main (aefae6e) and here at the same site. From seat A4's attack on R4-13 (l.19501),
+// `Team/TMP/plan-177d2d-r4c-2026-11-19/cells/a4/b3/a4_rp2_okpl.npk`.
+struct:K_a4_rp2_okpl = { int64:k; };
+struct:H_a4_rp2_okpl = { List<int64>:l; int64:k; K_a4_rp2_okpl:kk; };
+func:mk_a4_rp2_okpl = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_a4_rp2_okpl = H_a4_rp2_okpl() never fails { pass H_a4_rp2_okpl{ l: raw mk_a4_rp2_okpl(), k: 2i64, kk: K_a4_rp2_okpl{ k: 3i64 } }; };
+func:growh_a4_rp2_okpl = int64(H_a4_rp2_okpl->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_a4_rp2_okpl = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_a4_rp2_okpl = int64->(H_a4_rp2_okpl->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_a4_rp2_okpl = { H_a4_rp2_okpl->:lp; List<int64>:own; };
+func:growp_a4_rp2_okpl = int64(HPO_a4_rp2_okpl->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:growo_a4_rp2_okpl = int64(HPO_a4_rp2_okpl->?:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ??! E5)).own), 1i64); } pass 7i64; };
+func:growr_a4_rp2_okpl = int64(Result<HPO_a4_rp2_okpl->>:r) never fails { if (r.is_error) { pass 7i64; } loop(0i64, 64i64, 1i64) { drop list_push(@((<-(r.value)).own), 1i64); } pass 7i64; };
+func:mknone_a4_rp2_okpl = HPO_a4_rp2_okpl->?() never fails { pass NIL; };
+func:g_a4_rp2_okpl = int64(HPO_a4_rp2_okpl->:o, HPO_a4_rp2_okpl->:o2) never fails { o = o2; pass raw growp_a4_rp2_okpl(o); };
+func:f_a4_rp2_okpl = int64(int64:n) never fails {
+    H_a4_rp2_okpl:h0 = raw mkh_a4_rp2_okpl();
+    HPO_a4_rp2_okpl:m1 = HPO_a4_rp2_okpl{ lp: @h0, own: raw mk_a4_rp2_okpl() };
+    HPO_a4_rp2_okpl:m2 = HPO_a4_rp2_okpl{ lp: @h0, own: raw mk_a4_rp2_okpl() };
+    HPO_a4_rp2_okpl->:a = @m1;
+    HPO_a4_rp2_okpl->:b = @m2;
+    int64->:e = @(m1.own[0i64]);
+    discard(raw g_a4_rp2_okpl(a, b));
+    pass (<-e) + 6i64;
+};
+func:cell_main_a4_rp2_okpl = int32() never fails { pass (((raw f_a4_rp2_okpl(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (177d2d row 1, R4-15): a right program, 67 on main on every road, refused here. l.19501 item 4: its plain twin `a4_pv_nv_okpl` is
+// refused on main at the same site. From seat A4's attack on R4-13 (l.19501), `Team/TMP/plan-177d2d-r4c-2026-11-19/cells/a4/b4/a4_pv_nv_ok.npk`.
+struct:K_a4_pv_nv_ok = { int64:k; };
+struct:H_a4_pv_nv_ok = { List<int64>:l; int64:k; K_a4_pv_nv_ok:kk; };
+func:mk_a4_pv_nv_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_a4_pv_nv_ok = H_a4_pv_nv_ok() never fails { pass H_a4_pv_nv_ok{ l: raw mk_a4_pv_nv_ok(), k: 2i64, kk: K_a4_pv_nv_ok{ k: 3i64 } }; };
+func:growh_a4_pv_nv_ok = int64(H_a4_pv_nv_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_a4_pv_nv_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_a4_pv_nv_ok = int64->(H_a4_pv_nv_ok->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_a4_pv_nv_ok = { H_a4_pv_nv_ok->:lp; List<int64>:own; };
+func:growp_a4_pv_nv_ok = int64(HPO_a4_pv_nv_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:growo_a4_pv_nv_ok = int64(HPO_a4_pv_nv_ok->?:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ??! E5)).own), 1i64); } pass 7i64; };
+func:growr_a4_pv_nv_ok = int64(Result<HPO_a4_pv_nv_ok->>:r) never fails { if (r.is_error) { pass 7i64; } loop(0i64, 64i64, 1i64) { drop list_push(@((<-(r.value)).own), 1i64); } pass 7i64; };
+func:mknone_a4_pv_nv_ok = HPO_a4_pv_nv_ok->?() never fails { pass NIL; };
+struct:SQO_a4_pv_nv_ok = { HPO_a4_pv_nv_ok->?:q; List<int64>:own; };
+func:idv_a4_pv_nv_ok = int64->(int64->:p) never fails { pass p; };
+func:gv_a4_pv_nv_ok = int64->(SQO_a4_pv_nv_ok->?:o) never fails { pass raw idv_a4_pv_nv_ok(@((<-((<-(o ??! E5)).q ??! E5)).own[0i64])); };
+func:f_a4_pv_nv_ok = int64(int64:n) never fails {
+    H_a4_pv_nv_ok:h0 = raw mkh_a4_pv_nv_ok();
+    HPO_a4_pv_nv_ok:m = HPO_a4_pv_nv_ok{ lp: @h0, own: raw mk_a4_pv_nv_ok() };
+    SQO_a4_pv_nv_ok:s = SQO_a4_pv_nv_ok{ q: @m, own: raw mk_a4_pv_nv_ok() };
+    SQO_a4_pv_nv_ok->?:os = @s;
+    int64->:e = raw gv_a4_pv_nv_ok(os);
+    discard(raw growl_a4_pv_nv_ok(@s.own));   // grows s.own, not m.own
+    pass (<-e) + 6i64;
+};
+func:cell_main_a4_pv_nv_ok = int32() never fails { pass (((raw f_a4_pv_nv_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `a4_pv_nv_ok`: refused on main (aefae6e) and here at the same site. From seat A4's attack on R4-13 (l.19501),
+// `Team/TMP/plan-177d2d-r4c-2026-11-19/cells/a4/b4/a4_pv_nv_okpl.npk`.
+struct:K_a4_pv_nv_okpl = { int64:k; };
+struct:H_a4_pv_nv_okpl = { List<int64>:l; int64:k; K_a4_pv_nv_okpl:kk; };
+func:mk_a4_pv_nv_okpl = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_a4_pv_nv_okpl = H_a4_pv_nv_okpl() never fails { pass H_a4_pv_nv_okpl{ l: raw mk_a4_pv_nv_okpl(), k: 2i64, kk: K_a4_pv_nv_okpl{ k: 3i64 } }; };
+func:growh_a4_pv_nv_okpl = int64(H_a4_pv_nv_okpl->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_a4_pv_nv_okpl = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_a4_pv_nv_okpl = int64->(H_a4_pv_nv_okpl->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_a4_pv_nv_okpl = { H_a4_pv_nv_okpl->:lp; List<int64>:own; };
+func:growp_a4_pv_nv_okpl = int64(HPO_a4_pv_nv_okpl->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:growo_a4_pv_nv_okpl = int64(HPO_a4_pv_nv_okpl->?:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ??! E5)).own), 1i64); } pass 7i64; };
+func:growr_a4_pv_nv_okpl = int64(Result<HPO_a4_pv_nv_okpl->>:r) never fails { if (r.is_error) { pass 7i64; } loop(0i64, 64i64, 1i64) { drop list_push(@((<-(r.value)).own), 1i64); } pass 7i64; };
+func:mknone_a4_pv_nv_okpl = HPO_a4_pv_nv_okpl->?() never fails { pass NIL; };
+struct:SQP_a4_pv_nv_okpl = { HPO_a4_pv_nv_okpl->:q; List<int64>:own; };
+func:idv_a4_pv_nv_okpl = int64->(int64->:p) never fails { pass p; };
+func:gv_a4_pv_nv_okpl = int64->(SQP_a4_pv_nv_okpl->:o) never fails { pass raw idv_a4_pv_nv_okpl(@((<-((<-o).q)).own[0i64])); };
+func:f_a4_pv_nv_okpl = int64(int64:n) never fails {
+    H_a4_pv_nv_okpl:h0 = raw mkh_a4_pv_nv_okpl();
+    HPO_a4_pv_nv_okpl:m = HPO_a4_pv_nv_okpl{ lp: @h0, own: raw mk_a4_pv_nv_okpl() };
+    SQP_a4_pv_nv_okpl:s = SQP_a4_pv_nv_okpl{ q: @m, own: raw mk_a4_pv_nv_okpl() };
+    SQP_a4_pv_nv_okpl->:os = @s;
+    int64->:e = raw gv_a4_pv_nv_okpl(os);
+    discard(raw growl_a4_pv_nv_okpl(@s.own));
+    pass (<-e) + 6i64;
+};
+func:cell_main_a4_pv_nv_okpl = int32() never fails { pass (((raw f_a4_pv_nv_okpl(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (177d2d row 1, R4-15): a right program, 67 on main on every road, refused here. l.19501 item 2: its twin on R4-11's own variable,
+// the call road, is `a4_pv_okb` (the element returned through a local, not through `idv`), refused on main in `gv`'s own body (BORROW-001). That
+// refusal is main's own price, since `a4_pv_okb_pl`, the plain form, is accepted; it is named on DEF-671's row. From seat A4's attack on R4-13
+// (l.19501), `Team/TMP/plan-177d2d-r4c-2026-11-19/cells/a4/b4/a4_pv_ok.npk`.
+struct:K_a4_pv_ok = { int64:k; };
+struct:H_a4_pv_ok = { List<int64>:l; int64:k; K_a4_pv_ok:kk; };
+func:mk_a4_pv_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_a4_pv_ok = H_a4_pv_ok() never fails { pass H_a4_pv_ok{ l: raw mk_a4_pv_ok(), k: 2i64, kk: K_a4_pv_ok{ k: 3i64 } }; };
+func:growh_a4_pv_ok = int64(H_a4_pv_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_a4_pv_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_a4_pv_ok = int64->(H_a4_pv_ok->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_a4_pv_ok = { H_a4_pv_ok->:lp; List<int64>:own; };
+func:growp_a4_pv_ok = int64(HPO_a4_pv_ok->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:growo_a4_pv_ok = int64(HPO_a4_pv_ok->?:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ??! E5)).own), 1i64); } pass 7i64; };
+func:growr_a4_pv_ok = int64(Result<HPO_a4_pv_ok->>:r) never fails { if (r.is_error) { pass 7i64; } loop(0i64, 64i64, 1i64) { drop list_push(@((<-(r.value)).own), 1i64); } pass 7i64; };
+func:mknone_a4_pv_ok = HPO_a4_pv_ok->?() never fails { pass NIL; };
+func:idv_a4_pv_ok = int64->(int64->:p) never fails { pass p; };
+func:gv_a4_pv_ok = int64->(HPO_a4_pv_ok->?:o) never fails { pass raw idv_a4_pv_ok(@((<-(o ??! E5)).own[0i64])); };
+func:f_a4_pv_ok = int64(int64:n) never fails {
+    H_a4_pv_ok:h0 = raw mkh_a4_pv_ok();
+    HPO_a4_pv_ok:m = HPO_a4_pv_ok{ lp: @h0, own: raw mk_a4_pv_ok() };
+    HPO_a4_pv_ok:m1 = HPO_a4_pv_ok{ lp: @h0, own: raw mk_a4_pv_ok() };
+    HPO_a4_pv_ok->?:om = @m;
+    int64->:e = raw gv_a4_pv_ok(om);
+    discard(raw growp_a4_pv_ok(@m1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_a4_pv_ok = int32() never fails { pass (((raw f_a4_pv_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `a4_pv_ok`: refused on main (aefae6e) and here at the same site. From seat A4's attack on R4-13 (l.19501),
+// `Team/TMP/plan-177d2d-r4c-2026-11-19/cells/a4/b5/a4_pv_okb.npk`.
+struct:K_a4_pv_okb = { int64:k; };
+struct:H_a4_pv_okb = { List<int64>:l; int64:k; K_a4_pv_okb:kk; };
+func:mk_a4_pv_okb = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_a4_pv_okb = H_a4_pv_okb() never fails { pass H_a4_pv_okb{ l: raw mk_a4_pv_okb(), k: 2i64, kk: K_a4_pv_okb{ k: 3i64 } }; };
+func:growh_a4_pv_okb = int64(H_a4_pv_okb->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_a4_pv_okb = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_a4_pv_okb = int64->(H_a4_pv_okb->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO_a4_pv_okb = { H_a4_pv_okb->:lp; List<int64>:own; };
+func:growp_a4_pv_okb = int64(HPO_a4_pv_okb->:p) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:growo_a4_pv_okb = int64(HPO_a4_pv_okb->?:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ??! E5)).own), 1i64); } pass 7i64; };
+func:growr_a4_pv_okb = int64(Result<HPO_a4_pv_okb->>:r) never fails { if (r.is_error) { pass 7i64; } loop(0i64, 64i64, 1i64) { drop list_push(@((<-(r.value)).own), 1i64); } pass 7i64; };
+func:mknone_a4_pv_okb = HPO_a4_pv_okb->?() never fails { pass NIL; };
+func:gv_a4_pv_okb = int64->(HPO_a4_pv_okb->?:o) never fails { int64->:e = @((<-(o ??! E5)).own[0i64]); pass e; };
+func:f_a4_pv_okb = int64(int64:n) never fails {
+    H_a4_pv_okb:h0 = raw mkh_a4_pv_okb();
+    HPO_a4_pv_okb:m = HPO_a4_pv_okb{ lp: @h0, own: raw mk_a4_pv_okb() };
+    HPO_a4_pv_okb:m1 = HPO_a4_pv_okb{ lp: @h0, own: raw mk_a4_pv_okb() };
+    HPO_a4_pv_okb->?:om = @m;
+    int64->:e = raw gv_a4_pv_okb(om);
+    discard(raw growp_a4_pv_okb(@m1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_a4_pv_okb = int32() never fails { pass (((raw f_a4_pv_okb(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (177d2d row 1, R4-15): a right program, 67 on main on every road, refused here. l.19266: its plain twin `a11_elh_ok_pl` is refused
+// on main at the same site. From seat AA's attack on R4-2 (l.19154), `Team/TMP/plan-177d2d-r4c-2026-11-19/cells/r4/aa/r4g/a11_elh_ok.npk`.
+struct:HO_a11_elh_ok = { List<int64>:own; List<int64>:oth; int64:z; };
+struct:SO_a11_elh_ok = { HO_a11_elh_ok->?:oq; int64:z; };
+struct:SOP_a11_elh_ok = { HO_a11_elh_ok->:oq; int64:z; };
+func:mk_a11_elh_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkho_a11_elh_ok = HO_a11_elh_ok() never fails { pass HO_a11_elh_ok{ own: raw mk_a11_elh_ok(), oth: raw mk_a11_elh_ok(), z: 1i64 }; };
+func:growl_a11_elh_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:sete_a11_elh_ok = int64(HO_a11_elh_ok->?:r) never fails { (<-(r ??! E5)).own[0i64] = 1i64; pass 7i64; };
+func:g_a11_elh_ok = int64(int64:n) never fails {
+    HO_a11_elh_ok:m = raw mkho_a11_elh_ok(); HO_a11_elh_ok->?:oq = @m;
+    int64->:e = @(m.own[0i64]);
+    discard(raw sete_a11_elh_ok(oq));
+    pass (<-e) + 6i64;
+};
+func:f_a11_elh_ok = int64(int64:n) never fails { pass raw g_a11_elh_ok(n); };
+func:cell_main_a11_elh_ok = int32() never fails { pass (((raw f_a11_elh_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `a11_elh_ok`: refused on main (aefae6e) and here at the same site. From seat AA's attack on R4-2 (l.19154),
+// `Team/TMP/plan-177d2d-r4c-2026-11-19/cells/r4/aa/r4g/a11_elh_ok_pl.npk`.
+struct:HO_a11_elh_ok_pl = { List<int64>:own; List<int64>:oth; int64:z; };
+struct:SO_a11_elh_ok_pl = { HO_a11_elh_ok_pl->?:oq; int64:z; };
+struct:SOP_a11_elh_ok_pl = { HO_a11_elh_ok_pl->:oq; int64:z; };
+func:mk_a11_elh_ok_pl = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkho_a11_elh_ok_pl = HO_a11_elh_ok_pl() never fails { pass HO_a11_elh_ok_pl{ own: raw mk_a11_elh_ok_pl(), oth: raw mk_a11_elh_ok_pl(), z: 1i64 }; };
+func:growl_a11_elh_ok_pl = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:sete_a11_elh_ok_pl = int64(HO_a11_elh_ok_pl->:r) never fails { (<-r).own[0i64] = 1i64; pass 7i64; };
+func:g_a11_elh_ok_pl = int64(int64:n) never fails {
+    HO_a11_elh_ok_pl:m = raw mkho_a11_elh_ok_pl(); HO_a11_elh_ok_pl->:oq = @m;
+    int64->:e = @(m.own[0i64]);
+    discard(raw sete_a11_elh_ok_pl(oq));
+    pass (<-e) + 6i64;
+};
+func:f_a11_elh_ok_pl = int64(int64:n) never fails { pass raw g_a11_elh_ok_pl(n); };
+func:cell_main_a11_elh_ok_pl = int32() never fails { pass (((raw f_a11_elh_ok_pl(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (177d2d row 1, R4-15): a right program, 67 on main on every road, refused here. l.19266: its plain twin `a11_els_ok_pl` is refused
+// on main at the same site. From seat AA's attack on R4-2 (l.19154), `Team/TMP/plan-177d2d-r4c-2026-11-19/cells/r4/aa/r4g/a11_els_ok.npk`.
+struct:HO_a11_els_ok = { List<int64>:own; List<int64>:oth; int64:z; };
+struct:SO_a11_els_ok = { HO_a11_els_ok->?:oq; int64:z; };
+struct:SOP_a11_els_ok = { HO_a11_els_ok->:oq; int64:z; };
+func:mk_a11_els_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkho_a11_els_ok = HO_a11_els_ok() never fails { pass HO_a11_els_ok{ own: raw mk_a11_els_ok(), oth: raw mk_a11_els_ok(), z: 1i64 }; };
+func:growl_a11_els_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:sete_a11_els_ok = int64(List<int64>->?:r) never fails { (<-(r ??! E5))[0i64] = 1i64; pass 7i64; };
+func:g_a11_els_ok = int64(int64:n) never fails {
+    HO_a11_els_ok:m = raw mkho_a11_els_ok(); List<int64>->?:ol = @m.own;
+    int64->:e = @(m.own[0i64]);
+    discard(raw sete_a11_els_ok(ol));
+    pass (<-e) + 6i64;
+};
+func:f_a11_els_ok = int64(int64:n) never fails { pass raw g_a11_els_ok(n); };
+func:cell_main_a11_els_ok = int32() never fails { pass (((raw f_a11_els_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `a11_els_ok`: refused on main (aefae6e) and here at the same site. From seat AA's attack on R4-2 (l.19154),
+// `Team/TMP/plan-177d2d-r4c-2026-11-19/cells/r4/aa/r4g/a11_els_ok_pl.npk`.
+struct:HO_a11_els_ok_pl = { List<int64>:own; List<int64>:oth; int64:z; };
+struct:SO_a11_els_ok_pl = { HO_a11_els_ok_pl->?:oq; int64:z; };
+struct:SOP_a11_els_ok_pl = { HO_a11_els_ok_pl->:oq; int64:z; };
+func:mk_a11_els_ok_pl = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkho_a11_els_ok_pl = HO_a11_els_ok_pl() never fails { pass HO_a11_els_ok_pl{ own: raw mk_a11_els_ok_pl(), oth: raw mk_a11_els_ok_pl(), z: 1i64 }; };
+func:growl_a11_els_ok_pl = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:sete_a11_els_ok_pl = int64(List<int64>->:r) never fails { (<-r)[0i64] = 1i64; pass 7i64; };
+func:g_a11_els_ok_pl = int64(int64:n) never fails {
+    HO_a11_els_ok_pl:m = raw mkho_a11_els_ok_pl(); List<int64>->:ol = @m.own;
+    int64->:e = @(m.own[0i64]);
+    discard(raw sete_a11_els_ok_pl(ol));
+    pass (<-e) + 6i64;
+};
+func:f_a11_els_ok_pl = int64(int64:n) never fails { pass raw g_a11_els_ok_pl(n); };
+func:cell_main_a11_els_ok_pl = int32() never fails { pass (((raw f_a11_els_ok_pl(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

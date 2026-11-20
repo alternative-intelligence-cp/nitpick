@@ -1403,7 +1403,7 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
         // the claims keep D-286's same-root rule).
         if (((akind == (raw ACC_WRITE())) || (akind == (raw ACC_EXCLUSIVE()))) && (mode != (raw CHECK_CLAIMS()))) {
             int32:plt0 = raw exprtypes_get(x.etypes, place);
-            if ((plt0 != 0i32) && ((raw type_kind(x.types, plt0)) == (raw TY_POINTER()))) {
+            if ((plt0 != 0i32) && ((raw type_kind(x.types, raw type_unwrapped(x.types, plt0))) == (raw TY_POINTER()))) {
                 List<Step>:ap0 = raw list_init::<Step>(8i64);
                 drop decode_path(x, extra, @ap0);
                 if (raw check_pointer_targets(x, place, ap0, akind, at, mode)) { pass true; }
@@ -1841,7 +1841,7 @@ func:ptr_write_base = ExprId(Alias->:x, ExprId:place, int64:n) never fails {
         if (n > own.count) {
             int32:t = raw exprtypes_get(x.etypes, place);
             if (t != 0i32) {
-                if ((raw type_kind(x.types, t)) == (raw TY_POINTER())) { pass place; }
+                if ((raw type_kind(x.types, raw type_unwrapped(x.types, t))) == (raw TY_POINTER())) { pass place; }   // DEF-671: a wrapped pointer too
             }
         }
     }
@@ -1899,7 +1899,7 @@ func:ptr_ref_is_target = bool(Alias->:x, ViewRef:vr, int32:pty, int32:pte) never
 // `h.items[…]`, disjoint from `@h.l[0]` (`xu12l`, `xu12r`: 236 at -O0 and -O2, the detector 97). Its price: a getter of a disjoint `List` field grown under an
 // element address of the other is refused (`pr1_ok`).
 func:target_is_pointee = bool(Alias->:x, ViewRef:vr, ExprId:pe) never fails {
-    int32:pty = raw exprtypes_get(x.etypes, raw peel_ptr_casts(x, pe));
+    int32:pty = raw type_unwrapped(x.types, raw exprtypes_get(x.etypes, raw peel_ptr_casts(x, pe)));   // AA debug arm
     // A POINTEE THAT HOLDS ITS OWN TYPE UNDER A `List` (a tree: `T = { List<T>:kids; List<int64>:vals; }`; 177d2b4 row 8, hole 1): a ref of type `T` may be the
     // pointee or any `T` below it (`kid(@root)` passes `@((<-t).kids[0i64])`), so it is the target WHOLE (`rt1`, `rt2`, `rt4`, `mr1`, `mr2`, `rd2`).
     if (raw type_heap_holds(x, raw type_elem(x.types, pty), raw type_elem(x.types, pty), false, 8i32)) { pass false; }
@@ -2014,7 +2014,7 @@ func:pointer_targets_of = NIL(Alias->:x, Span:at, ExprId:pe_in, int32:fuel, List
     int32:r = raw place_root_symbol(x, pe);
     if (r == 0i32) { pass NIL; }
     Symbol:sy = raw symtab_get(x.tab, r);
-    int32:pty = raw exprtypes_get(x.etypes, pe);
+    int32:pty = raw type_unwrapped(x.types, raw exprtypes_get(x.etypes, pe));   // DEF-671: an Optional or `Result` holding the pointer is asked as the pointer
     if (pty == 0i32) { pass NIL; }
     int32:pte = raw type_elem(x.types, pty);
     if (sy.origin_kind != (raw SYM_STMT())) {   // a local's chain holds where it points
@@ -2122,8 +2122,13 @@ func:check_pointer_targets = bool(Alias->:x, ExprId:place, List<Step>:ap, int32:
         // pointee alone (D-286, DEF-272); under a callee's summary it was taken
         // as the write's pointer above (DEF-306, DEF-308).
         int32:plt = raw exprtypes_get(x.etypes, place);
-        if ((plt != 0i32) && ((raw type_kind(x.types, plt)) == (raw TY_POINTER()))
+        if ((plt != 0i32) && ((raw type_kind(x.types, raw type_unwrapped(x.types, plt))) == (raw TY_POINTER()))
             && ((raw place_root_symbol(x, place)) == 0i32)) {
+            // R4-15 (DEF-671, root 4's rootless arm): A WRAPPED ROOTLESS POINTER'S WHOLE ITEM IS NO WRITE OF ITS POINTEE, as the rooted arm reads a wrapped
+            // name's (`ptr_place_written_whole` asks the place's own type). A write through the callee's unwrap (`@((<-(o ??! E5)).own)`) records the whole
+            // beside its paths (`growo2`: `MUT k=0 f488/... <whole>`), and read here as the target whole it refused `growo2(raw idw2(om))` under a view of
+            // `m.a` (`a4_r4c_okx`, `a4_r4c_okxa`, `a4_r4t_okx`) where `growo2(om)` is accepted. The paths below the pointee are read as before.
+            if ((ap.count == 0i64) && ((raw type_kind(x.types, plt)) != (raw TY_POINTER()))) { pass false; }
             if (raw pointee_is_any(x, place)) { erase = true; }
             List<ViewRef>:ctg = raw list_init::<ViewRef>(4i64);
             drop escape_pointer_targets(x.esc, place, @ctg);
@@ -2818,7 +2823,10 @@ func:push_enclosing_parties = NIL(Alias->:x, StmtId:defer_id) never fails {
         Party:pp = x.pre[i];
         bool:already = false;
         for (int64:j in 0i64...x.live.count) {
-            if (x.live[j].site.index == pp.site.index) { already = true; }
+            // DEF-703: already live only when the same holder holds the same site with the same kind; a party
+            // of another holder, or another kind of this holder's (DEF-666's PLAIN beside its ELEM), doesn't stand for it.
+            if ((x.live[j].site.index == pp.site.index) && (x.live[j].holder == pp.holder)
+                && (x.live[j].kind == pp.kind) && (x.live[j].path == pp.path)) { already = true; }   // AA debug arm
         }
         if (already) { continue; }
         drop list_push(@x.live, pp);
@@ -2896,9 +2904,59 @@ func:check_written_mode = NIL(Alias->:x, ExprId:place, int32:callee, int32:pos, 
     }
     while (e >= 0i32) decreases e + 1i32 {
         if (raw check_access_reported(x, place, raw escape_mut_path(x.esc, e), raw ACC_WRITE(), raw expr_none(), at, mode)) { pass NIL; }
+        if (raw check_hop_written(x, place, raw escape_mut_path(x.esc, e), at, mode, 8i32)) { pass NIL; }   // RB-1
         e = raw escape_mut_next(x.esc, e);
     }
     pass NIL;
+};
+
+// RB-1 (DEF-348): A CALLEE'S WRITE BELOW A POINTER FIELD OF THE PLACE IT WAS HANDED is a write through that pointer, judged as the write by name is
+// (`check_pointer_targets`): `put2(@sx, hq)` writing `(<-((<-p).q)).lp` writes `sx.q`'s `lp`, where `sx`'s chain says `sx.q` points (`@m`), not into `sx`
+// (`escape_path_hop` reads the hop off the types). A target that is the pointee takes the rest of the path, re-resolved at its own next hop; any other target
+// is written whole (DEF-591's closed direction).
+func:check_hop_written = bool(Alias->:x, ExprId:place, int32:path, Span:at, int32:mode, int32:fuel) never fails {
+    List<int32>:seen = raw list_init::<int32>(8i64);
+    pass (raw check_hop_written_s(x, place, path, at, mode, fuel, @seen));
+};
+// RB-1n: ONCE PER ROOT, PLACE TYPE AND REST, at the best fuel met (`seen`: four ints each, the last the fuel). Each pointee target with path 0 recursed
+// again for every target that led to it, K^(D-1) (seat ARB's `hf_d8k10`: 261.90 s on RB-1m, 0.40 s on M). A revisit at no more fuel adds nothing; one at
+// more fuel can reach further, so it goes on and the entry keeps the larger.
+func:check_hop_written_s = bool(Alias->:x, ExprId:place, int32:path, Span:at, int32:mode, int32:fuel, List<int32>->:seen) decreases fuel never fails {
+    if (fuel <= 0i32) { pass false; }
+    List<int32>:hs = raw list_init::<int32>(2i64);
+    int32:ht = raw escape_path_hop(x.esc, raw exprtypes_get(x.etypes, place), path, @hs);
+    if (ht == 0i32) { pass false; }
+    int32:r = raw place_root_symbol(x, place);
+    if (r == 0i32) { pass false; }
+    int32:pty = raw exprtypes_get(x.etypes, place);
+    int64:sf = 0i64 - 1i64;
+    for (int64:si in 0i64...(seen.count / 4i64)) { if (((<-seen)[4i64 * si] == r) && ((<-seen)[(4i64 * si) + 1i64] == pty) && ((<-seen)[(4i64 * si) + 2i64] == path)) { sf = (4i64 * si) + 3i64; } }
+    if ((sf >= 0i64) && ((<-seen)[sf] >= fuel)) { pass false; }
+    if (sf >= 0i64) { (<-seen)[sf] = fuel; } else { drop list_push(seen, r); drop list_push(seen, pty); drop list_push(seen, path); drop list_push(seen, fuel); }
+    Symbol:sy = raw symtab_get(x.tab, r);
+    if (sy.origin_kind != (raw SYM_STMT())) { pass false; }
+    int32:pte = raw type_elem(x.types, ht);
+    int32:e = raw escape_view_ref_first(x.esc, sy.origin);
+    while (e >= 0i32) decreases e + 1i32 {
+        ViewRef:vr = raw escape_view_ref(x.esc, e);
+        e = raw escape_view_ref_next(x.esc, e);
+        if ((vr.root == 0i32) || (!(raw ptr_ref_is_target(x, vr, ht, pte)))) { continue; }
+        List<Step>:tp = raw list_init::<Step>(8i64);
+        if (!(raw ptr_target_steps(x, vr, @tp))) { continue; }
+        int32:vt = raw exprtypes_get(x.etypes, ExprId{ index: vr.place });
+        int32:et = raw escape_path_end_type(x.esc, vt, vr.path);
+        bool:pointee = ((vr.kind == (raw REF_ADDR())) && (et != 0i32) && (et == pte)) || ((vr.kind == (raw REF_PASS())) && ((vt == ht) || (vr.read == ht)));
+        if (pointee) { drop decode_path(x, hs[1i64], @tp); }
+        if (raw check_view_parties_at(x, vr, tp, 0i32, 0i32, raw expr_none(), raw ACC_WRITE(), at, mode)) { pass true; }
+        if (raw check_pointer_view_parties(x, vr.root, tp, raw ACC_WRITE(), at, 0i32)) { pass true; }
+        if (pointee && (vr.kind == (raw REF_ADDR())) && (vr.path == 0i32)) {
+            ExprId:tpl = ExprId{ index: vr.place };
+            ExprNode:tpn = raw ast_expr(x.ast, tpl);
+            if (tpn.kind == ExprKind.ExprAddressOfExpr) { tpl = raw expr_operand(tpn); }
+            if (raw check_hop_written_s(x, tpl, hs[1i64], at, mode, fuel - 1i32, seen)) { pass true; }
+        }
+    }
+    pass false;
 };
 
 // THE VIEW PARTIES AGAINST WHAT A CALLEE WRITES THROUGH A SLICE ARGUMENT
@@ -3515,6 +3573,12 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
                 lent_ok = raw crossing_concurrent_method(rxk, raw intern_get(x.it, n.payload =>! int32));
                 // AN ACQUISITION INVALIDATES NO VIEW OF ITS LOCK (DEF-438): the cell stays where it is, so a guard's view of the lock (and any other) isn't its conflict. A second guard while the first lives is the lock analysis's, LOCK-001, one report (D-240).
                 lock_op = lent_ok && ((rxk == (raw TY_MUTEX())) || (rxk == (raw TY_RWLOCK())));
+                // A WAIT RELEASES THE GUARD'S LOCK (DEF-711): another task may replace the guarded value while `cv.timedwait(g, d)` sleeps,
+                // so a view of `g.value` taken before the wait reads freed bytes after it. The guard argument is written, for the views.
+                if (lent_ok && (rxk == (raw TY_CONDVAR())) && (count > 0i32) && (raw string_eq(raw intern_get(x.it, n.payload =>! int32), "timedwait"))) {
+                    ExprId:ga = ExprId{ index: raw ast_id_at(x.ast, start, 0i32) };
+                    drop check_access_ex(x, ga, 0i32, raw ACC_WRITE(), raw expr_none(), (raw ast_expr(x.ast, ga)).span, raw CHECK_VIEWS());
+                }
             }
         }
         if (ptr_recv && (rcallee > 0i32) && (raw is_place_chain(x, recv))) {
@@ -3610,9 +3674,12 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
         // cannot read; nothing for a bare or `#` builtin, whose aliasing is the
         // reference's row) is an access of what the pointer reaches, against
         // the view parties rooted at the pointer's name.
+        // DEF-671's caller side: an Optional or a `Result` that holds the pointer is handed as the pointer (`repo(so.oq)`, the callee writing
+        // `(<-(r ??! E5)).own`), as `passed_pointee` asks it (DEF-601).
         int32:at2 = raw exprtypes_get(x.etypes, a2);
+        int32:at2u = raw type_unwrapped(x.types, at2);
         if ((at2 != 0i32) && (!(raw escape_call_is_bare_builtin(x.esc, id))) && (n.kind != ExprKind.ExprBuiltinExpr)) {
-            if (((raw type_kind(x.types, at2)) == (raw TY_POINTER())) && (raw is_place_chain(x, a2))) {
+            if (((raw type_kind(x.types, at2u)) == (raw TY_POINTER())) && (raw is_place_chain(x, a2))) {
                 drop check_written(x, a2, callee_fn, pos_base + j, (raw ast_expr(x.ast, a2)).span);
             }
             // A SLICE HANDED TO A CALLEE (DEF-289's second face, landing 157):
@@ -3644,7 +3711,7 @@ func:acc_call = NIL(Alias->:x, ExprId:id, ExprNode:n, ExprId:recv, int32:start, 
             // view parties at the storage it points at (check_written →
             // check_pointer_targets' call-result arm). The place-chain twin is
             // the branch above.
-            if (((raw type_kind(x.types, at2)) == (raw TY_POINTER())) && (!(raw is_place_chain(x, a2)))) {
+            if (((raw type_kind(x.types, at2u)) == (raw TY_POINTER())) && (!(raw is_place_chain(x, a2)))) {
                 drop check_written(x, a2, callee_fn, pos_base + j, (raw ast_expr(x.ast, a2)).span);
             }
         }
@@ -3958,7 +4025,11 @@ func:rejudge_earlier = NIL(Alias->:x, ExprId:snap, ExprId:id, ExprId:recv, int32
 func:rejudge_holder = NIL(Alias->:x, ExprId:a, int64:d0) never fails {
     // No view live, nothing to judge; and the type walk below is not free: `struct_field` resolves every field's type again and a generic field commits into `ast.ids` (+4 MiB of `peak_live` on `src/npkc.npk` until this guard).
     bool:seen = false;
-    for (int64:v in 0i64...x.live.count) { if (x.live[v].kind == (raw PARTY_VIEW())) { seen = true; } }
+    // DEF-708: a BY-VALUE holder (`grow(w)`, `Wrap:w = Wrap{ lp: @l }`) hands the callee the List an element address is live into;
+    // an address or a pointer argument is judged by the callee's summary where main judges it (rule A, DEF-304), so it isn't here.
+    int32:t0 = raw type_unwrapped(x.types, raw exprtypes_get(x.etypes, a));   // an Optional or a Result of a pointer is a pointer (T3-708d)
+    bool:byval = ((raw ast_expr(x.ast, a)).kind != ExprKind.ExprAddressOfExpr) && ((t0 == 0i32) || ((raw type_kind(x.types, t0)) != (raw TY_POINTER())));
+    for (int64:v in 0i64...x.live.count) { if ((x.live[v].kind == (raw PARTY_VIEW())) || (byval && (x.live[v].kind == (raw PARTY_ELEM_ADDR())) && (x.live[v].view_kind != (0i32 - 2i32)) && (raw place_is_list_element(x, x.live[v].place)))) { seen = true; } }
     if (!seen) { pass NIL; }
     int32:t = raw exprtypes_get(x.etypes, a);
     if ((t != 0i32) && ((raw type_kind(x.types, t)) == (raw TY_POINTER()))) { t = raw type_elem(x.types, t); }
@@ -3967,7 +4038,7 @@ func:rejudge_holder = NIL(Alias->:x, ExprId:a, int64:d0) never fails {
     int32:hr = raw place_root_symbol(x, is (an.kind == ExprKind.ExprAddressOfExpr) : (raw expr_operand(an)) : a);
     for (int64:i in 0i64...x.live.count) {
         if ((raw diaglist_count(x.diags)) > d0) { pass NIL; }   // one mistake, one report
-        if ((x.live[i].kind == (raw PARTY_VIEW())) && ((hr == 0i32) || (x.live[i].holder != hr))) {
+        if (((x.live[i].kind == (raw PARTY_VIEW())) || (byval && (x.live[i].kind == (raw PARTY_ELEM_ADDR())) && (x.live[i].view_kind != (0i32 - 2i32)) && (raw place_is_list_element(x, x.live[i].place)))) && ((hr == 0i32) || (x.live[i].holder != hr))) {
             drop target_handed(x, a, (raw ast_expr(x.ast, a)).span, x.live[i].site.index, false, 8i32);
         }
     }

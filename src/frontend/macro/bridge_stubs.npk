@@ -277,8 +277,13 @@ func:bs_one_method = string(Ast->:ast, InternTable->:it, DiagList->:diags,
         mj = mj + 1i32;
     }
     t = raw bs_cat(move(t), ", Duration:within) {\n");
+    // DEF-706: the closed and poisoned checks come FIRST -- before the stub
+    // reads through `base`, which close and the reap unmap.
+    t = raw bs_cat(move(t), "    if (b.closed) { fail EBridgePoisoned; }\n    if (b.poisoned) { fail EBridgePoisoned; }\n");
     t = raw bs_cat(move(t), "    wild int8->:base = b.shm.base;\n");
-    t = raw bs_cat(move(t), "    int64:boff = <-(#ptr_add<int64>(base, 2i64));\n");
+    // DEF-704: the Bridge's own bulk offset, from its own ring_cap -- never
+    // read back from the region, which the driver can write.
+    t = raw bs_cat(move(t), "    int64:boff = 256i64 + (b.ring_cap * 32i64);\n");
     t = raw bs_cat(move(t), "    wild int8->:bulk = #ptr_add<int8>(base, boff);\n");
 
     // slots: one 8-byte word per scalar, two per slice {rel_off, len};
@@ -295,6 +300,22 @@ func:bs_one_method = string(Ast->:ast, InternTable->:it, DiagList->:diags,
     t = raw bs_cat(move(t), "    int64:aoff = ");
     t = raw bs_cat(move(t), raw bs_num((slots => int64) * 8i64));
     t = raw bs_cat(move(t), "i64;\n");
+    // DEF-705: the whole call -- its slots, its slices' bytes and, for a
+    // return, the 8-aligned word after them (the Bridge's own bulk_off is
+    // 8-aligned) -- must fit the Bridge's own bulk size (its shm.size less
+    // 256 + 32 per ring slot); refused before any
+    // write, as `OutOfBounds` (a call that doesn't fit its area), which every
+    // importer's failsafe already names.
+    if (rcls != 5i32) { t = raw bs_cat(move(t), "    if ((((aoff"); }
+    if (rcls == 5i32) { t = raw bs_cat(move(t), "    if ((aoff"); }
+    int32:mq = 1i32;
+    while (mq < (pc - 1i32)) decreases ((pc - 1i32)) - mq {
+        int32:cq = ((sig.ptr[(mq - 1i32) => int64]) =>! int32) - 48i32;
+        if (cq >= 3i32) { t = raw bs_cat(raw bs_cat(raw bs_cat(move(t), " + p"), raw bs_num(mq => int64)), ".len"); }
+        mq = mq + 1i32;
+    }
+    if (rcls != 5i32) { t = raw bs_cat(move(t), " + 7i64) & (0i64 - 8i64)) + 8i64"); }
+    t = raw bs_cat(move(t), ") > (b.shm.size - boff)) { fail OutOfBounds; }\n");
     int32:slot = 0i32;
     int32:mm = 1i32;
     while (mm < (pc - 1i32)) decreases ((pc - 1i32)) - mm {

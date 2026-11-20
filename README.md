@@ -26,6 +26,8 @@ build and test driver `npkg` is Nitpick too. What comes next is verification
 about a minute — LLVM 20, a clone, three commands — and through a first program.
 Everything in it was run as written.
 
+Then [`nitpick-docs`](https://github.com/alternative-intelligence-cp/nitpick-docs) has a quick start, a cheat sheet, a guide to the driver model and the Bridge, and examples.
+
 ## What it is
 
 Nitpick is built for software where a failure is a physical event rather than a

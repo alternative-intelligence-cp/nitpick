@@ -1,0 +1,109 @@
+// expect-exit: 60
+// argv: REF_DRIVER
+// 2026-11-19 (landing 177d2d, row 10: the Bridge, form BR-5g, closing DEF-704, DEF-705, DEF-706, DEF-707 and DEF-712; rulings l.18410, l.19234,
+// l.19307, l.19443, l.20202 and l.20254). A stub takes its bulk offset from the Bridge's own `ring_cap`, never from the region (DEF-704); refuses a
+// call whose slots, slice bytes or return word don't fit the bulk area, as `OutOfBounds`, before any write (DEF-705); checks `closed` and `poisoned`
+// first (DEF-706); `dispatch` range-checks the driver's indices before any arithmetic and kills a driver that rewrote line 0 (DEF-707); close and the
+// reap clear the base and the stderr tail's cursor, and the tail refuses a closed Bridge (DEF-706, DEF-712); and every field of `Shm` and `Bridge` is
+// `sealed` (D-313; DEF-467's fix for these two structs, l.19307). as `ab_ord_close_t`, after POISON. Exit 60 here on every road, -O0 and -O2, and
+// under the detector, with the tree's `ref_driver` fixture; main (aefae6e): 77 on every road (DEF-712's freed-ring read). From seat AB's release hunt
+// on BR-5f and BR-5g (l.19307, l.19443), `Team/TMP/atk-177d2d-bridge-2026-11-19/cells/ab/`, `ab_ord_poison_t.npk`, by `cat`, its `mod:` line and
+// library path changed.
+// seat AB (Ailp-team_215), 2026-11-19, P6 order: after POISON, then after CLOSE, then after REAP, each of a stub with
+// slots, a raw `dispatch`, `bridge_stderr_tail`, `bridge_close` and `bridge_reap`. The shipped reference driver;
+// its kernel 1 (hostile_tail) is how the suite's own tests poison a Bridge.
+// Exits: 40 + the first step whose outcome isn't the one the API promises; 60 every step as promised;
+// traps go to failsafe (75, 76, 77 MachineFault).
+mod:bridge_ab_ord_poison_t;
+use "../../../lib/nbridge.npk".*;
+error:E9;
+
+extern:"cdrv" = {
+    func:echo_add     = int64(Bridge->:b, int64:x, int64:y, Duration:within);
+    func:hostile_tail = NIL(Bridge->:b, Duration:within);
+    func:refuses      = int64(Bridge->:b, Duration:within);
+};
+
+async func:main = int32(cstring[]:argv) {
+    if (argv.len < 2i64) { exit 7i32; }
+    string:mp = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+    Path:p = path_parse(mp) ?! E9;
+    int64:h = raw cdrv_iface_hash();
+    Result<Bridge>:br = await spawn_driver(p, 65536i64, 64i64, h, raw duration_secs(5i64));
+    Bridge:b = move(br) ?! E9;
+    Result<int64>:r1 = await echo_add(@b, 40i64, 2i64, raw duration_secs(5i64));
+    if (r1.is_error)       { exit 41i32; }
+    if (r1.value != 42i64) { exit 41i32; }
+    Result<int64>:r1b = await refuses(@b, raw duration_secs(5i64));
+    if (!r1b.is_error)               { exit 39i32; }
+    if (r1b.err != EDriverError)     { exit 39i32; }
+    Result<int64>:r1c = await echo_add(@b, 40i64, 2i64, raw duration_secs(5i64));
+    if (r1c.is_error)                { exit 38i32; }
+    Result<NIL>:r2 = await hostile_tail(@b, raw duration_secs(5i64));
+    if (r2.is_error) { exit 42i32; }
+    Result<int64>:r3 = await echo_add(@b, 1i64, 1i64, raw duration_secs(5i64));
+    if (!r3.is_error)                { exit 43i32; }
+    if (r3.err != EDriverProtocol)   { exit 43i32; }
+    // poisoned
+    Result<int64>:r4 = await echo_add(@b, 1i64, 1i64, raw duration_secs(5i64));
+    if (!r4.is_error)                { exit 44i32; }
+    if (r4.err != EBridgePoisoned)   { exit 44i32; }
+    Result<int32>:r5 = await dispatch(@b, 0i64, 0i64, raw duration_secs(5i64));
+    if (!r5.is_error)                { exit 45i32; }
+    if (r5.err != EBridgePoisoned)   { exit 45i32; }
+    Result<string>:r6 = bridge_stderr_tail(@b);
+    if (r6.is_error)                 { exit 46i32; }
+    Result<NIL>:r7 = await bridge_close(@b, raw duration_secs(5i64));
+    if (r7.is_error)                 { exit 47i32; }
+    // closed
+    Result<string>:r8 = bridge_stderr_tail(@b);
+    if (!r8.is_error)                { exit 48i32; }
+    if (r8.err != EBridgePoisoned)   { exit 48i32; }
+    Result<int64>:r9 = await echo_add(@b, 1i64, 1i64, raw duration_secs(5i64));
+    if (!r9.is_error)                { exit 49i32; }
+    if (r9.err != EBridgePoisoned)   { exit 49i32; }
+    drop bridge_reap(@b);
+    // reaped after close (a no-op)
+    Result<int32>:r10 = await dispatch(@b, 0i64, 0i64, raw duration_secs(5i64));
+    if (!r10.is_error)               { exit 50i32; }
+    if (r10.err != EBridgePoisoned)  { exit 50i32; }
+    Result<NIL>:r11 = await bridge_close(@b, raw duration_secs(5i64));
+    if (r11.is_error)                { exit 51i32; }
+    Result<string>:r12 = bridge_stderr_tail(@b);
+    if (!r12.is_error)               { exit 52i32; }
+    if (r12.err != EBridgePoisoned)  { exit 52i32; }
+    Result<int64>:r13 = await refuses(@b, raw duration_secs(5i64));
+    if (!r13.is_error)               { exit 53i32; }
+    if (r13.err != EBridgePoisoned)  { exit 53i32; }
+    exit 60i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (BadPath)          { exit 92i32; },
+        (EDriverSpawn)     { exit 93i32; },
+        (EDriverFault)     { exit 94i32; },
+        (EDriverProtocol)  { exit 95i32; },
+        (EDriverDeadline)  { exit 96i32; },
+        (EDriverError)     { exit 84i32; },
+        (ERingFull)        { exit 85i32; },
+        (EBridgePoisoned)  { exit 83i32; },
+        (EShmCreate)       { exit 86i32; },
+        (EShmSeal)         { exit 86i32; },
+        (EShmMap)          { exit 86i32; },
+        (DeadlineExceeded) { exit 98i32; },
+        (DriverLeak)       { exit 89i32; },
+        (IntOverflow)      { exit 75i32; },
+        (OutOfBounds)      { exit 76i32; },
+        (MachineFault)     { exit 77i32; },
+        (WildLeak)         { exit 88i32; },
+        (Unreachable)      { exit 87i32; },
+        (HeapOom)          { exit 87i32; },
+        (HeapBadRequest)   { exit 87i32; },
+        (StackExhausted)   { exit 78i32; },
+        (DecreasesViolated) { exit 79i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 90i32;
+};

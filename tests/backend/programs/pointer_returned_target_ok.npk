@@ -1,10 +1,13 @@
 // expect-exit: 0
 mod:pointer_returned_target_ok;
 // WHAT ROW 6'S WHOLE-TARGET READING LEAVES LEGAL (DEF-591; landing 177d2b4, row 6): each module is one cell that reads its own right
-// value (67; `xu7cl` 127) at -O0, -O2 and under the freed-heap detector, on a7f1c1b and on the row. They are: a pointer read out of a
+// value (67) at -O0, -O2 and under the freed-heap detector, on a7f1c1b and on the row. They are: a pointer read out of a
 // holder by name, then grown (`x72d1c_ok`); the disjoint field taken by name, the price's twin (`pr1t_ok`); an element address through
-// the getter's pointer (`xu12vc_ok`); the compiler's own two sites in their rewritten forms (`ep1n_ok`, an index held rather than a
-// view; `is1n_ok`, the field by name); and a callee's growth through a pointer member, read first (`xu7cl`).
+// the getter's pointer (`xu12vc_ok`); and the compiler's own two sites in their rewritten forms (`ep1n_ok`, an index held rather than a
+// view; `is1n_ok`, the field by name).
+// 2026-11-19 (landing 177d2d, row 3, DEF-348's row a): `xu7cl`, a callee's growth through a pointer member read first, left this file. It
+// was legal only through DEF-348's miss (the write through `h.lp` wasn't recorded, and the same growth spelled by name is refused); it is
+// a price at parity now, in tests/analysis/rejection/hop_field_store_prices.npk beside that twin (rulings l.19728 item 3).
 error:E5;
 struct:K_x72d1c_ok = { int64:k; };
 struct:H_x72d1c_ok = { List<int64>:l; int64:k; K_x72d1c_ok:kk; };
@@ -160,45 +163,12 @@ func:f_is1n_ok = int64(int64:n) never fails {
     pass (raw clear_is1n_ok(@x)) + 1i64;
 };
 func:cell_main_is1n_ok = int32() never fails { pass (((raw f_is1n_ok(1i64)) + 60i64) =>! int32); };
-struct:K_xu7cl = { int64:k; };
-struct:H_xu7cl = { List<int64>:l; int64:k; K_xu7cl:kk; };
-struct:H2_xu7cl = { H_xu7cl:inner; int64:z; };
-struct:HP_xu7cl = { H_xu7cl->:lp; int64:z; };
-struct:W_xu7cl = { H_xu7cl->:hp; int64:z; };
-struct:S_xu7cl = { int64:a; int64:b; };
-struct:PE_xu7cl = { int64->:p; int64:z; };
-enum:EK_xu7cl = { A(int64->); Z; };
-func:rdk_xu7cl = int64(EK_xu7cl:e) never fails { int64:v = 0i64; pick (e) { (EK_xu7cl.A(q)) { v = <-q; }, (EK_xu7cl.Z) { v = 0i64; } } pass v; };
-func:mk_xu7cl = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
-func:mkh_xu7cl = H_xu7cl() never fails { pass H_xu7cl{ l: raw mk_xu7cl(), k: 2i64, kk: K_xu7cl{ k: 3i64 } }; };
-func:growh_xu7cl = int64(H_xu7cl->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:fp_xu7cl = int64->(H_xu7cl->:q) never fails { pass @((<-q).l[0i64]); };
-func:fpl_xu7cl = int64->(List<int64>->:q) never fails { pass @((<-q)[0i64]); };
-func:fa_xu7cl = int64->(S_xu7cl->:q) never fails { pass @((<-q).a); };
-func:idp_xu7cl = int64->(int64->:q) never fails { pass q; };
-func:idh_xu7cl = H_xu7cl->(H_xu7cl->:q) never fails { pass q; };
-func:fp2_xu7cl = int64->(int64:v, H_xu7cl->:q) never fails { pass @((<-q).l[0i64]); };
-func:fp2b_xu7cl = int64->(H_xu7cl->:q, int64:v) never fails { pass @((<-q).l[0i64]); };
-func:rd2_xu7cl = int64(int64->:e, int64:z) never fails { pass <-e; };
-impl:H_xu7cl = { func:first = int64->(H_xu7cl->:self) never fails { pass @((<-self).l[0i64]); }; };
-impl:K_xu7cl = { func:sel = int64->(K_xu7cl:self, H_xu7cl->:q) never fails { pass @((<-q).l[0i64]); }; };
-func:growmem2_xu7cl = int64(HP_xu7cl->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.lp.l, 1i64); } pass 7i64; };
-func:f_xu7cl = int64(int64:n) never fails {
-    H_xu7cl:h0 = raw mkh_xu7cl();
-    HP_xu7cl:h = HP_xu7cl{ lp: @h0, z: 0i64 };
-    int64->:e = raw fp_xu7cl(@h0);
-    int64:v = <-e;
-    discard(raw growmem2_xu7cl(@h));
-    pass v + 66i64;
-};
-func:cell_main_xu7cl = int32() never fails { pass (((raw f_xu7cl(1i64)) + 60i64) =>! int32); };
 func:main = int32(cstring[]:argv) {
     if ((raw cell_main_x72d1c_ok()) != 67i32) { exit 1i32; }
     if ((raw cell_main_pr1t_ok()) != 67i32) { exit 2i32; }
     if ((raw cell_main_xu12vc_ok()) != 67i32) { exit 3i32; }
     if ((raw cell_main_ep1n_ok()) != 67i32) { exit 4i32; }
     if ((raw cell_main_is1n_ok()) != 67i32) { exit 5i32; }
-    if ((raw cell_main_xu7cl()) != 127i32) { exit 6i32; }
     exit 0i32;
 };
 func:failsafe = int32(Error:e) {

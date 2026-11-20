@@ -14,6 +14,11 @@ mod:addr_via_pointer_store_ok;
 // 2026-11-18 (landing 177d2c, row 3, rulings l.17362): `pk2_lc_ok` and `r21_pkt_ok` moved to redef_reroot_store_prices.npk, prices at parity (a
 // store into a `pick` binding's storage through an address rerooted to it is refused there at BORROW-009, as its direct twin is on main); 118 ->
 // 116.
+// 2026-11-19 (landing 177d2d, row 2: row 1 of 177d2c held out, now rebased onto aefae6e as R1-4 with the cost fix, its price DEF-694; rulings l.19112 and l.19370):
+// its six growths (`a5_hpc_ok`, `a5_if_ok`, `a5_loop_ok`, `a5_rsg_ok`, `a5_view_ok`, `fu_self130_ok`) are refused on R1-4 at BORROW-015 and are in
+// tests/analysis/rejection/addr_via_pointer_deep_prices_1.npk (rulings l.16674 item 3 (a)); `pk2_ok`, `pk2c_ok` and `pk3_ok` are refused on R1-4 at
+// BORROW-009, row 3's `pick` gate met at depth, prices at parity with `pk2_lc_ok`, which main refuses at BORROW-009 in
+// redef_reroot_store_prices.npk, and moved to tests/analysis/rejection/addr_via_pointer_deep_prices_2.npk (l.19112 item 4); 116 -> 107.
 error:E5;
 // Ailp-team_156, a3_hqv RIGHT TWIN, no growth (a3_hq with a parameter's value, as BORROW-002 refuses a borrow stored there): a one-hop rootless store whose targets are a
 // field through a LOCAL POINTER (`@q.h`, q = @m); `q` dies at the block's end; `m.h.lp` read after `hq` grows.
@@ -39,549 +44,6 @@ func:f_a3_hqv_ok = int64(int64:n) never fails {
     pass raw g_a3_hqv_ok(@h0, @h2, n);
 };
 func:cell_main_a3_hqv_ok = int32() never fails { pass (((raw f_a3_hqv_ok(1i64)) + 60i64) =>! int32); };
-struct:K_a5_hpc_ok = { int64:k; };
-struct:H_a5_hpc_ok = { List<int64>:l; int64:k; K_a5_hpc_ok:kk; };
-func:mk_a5_hpc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
-func:mkh_a5_hpc_ok = H_a5_hpc_ok() never fails { pass H_a5_hpc_ok{ l: raw mk_a5_hpc_ok(), k: 2i64, kk: K_a5_hpc_ok{ k: 3i64 } }; };
-func:growh_a5_hpc_ok = int64(H_a5_hpc_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:growl_a5_hpc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
-func:fp_a5_hpc_ok = int64->(H_a5_hpc_ok->:q) never fails { pass @((<-q).l[0i64]); };
-func:idh_a5_hpc_ok = H_a5_hpc_ok->(H_a5_hpc_ok->:q) never fails { pass q; };
-func:getl_a5_hpc_ok = List<int64>->(H_a5_hpc_ok->:w) never fails { pass @w.l; };
-struct:HPO_a5_hpc_ok = { H_a5_hpc_ok->:lp; List<int64>:own; };
-struct:SQ_a5_hpc_ok = { HPO_a5_hpc_ok->:q; int64:z; };
-struct:SR_a5_hpc_ok = { SQ_a5_hpc_ok->:sq; int64:z; };
-struct:SL_a5_hpc_ok = { List<int64>->:l; int64:z; };
-struct:SL2_a5_hpc_ok = { SL_a5_hpc_ok:s; int64:z; };
-struct:SLP_a5_hpc_ok = { SL_a5_hpc_ok->:sp; int64:z; };
-struct:SQB_a5_hpc_ok = { HPO_a5_hpc_ok->:q; int64:z; };
-struct:HPB_a5_hpc_ok = { H_a5_hpc_ok->:lp; List<int64>:own; };
-struct:PV_a5_hpc_ok = { H_a5_hpc_ok->:p; int64:v; };
-struct:HPV_a5_hpc_ok = { H_a5_hpc_ok->:lp; List<PV_a5_hpc_ok>:own; };
-struct:SLV_a5_hpc_ok = { List<PV_a5_hpc_ok>->:l; int64:z; };
-struct:SQV_a5_hpc_ok = { HPV_a5_hpc_ok->:q; int64:z; };
-func:getown_a5_hpc_ok = List<int64>->(HPO_a5_hpc_ok->:w) never fails { pass @w.own; };
-func:getownv_a5_hpc_ok = List<PV_a5_hpc_ok>->(HPV_a5_hpc_ok->:w) never fails { pass @w.own; };
-func:mkv_a5_hpc_ok = List<PV_a5_hpc_ok>(H_a5_hpc_ok->:h) never fails { List<PV_a5_hpc_ok>:l = raw list_init::<PV_a5_hpc_ok>(1i64); drop list_push(@l, PV_a5_hpc_ok{ p: h, v: 1i64 }); pass l; };
-func:idp_a5_hpc_ok = HPO_a5_hpc_ok->(HPO_a5_hpc_ok->:w) never fails { pass w; };
-func:cvq_a5_hpc_ok = SQ_a5_hpc_ok->(SQB_a5_hpc_ok->:b) never fails { pass ((b =>! any->) =>! SQ_a5_hpc_ok->); };
-func:put_a5_hpc_ok = int64(HPO_a5_hpc_ok->:p, H_a5_hpc_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SR2_a5_hpc_ok = { SQ_a5_hpc_ok->:sq; int64:z; };
-struct:SPP_a5_hpc_ok = { HPO_a5_hpc_ok->->:qq; int64:z; };
-struct:SPPP_a5_hpc_ok = { HPO_a5_hpc_ok->->->:qqq; int64:z; };
-struct:SPPPP_a5_hpc_ok = { HPO_a5_hpc_ok->->->->:qqqq; int64:z; };
-struct:HN_a5_hpc_ok = { int64:a; int64:b; };
-struct:SN_a5_hpc_ok = { HN_a5_hpc_ok->:q; int64:z; };
-struct:SNPP_a5_hpc_ok = { HN_a5_hpc_ok->->:qq; int64:z; };
-struct:SN4_a5_hpc_ok = { HN_a5_hpc_ok->->->->:qqqq; int64:z; };
-struct:W_a5_hpc_ok = { HPO_a5_hpc_ok:h; int64:z; };
-struct:W2_a5_hpc_ok = { HPO_a5_hpc_ok->:a; HPO_a5_hpc_ok->:b; int64:z; };
-struct:SO2_a5_hpc_ok = { HPO_a5_hpc_ok->->?:oqq; int64:z; };
-func:geth_a5_hpc_ok = HPO_a5_hpc_ok->(W_a5_hpc_ok->:w) never fails { pass @w.h; };
-func:geta_a5_hpc_ok = HPO_a5_hpc_ok->->(W2_a5_hpc_ok->:w) never fails { pass @w.a; };
-func:mksqw_a5_hpc_ok = SQ_a5_hpc_ok(W_a5_hpc_ok->:w) never fails { pass SQ_a5_hpc_ok{ q: @w.h, z: 1i64 }; };
-func:idpp_a5_hpc_ok = HPO_a5_hpc_ok->->(HPO_a5_hpc_ok->->:p) never fails { pass p; };
-func:rety_a5_hpc_ok = HPO_a5_hpc_ok->(HN_a5_hpc_ok->:p) never fails { pass ((p =>! any->) =>! HPO_a5_hpc_ok->); };
-func:put2pp_a5_hpc_ok = int64(HPO_a5_hpc_ok->->:pp, H_a5_hpc_ok->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
-func:put3_a5_hpc_ok = int64(HPO_a5_hpc_ok->->->:pp, H_a5_hpc_ok->:v) never fails { (<-(<-(<-pp))).lp = v; pass 7i64; };
-func:put4_a5_hpc_ok = int64(HPO_a5_hpc_ok->->->->:pp, H_a5_hpc_ok->:v) never fails { (<-(<-(<-(<-pp)))).lp = v; pass 7i64; };
-impl:HPO_a5_hpc_ok = { func:setme = int64(HPO_a5_hpc_ok->:self, H_a5_hpc_ok->:v) never fails { (<-self).lp = v; pass 7i64; }; };
-struct:WX3_a5_hpc_ok = { HN_a5_hpc_ok->->:x; int64:z; };
-struct:WX4_a5_hpc_ok = { HN_a5_hpc_ok->->->:x; int64:z; };
-struct:SA_a5_hpc_ok = { any->:p; int64:z; };
-struct:SX3_a5_hpc_ok = { HN_a5_hpc_ok->->->:x3; int64:z; };
-struct:SN5_a5_hpc_ok = { HN_a5_hpc_ok->->->->->:q5; int64:z; };
-struct:SP5_a5_hpc_ok = { HPO_a5_hpc_ok->->->->->:q5; int64:z; };
-func:getx3_a5_hpc_ok = HN_a5_hpc_ok->->->(WX3_a5_hpc_ok->:w) never fails { pass @w.x; };
-func:getx3c_a5_hpc_ok = HPO_a5_hpc_ok->->->(WX3_a5_hpc_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_a5_hpc_ok->->->; };
-func:getx4_a5_hpc_ok = HN_a5_hpc_ok->->->->(WX4_a5_hpc_ok->:w) never fails { pass @w.x; };
-func:getx4c_a5_hpc_ok = HPO_a5_hpc_ok->->->->(WX4_a5_hpc_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_a5_hpc_ok->->->->; };
-func:toany_a5_hpc_ok = any->(HN_a5_hpc_ok->->:p) never fails { pass (p =>! any->); };
-func:put5_a5_hpc_ok = int64(HPO_a5_hpc_ok->->->->->:pp, H_a5_hpc_ok->:v) never fails { (<-(<-(<-(<-(<-pp))))).lp = v; pass 7i64; };
-struct:WP_a5_hpc_ok = { HPO_a5_hpc_ok->:p; int64:z; };
-struct:SW_a5_hpc_ok = { WP_a5_hpc_ok:w; int64:z; };
-struct:SWP_a5_hpc_ok = { SW_a5_hpc_ok->:sw; int64:z; };
-struct:SO_a5_hpc_ok = { HPO_a5_hpc_ok->?:o; int64:z; };
-struct:SA2_a5_hpc_ok = { HPO_a5_hpc_ok->[2]:arr; int64:z; };
-struct:SI_a5_hpc_ok = { int64:i; int64:z; };
-struct:WPP_a5_hpc_ok = { HPO_a5_hpc_ok->->:pp; int64:z; };
-struct:SWPP_a5_hpc_ok = { WPP_a5_hpc_ok:w; int64:z; };
-func:putwp_a5_hpc_ok = int64(WP_a5_hpc_ok:w, H_a5_hpc_ok->:v) never fails { (<-(w.p)).lp = v; pass 7i64; };
-func:conv_a5_hpc_ok = HPO_a5_hpc_ok->(HPB_a5_hpc_ok->:p) never fails { pass ((p =>! any->) =>! HPO_a5_hpc_ok->); };
-func:conv2_a5_hpc_ok = HPO_a5_hpc_ok->(HPB_a5_hpc_ok->:p) never fails { pass ((p =>! any->) =>! HPO_a5_hpc_ok->); };
-struct:RR_a5_hpc_ok = { SQ_a5_hpc_ok->:sq; HPO_a5_hpc_ok->:q; int64:z; };
-struct:X2_a5_hpc_ok = { H_a5_hpc_ok->:lp; HPB_a5_hpc_ok:inner; };
-func:cvh_a5_hpc_ok = X2_a5_hpc_ok->(HPB_a5_hpc_ok->:p) never fails { pass ((p =>! any->) =>! X2_a5_hpc_ok->); };
-func:putx_a5_hpc_ok = int64(X2_a5_hpc_ok->:p, H_a5_hpc_ok->:v) never fails { p.lp = v; pass 7i64; };
-func:idh2_a5_hpc_ok = HPB_a5_hpc_ok->(HPB_a5_hpc_ok->:p) never fails { pass p; };
-func:putb_a5_hpc_ok = int64(HPB_a5_hpc_ok->:p, H_a5_hpc_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SX_a5_hpc_ok = { X2_a5_hpc_ok->:q; int64:z; };
-struct:SB_a5_hpc_ok = { HPB_a5_hpc_ok->:p; int64:z; };
-struct:Y2_a5_hpc_ok = { X2_a5_hpc_ok:x; int64:z; };
-struct:XA_a5_hpc_ok = { HPB_a5_hpc_ok[2]:arr; int64:z; };
-struct:XL_a5_hpc_ok = { List<HPB_a5_hpc_ok>:l; int64:z; };
-enum:EB_a5_hpc_ok = { A(HPB_a5_hpc_ok); Z; };
-func:idx_a5_hpc_ok = X2_a5_hpc_ok->(X2_a5_hpc_ok->:q) never fails { pass q; };
-func:getq_a5_hpc_ok = X2_a5_hpc_ok->(SX_a5_hpc_ok->:s) never fails { pass s.q; };
-func:inr_a5_hpc_ok = HPB_a5_hpc_ok->(X2_a5_hpc_ok->:q) never fails { pass @((<-q).inner); };
-func:st_a5_hpc_ok = int64(X2_a5_hpc_ok->:qp, H_a5_hpc_ok->:v) never fails { HPB_a5_hpc_ok->:r = @((<-qp).inner); (<-r).lp = v; pass 7i64; };
-func:stq_a5_hpc_ok = int64(SX_a5_hpc_ok->:sp, H_a5_hpc_ok->:v) never fails { HPB_a5_hpc_ok->:r = @((<-((<-sp).q)).inner); (<-r).lp = v; pass 7i64; };
-struct:HPC_a5_hpc_ok = { HPB_a5_hpc_ok->:pb; int64:z; };
-func:put2_a5_hpc_ok = int64(HPB_a5_hpc_ok->->:pp, H_a5_hpc_ok->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
-func:putr_a5_hpc_ok = int64(HPB_a5_hpc_ok->:r, H_a5_hpc_ok->:v) never fails { HPB_a5_hpc_ok->:r1 = @(<-r); H_a5_hpc_ok->->:r2 = @((<-r1).lp); <-r2 = v; pass 7i64; };
-func:cst_a5_hpc_ok = H_a5_hpc_ok->(H_a5_hpc_ok->:p) never fails { pass ((p =>! any->) =>! H_a5_hpc_ok->); };
-func:g_a5_hpc_ok = int64(H_a5_hpc_ok->:h0p, H_a5_hpc_ok->:hq, H_a5_hpc_ok->:hz, int64:n) never fails {
-    int64->:e = raw fp_a5_hpc_ok(hz);
-    X2_a5_hpc_ok:mx = X2_a5_hpc_ok{ lp: h0p, inner: HPB_a5_hpc_ok{ lp: h0p, own: raw mk_a5_hpc_ok() } };
-    X2_a5_hpc_ok->:q0 = @mx;
-    HPB_a5_hpc_ok->:r = @((<-q0).inner);
-    H_a5_hpc_ok->->:r2 = @((<-r).lp);
-    HPC_a5_hpc_ok:c = HPC_a5_hpc_ok{ pb: r, z: 0i64 };
-    HPC_a5_hpc_ok->:cp = @c;
-    H_a5_hpc_ok->->:r3 = @((<-((<-cp).pb)).lp);
-    <-r3 = hq;
-    e = raw fp_a5_hpc_ok(mx.inner.lp);
-    discard(raw growh_a5_hpc_ok(hq));
-    pass 7i64;
-};
-func:f_a5_hpc_ok = int64(int64:n) never fails {
-    H_a5_hpc_ok:hz = raw mkh_a5_hpc_ok(); H_a5_hpc_ok:h0 = raw mkh_a5_hpc_ok(); H_a5_hpc_ok:h2 = raw mkh_a5_hpc_ok();
-    pass raw g_a5_hpc_ok(@h0, @h2, @hz, n);
-};
-func:cell_main_a5_hpc_ok = int32() never fails { pass (((raw f_a5_hpc_ok(1i64)) + 60i64) =>! int32); };
-struct:K_a5_if_ok = { int64:k; };
-struct:H_a5_if_ok = { List<int64>:l; int64:k; K_a5_if_ok:kk; };
-func:mk_a5_if_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
-func:mkh_a5_if_ok = H_a5_if_ok() never fails { pass H_a5_if_ok{ l: raw mk_a5_if_ok(), k: 2i64, kk: K_a5_if_ok{ k: 3i64 } }; };
-func:growh_a5_if_ok = int64(H_a5_if_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:growl_a5_if_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
-func:fp_a5_if_ok = int64->(H_a5_if_ok->:q) never fails { pass @((<-q).l[0i64]); };
-func:idh_a5_if_ok = H_a5_if_ok->(H_a5_if_ok->:q) never fails { pass q; };
-func:getl_a5_if_ok = List<int64>->(H_a5_if_ok->:w) never fails { pass @w.l; };
-struct:HPO_a5_if_ok = { H_a5_if_ok->:lp; List<int64>:own; };
-struct:SQ_a5_if_ok = { HPO_a5_if_ok->:q; int64:z; };
-struct:SR_a5_if_ok = { SQ_a5_if_ok->:sq; int64:z; };
-struct:SL_a5_if_ok = { List<int64>->:l; int64:z; };
-struct:SL2_a5_if_ok = { SL_a5_if_ok:s; int64:z; };
-struct:SLP_a5_if_ok = { SL_a5_if_ok->:sp; int64:z; };
-struct:SQB_a5_if_ok = { HPO_a5_if_ok->:q; int64:z; };
-struct:HPB_a5_if_ok = { H_a5_if_ok->:lp; List<int64>:own; };
-struct:PV_a5_if_ok = { H_a5_if_ok->:p; int64:v; };
-struct:HPV_a5_if_ok = { H_a5_if_ok->:lp; List<PV_a5_if_ok>:own; };
-struct:SLV_a5_if_ok = { List<PV_a5_if_ok>->:l; int64:z; };
-struct:SQV_a5_if_ok = { HPV_a5_if_ok->:q; int64:z; };
-func:getown_a5_if_ok = List<int64>->(HPO_a5_if_ok->:w) never fails { pass @w.own; };
-func:getownv_a5_if_ok = List<PV_a5_if_ok>->(HPV_a5_if_ok->:w) never fails { pass @w.own; };
-func:mkv_a5_if_ok = List<PV_a5_if_ok>(H_a5_if_ok->:h) never fails { List<PV_a5_if_ok>:l = raw list_init::<PV_a5_if_ok>(1i64); drop list_push(@l, PV_a5_if_ok{ p: h, v: 1i64 }); pass l; };
-func:idp_a5_if_ok = HPO_a5_if_ok->(HPO_a5_if_ok->:w) never fails { pass w; };
-func:cvq_a5_if_ok = SQ_a5_if_ok->(SQB_a5_if_ok->:b) never fails { pass ((b =>! any->) =>! SQ_a5_if_ok->); };
-func:put_a5_if_ok = int64(HPO_a5_if_ok->:p, H_a5_if_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SR2_a5_if_ok = { SQ_a5_if_ok->:sq; int64:z; };
-struct:SPP_a5_if_ok = { HPO_a5_if_ok->->:qq; int64:z; };
-struct:SPPP_a5_if_ok = { HPO_a5_if_ok->->->:qqq; int64:z; };
-struct:SPPPP_a5_if_ok = { HPO_a5_if_ok->->->->:qqqq; int64:z; };
-struct:HN_a5_if_ok = { int64:a; int64:b; };
-struct:SN_a5_if_ok = { HN_a5_if_ok->:q; int64:z; };
-struct:SNPP_a5_if_ok = { HN_a5_if_ok->->:qq; int64:z; };
-struct:SN4_a5_if_ok = { HN_a5_if_ok->->->->:qqqq; int64:z; };
-struct:W_a5_if_ok = { HPO_a5_if_ok:h; int64:z; };
-struct:W2_a5_if_ok = { HPO_a5_if_ok->:a; HPO_a5_if_ok->:b; int64:z; };
-struct:SO2_a5_if_ok = { HPO_a5_if_ok->->?:oqq; int64:z; };
-func:geth_a5_if_ok = HPO_a5_if_ok->(W_a5_if_ok->:w) never fails { pass @w.h; };
-func:geta_a5_if_ok = HPO_a5_if_ok->->(W2_a5_if_ok->:w) never fails { pass @w.a; };
-func:mksqw_a5_if_ok = SQ_a5_if_ok(W_a5_if_ok->:w) never fails { pass SQ_a5_if_ok{ q: @w.h, z: 1i64 }; };
-func:idpp_a5_if_ok = HPO_a5_if_ok->->(HPO_a5_if_ok->->:p) never fails { pass p; };
-func:rety_a5_if_ok = HPO_a5_if_ok->(HN_a5_if_ok->:p) never fails { pass ((p =>! any->) =>! HPO_a5_if_ok->); };
-func:put2pp_a5_if_ok = int64(HPO_a5_if_ok->->:pp, H_a5_if_ok->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
-func:put3_a5_if_ok = int64(HPO_a5_if_ok->->->:pp, H_a5_if_ok->:v) never fails { (<-(<-(<-pp))).lp = v; pass 7i64; };
-func:put4_a5_if_ok = int64(HPO_a5_if_ok->->->->:pp, H_a5_if_ok->:v) never fails { (<-(<-(<-(<-pp)))).lp = v; pass 7i64; };
-impl:HPO_a5_if_ok = { func:setme = int64(HPO_a5_if_ok->:self, H_a5_if_ok->:v) never fails { (<-self).lp = v; pass 7i64; }; };
-struct:WX3_a5_if_ok = { HN_a5_if_ok->->:x; int64:z; };
-struct:WX4_a5_if_ok = { HN_a5_if_ok->->->:x; int64:z; };
-struct:SA_a5_if_ok = { any->:p; int64:z; };
-struct:SX3_a5_if_ok = { HN_a5_if_ok->->->:x3; int64:z; };
-struct:SN5_a5_if_ok = { HN_a5_if_ok->->->->->:q5; int64:z; };
-struct:SP5_a5_if_ok = { HPO_a5_if_ok->->->->->:q5; int64:z; };
-func:getx3_a5_if_ok = HN_a5_if_ok->->->(WX3_a5_if_ok->:w) never fails { pass @w.x; };
-func:getx3c_a5_if_ok = HPO_a5_if_ok->->->(WX3_a5_if_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_a5_if_ok->->->; };
-func:getx4_a5_if_ok = HN_a5_if_ok->->->->(WX4_a5_if_ok->:w) never fails { pass @w.x; };
-func:getx4c_a5_if_ok = HPO_a5_if_ok->->->->(WX4_a5_if_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_a5_if_ok->->->->; };
-func:toany_a5_if_ok = any->(HN_a5_if_ok->->:p) never fails { pass (p =>! any->); };
-func:put5_a5_if_ok = int64(HPO_a5_if_ok->->->->->:pp, H_a5_if_ok->:v) never fails { (<-(<-(<-(<-(<-pp))))).lp = v; pass 7i64; };
-struct:WP_a5_if_ok = { HPO_a5_if_ok->:p; int64:z; };
-struct:SW_a5_if_ok = { WP_a5_if_ok:w; int64:z; };
-struct:SWP_a5_if_ok = { SW_a5_if_ok->:sw; int64:z; };
-struct:SO_a5_if_ok = { HPO_a5_if_ok->?:o; int64:z; };
-struct:SA2_a5_if_ok = { HPO_a5_if_ok->[2]:arr; int64:z; };
-struct:SI_a5_if_ok = { int64:i; int64:z; };
-struct:WPP_a5_if_ok = { HPO_a5_if_ok->->:pp; int64:z; };
-struct:SWPP_a5_if_ok = { WPP_a5_if_ok:w; int64:z; };
-func:putwp_a5_if_ok = int64(WP_a5_if_ok:w, H_a5_if_ok->:v) never fails { (<-(w.p)).lp = v; pass 7i64; };
-func:conv_a5_if_ok = HPO_a5_if_ok->(HPB_a5_if_ok->:p) never fails { pass ((p =>! any->) =>! HPO_a5_if_ok->); };
-func:conv2_a5_if_ok = HPO_a5_if_ok->(HPB_a5_if_ok->:p) never fails { pass ((p =>! any->) =>! HPO_a5_if_ok->); };
-struct:RR_a5_if_ok = { SQ_a5_if_ok->:sq; HPO_a5_if_ok->:q; int64:z; };
-struct:X2_a5_if_ok = { H_a5_if_ok->:lp; HPB_a5_if_ok:inner; };
-func:cvh_a5_if_ok = X2_a5_if_ok->(HPB_a5_if_ok->:p) never fails { pass ((p =>! any->) =>! X2_a5_if_ok->); };
-func:putx_a5_if_ok = int64(X2_a5_if_ok->:p, H_a5_if_ok->:v) never fails { p.lp = v; pass 7i64; };
-func:idh2_a5_if_ok = HPB_a5_if_ok->(HPB_a5_if_ok->:p) never fails { pass p; };
-func:putb_a5_if_ok = int64(HPB_a5_if_ok->:p, H_a5_if_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SX_a5_if_ok = { X2_a5_if_ok->:q; int64:z; };
-struct:SB_a5_if_ok = { HPB_a5_if_ok->:p; int64:z; };
-struct:Y2_a5_if_ok = { X2_a5_if_ok:x; int64:z; };
-struct:XA_a5_if_ok = { HPB_a5_if_ok[2]:arr; int64:z; };
-struct:XL_a5_if_ok = { List<HPB_a5_if_ok>:l; int64:z; };
-enum:EB_a5_if_ok = { A(HPB_a5_if_ok); Z; };
-func:idx_a5_if_ok = X2_a5_if_ok->(X2_a5_if_ok->:q) never fails { pass q; };
-func:getq_a5_if_ok = X2_a5_if_ok->(SX_a5_if_ok->:s) never fails { pass s.q; };
-func:inr_a5_if_ok = HPB_a5_if_ok->(X2_a5_if_ok->:q) never fails { pass @((<-q).inner); };
-func:st_a5_if_ok = int64(X2_a5_if_ok->:qp, H_a5_if_ok->:v) never fails { HPB_a5_if_ok->:r = @((<-qp).inner); (<-r).lp = v; pass 7i64; };
-func:stq_a5_if_ok = int64(SX_a5_if_ok->:sp, H_a5_if_ok->:v) never fails { HPB_a5_if_ok->:r = @((<-((<-sp).q)).inner); (<-r).lp = v; pass 7i64; };
-struct:HPC_a5_if_ok = { HPB_a5_if_ok->:pb; int64:z; };
-func:put2_a5_if_ok = int64(HPB_a5_if_ok->->:pp, H_a5_if_ok->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
-func:putr_a5_if_ok = int64(HPB_a5_if_ok->:r, H_a5_if_ok->:v) never fails { HPB_a5_if_ok->:r1 = @(<-r); H_a5_if_ok->->:r2 = @((<-r1).lp); <-r2 = v; pass 7i64; };
-func:cst_a5_if_ok = H_a5_if_ok->(H_a5_if_ok->:p) never fails { pass ((p =>! any->) =>! H_a5_if_ok->); };
-func:g_a5_if_ok = int64(H_a5_if_ok->:h0p, H_a5_if_ok->:hq, H_a5_if_ok->:hz, int64:n) never fails {
-    int64->:e = raw fp_a5_if_ok(hz);
-    X2_a5_if_ok:mx = X2_a5_if_ok{ lp: h0p, inner: HPB_a5_if_ok{ lp: h0p, own: raw mk_a5_if_ok() } };
-    X2_a5_if_ok->:q0 = @mx;
-    HPB_a5_if_ok->:r = @((<-q0).inner);
-    H_a5_if_ok->->:r2 = @((<-r).lp);
-    if (n > 1i64) { <-r2 = hq; }
-    e = raw fp_a5_if_ok(mx.inner.lp);
-    discard(raw growh_a5_if_ok(hq));
-    pass 7i64;
-};
-func:f_a5_if_ok = int64(int64:n) never fails {
-    H_a5_if_ok:hz = raw mkh_a5_if_ok(); H_a5_if_ok:h0 = raw mkh_a5_if_ok(); H_a5_if_ok:h2 = raw mkh_a5_if_ok();
-    pass raw g_a5_if_ok(@h0, @h2, @hz, n);
-};
-func:cell_main_a5_if_ok = int32() never fails { pass (((raw f_a5_if_ok(1i64)) + 60i64) =>! int32); };
-struct:K_a5_loop_ok = { int64:k; };
-struct:H_a5_loop_ok = { List<int64>:l; int64:k; K_a5_loop_ok:kk; };
-func:mk_a5_loop_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
-func:mkh_a5_loop_ok = H_a5_loop_ok() never fails { pass H_a5_loop_ok{ l: raw mk_a5_loop_ok(), k: 2i64, kk: K_a5_loop_ok{ k: 3i64 } }; };
-func:growh_a5_loop_ok = int64(H_a5_loop_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:growl_a5_loop_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
-func:fp_a5_loop_ok = int64->(H_a5_loop_ok->:q) never fails { pass @((<-q).l[0i64]); };
-func:idh_a5_loop_ok = H_a5_loop_ok->(H_a5_loop_ok->:q) never fails { pass q; };
-func:getl_a5_loop_ok = List<int64>->(H_a5_loop_ok->:w) never fails { pass @w.l; };
-struct:HPO_a5_loop_ok = { H_a5_loop_ok->:lp; List<int64>:own; };
-struct:SQ_a5_loop_ok = { HPO_a5_loop_ok->:q; int64:z; };
-struct:SR_a5_loop_ok = { SQ_a5_loop_ok->:sq; int64:z; };
-struct:SL_a5_loop_ok = { List<int64>->:l; int64:z; };
-struct:SL2_a5_loop_ok = { SL_a5_loop_ok:s; int64:z; };
-struct:SLP_a5_loop_ok = { SL_a5_loop_ok->:sp; int64:z; };
-struct:SQB_a5_loop_ok = { HPO_a5_loop_ok->:q; int64:z; };
-struct:HPB_a5_loop_ok = { H_a5_loop_ok->:lp; List<int64>:own; };
-struct:PV_a5_loop_ok = { H_a5_loop_ok->:p; int64:v; };
-struct:HPV_a5_loop_ok = { H_a5_loop_ok->:lp; List<PV_a5_loop_ok>:own; };
-struct:SLV_a5_loop_ok = { List<PV_a5_loop_ok>->:l; int64:z; };
-struct:SQV_a5_loop_ok = { HPV_a5_loop_ok->:q; int64:z; };
-func:getown_a5_loop_ok = List<int64>->(HPO_a5_loop_ok->:w) never fails { pass @w.own; };
-func:getownv_a5_loop_ok = List<PV_a5_loop_ok>->(HPV_a5_loop_ok->:w) never fails { pass @w.own; };
-func:mkv_a5_loop_ok = List<PV_a5_loop_ok>(H_a5_loop_ok->:h) never fails { List<PV_a5_loop_ok>:l = raw list_init::<PV_a5_loop_ok>(1i64); drop list_push(@l, PV_a5_loop_ok{ p: h, v: 1i64 }); pass l; };
-func:idp_a5_loop_ok = HPO_a5_loop_ok->(HPO_a5_loop_ok->:w) never fails { pass w; };
-func:cvq_a5_loop_ok = SQ_a5_loop_ok->(SQB_a5_loop_ok->:b) never fails { pass ((b =>! any->) =>! SQ_a5_loop_ok->); };
-func:put_a5_loop_ok = int64(HPO_a5_loop_ok->:p, H_a5_loop_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SR2_a5_loop_ok = { SQ_a5_loop_ok->:sq; int64:z; };
-struct:SPP_a5_loop_ok = { HPO_a5_loop_ok->->:qq; int64:z; };
-struct:SPPP_a5_loop_ok = { HPO_a5_loop_ok->->->:qqq; int64:z; };
-struct:SPPPP_a5_loop_ok = { HPO_a5_loop_ok->->->->:qqqq; int64:z; };
-struct:HN_a5_loop_ok = { int64:a; int64:b; };
-struct:SN_a5_loop_ok = { HN_a5_loop_ok->:q; int64:z; };
-struct:SNPP_a5_loop_ok = { HN_a5_loop_ok->->:qq; int64:z; };
-struct:SN4_a5_loop_ok = { HN_a5_loop_ok->->->->:qqqq; int64:z; };
-struct:W_a5_loop_ok = { HPO_a5_loop_ok:h; int64:z; };
-struct:W2_a5_loop_ok = { HPO_a5_loop_ok->:a; HPO_a5_loop_ok->:b; int64:z; };
-struct:SO2_a5_loop_ok = { HPO_a5_loop_ok->->?:oqq; int64:z; };
-func:geth_a5_loop_ok = HPO_a5_loop_ok->(W_a5_loop_ok->:w) never fails { pass @w.h; };
-func:geta_a5_loop_ok = HPO_a5_loop_ok->->(W2_a5_loop_ok->:w) never fails { pass @w.a; };
-func:mksqw_a5_loop_ok = SQ_a5_loop_ok(W_a5_loop_ok->:w) never fails { pass SQ_a5_loop_ok{ q: @w.h, z: 1i64 }; };
-func:idpp_a5_loop_ok = HPO_a5_loop_ok->->(HPO_a5_loop_ok->->:p) never fails { pass p; };
-func:rety_a5_loop_ok = HPO_a5_loop_ok->(HN_a5_loop_ok->:p) never fails { pass ((p =>! any->) =>! HPO_a5_loop_ok->); };
-func:put2pp_a5_loop_ok = int64(HPO_a5_loop_ok->->:pp, H_a5_loop_ok->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
-func:put3_a5_loop_ok = int64(HPO_a5_loop_ok->->->:pp, H_a5_loop_ok->:v) never fails { (<-(<-(<-pp))).lp = v; pass 7i64; };
-func:put4_a5_loop_ok = int64(HPO_a5_loop_ok->->->->:pp, H_a5_loop_ok->:v) never fails { (<-(<-(<-(<-pp)))).lp = v; pass 7i64; };
-impl:HPO_a5_loop_ok = { func:setme = int64(HPO_a5_loop_ok->:self, H_a5_loop_ok->:v) never fails { (<-self).lp = v; pass 7i64; }; };
-struct:WX3_a5_loop_ok = { HN_a5_loop_ok->->:x; int64:z; };
-struct:WX4_a5_loop_ok = { HN_a5_loop_ok->->->:x; int64:z; };
-struct:SA_a5_loop_ok = { any->:p; int64:z; };
-struct:SX3_a5_loop_ok = { HN_a5_loop_ok->->->:x3; int64:z; };
-struct:SN5_a5_loop_ok = { HN_a5_loop_ok->->->->->:q5; int64:z; };
-struct:SP5_a5_loop_ok = { HPO_a5_loop_ok->->->->->:q5; int64:z; };
-func:getx3_a5_loop_ok = HN_a5_loop_ok->->->(WX3_a5_loop_ok->:w) never fails { pass @w.x; };
-func:getx3c_a5_loop_ok = HPO_a5_loop_ok->->->(WX3_a5_loop_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_a5_loop_ok->->->; };
-func:getx4_a5_loop_ok = HN_a5_loop_ok->->->->(WX4_a5_loop_ok->:w) never fails { pass @w.x; };
-func:getx4c_a5_loop_ok = HPO_a5_loop_ok->->->->(WX4_a5_loop_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_a5_loop_ok->->->->; };
-func:toany_a5_loop_ok = any->(HN_a5_loop_ok->->:p) never fails { pass (p =>! any->); };
-func:put5_a5_loop_ok = int64(HPO_a5_loop_ok->->->->->:pp, H_a5_loop_ok->:v) never fails { (<-(<-(<-(<-(<-pp))))).lp = v; pass 7i64; };
-struct:WP_a5_loop_ok = { HPO_a5_loop_ok->:p; int64:z; };
-struct:SW_a5_loop_ok = { WP_a5_loop_ok:w; int64:z; };
-struct:SWP_a5_loop_ok = { SW_a5_loop_ok->:sw; int64:z; };
-struct:SO_a5_loop_ok = { HPO_a5_loop_ok->?:o; int64:z; };
-struct:SA2_a5_loop_ok = { HPO_a5_loop_ok->[2]:arr; int64:z; };
-struct:SI_a5_loop_ok = { int64:i; int64:z; };
-struct:WPP_a5_loop_ok = { HPO_a5_loop_ok->->:pp; int64:z; };
-struct:SWPP_a5_loop_ok = { WPP_a5_loop_ok:w; int64:z; };
-func:putwp_a5_loop_ok = int64(WP_a5_loop_ok:w, H_a5_loop_ok->:v) never fails { (<-(w.p)).lp = v; pass 7i64; };
-func:conv_a5_loop_ok = HPO_a5_loop_ok->(HPB_a5_loop_ok->:p) never fails { pass ((p =>! any->) =>! HPO_a5_loop_ok->); };
-func:conv2_a5_loop_ok = HPO_a5_loop_ok->(HPB_a5_loop_ok->:p) never fails { pass ((p =>! any->) =>! HPO_a5_loop_ok->); };
-struct:RR_a5_loop_ok = { SQ_a5_loop_ok->:sq; HPO_a5_loop_ok->:q; int64:z; };
-struct:X2_a5_loop_ok = { H_a5_loop_ok->:lp; HPB_a5_loop_ok:inner; };
-func:cvh_a5_loop_ok = X2_a5_loop_ok->(HPB_a5_loop_ok->:p) never fails { pass ((p =>! any->) =>! X2_a5_loop_ok->); };
-func:putx_a5_loop_ok = int64(X2_a5_loop_ok->:p, H_a5_loop_ok->:v) never fails { p.lp = v; pass 7i64; };
-func:idh2_a5_loop_ok = HPB_a5_loop_ok->(HPB_a5_loop_ok->:p) never fails { pass p; };
-func:putb_a5_loop_ok = int64(HPB_a5_loop_ok->:p, H_a5_loop_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SX_a5_loop_ok = { X2_a5_loop_ok->:q; int64:z; };
-struct:SB_a5_loop_ok = { HPB_a5_loop_ok->:p; int64:z; };
-struct:Y2_a5_loop_ok = { X2_a5_loop_ok:x; int64:z; };
-struct:XA_a5_loop_ok = { HPB_a5_loop_ok[2]:arr; int64:z; };
-struct:XL_a5_loop_ok = { List<HPB_a5_loop_ok>:l; int64:z; };
-enum:EB_a5_loop_ok = { A(HPB_a5_loop_ok); Z; };
-func:idx_a5_loop_ok = X2_a5_loop_ok->(X2_a5_loop_ok->:q) never fails { pass q; };
-func:getq_a5_loop_ok = X2_a5_loop_ok->(SX_a5_loop_ok->:s) never fails { pass s.q; };
-func:inr_a5_loop_ok = HPB_a5_loop_ok->(X2_a5_loop_ok->:q) never fails { pass @((<-q).inner); };
-func:st_a5_loop_ok = int64(X2_a5_loop_ok->:qp, H_a5_loop_ok->:v) never fails { HPB_a5_loop_ok->:r = @((<-qp).inner); (<-r).lp = v; pass 7i64; };
-func:stq_a5_loop_ok = int64(SX_a5_loop_ok->:sp, H_a5_loop_ok->:v) never fails { HPB_a5_loop_ok->:r = @((<-((<-sp).q)).inner); (<-r).lp = v; pass 7i64; };
-struct:HPC_a5_loop_ok = { HPB_a5_loop_ok->:pb; int64:z; };
-func:put2_a5_loop_ok = int64(HPB_a5_loop_ok->->:pp, H_a5_loop_ok->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
-func:putr_a5_loop_ok = int64(HPB_a5_loop_ok->:r, H_a5_loop_ok->:v) never fails { HPB_a5_loop_ok->:r1 = @(<-r); H_a5_loop_ok->->:r2 = @((<-r1).lp); <-r2 = v; pass 7i64; };
-func:cst_a5_loop_ok = H_a5_loop_ok->(H_a5_loop_ok->:p) never fails { pass ((p =>! any->) =>! H_a5_loop_ok->); };
-func:g_a5_loop_ok = int64(H_a5_loop_ok->:h0p, H_a5_loop_ok->:hq, H_a5_loop_ok->:hz, int64:n) never fails {
-    int64->:e = raw fp_a5_loop_ok(hz);
-    X2_a5_loop_ok:mx = X2_a5_loop_ok{ lp: h0p, inner: HPB_a5_loop_ok{ lp: h0p, own: raw mk_a5_loop_ok() } };
-    X2_a5_loop_ok->:q0 = @mx;
-    HPB_a5_loop_ok->:r = @((<-q0).inner);
-    H_a5_loop_ok->->:r2 = @((<-r).lp);
-    loop(0i64, 3i64, 1i64) { H_a5_loop_ok->->:r3 = @((<-r).lp); <-r3 = hq; }
-    e = raw fp_a5_loop_ok(mx.inner.lp);
-    discard(raw growh_a5_loop_ok(hq));
-    pass 7i64;
-};
-func:f_a5_loop_ok = int64(int64:n) never fails {
-    H_a5_loop_ok:hz = raw mkh_a5_loop_ok(); H_a5_loop_ok:h0 = raw mkh_a5_loop_ok(); H_a5_loop_ok:h2 = raw mkh_a5_loop_ok();
-    pass raw g_a5_loop_ok(@h0, @h2, @hz, n);
-};
-func:cell_main_a5_loop_ok = int32() never fails { pass (((raw f_a5_loop_ok(1i64)) + 60i64) =>! int32); };
-struct:K_a5_rsg_ok = { int64:k; };
-struct:H_a5_rsg_ok = { List<int64>:l; int64:k; K_a5_rsg_ok:kk; };
-func:mk_a5_rsg_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
-func:mkh_a5_rsg_ok = H_a5_rsg_ok() never fails { pass H_a5_rsg_ok{ l: raw mk_a5_rsg_ok(), k: 2i64, kk: K_a5_rsg_ok{ k: 3i64 } }; };
-func:growh_a5_rsg_ok = int64(H_a5_rsg_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:growl_a5_rsg_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
-func:fp_a5_rsg_ok = int64->(H_a5_rsg_ok->:q) never fails { pass @((<-q).l[0i64]); };
-func:idh_a5_rsg_ok = H_a5_rsg_ok->(H_a5_rsg_ok->:q) never fails { pass q; };
-func:getl_a5_rsg_ok = List<int64>->(H_a5_rsg_ok->:w) never fails { pass @w.l; };
-struct:HPO_a5_rsg_ok = { H_a5_rsg_ok->:lp; List<int64>:own; };
-struct:SQ_a5_rsg_ok = { HPO_a5_rsg_ok->:q; int64:z; };
-struct:SR_a5_rsg_ok = { SQ_a5_rsg_ok->:sq; int64:z; };
-struct:SL_a5_rsg_ok = { List<int64>->:l; int64:z; };
-struct:SL2_a5_rsg_ok = { SL_a5_rsg_ok:s; int64:z; };
-struct:SLP_a5_rsg_ok = { SL_a5_rsg_ok->:sp; int64:z; };
-struct:SQB_a5_rsg_ok = { HPO_a5_rsg_ok->:q; int64:z; };
-struct:HPB_a5_rsg_ok = { H_a5_rsg_ok->:lp; List<int64>:own; };
-struct:PV_a5_rsg_ok = { H_a5_rsg_ok->:p; int64:v; };
-struct:HPV_a5_rsg_ok = { H_a5_rsg_ok->:lp; List<PV_a5_rsg_ok>:own; };
-struct:SLV_a5_rsg_ok = { List<PV_a5_rsg_ok>->:l; int64:z; };
-struct:SQV_a5_rsg_ok = { HPV_a5_rsg_ok->:q; int64:z; };
-func:getown_a5_rsg_ok = List<int64>->(HPO_a5_rsg_ok->:w) never fails { pass @w.own; };
-func:getownv_a5_rsg_ok = List<PV_a5_rsg_ok>->(HPV_a5_rsg_ok->:w) never fails { pass @w.own; };
-func:mkv_a5_rsg_ok = List<PV_a5_rsg_ok>(H_a5_rsg_ok->:h) never fails { List<PV_a5_rsg_ok>:l = raw list_init::<PV_a5_rsg_ok>(1i64); drop list_push(@l, PV_a5_rsg_ok{ p: h, v: 1i64 }); pass l; };
-func:idp_a5_rsg_ok = HPO_a5_rsg_ok->(HPO_a5_rsg_ok->:w) never fails { pass w; };
-func:cvq_a5_rsg_ok = SQ_a5_rsg_ok->(SQB_a5_rsg_ok->:b) never fails { pass ((b =>! any->) =>! SQ_a5_rsg_ok->); };
-func:put_a5_rsg_ok = int64(HPO_a5_rsg_ok->:p, H_a5_rsg_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SR2_a5_rsg_ok = { SQ_a5_rsg_ok->:sq; int64:z; };
-struct:SPP_a5_rsg_ok = { HPO_a5_rsg_ok->->:qq; int64:z; };
-struct:SPPP_a5_rsg_ok = { HPO_a5_rsg_ok->->->:qqq; int64:z; };
-struct:SPPPP_a5_rsg_ok = { HPO_a5_rsg_ok->->->->:qqqq; int64:z; };
-struct:HN_a5_rsg_ok = { int64:a; int64:b; };
-struct:SN_a5_rsg_ok = { HN_a5_rsg_ok->:q; int64:z; };
-struct:SNPP_a5_rsg_ok = { HN_a5_rsg_ok->->:qq; int64:z; };
-struct:SN4_a5_rsg_ok = { HN_a5_rsg_ok->->->->:qqqq; int64:z; };
-struct:W_a5_rsg_ok = { HPO_a5_rsg_ok:h; int64:z; };
-struct:W2_a5_rsg_ok = { HPO_a5_rsg_ok->:a; HPO_a5_rsg_ok->:b; int64:z; };
-struct:SO2_a5_rsg_ok = { HPO_a5_rsg_ok->->?:oqq; int64:z; };
-func:geth_a5_rsg_ok = HPO_a5_rsg_ok->(W_a5_rsg_ok->:w) never fails { pass @w.h; };
-func:geta_a5_rsg_ok = HPO_a5_rsg_ok->->(W2_a5_rsg_ok->:w) never fails { pass @w.a; };
-func:mksqw_a5_rsg_ok = SQ_a5_rsg_ok(W_a5_rsg_ok->:w) never fails { pass SQ_a5_rsg_ok{ q: @w.h, z: 1i64 }; };
-func:idpp_a5_rsg_ok = HPO_a5_rsg_ok->->(HPO_a5_rsg_ok->->:p) never fails { pass p; };
-func:rety_a5_rsg_ok = HPO_a5_rsg_ok->(HN_a5_rsg_ok->:p) never fails { pass ((p =>! any->) =>! HPO_a5_rsg_ok->); };
-func:put2pp_a5_rsg_ok = int64(HPO_a5_rsg_ok->->:pp, H_a5_rsg_ok->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
-func:put3_a5_rsg_ok = int64(HPO_a5_rsg_ok->->->:pp, H_a5_rsg_ok->:v) never fails { (<-(<-(<-pp))).lp = v; pass 7i64; };
-func:put4_a5_rsg_ok = int64(HPO_a5_rsg_ok->->->->:pp, H_a5_rsg_ok->:v) never fails { (<-(<-(<-(<-pp)))).lp = v; pass 7i64; };
-impl:HPO_a5_rsg_ok = { func:setme = int64(HPO_a5_rsg_ok->:self, H_a5_rsg_ok->:v) never fails { (<-self).lp = v; pass 7i64; }; };
-struct:WX3_a5_rsg_ok = { HN_a5_rsg_ok->->:x; int64:z; };
-struct:WX4_a5_rsg_ok = { HN_a5_rsg_ok->->->:x; int64:z; };
-struct:SA_a5_rsg_ok = { any->:p; int64:z; };
-struct:SX3_a5_rsg_ok = { HN_a5_rsg_ok->->->:x3; int64:z; };
-struct:SN5_a5_rsg_ok = { HN_a5_rsg_ok->->->->->:q5; int64:z; };
-struct:SP5_a5_rsg_ok = { HPO_a5_rsg_ok->->->->->:q5; int64:z; };
-func:getx3_a5_rsg_ok = HN_a5_rsg_ok->->->(WX3_a5_rsg_ok->:w) never fails { pass @w.x; };
-func:getx3c_a5_rsg_ok = HPO_a5_rsg_ok->->->(WX3_a5_rsg_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_a5_rsg_ok->->->; };
-func:getx4_a5_rsg_ok = HN_a5_rsg_ok->->->->(WX4_a5_rsg_ok->:w) never fails { pass @w.x; };
-func:getx4c_a5_rsg_ok = HPO_a5_rsg_ok->->->->(WX4_a5_rsg_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_a5_rsg_ok->->->->; };
-func:toany_a5_rsg_ok = any->(HN_a5_rsg_ok->->:p) never fails { pass (p =>! any->); };
-func:put5_a5_rsg_ok = int64(HPO_a5_rsg_ok->->->->->:pp, H_a5_rsg_ok->:v) never fails { (<-(<-(<-(<-(<-pp))))).lp = v; pass 7i64; };
-struct:WP_a5_rsg_ok = { HPO_a5_rsg_ok->:p; int64:z; };
-struct:SW_a5_rsg_ok = { WP_a5_rsg_ok:w; int64:z; };
-struct:SWP_a5_rsg_ok = { SW_a5_rsg_ok->:sw; int64:z; };
-struct:SO_a5_rsg_ok = { HPO_a5_rsg_ok->?:o; int64:z; };
-struct:SA2_a5_rsg_ok = { HPO_a5_rsg_ok->[2]:arr; int64:z; };
-struct:SI_a5_rsg_ok = { int64:i; int64:z; };
-struct:WPP_a5_rsg_ok = { HPO_a5_rsg_ok->->:pp; int64:z; };
-struct:SWPP_a5_rsg_ok = { WPP_a5_rsg_ok:w; int64:z; };
-func:putwp_a5_rsg_ok = int64(WP_a5_rsg_ok:w, H_a5_rsg_ok->:v) never fails { (<-(w.p)).lp = v; pass 7i64; };
-func:conv_a5_rsg_ok = HPO_a5_rsg_ok->(HPB_a5_rsg_ok->:p) never fails { pass ((p =>! any->) =>! HPO_a5_rsg_ok->); };
-func:conv2_a5_rsg_ok = HPO_a5_rsg_ok->(HPB_a5_rsg_ok->:p) never fails { pass ((p =>! any->) =>! HPO_a5_rsg_ok->); };
-struct:RR_a5_rsg_ok = { SQ_a5_rsg_ok->:sq; HPO_a5_rsg_ok->:q; int64:z; };
-struct:X2_a5_rsg_ok = { H_a5_rsg_ok->:lp; HPB_a5_rsg_ok:inner; };
-func:cvh_a5_rsg_ok = X2_a5_rsg_ok->(HPB_a5_rsg_ok->:p) never fails { pass ((p =>! any->) =>! X2_a5_rsg_ok->); };
-func:putx_a5_rsg_ok = int64(X2_a5_rsg_ok->:p, H_a5_rsg_ok->:v) never fails { p.lp = v; pass 7i64; };
-func:idh2_a5_rsg_ok = HPB_a5_rsg_ok->(HPB_a5_rsg_ok->:p) never fails { pass p; };
-func:putb_a5_rsg_ok = int64(HPB_a5_rsg_ok->:p, H_a5_rsg_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SX_a5_rsg_ok = { X2_a5_rsg_ok->:q; int64:z; };
-struct:SB_a5_rsg_ok = { HPB_a5_rsg_ok->:p; int64:z; };
-struct:Y2_a5_rsg_ok = { X2_a5_rsg_ok:x; int64:z; };
-struct:XA_a5_rsg_ok = { HPB_a5_rsg_ok[2]:arr; int64:z; };
-struct:XL_a5_rsg_ok = { List<HPB_a5_rsg_ok>:l; int64:z; };
-enum:EB_a5_rsg_ok = { A(HPB_a5_rsg_ok); Z; };
-func:idx_a5_rsg_ok = X2_a5_rsg_ok->(X2_a5_rsg_ok->:q) never fails { pass q; };
-func:getq_a5_rsg_ok = X2_a5_rsg_ok->(SX_a5_rsg_ok->:s) never fails { pass s.q; };
-func:inr_a5_rsg_ok = HPB_a5_rsg_ok->(X2_a5_rsg_ok->:q) never fails { pass @((<-q).inner); };
-func:st_a5_rsg_ok = int64(X2_a5_rsg_ok->:qp, H_a5_rsg_ok->:v) never fails { HPB_a5_rsg_ok->:r = @((<-qp).inner); (<-r).lp = v; pass 7i64; };
-func:stq_a5_rsg_ok = int64(SX_a5_rsg_ok->:sp, H_a5_rsg_ok->:v) never fails { HPB_a5_rsg_ok->:r = @((<-((<-sp).q)).inner); (<-r).lp = v; pass 7i64; };
-struct:HPC_a5_rsg_ok = { HPB_a5_rsg_ok->:pb; int64:z; };
-func:put2_a5_rsg_ok = int64(HPB_a5_rsg_ok->->:pp, H_a5_rsg_ok->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
-func:putr_a5_rsg_ok = int64(HPB_a5_rsg_ok->:r, H_a5_rsg_ok->:v) never fails { HPB_a5_rsg_ok->:r1 = @(<-r); H_a5_rsg_ok->->:r2 = @((<-r1).lp); <-r2 = v; pass 7i64; };
-func:cst_a5_rsg_ok = H_a5_rsg_ok->(H_a5_rsg_ok->:p) never fails { pass ((p =>! any->) =>! H_a5_rsg_ok->); };
-func:g_a5_rsg_ok = int64(H_a5_rsg_ok->:h0p, H_a5_rsg_ok->:hq, H_a5_rsg_ok->:hz, int64:n) never fails {
-    int64->:e = raw fp_a5_rsg_ok(hz);
-    X2_a5_rsg_ok:mx = X2_a5_rsg_ok{ lp: h0p, inner: HPB_a5_rsg_ok{ lp: h0p, own: raw mk_a5_rsg_ok() } };
-    X2_a5_rsg_ok->:q0 = @mx;
-    HPB_a5_rsg_ok->:r = @((<-q0).inner);
-    H_a5_rsg_ok->->:r2 = @((<-r).lp);
-    <-r2 = hq;
-    e = raw fp_a5_rsg_ok(mx.inner.lp);
-    X2_a5_rsg_ok:my = X2_a5_rsg_ok{ lp: h0p, inner: HPB_a5_rsg_ok{ lp: h0p, own: raw mk_a5_rsg_ok() } };
-    q0 = @my;
-    r = @((<-q0).inner);
-    discard(raw growh_a5_rsg_ok(hq));
-    pass 7i64;
-};
-func:f_a5_rsg_ok = int64(int64:n) never fails {
-    H_a5_rsg_ok:hz = raw mkh_a5_rsg_ok(); H_a5_rsg_ok:h0 = raw mkh_a5_rsg_ok(); H_a5_rsg_ok:h2 = raw mkh_a5_rsg_ok();
-    pass raw g_a5_rsg_ok(@h0, @h2, @hz, n);
-};
-func:cell_main_a5_rsg_ok = int32() never fails { pass (((raw f_a5_rsg_ok(1i64)) + 60i64) =>! int32); };
-struct:K_a5_view_ok = { int64:k; };
-struct:H_a5_view_ok = { List<int64>:l; int64:k; K_a5_view_ok:kk; };
-func:mk_a5_view_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
-func:mkh_a5_view_ok = H_a5_view_ok() never fails { pass H_a5_view_ok{ l: raw mk_a5_view_ok(), k: 2i64, kk: K_a5_view_ok{ k: 3i64 } }; };
-func:growh_a5_view_ok = int64(H_a5_view_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:growl_a5_view_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
-func:fp_a5_view_ok = int64->(H_a5_view_ok->:q) never fails { pass @((<-q).l[0i64]); };
-func:idh_a5_view_ok = H_a5_view_ok->(H_a5_view_ok->:q) never fails { pass q; };
-func:getl_a5_view_ok = List<int64>->(H_a5_view_ok->:w) never fails { pass @w.l; };
-struct:HPO_a5_view_ok = { H_a5_view_ok->:lp; List<int64>:own; };
-struct:SQ_a5_view_ok = { HPO_a5_view_ok->:q; int64:z; };
-struct:SR_a5_view_ok = { SQ_a5_view_ok->:sq; int64:z; };
-struct:SL_a5_view_ok = { List<int64>->:l; int64:z; };
-struct:SL2_a5_view_ok = { SL_a5_view_ok:s; int64:z; };
-struct:SLP_a5_view_ok = { SL_a5_view_ok->:sp; int64:z; };
-struct:SQB_a5_view_ok = { HPO_a5_view_ok->:q; int64:z; };
-struct:HPB_a5_view_ok = { H_a5_view_ok->:lp; List<int64>:own; };
-struct:PV_a5_view_ok = { H_a5_view_ok->:p; int64:v; };
-struct:HPV_a5_view_ok = { H_a5_view_ok->:lp; List<PV_a5_view_ok>:own; };
-struct:SLV_a5_view_ok = { List<PV_a5_view_ok>->:l; int64:z; };
-struct:SQV_a5_view_ok = { HPV_a5_view_ok->:q; int64:z; };
-func:getown_a5_view_ok = List<int64>->(HPO_a5_view_ok->:w) never fails { pass @w.own; };
-func:getownv_a5_view_ok = List<PV_a5_view_ok>->(HPV_a5_view_ok->:w) never fails { pass @w.own; };
-func:mkv_a5_view_ok = List<PV_a5_view_ok>(H_a5_view_ok->:h) never fails { List<PV_a5_view_ok>:l = raw list_init::<PV_a5_view_ok>(1i64); drop list_push(@l, PV_a5_view_ok{ p: h, v: 1i64 }); pass l; };
-func:idp_a5_view_ok = HPO_a5_view_ok->(HPO_a5_view_ok->:w) never fails { pass w; };
-func:cvq_a5_view_ok = SQ_a5_view_ok->(SQB_a5_view_ok->:b) never fails { pass ((b =>! any->) =>! SQ_a5_view_ok->); };
-func:put_a5_view_ok = int64(HPO_a5_view_ok->:p, H_a5_view_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SR2_a5_view_ok = { SQ_a5_view_ok->:sq; int64:z; };
-struct:SPP_a5_view_ok = { HPO_a5_view_ok->->:qq; int64:z; };
-struct:SPPP_a5_view_ok = { HPO_a5_view_ok->->->:qqq; int64:z; };
-struct:SPPPP_a5_view_ok = { HPO_a5_view_ok->->->->:qqqq; int64:z; };
-struct:HN_a5_view_ok = { int64:a; int64:b; };
-struct:SN_a5_view_ok = { HN_a5_view_ok->:q; int64:z; };
-struct:SNPP_a5_view_ok = { HN_a5_view_ok->->:qq; int64:z; };
-struct:SN4_a5_view_ok = { HN_a5_view_ok->->->->:qqqq; int64:z; };
-struct:W_a5_view_ok = { HPO_a5_view_ok:h; int64:z; };
-struct:W2_a5_view_ok = { HPO_a5_view_ok->:a; HPO_a5_view_ok->:b; int64:z; };
-struct:SO2_a5_view_ok = { HPO_a5_view_ok->->?:oqq; int64:z; };
-func:geth_a5_view_ok = HPO_a5_view_ok->(W_a5_view_ok->:w) never fails { pass @w.h; };
-func:geta_a5_view_ok = HPO_a5_view_ok->->(W2_a5_view_ok->:w) never fails { pass @w.a; };
-func:mksqw_a5_view_ok = SQ_a5_view_ok(W_a5_view_ok->:w) never fails { pass SQ_a5_view_ok{ q: @w.h, z: 1i64 }; };
-func:idpp_a5_view_ok = HPO_a5_view_ok->->(HPO_a5_view_ok->->:p) never fails { pass p; };
-func:rety_a5_view_ok = HPO_a5_view_ok->(HN_a5_view_ok->:p) never fails { pass ((p =>! any->) =>! HPO_a5_view_ok->); };
-func:put2pp_a5_view_ok = int64(HPO_a5_view_ok->->:pp, H_a5_view_ok->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
-func:put3_a5_view_ok = int64(HPO_a5_view_ok->->->:pp, H_a5_view_ok->:v) never fails { (<-(<-(<-pp))).lp = v; pass 7i64; };
-func:put4_a5_view_ok = int64(HPO_a5_view_ok->->->->:pp, H_a5_view_ok->:v) never fails { (<-(<-(<-(<-pp)))).lp = v; pass 7i64; };
-impl:HPO_a5_view_ok = { func:setme = int64(HPO_a5_view_ok->:self, H_a5_view_ok->:v) never fails { (<-self).lp = v; pass 7i64; }; };
-struct:WX3_a5_view_ok = { HN_a5_view_ok->->:x; int64:z; };
-struct:WX4_a5_view_ok = { HN_a5_view_ok->->->:x; int64:z; };
-struct:SA_a5_view_ok = { any->:p; int64:z; };
-struct:SX3_a5_view_ok = { HN_a5_view_ok->->->:x3; int64:z; };
-struct:SN5_a5_view_ok = { HN_a5_view_ok->->->->->:q5; int64:z; };
-struct:SP5_a5_view_ok = { HPO_a5_view_ok->->->->->:q5; int64:z; };
-func:getx3_a5_view_ok = HN_a5_view_ok->->->(WX3_a5_view_ok->:w) never fails { pass @w.x; };
-func:getx3c_a5_view_ok = HPO_a5_view_ok->->->(WX3_a5_view_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_a5_view_ok->->->; };
-func:getx4_a5_view_ok = HN_a5_view_ok->->->->(WX4_a5_view_ok->:w) never fails { pass @w.x; };
-func:getx4c_a5_view_ok = HPO_a5_view_ok->->->->(WX4_a5_view_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_a5_view_ok->->->->; };
-func:toany_a5_view_ok = any->(HN_a5_view_ok->->:p) never fails { pass (p =>! any->); };
-func:put5_a5_view_ok = int64(HPO_a5_view_ok->->->->->:pp, H_a5_view_ok->:v) never fails { (<-(<-(<-(<-(<-pp))))).lp = v; pass 7i64; };
-struct:WP_a5_view_ok = { HPO_a5_view_ok->:p; int64:z; };
-struct:SW_a5_view_ok = { WP_a5_view_ok:w; int64:z; };
-struct:SWP_a5_view_ok = { SW_a5_view_ok->:sw; int64:z; };
-struct:SO_a5_view_ok = { HPO_a5_view_ok->?:o; int64:z; };
-struct:SA2_a5_view_ok = { HPO_a5_view_ok->[2]:arr; int64:z; };
-struct:SI_a5_view_ok = { int64:i; int64:z; };
-struct:WPP_a5_view_ok = { HPO_a5_view_ok->->:pp; int64:z; };
-struct:SWPP_a5_view_ok = { WPP_a5_view_ok:w; int64:z; };
-func:putwp_a5_view_ok = int64(WP_a5_view_ok:w, H_a5_view_ok->:v) never fails { (<-(w.p)).lp = v; pass 7i64; };
-func:conv_a5_view_ok = HPO_a5_view_ok->(HPB_a5_view_ok->:p) never fails { pass ((p =>! any->) =>! HPO_a5_view_ok->); };
-func:conv2_a5_view_ok = HPO_a5_view_ok->(HPB_a5_view_ok->:p) never fails { pass ((p =>! any->) =>! HPO_a5_view_ok->); };
-struct:RR_a5_view_ok = { SQ_a5_view_ok->:sq; HPO_a5_view_ok->:q; int64:z; };
-struct:X2_a5_view_ok = { H_a5_view_ok->:lp; HPB_a5_view_ok:inner; };
-func:cvh_a5_view_ok = X2_a5_view_ok->(HPB_a5_view_ok->:p) never fails { pass ((p =>! any->) =>! X2_a5_view_ok->); };
-func:putx_a5_view_ok = int64(X2_a5_view_ok->:p, H_a5_view_ok->:v) never fails { p.lp = v; pass 7i64; };
-func:idh2_a5_view_ok = HPB_a5_view_ok->(HPB_a5_view_ok->:p) never fails { pass p; };
-func:putb_a5_view_ok = int64(HPB_a5_view_ok->:p, H_a5_view_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SX_a5_view_ok = { X2_a5_view_ok->:q; int64:z; };
-struct:SB_a5_view_ok = { HPB_a5_view_ok->:p; int64:z; };
-struct:Y2_a5_view_ok = { X2_a5_view_ok:x; int64:z; };
-struct:XA_a5_view_ok = { HPB_a5_view_ok[2]:arr; int64:z; };
-struct:XL_a5_view_ok = { List<HPB_a5_view_ok>:l; int64:z; };
-enum:EB_a5_view_ok = { A(HPB_a5_view_ok); Z; };
-func:idx_a5_view_ok = X2_a5_view_ok->(X2_a5_view_ok->:q) never fails { pass q; };
-func:getq_a5_view_ok = X2_a5_view_ok->(SX_a5_view_ok->:s) never fails { pass s.q; };
-func:inr_a5_view_ok = HPB_a5_view_ok->(X2_a5_view_ok->:q) never fails { pass @((<-q).inner); };
-func:st_a5_view_ok = int64(X2_a5_view_ok->:qp, H_a5_view_ok->:v) never fails { HPB_a5_view_ok->:r = @((<-qp).inner); (<-r).lp = v; pass 7i64; };
-func:stq_a5_view_ok = int64(SX_a5_view_ok->:sp, H_a5_view_ok->:v) never fails { HPB_a5_view_ok->:r = @((<-((<-sp).q)).inner); (<-r).lp = v; pass 7i64; };
-struct:HPC_a5_view_ok = { HPB_a5_view_ok->:pb; int64:z; };
-func:put2_a5_view_ok = int64(HPB_a5_view_ok->->:pp, H_a5_view_ok->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
-func:putr_a5_view_ok = int64(HPB_a5_view_ok->:r, H_a5_view_ok->:v) never fails { HPB_a5_view_ok->:r1 = @(<-r); H_a5_view_ok->->:r2 = @((<-r1).lp); <-r2 = v; pass 7i64; };
-func:cst_a5_view_ok = H_a5_view_ok->(H_a5_view_ok->:p) never fails { pass ((p =>! any->) =>! H_a5_view_ok->); };
-func:g_a5_view_ok = int64(H_a5_view_ok->:h0p, H_a5_view_ok->:hq, H_a5_view_ok->:hz, int64:n) never fails {
-    int64->:e = raw fp_a5_view_ok(hz);
-    X2_a5_view_ok:mx = X2_a5_view_ok{ lp: h0p, inner: HPB_a5_view_ok{ lp: h0p, own: raw mk_a5_view_ok() } };
-    X2_a5_view_ok->:q0 = @mx;
-    HPB_a5_view_ok->:r = @((<-q0).inner);
-    H_a5_view_ok->->:r2 = @((<-r).lp);
-    HPB_a5_view_ok->:rv = r;
-    H_a5_view_ok->->:r3 = @((<-rv).lp);
-    <-r3 = hq;
-    e = raw fp_a5_view_ok(mx.inner.lp);
-    discard(raw growh_a5_view_ok(hq));
-    pass 7i64;
-};
-func:f_a5_view_ok = int64(int64:n) never fails {
-    H_a5_view_ok:hz = raw mkh_a5_view_ok(); H_a5_view_ok:h0 = raw mkh_a5_view_ok(); H_a5_view_ok:h2 = raw mkh_a5_view_ok();
-    pass raw g_a5_view_ok(@h0, @h2, @hz, n);
-};
-func:cell_main_a5_view_ok = int32() never fails { pass (((raw f_a5_view_ok(1i64)) + 60i64) =>! int32); };
 struct:K_b_base_d_ok = { int64:k; };
 struct:H_b_base_d_ok = { List<int64>:l; int64:k; K_b_base_d_ok:kk; };
 func:mk_b_base_d_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
@@ -4807,239 +4269,6 @@ func:f_fu_self130_ng = int64(int64:n) never fails {
     pass raw g_fu_self130_ng(@h0, @h2, @hz, n);
 };
 func:cell_main_fu_self130_ng = int32() never fails { pass (((raw f_fu_self130_ng(1i64)) + 60i64) =>! int32); };
-struct:K_fu_self130_ok = { int64:k; };
-struct:H_fu_self130_ok = { List<int64>:l; int64:k; K_fu_self130_ok:kk; };
-func:mk_fu_self130_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
-func:mkh_fu_self130_ok = H_fu_self130_ok() never fails { pass H_fu_self130_ok{ l: raw mk_fu_self130_ok(), k: 2i64, kk: K_fu_self130_ok{ k: 3i64 } }; };
-func:growh_fu_self130_ok = int64(H_fu_self130_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:growl_fu_self130_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
-func:fp_fu_self130_ok = int64->(H_fu_self130_ok->:q) never fails { pass @((<-q).l[0i64]); };
-func:idh_fu_self130_ok = H_fu_self130_ok->(H_fu_self130_ok->:q) never fails { pass q; };
-func:getl_fu_self130_ok = List<int64>->(H_fu_self130_ok->:w) never fails { pass @w.l; };
-struct:HPO_fu_self130_ok = { H_fu_self130_ok->:lp; List<int64>:own; };
-struct:SQ_fu_self130_ok = { HPO_fu_self130_ok->:q; int64:z; };
-struct:SR_fu_self130_ok = { SQ_fu_self130_ok->:sq; int64:z; };
-struct:SL_fu_self130_ok = { List<int64>->:l; int64:z; };
-struct:SL2_fu_self130_ok = { SL_fu_self130_ok:s; int64:z; };
-struct:SLP_fu_self130_ok = { SL_fu_self130_ok->:sp; int64:z; };
-struct:SQB_fu_self130_ok = { HPO_fu_self130_ok->:q; int64:z; };
-struct:HPB_fu_self130_ok = { H_fu_self130_ok->:lp; List<int64>:own; };
-struct:PV_fu_self130_ok = { H_fu_self130_ok->:p; int64:v; };
-struct:HPV_fu_self130_ok = { H_fu_self130_ok->:lp; List<PV_fu_self130_ok>:own; };
-struct:SLV_fu_self130_ok = { List<PV_fu_self130_ok>->:l; int64:z; };
-struct:SQV_fu_self130_ok = { HPV_fu_self130_ok->:q; int64:z; };
-func:getown_fu_self130_ok = List<int64>->(HPO_fu_self130_ok->:w) never fails { pass @w.own; };
-func:getownv_fu_self130_ok = List<PV_fu_self130_ok>->(HPV_fu_self130_ok->:w) never fails { pass @w.own; };
-func:mkv_fu_self130_ok = List<PV_fu_self130_ok>(H_fu_self130_ok->:h) never fails { List<PV_fu_self130_ok>:l = raw list_init::<PV_fu_self130_ok>(1i64); drop list_push(@l, PV_fu_self130_ok{ p: h, v: 1i64 }); pass l; };
-func:idp_fu_self130_ok = HPO_fu_self130_ok->(HPO_fu_self130_ok->:w) never fails { pass w; };
-func:cvq_fu_self130_ok = SQ_fu_self130_ok->(SQB_fu_self130_ok->:b) never fails { pass ((b =>! any->) =>! SQ_fu_self130_ok->); };
-func:put_fu_self130_ok = int64(HPO_fu_self130_ok->:p, H_fu_self130_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SR2_fu_self130_ok = { SQ_fu_self130_ok->:sq; int64:z; };
-struct:SPP_fu_self130_ok = { HPO_fu_self130_ok->->:qq; int64:z; };
-struct:SPPP_fu_self130_ok = { HPO_fu_self130_ok->->->:qqq; int64:z; };
-struct:SPPPP_fu_self130_ok = { HPO_fu_self130_ok->->->->:qqqq; int64:z; };
-struct:HN_fu_self130_ok = { int64:a; int64:b; };
-struct:SN_fu_self130_ok = { HN_fu_self130_ok->:q; int64:z; };
-struct:SNPP_fu_self130_ok = { HN_fu_self130_ok->->:qq; int64:z; };
-struct:SN4_fu_self130_ok = { HN_fu_self130_ok->->->->:qqqq; int64:z; };
-struct:W_fu_self130_ok = { HPO_fu_self130_ok:h; int64:z; };
-struct:W2_fu_self130_ok = { HPO_fu_self130_ok->:a; HPO_fu_self130_ok->:b; int64:z; };
-struct:SO2_fu_self130_ok = { HPO_fu_self130_ok->->?:oqq; int64:z; };
-func:geth_fu_self130_ok = HPO_fu_self130_ok->(W_fu_self130_ok->:w) never fails { pass @w.h; };
-func:geta_fu_self130_ok = HPO_fu_self130_ok->->(W2_fu_self130_ok->:w) never fails { pass @w.a; };
-func:mksqw_fu_self130_ok = SQ_fu_self130_ok(W_fu_self130_ok->:w) never fails { pass SQ_fu_self130_ok{ q: @w.h, z: 1i64 }; };
-func:idpp_fu_self130_ok = HPO_fu_self130_ok->->(HPO_fu_self130_ok->->:p) never fails { pass p; };
-func:rety_fu_self130_ok = HPO_fu_self130_ok->(HN_fu_self130_ok->:p) never fails { pass ((p =>! any->) =>! HPO_fu_self130_ok->); };
-func:put2pp_fu_self130_ok = int64(HPO_fu_self130_ok->->:pp, H_fu_self130_ok->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
-func:put3_fu_self130_ok = int64(HPO_fu_self130_ok->->->:pp, H_fu_self130_ok->:v) never fails { (<-(<-(<-pp))).lp = v; pass 7i64; };
-func:put4_fu_self130_ok = int64(HPO_fu_self130_ok->->->->:pp, H_fu_self130_ok->:v) never fails { (<-(<-(<-(<-pp)))).lp = v; pass 7i64; };
-impl:HPO_fu_self130_ok = { func:setme = int64(HPO_fu_self130_ok->:self, H_fu_self130_ok->:v) never fails { (<-self).lp = v; pass 7i64; }; };
-struct:WX3_fu_self130_ok = { HN_fu_self130_ok->->:x; int64:z; };
-struct:WX4_fu_self130_ok = { HN_fu_self130_ok->->->:x; int64:z; };
-struct:SA_fu_self130_ok = { any->:p; int64:z; };
-struct:SX3_fu_self130_ok = { HN_fu_self130_ok->->->:x3; int64:z; };
-struct:SN5_fu_self130_ok = { HN_fu_self130_ok->->->->->:q5; int64:z; };
-struct:SP5_fu_self130_ok = { HPO_fu_self130_ok->->->->->:q5; int64:z; };
-func:getx3_fu_self130_ok = HN_fu_self130_ok->->->(WX3_fu_self130_ok->:w) never fails { pass @w.x; };
-func:getx3c_fu_self130_ok = HPO_fu_self130_ok->->->(WX3_fu_self130_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_fu_self130_ok->->->; };
-func:getx4_fu_self130_ok = HN_fu_self130_ok->->->->(WX4_fu_self130_ok->:w) never fails { pass @w.x; };
-func:getx4c_fu_self130_ok = HPO_fu_self130_ok->->->->(WX4_fu_self130_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_fu_self130_ok->->->->; };
-func:toany_fu_self130_ok = any->(HN_fu_self130_ok->->:p) never fails { pass (p =>! any->); };
-func:put5_fu_self130_ok = int64(HPO_fu_self130_ok->->->->->:pp, H_fu_self130_ok->:v) never fails { (<-(<-(<-(<-(<-pp))))).lp = v; pass 7i64; };
-struct:WP_fu_self130_ok = { HPO_fu_self130_ok->:p; int64:z; };
-struct:SW_fu_self130_ok = { WP_fu_self130_ok:w; int64:z; };
-struct:SWP_fu_self130_ok = { SW_fu_self130_ok->:sw; int64:z; };
-struct:SO_fu_self130_ok = { HPO_fu_self130_ok->?:o; int64:z; };
-struct:SA2_fu_self130_ok = { HPO_fu_self130_ok->[2]:arr; int64:z; };
-struct:SI_fu_self130_ok = { int64:i; int64:z; };
-struct:WPP_fu_self130_ok = { HPO_fu_self130_ok->->:pp; int64:z; };
-struct:SWPP_fu_self130_ok = { WPP_fu_self130_ok:w; int64:z; };
-func:putwp_fu_self130_ok = int64(WP_fu_self130_ok:w, H_fu_self130_ok->:v) never fails { (<-(w.p)).lp = v; pass 7i64; };
-func:conv_fu_self130_ok = HPO_fu_self130_ok->(HPB_fu_self130_ok->:p) never fails { pass ((p =>! any->) =>! HPO_fu_self130_ok->); };
-func:conv2_fu_self130_ok = HPO_fu_self130_ok->(HPB_fu_self130_ok->:p) never fails { pass ((p =>! any->) =>! HPO_fu_self130_ok->); };
-struct:RR_fu_self130_ok = { SQ_fu_self130_ok->:sq; HPO_fu_self130_ok->:q; int64:z; };
-struct:X2_fu_self130_ok = { H_fu_self130_ok->:lp; HPB_fu_self130_ok:inner; };
-func:cvh_fu_self130_ok = X2_fu_self130_ok->(HPB_fu_self130_ok->:p) never fails { pass ((p =>! any->) =>! X2_fu_self130_ok->); };
-func:putx_fu_self130_ok = int64(X2_fu_self130_ok->:p, H_fu_self130_ok->:v) never fails { p.lp = v; pass 7i64; };
-func:idh2_fu_self130_ok = HPB_fu_self130_ok->(HPB_fu_self130_ok->:p) never fails { pass p; };
-func:putb_fu_self130_ok = int64(HPB_fu_self130_ok->:p, H_fu_self130_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SX_fu_self130_ok = { X2_fu_self130_ok->:q; int64:z; };
-struct:SB_fu_self130_ok = { HPB_fu_self130_ok->:p; int64:z; };
-struct:Y2_fu_self130_ok = { X2_fu_self130_ok:x; int64:z; };
-struct:XA_fu_self130_ok = { HPB_fu_self130_ok[2]:arr; int64:z; };
-struct:XL_fu_self130_ok = { List<HPB_fu_self130_ok>:l; int64:z; };
-enum:EB_fu_self130_ok = { A(HPB_fu_self130_ok); Z; };
-func:idx_fu_self130_ok = X2_fu_self130_ok->(X2_fu_self130_ok->:q) never fails { pass q; };
-func:getq_fu_self130_ok = X2_fu_self130_ok->(SX_fu_self130_ok->:s) never fails { pass s.q; };
-func:inr_fu_self130_ok = HPB_fu_self130_ok->(X2_fu_self130_ok->:q) never fails { pass @((<-q).inner); };
-func:st_fu_self130_ok = int64(X2_fu_self130_ok->:qp, H_fu_self130_ok->:v) never fails { HPB_fu_self130_ok->:r = @((<-qp).inner); (<-r).lp = v; pass 7i64; };
-func:stq_fu_self130_ok = int64(SX_fu_self130_ok->:sp, H_fu_self130_ok->:v) never fails { HPB_fu_self130_ok->:r = @((<-((<-sp).q)).inner); (<-r).lp = v; pass 7i64; };
-func:g_fu_self130_ok = int64(H_fu_self130_ok->:h0p, H_fu_self130_ok->:hq, H_fu_self130_ok->:hz, int64:n) never fails {
-    int64->:e = raw fp_fu_self130_ok(hz);
-    X2_fu_self130_ok:mx = X2_fu_self130_ok{ lp: h0p, inner: HPB_fu_self130_ok{ lp: h0p, own: raw mk_fu_self130_ok() } };
-    X2_fu_self130_ok->:q0 = @mx;
-    HPB_fu_self130_ok->:r = @((<-q0).inner);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    r = @(<-r);
-    H_fu_self130_ok->->:r2 = @((<-r).lp);
-    <-r2 = hq;
-    e = raw fp_fu_self130_ok(mx.inner.lp);
-    discard(raw growh_fu_self130_ok(hq));
-    pass 7i64;
-};
-func:f_fu_self130_ok = int64(int64:n) never fails {
-    H_fu_self130_ok:hz = raw mkh_fu_self130_ok(); H_fu_self130_ok:h0 = raw mkh_fu_self130_ok(); H_fu_self130_ok:h2 = raw mkh_fu_self130_ok();
-    pass raw g_fu_self130_ok(@h0, @h2, @hz, n);
-};
-func:cell_main_fu_self130_ok = int32() never fails { pass (((raw f_fu_self130_ok(1i64)) + 60i64) =>! int32); };
 struct:K_fu_self130_pl = { int64:k; };
 struct:H_fu_self130_pl = { List<int64>:l; int64:k; K_fu_self130_pl:kk; };
 func:mk_fu_self130_pl = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
@@ -5856,306 +5085,6 @@ func:f_perf_wide_ok = int64(int64:n) never fails {
     pass raw g_perf_wide_ok(@h0, @h2, @hz, n);
 };
 func:cell_main_perf_wide_ok = int32() never fails { pass (((raw f_perf_wide_ok(1i64)) + 60i64) =>! int32); };
-struct:K_pk2_ok = { int64:k; };
-struct:H_pk2_ok = { List<int64>:l; int64:k; K_pk2_ok:kk; };
-func:mk_pk2_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
-func:mkh_pk2_ok = H_pk2_ok() never fails { pass H_pk2_ok{ l: raw mk_pk2_ok(), k: 2i64, kk: K_pk2_ok{ k: 3i64 } }; };
-func:growh_pk2_ok = int64(H_pk2_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:growl_pk2_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
-func:fp_pk2_ok = int64->(H_pk2_ok->:q) never fails { pass @((<-q).l[0i64]); };
-func:idh_pk2_ok = H_pk2_ok->(H_pk2_ok->:q) never fails { pass q; };
-func:getl_pk2_ok = List<int64>->(H_pk2_ok->:w) never fails { pass @w.l; };
-struct:HPO_pk2_ok = { H_pk2_ok->:lp; List<int64>:own; };
-struct:SQ_pk2_ok = { HPO_pk2_ok->:q; int64:z; };
-struct:SR_pk2_ok = { SQ_pk2_ok->:sq; int64:z; };
-struct:SL_pk2_ok = { List<int64>->:l; int64:z; };
-struct:SL2_pk2_ok = { SL_pk2_ok:s; int64:z; };
-struct:SLP_pk2_ok = { SL_pk2_ok->:sp; int64:z; };
-struct:SQB_pk2_ok = { HPO_pk2_ok->:q; int64:z; };
-struct:HPB_pk2_ok = { H_pk2_ok->:lp; List<int64>:own; };
-struct:PV_pk2_ok = { H_pk2_ok->:p; int64:v; };
-struct:HPV_pk2_ok = { H_pk2_ok->:lp; List<PV_pk2_ok>:own; };
-struct:SLV_pk2_ok = { List<PV_pk2_ok>->:l; int64:z; };
-struct:SQV_pk2_ok = { HPV_pk2_ok->:q; int64:z; };
-func:getown_pk2_ok = List<int64>->(HPO_pk2_ok->:w) never fails { pass @w.own; };
-func:getownv_pk2_ok = List<PV_pk2_ok>->(HPV_pk2_ok->:w) never fails { pass @w.own; };
-func:mkv_pk2_ok = List<PV_pk2_ok>(H_pk2_ok->:h) never fails { List<PV_pk2_ok>:l = raw list_init::<PV_pk2_ok>(1i64); drop list_push(@l, PV_pk2_ok{ p: h, v: 1i64 }); pass l; };
-func:idp_pk2_ok = HPO_pk2_ok->(HPO_pk2_ok->:w) never fails { pass w; };
-func:cvq_pk2_ok = SQ_pk2_ok->(SQB_pk2_ok->:b) never fails { pass ((b =>! any->) =>! SQ_pk2_ok->); };
-func:put_pk2_ok = int64(HPO_pk2_ok->:p, H_pk2_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SR2_pk2_ok = { SQ_pk2_ok->:sq; int64:z; };
-struct:SPP_pk2_ok = { HPO_pk2_ok->->:qq; int64:z; };
-struct:SPPP_pk2_ok = { HPO_pk2_ok->->->:qqq; int64:z; };
-struct:SPPPP_pk2_ok = { HPO_pk2_ok->->->->:qqqq; int64:z; };
-struct:HN_pk2_ok = { int64:a; int64:b; };
-struct:SN_pk2_ok = { HN_pk2_ok->:q; int64:z; };
-struct:SNPP_pk2_ok = { HN_pk2_ok->->:qq; int64:z; };
-struct:SN4_pk2_ok = { HN_pk2_ok->->->->:qqqq; int64:z; };
-struct:W_pk2_ok = { HPO_pk2_ok:h; int64:z; };
-struct:W2_pk2_ok = { HPO_pk2_ok->:a; HPO_pk2_ok->:b; int64:z; };
-struct:SO2_pk2_ok = { HPO_pk2_ok->->?:oqq; int64:z; };
-func:geth_pk2_ok = HPO_pk2_ok->(W_pk2_ok->:w) never fails { pass @w.h; };
-func:geta_pk2_ok = HPO_pk2_ok->->(W2_pk2_ok->:w) never fails { pass @w.a; };
-func:mksqw_pk2_ok = SQ_pk2_ok(W_pk2_ok->:w) never fails { pass SQ_pk2_ok{ q: @w.h, z: 1i64 }; };
-func:idpp_pk2_ok = HPO_pk2_ok->->(HPO_pk2_ok->->:p) never fails { pass p; };
-func:rety_pk2_ok = HPO_pk2_ok->(HN_pk2_ok->:p) never fails { pass ((p =>! any->) =>! HPO_pk2_ok->); };
-func:put2pp_pk2_ok = int64(HPO_pk2_ok->->:pp, H_pk2_ok->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
-func:put3_pk2_ok = int64(HPO_pk2_ok->->->:pp, H_pk2_ok->:v) never fails { (<-(<-(<-pp))).lp = v; pass 7i64; };
-func:put4_pk2_ok = int64(HPO_pk2_ok->->->->:pp, H_pk2_ok->:v) never fails { (<-(<-(<-(<-pp)))).lp = v; pass 7i64; };
-impl:HPO_pk2_ok = { func:setme = int64(HPO_pk2_ok->:self, H_pk2_ok->:v) never fails { (<-self).lp = v; pass 7i64; }; };
-struct:WX3_pk2_ok = { HN_pk2_ok->->:x; int64:z; };
-struct:WX4_pk2_ok = { HN_pk2_ok->->->:x; int64:z; };
-struct:SA_pk2_ok = { any->:p; int64:z; };
-struct:SX3_pk2_ok = { HN_pk2_ok->->->:x3; int64:z; };
-struct:SN5_pk2_ok = { HN_pk2_ok->->->->->:q5; int64:z; };
-struct:SP5_pk2_ok = { HPO_pk2_ok->->->->->:q5; int64:z; };
-func:getx3_pk2_ok = HN_pk2_ok->->->(WX3_pk2_ok->:w) never fails { pass @w.x; };
-func:getx3c_pk2_ok = HPO_pk2_ok->->->(WX3_pk2_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_pk2_ok->->->; };
-func:getx4_pk2_ok = HN_pk2_ok->->->->(WX4_pk2_ok->:w) never fails { pass @w.x; };
-func:getx4c_pk2_ok = HPO_pk2_ok->->->->(WX4_pk2_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_pk2_ok->->->->; };
-func:toany_pk2_ok = any->(HN_pk2_ok->->:p) never fails { pass (p =>! any->); };
-func:put5_pk2_ok = int64(HPO_pk2_ok->->->->->:pp, H_pk2_ok->:v) never fails { (<-(<-(<-(<-(<-pp))))).lp = v; pass 7i64; };
-struct:WP_pk2_ok = { HPO_pk2_ok->:p; int64:z; };
-struct:SW_pk2_ok = { WP_pk2_ok:w; int64:z; };
-struct:SWP_pk2_ok = { SW_pk2_ok->:sw; int64:z; };
-struct:SO_pk2_ok = { HPO_pk2_ok->?:o; int64:z; };
-struct:SA2_pk2_ok = { HPO_pk2_ok->[2]:arr; int64:z; };
-struct:SI_pk2_ok = { int64:i; int64:z; };
-struct:WPP_pk2_ok = { HPO_pk2_ok->->:pp; int64:z; };
-struct:SWPP_pk2_ok = { WPP_pk2_ok:w; int64:z; };
-func:putwp_pk2_ok = int64(WP_pk2_ok:w, H_pk2_ok->:v) never fails { (<-(w.p)).lp = v; pass 7i64; };
-func:conv_pk2_ok = HPO_pk2_ok->(HPB_pk2_ok->:p) never fails { pass ((p =>! any->) =>! HPO_pk2_ok->); };
-func:conv2_pk2_ok = HPO_pk2_ok->(HPB_pk2_ok->:p) never fails { pass ((p =>! any->) =>! HPO_pk2_ok->); };
-struct:RR_pk2_ok = { SQ_pk2_ok->:sq; HPO_pk2_ok->:q; int64:z; };
-struct:X2_pk2_ok = { H_pk2_ok->:lp; HPB_pk2_ok:inner; };
-func:cvh_pk2_ok = X2_pk2_ok->(HPB_pk2_ok->:p) never fails { pass ((p =>! any->) =>! X2_pk2_ok->); };
-func:putx_pk2_ok = int64(X2_pk2_ok->:p, H_pk2_ok->:v) never fails { p.lp = v; pass 7i64; };
-func:idh2_pk2_ok = HPB_pk2_ok->(HPB_pk2_ok->:p) never fails { pass p; };
-func:putb_pk2_ok = int64(HPB_pk2_ok->:p, H_pk2_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SX_pk2_ok = { X2_pk2_ok->:q; int64:z; };
-struct:SB_pk2_ok = { HPB_pk2_ok->:p; int64:z; };
-struct:Y2_pk2_ok = { X2_pk2_ok:x; int64:z; };
-struct:XA_pk2_ok = { HPB_pk2_ok[2]:arr; int64:z; };
-struct:XL_pk2_ok = { List<HPB_pk2_ok>:l; int64:z; };
-enum:EB_pk2_ok = { A(HPB_pk2_ok); Z; };
-func:idx_pk2_ok = X2_pk2_ok->(X2_pk2_ok->:q) never fails { pass q; };
-func:getq_pk2_ok = X2_pk2_ok->(SX_pk2_ok->:s) never fails { pass s.q; };
-func:inr_pk2_ok = HPB_pk2_ok->(X2_pk2_ok->:q) never fails { pass @((<-q).inner); };
-func:st_pk2_ok = int64(X2_pk2_ok->:qp, H_pk2_ok->:v) never fails { HPB_pk2_ok->:r = @((<-qp).inner); (<-r).lp = v; pass 7i64; };
-func:stq_pk2_ok = int64(SX_pk2_ok->:sp, H_pk2_ok->:v) never fails { HPB_pk2_ok->:r = @((<-((<-sp).q)).inner); (<-r).lp = v; pass 7i64; };
-enum:EX_pk2_ok = { A(X2_pk2_ok); Z; };
-func:g_pk2_ok = int64(H_pk2_ok->:h0p, H_pk2_ok->:hq, H_pk2_ok->:hz, int64:n) never fails {
-    int64->:e = raw fp_pk2_ok(hz);
-    EX_pk2_ok:o = EX_pk2_ok.A(X2_pk2_ok{ lp: h0p, inner: HPB_pk2_ok{ lp: h0p, own: raw mk_pk2_ok() } });
-    pick (move(o)) { (EX_pk2_ok.A(m)) { X2_pk2_ok->:q0 = @m; HPB_pk2_ok->:r = @((<-q0).inner); H_pk2_ok->->:r2 = @((<-r).lp); <-r2 = hq; e = raw fp_pk2_ok(m.inner.lp); }, (EX_pk2_ok.Z) { } }
-    discard(raw growh_pk2_ok(hq));
-    pass 7i64;
-};
-func:f_pk2_ok = int64(int64:n) never fails {
-    H_pk2_ok:hz = raw mkh_pk2_ok(); H_pk2_ok:h0 = raw mkh_pk2_ok(); H_pk2_ok:h2 = raw mkh_pk2_ok();
-    pass raw g_pk2_ok(@h0, @h2, @hz, n);
-};
-func:cell_main_pk2_ok = int32() never fails { pass (((raw f_pk2_ok(1i64)) + 60i64) =>! int32); };
-struct:K_pk2c_ok = { int64:k; };
-struct:H_pk2c_ok = { List<int64>:l; int64:k; K_pk2c_ok:kk; };
-func:mk_pk2c_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
-func:mkh_pk2c_ok = H_pk2c_ok() never fails { pass H_pk2c_ok{ l: raw mk_pk2c_ok(), k: 2i64, kk: K_pk2c_ok{ k: 3i64 } }; };
-func:growh_pk2c_ok = int64(H_pk2c_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:growl_pk2c_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
-func:fp_pk2c_ok = int64->(H_pk2c_ok->:q) never fails { pass @((<-q).l[0i64]); };
-func:idh_pk2c_ok = H_pk2c_ok->(H_pk2c_ok->:q) never fails { pass q; };
-func:getl_pk2c_ok = List<int64>->(H_pk2c_ok->:w) never fails { pass @w.l; };
-struct:HPO_pk2c_ok = { H_pk2c_ok->:lp; List<int64>:own; };
-struct:SQ_pk2c_ok = { HPO_pk2c_ok->:q; int64:z; };
-struct:SR_pk2c_ok = { SQ_pk2c_ok->:sq; int64:z; };
-struct:SL_pk2c_ok = { List<int64>->:l; int64:z; };
-struct:SL2_pk2c_ok = { SL_pk2c_ok:s; int64:z; };
-struct:SLP_pk2c_ok = { SL_pk2c_ok->:sp; int64:z; };
-struct:SQB_pk2c_ok = { HPO_pk2c_ok->:q; int64:z; };
-struct:HPB_pk2c_ok = { H_pk2c_ok->:lp; List<int64>:own; };
-struct:PV_pk2c_ok = { H_pk2c_ok->:p; int64:v; };
-struct:HPV_pk2c_ok = { H_pk2c_ok->:lp; List<PV_pk2c_ok>:own; };
-struct:SLV_pk2c_ok = { List<PV_pk2c_ok>->:l; int64:z; };
-struct:SQV_pk2c_ok = { HPV_pk2c_ok->:q; int64:z; };
-func:getown_pk2c_ok = List<int64>->(HPO_pk2c_ok->:w) never fails { pass @w.own; };
-func:getownv_pk2c_ok = List<PV_pk2c_ok>->(HPV_pk2c_ok->:w) never fails { pass @w.own; };
-func:mkv_pk2c_ok = List<PV_pk2c_ok>(H_pk2c_ok->:h) never fails { List<PV_pk2c_ok>:l = raw list_init::<PV_pk2c_ok>(1i64); drop list_push(@l, PV_pk2c_ok{ p: h, v: 1i64 }); pass l; };
-func:idp_pk2c_ok = HPO_pk2c_ok->(HPO_pk2c_ok->:w) never fails { pass w; };
-func:cvq_pk2c_ok = SQ_pk2c_ok->(SQB_pk2c_ok->:b) never fails { pass ((b =>! any->) =>! SQ_pk2c_ok->); };
-func:put_pk2c_ok = int64(HPO_pk2c_ok->:p, H_pk2c_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SR2_pk2c_ok = { SQ_pk2c_ok->:sq; int64:z; };
-struct:SPP_pk2c_ok = { HPO_pk2c_ok->->:qq; int64:z; };
-struct:SPPP_pk2c_ok = { HPO_pk2c_ok->->->:qqq; int64:z; };
-struct:SPPPP_pk2c_ok = { HPO_pk2c_ok->->->->:qqqq; int64:z; };
-struct:HN_pk2c_ok = { int64:a; int64:b; };
-struct:SN_pk2c_ok = { HN_pk2c_ok->:q; int64:z; };
-struct:SNPP_pk2c_ok = { HN_pk2c_ok->->:qq; int64:z; };
-struct:SN4_pk2c_ok = { HN_pk2c_ok->->->->:qqqq; int64:z; };
-struct:W_pk2c_ok = { HPO_pk2c_ok:h; int64:z; };
-struct:W2_pk2c_ok = { HPO_pk2c_ok->:a; HPO_pk2c_ok->:b; int64:z; };
-struct:SO2_pk2c_ok = { HPO_pk2c_ok->->?:oqq; int64:z; };
-func:geth_pk2c_ok = HPO_pk2c_ok->(W_pk2c_ok->:w) never fails { pass @w.h; };
-func:geta_pk2c_ok = HPO_pk2c_ok->->(W2_pk2c_ok->:w) never fails { pass @w.a; };
-func:mksqw_pk2c_ok = SQ_pk2c_ok(W_pk2c_ok->:w) never fails { pass SQ_pk2c_ok{ q: @w.h, z: 1i64 }; };
-func:idpp_pk2c_ok = HPO_pk2c_ok->->(HPO_pk2c_ok->->:p) never fails { pass p; };
-func:rety_pk2c_ok = HPO_pk2c_ok->(HN_pk2c_ok->:p) never fails { pass ((p =>! any->) =>! HPO_pk2c_ok->); };
-func:put2pp_pk2c_ok = int64(HPO_pk2c_ok->->:pp, H_pk2c_ok->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
-func:put3_pk2c_ok = int64(HPO_pk2c_ok->->->:pp, H_pk2c_ok->:v) never fails { (<-(<-(<-pp))).lp = v; pass 7i64; };
-func:put4_pk2c_ok = int64(HPO_pk2c_ok->->->->:pp, H_pk2c_ok->:v) never fails { (<-(<-(<-(<-pp)))).lp = v; pass 7i64; };
-impl:HPO_pk2c_ok = { func:setme = int64(HPO_pk2c_ok->:self, H_pk2c_ok->:v) never fails { (<-self).lp = v; pass 7i64; }; };
-struct:WX3_pk2c_ok = { HN_pk2c_ok->->:x; int64:z; };
-struct:WX4_pk2c_ok = { HN_pk2c_ok->->->:x; int64:z; };
-struct:SA_pk2c_ok = { any->:p; int64:z; };
-struct:SX3_pk2c_ok = { HN_pk2c_ok->->->:x3; int64:z; };
-struct:SN5_pk2c_ok = { HN_pk2c_ok->->->->->:q5; int64:z; };
-struct:SP5_pk2c_ok = { HPO_pk2c_ok->->->->->:q5; int64:z; };
-func:getx3_pk2c_ok = HN_pk2c_ok->->->(WX3_pk2c_ok->:w) never fails { pass @w.x; };
-func:getx3c_pk2c_ok = HPO_pk2c_ok->->->(WX3_pk2c_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_pk2c_ok->->->; };
-func:getx4_pk2c_ok = HN_pk2c_ok->->->->(WX4_pk2c_ok->:w) never fails { pass @w.x; };
-func:getx4c_pk2c_ok = HPO_pk2c_ok->->->->(WX4_pk2c_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_pk2c_ok->->->->; };
-func:toany_pk2c_ok = any->(HN_pk2c_ok->->:p) never fails { pass (p =>! any->); };
-func:put5_pk2c_ok = int64(HPO_pk2c_ok->->->->->:pp, H_pk2c_ok->:v) never fails { (<-(<-(<-(<-(<-pp))))).lp = v; pass 7i64; };
-struct:WP_pk2c_ok = { HPO_pk2c_ok->:p; int64:z; };
-struct:SW_pk2c_ok = { WP_pk2c_ok:w; int64:z; };
-struct:SWP_pk2c_ok = { SW_pk2c_ok->:sw; int64:z; };
-struct:SO_pk2c_ok = { HPO_pk2c_ok->?:o; int64:z; };
-struct:SA2_pk2c_ok = { HPO_pk2c_ok->[2]:arr; int64:z; };
-struct:SI_pk2c_ok = { int64:i; int64:z; };
-struct:WPP_pk2c_ok = { HPO_pk2c_ok->->:pp; int64:z; };
-struct:SWPP_pk2c_ok = { WPP_pk2c_ok:w; int64:z; };
-func:putwp_pk2c_ok = int64(WP_pk2c_ok:w, H_pk2c_ok->:v) never fails { (<-(w.p)).lp = v; pass 7i64; };
-func:conv_pk2c_ok = HPO_pk2c_ok->(HPB_pk2c_ok->:p) never fails { pass ((p =>! any->) =>! HPO_pk2c_ok->); };
-func:conv2_pk2c_ok = HPO_pk2c_ok->(HPB_pk2c_ok->:p) never fails { pass ((p =>! any->) =>! HPO_pk2c_ok->); };
-struct:RR_pk2c_ok = { SQ_pk2c_ok->:sq; HPO_pk2c_ok->:q; int64:z; };
-struct:X2_pk2c_ok = { H_pk2c_ok->:lp; HPB_pk2c_ok:inner; };
-func:cvh_pk2c_ok = X2_pk2c_ok->(HPB_pk2c_ok->:p) never fails { pass ((p =>! any->) =>! X2_pk2c_ok->); };
-func:putx_pk2c_ok = int64(X2_pk2c_ok->:p, H_pk2c_ok->:v) never fails { p.lp = v; pass 7i64; };
-func:idh2_pk2c_ok = HPB_pk2c_ok->(HPB_pk2c_ok->:p) never fails { pass p; };
-func:putb_pk2c_ok = int64(HPB_pk2c_ok->:p, H_pk2c_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SX_pk2c_ok = { X2_pk2c_ok->:q; int64:z; };
-struct:SB_pk2c_ok = { HPB_pk2c_ok->:p; int64:z; };
-struct:Y2_pk2c_ok = { X2_pk2c_ok:x; int64:z; };
-struct:XA_pk2c_ok = { HPB_pk2c_ok[2]:arr; int64:z; };
-struct:XL_pk2c_ok = { List<HPB_pk2c_ok>:l; int64:z; };
-enum:EB_pk2c_ok = { A(HPB_pk2c_ok); Z; };
-func:idx_pk2c_ok = X2_pk2c_ok->(X2_pk2c_ok->:q) never fails { pass q; };
-func:getq_pk2c_ok = X2_pk2c_ok->(SX_pk2c_ok->:s) never fails { pass s.q; };
-func:inr_pk2c_ok = HPB_pk2c_ok->(X2_pk2c_ok->:q) never fails { pass @((<-q).inner); };
-func:st_pk2c_ok = int64(X2_pk2c_ok->:qp, H_pk2c_ok->:v) never fails { HPB_pk2c_ok->:r = @((<-qp).inner); (<-r).lp = v; pass 7i64; };
-func:stq_pk2c_ok = int64(SX_pk2c_ok->:sp, H_pk2c_ok->:v) never fails { HPB_pk2c_ok->:r = @((<-((<-sp).q)).inner); (<-r).lp = v; pass 7i64; };
-enum:EX_pk2c_ok = { A(X2_pk2c_ok); Z; };
-func:g_pk2c_ok = int64(H_pk2c_ok->:h0p, H_pk2c_ok->:hq, H_pk2c_ok->:hz, int64:n) never fails {
-    int64->:e = raw fp_pk2c_ok(hz);
-    EX_pk2c_ok:o = EX_pk2c_ok.A(X2_pk2c_ok{ lp: h0p, inner: HPB_pk2c_ok{ lp: h0p, own: raw mk_pk2c_ok() } });
-    pick (move(o)) { (EX_pk2c_ok.A(m)) { X2_pk2c_ok->:q0 = @m; HPB_pk2c_ok->:r = @((<-q0).inner); HPB_pk2c_ok->:rc = r; H_pk2c_ok->->:r2 = @((<-rc).lp); <-r2 = hq; e = raw fp_pk2c_ok(m.inner.lp); }, (EX_pk2c_ok.Z) { } }
-    discard(raw growh_pk2c_ok(hq));
-    pass 7i64;
-};
-func:f_pk2c_ok = int64(int64:n) never fails {
-    H_pk2c_ok:hz = raw mkh_pk2c_ok(); H_pk2c_ok:h0 = raw mkh_pk2c_ok(); H_pk2c_ok:h2 = raw mkh_pk2c_ok();
-    pass raw g_pk2c_ok(@h0, @h2, @hz, n);
-};
-func:cell_main_pk2c_ok = int32() never fails { pass (((raw f_pk2c_ok(1i64)) + 60i64) =>! int32); };
-struct:K_pk3_ok = { int64:k; };
-struct:H_pk3_ok = { List<int64>:l; int64:k; K_pk3_ok:kk; };
-func:mk_pk3_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
-func:mkh_pk3_ok = H_pk3_ok() never fails { pass H_pk3_ok{ l: raw mk_pk3_ok(), k: 2i64, kk: K_pk3_ok{ k: 3i64 } }; };
-func:growh_pk3_ok = int64(H_pk3_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:growl_pk3_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
-func:fp_pk3_ok = int64->(H_pk3_ok->:q) never fails { pass @((<-q).l[0i64]); };
-func:idh_pk3_ok = H_pk3_ok->(H_pk3_ok->:q) never fails { pass q; };
-func:getl_pk3_ok = List<int64>->(H_pk3_ok->:w) never fails { pass @w.l; };
-struct:HPO_pk3_ok = { H_pk3_ok->:lp; List<int64>:own; };
-struct:SQ_pk3_ok = { HPO_pk3_ok->:q; int64:z; };
-struct:SR_pk3_ok = { SQ_pk3_ok->:sq; int64:z; };
-struct:SL_pk3_ok = { List<int64>->:l; int64:z; };
-struct:SL2_pk3_ok = { SL_pk3_ok:s; int64:z; };
-struct:SLP_pk3_ok = { SL_pk3_ok->:sp; int64:z; };
-struct:SQB_pk3_ok = { HPO_pk3_ok->:q; int64:z; };
-struct:HPB_pk3_ok = { H_pk3_ok->:lp; List<int64>:own; };
-struct:PV_pk3_ok = { H_pk3_ok->:p; int64:v; };
-struct:HPV_pk3_ok = { H_pk3_ok->:lp; List<PV_pk3_ok>:own; };
-struct:SLV_pk3_ok = { List<PV_pk3_ok>->:l; int64:z; };
-struct:SQV_pk3_ok = { HPV_pk3_ok->:q; int64:z; };
-func:getown_pk3_ok = List<int64>->(HPO_pk3_ok->:w) never fails { pass @w.own; };
-func:getownv_pk3_ok = List<PV_pk3_ok>->(HPV_pk3_ok->:w) never fails { pass @w.own; };
-func:mkv_pk3_ok = List<PV_pk3_ok>(H_pk3_ok->:h) never fails { List<PV_pk3_ok>:l = raw list_init::<PV_pk3_ok>(1i64); drop list_push(@l, PV_pk3_ok{ p: h, v: 1i64 }); pass l; };
-func:idp_pk3_ok = HPO_pk3_ok->(HPO_pk3_ok->:w) never fails { pass w; };
-func:cvq_pk3_ok = SQ_pk3_ok->(SQB_pk3_ok->:b) never fails { pass ((b =>! any->) =>! SQ_pk3_ok->); };
-func:put_pk3_ok = int64(HPO_pk3_ok->:p, H_pk3_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SR2_pk3_ok = { SQ_pk3_ok->:sq; int64:z; };
-struct:SPP_pk3_ok = { HPO_pk3_ok->->:qq; int64:z; };
-struct:SPPP_pk3_ok = { HPO_pk3_ok->->->:qqq; int64:z; };
-struct:SPPPP_pk3_ok = { HPO_pk3_ok->->->->:qqqq; int64:z; };
-struct:HN_pk3_ok = { int64:a; int64:b; };
-struct:SN_pk3_ok = { HN_pk3_ok->:q; int64:z; };
-struct:SNPP_pk3_ok = { HN_pk3_ok->->:qq; int64:z; };
-struct:SN4_pk3_ok = { HN_pk3_ok->->->->:qqqq; int64:z; };
-struct:W_pk3_ok = { HPO_pk3_ok:h; int64:z; };
-struct:W2_pk3_ok = { HPO_pk3_ok->:a; HPO_pk3_ok->:b; int64:z; };
-struct:SO2_pk3_ok = { HPO_pk3_ok->->?:oqq; int64:z; };
-func:geth_pk3_ok = HPO_pk3_ok->(W_pk3_ok->:w) never fails { pass @w.h; };
-func:geta_pk3_ok = HPO_pk3_ok->->(W2_pk3_ok->:w) never fails { pass @w.a; };
-func:mksqw_pk3_ok = SQ_pk3_ok(W_pk3_ok->:w) never fails { pass SQ_pk3_ok{ q: @w.h, z: 1i64 }; };
-func:idpp_pk3_ok = HPO_pk3_ok->->(HPO_pk3_ok->->:p) never fails { pass p; };
-func:rety_pk3_ok = HPO_pk3_ok->(HN_pk3_ok->:p) never fails { pass ((p =>! any->) =>! HPO_pk3_ok->); };
-func:put2pp_pk3_ok = int64(HPO_pk3_ok->->:pp, H_pk3_ok->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
-func:put3_pk3_ok = int64(HPO_pk3_ok->->->:pp, H_pk3_ok->:v) never fails { (<-(<-(<-pp))).lp = v; pass 7i64; };
-func:put4_pk3_ok = int64(HPO_pk3_ok->->->->:pp, H_pk3_ok->:v) never fails { (<-(<-(<-(<-pp)))).lp = v; pass 7i64; };
-impl:HPO_pk3_ok = { func:setme = int64(HPO_pk3_ok->:self, H_pk3_ok->:v) never fails { (<-self).lp = v; pass 7i64; }; };
-struct:WX3_pk3_ok = { HN_pk3_ok->->:x; int64:z; };
-struct:WX4_pk3_ok = { HN_pk3_ok->->->:x; int64:z; };
-struct:SA_pk3_ok = { any->:p; int64:z; };
-struct:SX3_pk3_ok = { HN_pk3_ok->->->:x3; int64:z; };
-struct:SN5_pk3_ok = { HN_pk3_ok->->->->->:q5; int64:z; };
-struct:SP5_pk3_ok = { HPO_pk3_ok->->->->->:q5; int64:z; };
-func:getx3_pk3_ok = HN_pk3_ok->->->(WX3_pk3_ok->:w) never fails { pass @w.x; };
-func:getx3c_pk3_ok = HPO_pk3_ok->->->(WX3_pk3_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_pk3_ok->->->; };
-func:getx4_pk3_ok = HN_pk3_ok->->->->(WX4_pk3_ok->:w) never fails { pass @w.x; };
-func:getx4c_pk3_ok = HPO_pk3_ok->->->->(WX4_pk3_ok->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_pk3_ok->->->->; };
-func:toany_pk3_ok = any->(HN_pk3_ok->->:p) never fails { pass (p =>! any->); };
-func:put5_pk3_ok = int64(HPO_pk3_ok->->->->->:pp, H_pk3_ok->:v) never fails { (<-(<-(<-(<-(<-pp))))).lp = v; pass 7i64; };
-struct:WP_pk3_ok = { HPO_pk3_ok->:p; int64:z; };
-struct:SW_pk3_ok = { WP_pk3_ok:w; int64:z; };
-struct:SWP_pk3_ok = { SW_pk3_ok->:sw; int64:z; };
-struct:SO_pk3_ok = { HPO_pk3_ok->?:o; int64:z; };
-struct:SA2_pk3_ok = { HPO_pk3_ok->[2]:arr; int64:z; };
-struct:SI_pk3_ok = { int64:i; int64:z; };
-struct:WPP_pk3_ok = { HPO_pk3_ok->->:pp; int64:z; };
-struct:SWPP_pk3_ok = { WPP_pk3_ok:w; int64:z; };
-func:putwp_pk3_ok = int64(WP_pk3_ok:w, H_pk3_ok->:v) never fails { (<-(w.p)).lp = v; pass 7i64; };
-func:conv_pk3_ok = HPO_pk3_ok->(HPB_pk3_ok->:p) never fails { pass ((p =>! any->) =>! HPO_pk3_ok->); };
-func:conv2_pk3_ok = HPO_pk3_ok->(HPB_pk3_ok->:p) never fails { pass ((p =>! any->) =>! HPO_pk3_ok->); };
-struct:RR_pk3_ok = { SQ_pk3_ok->:sq; HPO_pk3_ok->:q; int64:z; };
-struct:X2_pk3_ok = { H_pk3_ok->:lp; HPB_pk3_ok:inner; };
-func:cvh_pk3_ok = X2_pk3_ok->(HPB_pk3_ok->:p) never fails { pass ((p =>! any->) =>! X2_pk3_ok->); };
-func:putx_pk3_ok = int64(X2_pk3_ok->:p, H_pk3_ok->:v) never fails { p.lp = v; pass 7i64; };
-func:idh2_pk3_ok = HPB_pk3_ok->(HPB_pk3_ok->:p) never fails { pass p; };
-func:putb_pk3_ok = int64(HPB_pk3_ok->:p, H_pk3_ok->:v) never fails { p.lp = v; pass 7i64; };
-struct:SX_pk3_ok = { X2_pk3_ok->:q; int64:z; };
-struct:SB_pk3_ok = { HPB_pk3_ok->:p; int64:z; };
-struct:Y2_pk3_ok = { X2_pk3_ok:x; int64:z; };
-struct:XA_pk3_ok = { HPB_pk3_ok[2]:arr; int64:z; };
-struct:XL_pk3_ok = { List<HPB_pk3_ok>:l; int64:z; };
-enum:EB_pk3_ok = { A(HPB_pk3_ok); Z; };
-func:idx_pk3_ok = X2_pk3_ok->(X2_pk3_ok->:q) never fails { pass q; };
-func:getq_pk3_ok = X2_pk3_ok->(SX_pk3_ok->:s) never fails { pass s.q; };
-func:inr_pk3_ok = HPB_pk3_ok->(X2_pk3_ok->:q) never fails { pass @((<-q).inner); };
-func:st_pk3_ok = int64(X2_pk3_ok->:qp, H_pk3_ok->:v) never fails { HPB_pk3_ok->:r = @((<-qp).inner); (<-r).lp = v; pass 7i64; };
-func:stq_pk3_ok = int64(SX_pk3_ok->:sp, H_pk3_ok->:v) never fails { HPB_pk3_ok->:r = @((<-((<-sp).q)).inner); (<-r).lp = v; pass 7i64; };
-enum:EX_pk3_ok = { A(X2_pk3_ok); Z; };
-func:g_pk3_ok = int64(H_pk3_ok->:h0p, H_pk3_ok->:hq, H_pk3_ok->:hz, int64:n) never fails {
-    int64->:e = raw fp_pk3_ok(hz);
-    EX_pk3_ok:o = EX_pk3_ok.A(X2_pk3_ok{ lp: h0p, inner: HPB_pk3_ok{ lp: h0p, own: raw mk_pk3_ok() } });
-    pick (move(o)) { (EX_pk3_ok.A(m)) { X2_pk3_ok->:q0 = @m; X2_pk3_ok->:q1 = @(<-q0); HPB_pk3_ok->:r = @((<-q1).inner); H_pk3_ok->->:r2 = @((<-r).lp); <-r2 = hq; e = raw fp_pk3_ok(m.inner.lp); }, (EX_pk3_ok.Z) { } }
-    discard(raw growh_pk3_ok(hq));
-    pass 7i64;
-};
-func:f_pk3_ok = int64(int64:n) never fails {
-    H_pk3_ok:hz = raw mkh_pk3_ok(); H_pk3_ok:h0 = raw mkh_pk3_ok(); H_pk3_ok:h2 = raw mkh_pk3_ok();
-    pass raw g_pk3_ok(@h0, @h2, @hz, n);
-};
-func:cell_main_pk3_ok = int32() never fails { pass (((raw f_pk3_ok(1i64)) + 60i64) =>! int32); };
 struct:K_qq3_ok = { int64:k; };
 struct:H_qq3_ok = { List<int64>:l; int64:k; K_qq3_ok:kk; };
 func:mk_qq3_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
@@ -13039,121 +11968,112 @@ func:f_km6_rr_ok = int64(int64:n) never fails {
 func:cell_main_km6_rr_ok = int32() never fails { pass (((raw f_km6_rr_ok(1i64)) + 60i64) =>! int32); };
 func:main = int32(cstring[]:argv) {
     if ((raw cell_main_a3_hqv_ok()) != 67i32) { exit 1i32; }
-    if ((raw cell_main_a5_hpc_ok()) != 67i32) { exit 2i32; }
-    if ((raw cell_main_a5_if_ok()) != 67i32) { exit 3i32; }
-    if ((raw cell_main_a5_loop_ok()) != 67i32) { exit 4i32; }
-    if ((raw cell_main_a5_rsg_ok()) != 67i32) { exit 5i32; }
-    if ((raw cell_main_a5_view_ok()) != 67i32) { exit 6i32; }
-    if ((raw cell_main_b_base_d_ok()) != 67i32) { exit 7i32; }
-    if ((raw cell_main_b_base_ok()) != 67i32) { exit 8i32; }
-    if ((raw cell_main_b_base_ok2()) != 67i32) { exit 9i32; }
-    if ((raw cell_main_cal_st2_ok()) != 67i32) { exit 10i32; }
-    if ((raw cell_main_cal_st2m_ok()) != 67i32) { exit 11i32; }
-    if ((raw cell_main_cal_st3_ok()) != 67i32) { exit 12i32; }
-    if ((raw cell_main_cal_stpp_ok()) != 67i32) { exit 13i32; }
-    if ((raw cell_main_cal_stq2_ok()) != 67i32) { exit 14i32; }
-    if ((raw cell_main_cst_in_ok()) != 67i32) { exit 15i32; }
-    if ((raw cell_main_cyc_loop_ok()) != 67i32) { exit 16i32; }
-    if ((raw cell_main_cyc_rr_ok()) != 67i32) { exit 17i32; }
-    if ((raw cell_main_cyc_self1_ok()) != 67i32) { exit 18i32; }
-    if ((raw cell_main_cyc_self_ok()) != 67i32) { exit 19i32; }
-    if ((raw cell_main_cyc_two_ok()) != 67i32) { exit 20i32; }
-    if ((raw cell_main_dd10_ok()) != 67i32) { exit 21i32; }
-    if ((raw cell_main_dd11_ok()) != 67i32) { exit 22i32; }
-    if ((raw cell_main_dd12_ok()) != 67i32) { exit 23i32; }
-    if ((raw cell_main_dd13_ok()) != 67i32) { exit 24i32; }
-    if ((raw cell_main_dd14_ok()) != 67i32) { exit 25i32; }
-    if ((raw cell_main_dd15_ok()) != 67i32) { exit 26i32; }
-    if ((raw cell_main_dd3_ok()) != 67i32) { exit 27i32; }
-    if ((raw cell_main_dd4_ok()) != 67i32) { exit 28i32; }
-    if ((raw cell_main_dd5_ok()) != 67i32) { exit 29i32; }
-    if ((raw cell_main_dd6_ok()) != 67i32) { exit 30i32; }
-    if ((raw cell_main_dd7_ok()) != 67i32) { exit 31i32; }
-    if ((raw cell_main_dd8_ok()) != 67i32) { exit 32i32; }
-    if ((raw cell_main_dd9_ok()) != 67i32) { exit 33i32; }
-    if ((raw cell_main_dt1_ok()) != 67i32) { exit 34i32; }
-    if ((raw cell_main_dt2_ok()) != 67i32) { exit 35i32; }
-    if ((raw cell_main_fu_alt130_lc()) != 67i32) { exit 36i32; }
-    if ((raw cell_main_fu_alt130_ng()) != 67i32) { exit 37i32; }
-    if ((raw cell_main_fu_alt130_pl()) != 67i32) { exit 38i32; }
-    if ((raw cell_main_fu_self130_lc()) != 67i32) { exit 39i32; }
-    if ((raw cell_main_fu_self130_ng()) != 67i32) { exit 40i32; }
-    if ((raw cell_main_fu_self130_ok()) != 67i32) { exit 41i32; }
-    if ((raw cell_main_fu_self130_pl()) != 67i32) { exit 42i32; }
-    if ((raw cell_main_mix5_ok()) != 67i32) { exit 43i32; }
-    if ((raw cell_main_nul_dflt_ok()) != 67i32) { exit 44i32; }
-    if ((raw cell_main_nul_mid_ok()) != 67i32) { exit 45i32; }
-    if ((raw cell_main_perf_cyc_ok()) != 67i32) { exit 46i32; }
-    if ((raw cell_main_perf_wide_ok()) != 67i32) { exit 47i32; }
-    if ((raw cell_main_pk2_ok()) != 67i32) { exit 48i32; }
-    if ((raw cell_main_pk2c_ok()) != 67i32) { exit 49i32; }
-    if ((raw cell_main_pk3_ok()) != 67i32) { exit 50i32; }
-    if ((raw cell_main_qq3_ok()) != 67i32) { exit 51i32; }
-    if ((raw cell_main_qq4_ok()) != 67i32) { exit 52i32; }
-    if ((raw cell_main_qq5_ok()) != 67i32) { exit 53i32; }
-    if ((raw cell_main_qq6_ok()) != 67i32) { exit 54i32; }
-    if ((raw cell_main_r10_strct_ok()) != 67i32) { exit 55i32; }
-    if ((raw cell_main_r12_pf_ok()) != 67i32) { exit 56i32; }
-    if ((raw cell_main_r15_ap_ok()) != 67i32) { exit 57i32; }
-    if ((raw cell_main_r17_lst_ok()) != 67i32) { exit 58i32; }
-    if ((raw cell_main_r20_opt_ok()) != 67i32) { exit 59i32; }
-    if ((raw cell_main_r20_optb_ok()) != 67i32) { exit 60i32; }
-    if ((raw cell_main_r22_auto_ok()) != 67i32) { exit 61i32; }
-    if ((raw cell_main_r22_autopp_ok()) != 67i32) { exit 62i32; }
-    if ((raw cell_main_r24_mid2_ok()) != 67i32) { exit 63i32; }
-    if ((raw cell_main_r24_mid3_ok()) != 67i32) { exit 64i32; }
-    if ((raw cell_main_r24_mid_ok()) != 67i32) { exit 65i32; }
-    if ((raw cell_main_r25_tern_ok()) != 67i32) { exit 66i32; }
-    if ((raw cell_main_r26_2lv_ok()) != 67i32) { exit 67i32; }
-    if ((raw cell_main_r26_2lv_ok2()) != 67i32) { exit 68i32; }
-    if ((raw cell_main_r26_3lv_n_ok()) != 67i32) { exit 69i32; }
-    if ((raw cell_main_r26_3lv_ok()) != 67i32) { exit 70i32; }
-    if ((raw cell_main_r26_dd_ok()) != 67i32) { exit 71i32; }
-    if ((raw cell_main_r26_dd_ok2()) != 67i32) { exit 72i32; }
-    if ((raw cell_main_r26_fld_ok()) != 67i32) { exit 73i32; }
-    if ((raw cell_main_r26_pp_ok()) != 67i32) { exit 74i32; }
-    if ((raw cell_main_r26_sbf_ok()) != 67i32) { exit 75i32; }
-    if ((raw cell_main_r3_d1_ok()) != 67i32) { exit 76i32; }
-    if ((raw cell_main_r3_dd_ok()) != 67i32) { exit 77i32; }
-    if ((raw cell_main_r3_pp_ok()) != 67i32) { exit 78i32; }
-    if ((raw cell_main_r3_ppp_ok()) != 67i32) { exit 79i32; }
-    if ((raw cell_main_r4_get_d_ok()) != 67i32) { exit 80i32; }
-    if ((raw cell_main_r4_get_ok()) != 67i32) { exit 81i32; }
-    if ((raw cell_main_r4_id2_ok()) != 67i32) { exit 82i32; }
-    if ((raw cell_main_r4_id_n_ok()) != 67i32) { exit 83i32; }
-    if ((raw cell_main_r4_id_ok()) != 67i32) { exit 84i32; }
-    if ((raw cell_main_r4_id_ok2()) != 67i32) { exit 85i32; }
-    if ((raw cell_main_r4_ida_ok()) != 67i32) { exit 86i32; }
-    if ((raw cell_main_r4_idd_ok()) != 67i32) { exit 87i32; }
-    if ((raw cell_main_r4_idf_ok()) != 67i32) { exit 88i32; }
-    if ((raw cell_main_r4_idv_ok()) != 67i32) { exit 89i32; }
-    if ((raw cell_main_r5_copy_ok()) != 67i32) { exit 90i32; }
-    if ((raw cell_main_r5_fld_ok()) != 67i32) { exit 91i32; }
-    if ((raw cell_main_r5_fldp_ok()) != 67i32) { exit 92i32; }
-    if ((raw cell_main_r6_cq_ok()) != 67i32) { exit 93i32; }
-    if ((raw cell_main_r7_late_n_ok()) != 67i32) { exit 94i32; }
-    if ((raw cell_main_r8_fld_ok()) != 67i32) { exit 95i32; }
-    if ((raw cell_main_r8_parq_ok()) != 67i32) { exit 96i32; }
-    if ((raw cell_main_r9_arr_ok()) != 67i32) { exit 97i32; }
-    if ((raw cell_main_tp_br_ok()) != 67i32) { exit 98i32; }
-    if ((raw cell_main_tp_diam_ok()) != 67i32) { exit 99i32; }
-    if ((raw cell_main_tp_join_ok()) != 67i32) { exit 100i32; }
-    if ((raw cell_main_tp_two_ok()) != 67i32) { exit 101i32; }
-    if ((raw cell_main_v_castfr_c()) != 67i32) { exit 102i32; }
-    if ((raw cell_main_v_dir1_c()) != 67i32) { exit 103i32; }
-    if ((raw cell_main_v_dstore_c()) != 67i32) { exit 104i32; }
-    if ((raw cell_main_v_nocall_c()) != 67i32) { exit 105i32; }
-    if ((raw cell_main_v_nocast_c()) != 67i32) { exit 106i32; }
-    if ((raw cell_main_v_whole_c()) != 67i32) { exit 107i32; }
-    if ((raw cell_main_kp_chm_ok()) != 67i32) { exit 108i32; }
-    if ((raw cell_main_kp_chd_ok()) != 67i32) { exit 109i32; }
-    if ((raw cell_main_kp_chi_ok()) != 67i32) { exit 110i32; }
-    if ((raw cell_main_km6_g2_ok()) != 67i32) { exit 111i32; }
-    if ((raw cell_main_km8_cl_ok()) != 67i32) { exit 112i32; }
-    if ((raw cell_main_km8_clm_ok()) != 67i32) { exit 113i32; }
-    if ((raw cell_main_km8_pf_ok()) != 67i32) { exit 114i32; }
-    if ((raw cell_main_km8_sp_ok()) != 67i32) { exit 115i32; }
-    if ((raw cell_main_km6_rr_ok()) != 67i32) { exit 116i32; }
+    if ((raw cell_main_b_base_d_ok()) != 67i32) { exit 2i32; }
+    if ((raw cell_main_b_base_ok()) != 67i32) { exit 3i32; }
+    if ((raw cell_main_b_base_ok2()) != 67i32) { exit 4i32; }
+    if ((raw cell_main_cal_st2_ok()) != 67i32) { exit 5i32; }
+    if ((raw cell_main_cal_st2m_ok()) != 67i32) { exit 6i32; }
+    if ((raw cell_main_cal_st3_ok()) != 67i32) { exit 7i32; }
+    if ((raw cell_main_cal_stpp_ok()) != 67i32) { exit 8i32; }
+    if ((raw cell_main_cal_stq2_ok()) != 67i32) { exit 9i32; }
+    if ((raw cell_main_cst_in_ok()) != 67i32) { exit 10i32; }
+    if ((raw cell_main_cyc_loop_ok()) != 67i32) { exit 11i32; }
+    if ((raw cell_main_cyc_rr_ok()) != 67i32) { exit 12i32; }
+    if ((raw cell_main_cyc_self1_ok()) != 67i32) { exit 13i32; }
+    if ((raw cell_main_cyc_self_ok()) != 67i32) { exit 14i32; }
+    if ((raw cell_main_cyc_two_ok()) != 67i32) { exit 15i32; }
+    if ((raw cell_main_dd10_ok()) != 67i32) { exit 16i32; }
+    if ((raw cell_main_dd11_ok()) != 67i32) { exit 17i32; }
+    if ((raw cell_main_dd12_ok()) != 67i32) { exit 18i32; }
+    if ((raw cell_main_dd13_ok()) != 67i32) { exit 19i32; }
+    if ((raw cell_main_dd14_ok()) != 67i32) { exit 20i32; }
+    if ((raw cell_main_dd15_ok()) != 67i32) { exit 21i32; }
+    if ((raw cell_main_dd3_ok()) != 67i32) { exit 22i32; }
+    if ((raw cell_main_dd4_ok()) != 67i32) { exit 23i32; }
+    if ((raw cell_main_dd5_ok()) != 67i32) { exit 24i32; }
+    if ((raw cell_main_dd6_ok()) != 67i32) { exit 25i32; }
+    if ((raw cell_main_dd7_ok()) != 67i32) { exit 26i32; }
+    if ((raw cell_main_dd8_ok()) != 67i32) { exit 27i32; }
+    if ((raw cell_main_dd9_ok()) != 67i32) { exit 28i32; }
+    if ((raw cell_main_dt1_ok()) != 67i32) { exit 29i32; }
+    if ((raw cell_main_dt2_ok()) != 67i32) { exit 30i32; }
+    if ((raw cell_main_fu_alt130_lc()) != 67i32) { exit 31i32; }
+    if ((raw cell_main_fu_alt130_ng()) != 67i32) { exit 32i32; }
+    if ((raw cell_main_fu_alt130_pl()) != 67i32) { exit 33i32; }
+    if ((raw cell_main_fu_self130_lc()) != 67i32) { exit 34i32; }
+    if ((raw cell_main_fu_self130_ng()) != 67i32) { exit 35i32; }
+    if ((raw cell_main_fu_self130_pl()) != 67i32) { exit 36i32; }
+    if ((raw cell_main_mix5_ok()) != 67i32) { exit 37i32; }
+    if ((raw cell_main_nul_dflt_ok()) != 67i32) { exit 38i32; }
+    if ((raw cell_main_nul_mid_ok()) != 67i32) { exit 39i32; }
+    if ((raw cell_main_perf_cyc_ok()) != 67i32) { exit 40i32; }
+    if ((raw cell_main_perf_wide_ok()) != 67i32) { exit 41i32; }
+    if ((raw cell_main_qq3_ok()) != 67i32) { exit 42i32; }
+    if ((raw cell_main_qq4_ok()) != 67i32) { exit 43i32; }
+    if ((raw cell_main_qq5_ok()) != 67i32) { exit 44i32; }
+    if ((raw cell_main_qq6_ok()) != 67i32) { exit 45i32; }
+    if ((raw cell_main_r10_strct_ok()) != 67i32) { exit 46i32; }
+    if ((raw cell_main_r12_pf_ok()) != 67i32) { exit 47i32; }
+    if ((raw cell_main_r15_ap_ok()) != 67i32) { exit 48i32; }
+    if ((raw cell_main_r17_lst_ok()) != 67i32) { exit 49i32; }
+    if ((raw cell_main_r20_opt_ok()) != 67i32) { exit 50i32; }
+    if ((raw cell_main_r20_optb_ok()) != 67i32) { exit 51i32; }
+    if ((raw cell_main_r22_auto_ok()) != 67i32) { exit 52i32; }
+    if ((raw cell_main_r22_autopp_ok()) != 67i32) { exit 53i32; }
+    if ((raw cell_main_r24_mid2_ok()) != 67i32) { exit 54i32; }
+    if ((raw cell_main_r24_mid3_ok()) != 67i32) { exit 55i32; }
+    if ((raw cell_main_r24_mid_ok()) != 67i32) { exit 56i32; }
+    if ((raw cell_main_r25_tern_ok()) != 67i32) { exit 57i32; }
+    if ((raw cell_main_r26_2lv_ok()) != 67i32) { exit 58i32; }
+    if ((raw cell_main_r26_2lv_ok2()) != 67i32) { exit 59i32; }
+    if ((raw cell_main_r26_3lv_n_ok()) != 67i32) { exit 60i32; }
+    if ((raw cell_main_r26_3lv_ok()) != 67i32) { exit 61i32; }
+    if ((raw cell_main_r26_dd_ok()) != 67i32) { exit 62i32; }
+    if ((raw cell_main_r26_dd_ok2()) != 67i32) { exit 63i32; }
+    if ((raw cell_main_r26_fld_ok()) != 67i32) { exit 64i32; }
+    if ((raw cell_main_r26_pp_ok()) != 67i32) { exit 65i32; }
+    if ((raw cell_main_r26_sbf_ok()) != 67i32) { exit 66i32; }
+    if ((raw cell_main_r3_d1_ok()) != 67i32) { exit 67i32; }
+    if ((raw cell_main_r3_dd_ok()) != 67i32) { exit 68i32; }
+    if ((raw cell_main_r3_pp_ok()) != 67i32) { exit 69i32; }
+    if ((raw cell_main_r3_ppp_ok()) != 67i32) { exit 70i32; }
+    if ((raw cell_main_r4_get_d_ok()) != 67i32) { exit 71i32; }
+    if ((raw cell_main_r4_get_ok()) != 67i32) { exit 72i32; }
+    if ((raw cell_main_r4_id2_ok()) != 67i32) { exit 73i32; }
+    if ((raw cell_main_r4_id_n_ok()) != 67i32) { exit 74i32; }
+    if ((raw cell_main_r4_id_ok()) != 67i32) { exit 75i32; }
+    if ((raw cell_main_r4_id_ok2()) != 67i32) { exit 76i32; }
+    if ((raw cell_main_r4_ida_ok()) != 67i32) { exit 77i32; }
+    if ((raw cell_main_r4_idd_ok()) != 67i32) { exit 78i32; }
+    if ((raw cell_main_r4_idf_ok()) != 67i32) { exit 79i32; }
+    if ((raw cell_main_r4_idv_ok()) != 67i32) { exit 80i32; }
+    if ((raw cell_main_r5_copy_ok()) != 67i32) { exit 81i32; }
+    if ((raw cell_main_r5_fld_ok()) != 67i32) { exit 82i32; }
+    if ((raw cell_main_r5_fldp_ok()) != 67i32) { exit 83i32; }
+    if ((raw cell_main_r6_cq_ok()) != 67i32) { exit 84i32; }
+    if ((raw cell_main_r7_late_n_ok()) != 67i32) { exit 85i32; }
+    if ((raw cell_main_r8_fld_ok()) != 67i32) { exit 86i32; }
+    if ((raw cell_main_r8_parq_ok()) != 67i32) { exit 87i32; }
+    if ((raw cell_main_r9_arr_ok()) != 67i32) { exit 88i32; }
+    if ((raw cell_main_tp_br_ok()) != 67i32) { exit 89i32; }
+    if ((raw cell_main_tp_diam_ok()) != 67i32) { exit 90i32; }
+    if ((raw cell_main_tp_join_ok()) != 67i32) { exit 91i32; }
+    if ((raw cell_main_tp_two_ok()) != 67i32) { exit 92i32; }
+    if ((raw cell_main_v_castfr_c()) != 67i32) { exit 93i32; }
+    if ((raw cell_main_v_dir1_c()) != 67i32) { exit 94i32; }
+    if ((raw cell_main_v_dstore_c()) != 67i32) { exit 95i32; }
+    if ((raw cell_main_v_nocall_c()) != 67i32) { exit 96i32; }
+    if ((raw cell_main_v_nocast_c()) != 67i32) { exit 97i32; }
+    if ((raw cell_main_v_whole_c()) != 67i32) { exit 98i32; }
+    if ((raw cell_main_kp_chm_ok()) != 67i32) { exit 99i32; }
+    if ((raw cell_main_kp_chd_ok()) != 67i32) { exit 100i32; }
+    if ((raw cell_main_kp_chi_ok()) != 67i32) { exit 101i32; }
+    if ((raw cell_main_km6_g2_ok()) != 67i32) { exit 102i32; }
+    if ((raw cell_main_km8_cl_ok()) != 67i32) { exit 103i32; }
+    if ((raw cell_main_km8_clm_ok()) != 67i32) { exit 104i32; }
+    if ((raw cell_main_km8_pf_ok()) != 67i32) { exit 105i32; }
+    if ((raw cell_main_km8_sp_ok()) != 67i32) { exit 106i32; }
+    if ((raw cell_main_km6_rr_ok()) != 67i32) { exit 107i32; }
     exit 0i32;
 };
 func:failsafe = int32(Error:e) {

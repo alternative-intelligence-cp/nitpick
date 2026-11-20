@@ -1,0 +1,32 @@
+// expect-error: NITPICK-TYPE-079
+// expect-error-at: 21:5
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 27:5
+// 2026-11-19 (landing 177d2d, row 10: the Bridge, form BR-5g, closing DEF-704, DEF-705, DEF-706, DEF-707 and DEF-712; rulings l.18410, l.19234,
+// l.19307, l.19443, l.20202 and l.20254). A stub takes its bulk offset from the Bridge's own `ring_cap`, never from the region (DEF-704); refuses a
+// call whose slots, slice bytes or return word don't fit the bulk area, as `OutOfBounds`, before any write (DEF-705); checks `closed` and `poisoned`
+// first (DEF-706); `dispatch` range-checks the driver's indices before any arithmetic and kills a driver that rewrote line 0 (DEF-707); close and the
+// reap clear the base and the stderr tail's cursor, and the tail refuses a closed Bridge (DEF-706, DEF-712); and every field of `Shm` and `Bridge` is
+// `sealed` (D-313; DEF-467's fix for these two structs, l.19307). a probe of the seal (l.19443 item 1): a store in a named function's body. From seat
+// AB's release hunt on BR-5f and BR-5g (l.19307, l.19443), `Team/TMP/atk-177d2d-bridge-2026-11-19/cells/ab/`, `seal_lambda.npk`, by `cat`, its `mod:`
+// line and library path changed.
+// seat AB (Ailp-team_215), 2026-11-19, seal route (closure): closures are removed (D-018). A "function value" in
+// Nitpick is a reference to a named `func` with NO captured environment, so a Bridge reaches it only as a parameter
+// and writing its sealed field happens in an ordinary function body, type-checked normally. This probe takes such a
+// function as a value; the write `b.ring_cap = -1` is the field store the seal refuses. No capture back-door, no `wild`.
+mod:bridge_seal_lambda;
+use "../../../lib/nbridge.npk".*;
+
+func:poke = NIL(Bridge->:b) never fails {
+    b.ring_cap = 0i64 - 1i64;
+    pass NIL;
+};
+
+func:caller = NIL(Bridge->:b) {
+    func NIL(Bridge->) never fails:g = poke;
+    drop raw g(b);
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) { exit 0i32; };
+func:failsafe = int32(Error:_~e) { exit 1i32; };
