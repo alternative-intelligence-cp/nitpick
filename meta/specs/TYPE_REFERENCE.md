@@ -927,10 +927,13 @@ choices dissolve: the value IS the digit string.
   truth value.
 - **Digit access**: `t.trit(i)` / `n.nit(i)` — each base's own name (a
   `tryte` has trits, not nits), one integer index, bounds-checked like an
-  array's (OUT_OF_BOUNDS); an ERR receiver yields an ERR digit. `.len` is
-  the digit count (10/5/1) as an `int64`.
+  array's (OUT_OF_BOUNDS); an ERR receiver yields an ERR digit. Index 0 is
+  the least significant digit: `t.trit(i)` is the digit of weight 3^i and
+  `n.nit(i)` the digit of weight 9^i, so a `tryte` holding 60 has
+  `trit(0)` 0, `trit(1)` −1 and `trit(2)` 1. `.len` is the digit count
+  (10/5/1) as an `int64`.
 - **Literals are contextual, any base**: a ternary-typed slot takes an
-  unsuffixed integer literal — `tryte:t = 42;` and `tryte:t = 1T1T0t;` are
+  unsuffixed integer literal — `tryte:t = 42;` and `tryte:t = 1TTT0t;` are
   one value spelled two ways (D-147 folds balanced digits at scan) —
   range-checked EXACTLY against the balanced bound. `ERR` takes the slot's
   type.

@@ -87,8 +87,10 @@ and the elided build removes a discharged write point's check for one
 the callee's `.body` past its checked entry. A limited binding has no address
 (TYPE-063) — pass it by value — and a `limit` refuses where no write point
 exists (TYPE-064). Two ways to read a row by hand: `.internal/quickemit/npkc
-FILE --obligations D` then z3 on `D/NNNN.smt2`, and a hand-written manifest
-in `nitpick.obligations`'s shape fed to `--elide` (outside every gate, P-27).
+FILE --obligations D` (an absolute `D` is written without a trailing `/`:
+with one the run fails today, DEF-726) then z3 on `D/NNNN.smt2`, and a
+hand-written manifest in `nitpick.obligations`'s shape fed to `--elide`
+(outside every gate, P-27).
 
 **The cost leg (1.5.1b step 0).** `tests/cost/*.toml` are units judged by the
 allocator's numbers under `NPK_HEAP_STATS` (BUILD_REFERENCE §7.1's `cost`
@@ -1121,7 +1123,10 @@ that carried them retired at the cycle close):
   same `--extra-picky=no-wildx`; `reject_wildx` walks the PROGRAM's modules (a
   node is the prelude's by its span's file) and reads four spellings (a `wildx`
   local, a `wildx`-returning function, an `=>! wildx …->` cast, a `wildx_*`
-  call). A rejection or accept file names its flags in a `// npkc-flags:` header
+  call). `tools/check` reads only the exact `--extra-picky=no-wildx` and
+  ignores any other `--extra-picky` argument without a word, where `npkc`
+  refuses it as an unknown argument (DEF-727). A rejection or accept file
+  names its flags in a `// npkc-flags:` header
   line and both runners pass them to the tool; a field of an unassigned local
   cannot be written by the caller (ASSIGN-001), which is why the mode is an
   argument.

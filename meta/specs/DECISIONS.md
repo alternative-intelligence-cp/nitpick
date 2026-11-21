@@ -15168,6 +15168,13 @@ Design points fixed inside the ratified frame, at open:
    precedes the early-out, as tfp's has since 1.3.2 and tern's does from
    birth; `tbb.npk` pins the same-width crossings.
 
+*[2026-11-21, 1.6.1e landing 177d2e — a dated note (the digit order; management_69's rulings of 2026-11-19).]* The
+text above names the digit access and says neither which end index 0 is nor that it is the least significant. It is the
+least significant, as point 4's offset trick computes it: `t.trit(i)` is the digit of weight 3^i and `n.nit(i)` the digit
+of weight 9^i. `tests/backend/programs/tern_basic.npk` l.61–76 pins it: 60 (`…1T1T0`) gives `trit(0)` 0, `trit(1)` −1
+and `trit(2)` 1, and 100 (1·81 + 2·9 + 1) gives `nit(0)` 1, `nit(1)` 2 and `nit(2)` 1. TYPE_REFERENCE's "Digit access"
+bullet says the same. A record of what the compiler and its test already do, not a language change.
+
 ## D-198 — `frac*`: invariant-normalized mixed numbers, exact-or-ERR — **SETTLED (1.3.0 batch, user-ratified)**
 
 `{whole: iN, num: iN, denom: uN}`; after EVERY operation the prototype's

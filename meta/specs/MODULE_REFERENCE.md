@@ -218,6 +218,32 @@ function belonging in the other is still a decomposition mistake; this says only
 that the language does not forbid it, so the fix is moving the function rather
 than inventing a file to satisfy a rule.
 
+### 2.5 A name two imports supply
+
+A bare name that two imports could mean is refused at the later `use`, the
+loader's ambiguity (D-159's note): neither is picked, and the build stops. The
+code follows the later `use`'s form: `NITPICK-RESOLVE-008` where a wildcard
+brings the name, `NITPICK-RESOLVE-001` where the `use` names it. An import of a
+name the file declares itself is refused the same way. Today RESOLVE-008 prints
+as a `warning` whose text says the earlier import or the local declaration is
+bound, which it isn't (DEF-723).
+
+```nitpick
+use "./x.npk".*;
+use "./y.npk".*;               // NITPICK-RESOLVE-008: both export `sq`
+```
+
+To use both, import the name from one module by name and reach the other
+through an alias (§2.1):
+
+```nitpick
+use "./x.npk".{sq};            // `sq` is x's
+use "./y.npk" as y;            // y's is `y.sq`
+
+if ((raw sq(3i32)) != 9i32)    { exit 10i32; }
+if ((raw y.sq(3i32)) != 27i32) { exit 11i32; }
+```
+
 ## 3. Visibility (`pub`)
 
 Nitpick uses a strict binary visibility model: **Public** or **Private**.

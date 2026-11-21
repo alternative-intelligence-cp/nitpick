@@ -124,6 +124,12 @@ BuiltinType         ::= "int8" | "int16" | "int32"
 BuiltinHelper       ::= "is" | "in" | "is_err"
 ```
 
+> **The compiler's keyword table holds 170 words** (`src/frontend/keywords.npk`,
+> generated from this section by `bootstrap/generator/gen_tables.py`): the 166
+> above, and §6.1's literal words `true`, `false`, `NULL` and `ERR`, which are
+> spelled like keywords and recognised like them. `NIL`, §6.1's fifth, is counted
+> among the 166, as a `BuiltinType`.
+
 > **Note (2026-10-09, 1.6.1e landing 113 — DEF-235, DEF-103):** no keyword is a
 > declared name of ANY kind — a function, a type, a trait, a module, an error, a
 > unit, a rule, a macro, a local or module binding, a parameter, a `for` binding, a
