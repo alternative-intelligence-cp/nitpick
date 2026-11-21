@@ -11051,7 +11051,7 @@ with zero compiler work), and the wire-conformance suite are 1.1 work
 C reference driver and conformance harness are buildable out-of-tree at any
 time — the v3 POC (18/18 kernel checks) is their seed.
 
-*[⟦FILL: DATE⟧, 1.6.1e landing 177d2e — a dated note (DEF-719, row 12, LBSG; rulings `MANAGEMENT/briefs/177d-held-rulings-2026-11-02.md` line 22693, its text line 22702 as amended at line 23217 item 2, line 23315).]* `Shm.memfd` is hidden; `Shm` is move-only by its marker; `shm_unmap` takes `move Shm` and closes the memfd after the unmap; `shm_seal_holds` is the public seal query. The comment over `shm_unmap` says so. DEF-719's row (LBSG) cites DEF-468, whose `Shm` face closes by the marker and the consuming unmap (line 23936).
+*[2026-11-21, 1.6.1e landing 177d2e — a dated note (DEF-719, row 12, LBSG; rulings `MANAGEMENT/briefs/177d-held-rulings-2026-11-02.md` line 22693, its text line 22702 as amended at line 23217 item 2, line 23315).]* `Shm.memfd` is hidden; `Shm` is move-only by its marker; `shm_unmap` takes `move Shm` and closes the memfd after the unmap; `shm_seal_holds` is the public seal query. The comment over `shm_unmap` says so. DEF-719's row (LBSG) cites DEF-468, whose `Shm` face closes by the marker and the consuming unmap (line 23936).
 
 ## D-150 — The heap: out-of-band slabs, canaries, and the request rules — **SETTLED**
 
