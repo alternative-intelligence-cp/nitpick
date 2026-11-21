@@ -39,9 +39,10 @@ pub error:EShmMap;
 // A sealed shared-memory region: the fd (kept, so it can be sent to the
 // driver via SCM_RIGHTS at spawn) and the runtime's own mapping.
 pub struct:Shm = {
-    sealed fd:          memfd;
+    hidden fd:          memfd;
     sealed wild int8->: base;
     sealed int64:       size;
+    hidden string:      own;   // an owner whose zero holds no descriptor: Shm is move-only (TYPE-046), and a vacant Shm drops nothing (DEF-471)
 };
 
 // Create a memfd of exactly `size` bytes, seal it against shrink and grow
@@ -86,15 +87,26 @@ pub func:shm_create_sealed = Shm(int64:size) {
     Result<int64>:rm = sys(raw SYS_MMAP(), 0i64, size, pf, MAP_SHARED => int32, mfd, 0i64);
     if (rm.is_error) { fail EShmMap; }
     wild int8->:base = #wild_ptr<int8>(rm.value);
-    pass Shm{ memfd: (mfd =>! int32) =>! fd, base: base, size: size };
+    pass Shm{ memfd: (mfd =>! int32) =>! fd, base: base, size: size, own: "" };
 };
 
-// Unmap the region. The fd is closed by its owner (`OwnedFd` once the Bridge
-// struct holds one); the mapping is `wild`, so its release is manual and
-// explicit here — the regime the whole tier runs in.
-pub func:shm_unmap = NIL(Shm->:s) {
+// THE SEAL, ASKED WITHOUT HANDING OUT THE DESCRIPTOR (DEF-719's row: `memfd` is hidden). It reads the seal word
+// (fcntl F_GET_SEALS) and writes nothing to the region: true only when F_SEAL_SHRINK, F_SEAL_GROW and F_SEAL_SEAL are all set.
+pub func:shm_seal_holds = bool(Shm->:s) never fails {
+    Result<int64>:g = sys(raw SYS_FCNTL(), (s.memfd => int64), raw fcntl_cmd(Fcmd.GetSeals));
+    if (g.is_error) { pass false; }
+    int64:want = raw F_SEAL_SHRINK() | (raw F_SEAL_GROW() | raw F_SEAL_SEAL());
+    pass ((g.value & want) == want);
+};
+
+// Unmap the region, then close its descriptor (D-149's note, DEF-719's row). `Shm` is move-only
+// by its marker and `shm_unmap` takes it by `move`, so the region's one owner releases both, once.
+// The mapping is `wild`, so its release is manual and explicit here — the regime the whole tier runs in.
+pub func:shm_unmap = NIL(move Shm:s) {
     wild int8->:sb = s.base;
     Result<int64>:um = sys(raw SYS_MUNMAP(), sb, s.size);
+    Result<NIL>:cm = close(s.memfd);   // the region's one owner closes its descriptor, after the unmap
+    if (cm.is_error) { }
     if (um.is_error) { fail EShmMap; }
     pass NIL;
 };
@@ -369,7 +381,7 @@ pub async func:spawn_driver = Bridge(Path:driver, int64:shm_size, int64:ring_cap
         Result<NIL>:c2 = close((ct.child =>! int32) =>! fd);  if (c2.is_error) { }
         fail EDriverSpawn;
     }
-    Shm:shm = shr.value;
+    Shm:shm = relay move(shr);
 
     // 2b. THE RING HEADER (§6.1), written BEFORE the child exists so the
     //     driver never observes a half-made region (v3 step 3). Line 0 is
@@ -384,13 +396,13 @@ pub async func:spawn_driver = Bridge(Path:driver, int64:shm_size, int64:ring_cap
     // 3. the stderr pipe and /dev/null; child-bound fds all ≥ 4.
     Result<FdPair>:epr = stderr_pipe();
     if (epr.is_error) {
-        drop spawn_scrap(@shm, ct.ours, ct.child, 0i64 - 1i64, 0i64 - 1i64, 0i64 - 1i64);
+        drop spawn_scrap(move(shm), ct.ours, ct.child, 0i64 - 1i64, 0i64 - 1i64, 0i64 - 1i64);
         fail EDriverSpawn;
     }
     FdPair:ep = epr.value;
     Result<int64>:dnr = open_devnull_driver();
     if (dnr.is_error) {
-        drop spawn_scrap(@shm, ct.ours, ct.child, ep.ours, ep.child, 0i64 - 1i64);
+        drop spawn_scrap(move(shm), ct.ours, ct.child, ep.ours, ep.child, 0i64 - 1i64);
         fail EDriverSpawn;
     }
     int64:devnull = dnr.value;
@@ -423,7 +435,7 @@ pub async func:spawn_driver = Bridge(Path:driver, int64:shm_size, int64:ring_cap
     //    kernel writes the pidfd INTO the slot (npkrt).
     Result<int64>:pr = clone_exec(bb);
     if (pr.is_error) {
-        drop spawn_scrap(@shm, ct.ours, ct.child, ep.ours, ep.child, devnull);
+        drop spawn_scrap(move(shm), ct.ours, ct.child, ep.ours, ep.child, devnull);
         fail EDriverSpawn;
     }
     int64:cpid = pr.value;
@@ -476,7 +488,7 @@ pub async func:spawn_driver = Bridge(Path:driver, int64:shm_size, int64:ring_cap
         Result<int64>:w = sys(raw SYS_WAITID(), raw P_PIDFD(), pidfd, si, raw WEXITED(), 0i64);
         if (w.is_error) { }
         dalloc(si);
-        drop spawn_scrap(@shm, ct.ours, 0i64 - 1i64, ep.ours, 0i64 - 1i64, 0i64 - 1i64);
+        drop spawn_scrap(move(shm), ct.ours, 0i64 - 1i64, ep.ours, 0i64 - 1i64, 0i64 - 1i64);
         Result<NIL>:cp = close((pidfd =>! int32) =>! fd);  if (cp.is_error) { }
         driver_retire(slot);
         fail EDriverSpawn;
@@ -506,7 +518,7 @@ pub async func:spawn_driver = Bridge(Path:driver, int64:shm_size, int64:ring_cap
 // far (-1 marks a descriptor not yet created). Best-effort by design — the
 // spawn is already failing, and these can only be the runtime's own
 // descriptors.
-func:spawn_scrap = NIL(Shm->:s, int64:a, int64:b, int64:c, int64:d, int64:e) never fails {
+func:spawn_scrap = NIL(move Shm:s, int64:a, int64:b, int64:c, int64:d, int64:e) never fails {
     wild int8->:sb = s.base;
     Result<int64>:um = sys(raw SYS_MUNMAP(), sb, s.size);
     if (um.is_error) { }

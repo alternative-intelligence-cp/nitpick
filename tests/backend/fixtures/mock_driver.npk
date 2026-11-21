@@ -21,6 +21,8 @@
 //   666 — reply with a WRONG seq            (the protocol-violation path)
 //   777 — write a dying word to stderr, exit (the fault + stderr-tail path)
 //   888 — never reply, sleep 30s            (the dispatch-deadline path)
+//   444 — bulk_offset := 2^40, then reply   (DEF-704's face: the hostile header)
+//   333 — tail := INT64_MIN, then reply     (DEF-707's face: the hostile index)
 //   else — result = kernel_id + 7
 mod:mock_driver;
 use "../../../lib/nbridge.npk".*;
@@ -166,6 +168,16 @@ async func:main = int32(cstring[]:_~argv) {
             Result<NIL>:zz = await sleep(raw duration_secs(30i64));
             if (zz.is_error) { }
             exit 14i32;
+        }
+
+        // THE HOSTILE KERNELS (DEF-704's and DEF-707's faces, seat RR's probe P-c, rulings l.18408 and l.18411):
+        // each writes what an honest driver never writes, BEFORE its completion (the OWED-1 order, as
+        // `ref_driver.c`'s kernel 1), then completes normally, so the NEXT call is the one that meets it.
+        //   444 -- the header's bulk_offset (@16) := 2^40: a Bridge that reads its offset back writes there
+        //   333 -- the ring's tail (@128) := INT64_MIN: a Bridge that subtracts before it range-checks traps
+        if (kern == 444i64) { <-(#ptr_add<int64>(shm, 2i64)) = 1099511627776i64; }
+        if (kern == 333i64) {
+            atomic_from_ptr::<int64>((#ptr_add<int8>(shm, 128i64)) =>! wild int64->).store(-9223372036854775807i64 - 1i64);
         }
 
         // THE RESPONSE ABI (D-190): the VALUE goes to the descriptor's

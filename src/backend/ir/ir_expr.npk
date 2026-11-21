@@ -591,9 +591,14 @@ pub func:temp_take = NIL(ExprEmitter->:x, string:ref) never fails {
 // A TRANSFER (a coercion, a wrap): the source's temporary is taken and the
 // result, if it owns, is a temporary in its place -- the `dyn` cell holds
 // what the concrete held, the `Optional` what the `T` did.
-func:temp_transfer = NIL(ExprEmitter->:x, string:src_ref, int32:ttid, IrVal:out) never fails {
+func:temp_transfer = NIL(ExprEmitter->:x, string:src_ref, int32:src_ty, int32:ttid, IrVal:out) never fails {
     if (out.state != (raw LL_OK())) { pass NIL; }
+    // A PLACE'S VALUE IS LENT, NOT TRANSFERRED (DEF-710): `use_opt(b)`, `use_dyn(l)`, `use_dyn(d)` handed a binding's owning value to a
+    // parameter that isn't `move` (a loan, D-183), and the wrap registered here dropped the binding's body at the statement's end while
+    // its name stayed usable. Only a temporary's value moves into the wrap; a place's owning value is left to its owner.
+    bool:was = raw fnem_temp_is_live(x.fe, src_ref);
     drop temp_take(x, src_ref);
+    if ((!was) && (raw type_drops_recorded(x.fe.ctx.types, raw subst_emitted_type(x.fe.ctx, src_ty), 64i32))) { pass NIL; }
     int32:tt = raw subst_emitted_type(x.fe.ctx, ttid);
     if (raw type_drops_recorded(x.fe.ctx.types, tt, 64i32)) {
         drop temp_register(x, tt, out.ll, out.ref);
@@ -684,13 +689,13 @@ pub func:emit_fit = IrVal(ExprEmitter->:x, int32:want, move IrVal:v, Span:at) ne
         string:dsrc = string_concat(v.ref, "");
         if ((raw type_kind(x.fe.ctx.types, g)) != (raw TY_DYN())) {
             IrVal:cell = raw emit_dyn_from(x, w, v, at);
-            drop temp_transfer(x, dsrc, w, cell);
+            drop temp_transfer(x, dsrc, v.type_id, w, cell);
             pass cell;
         }
         // `dyn A & B` TO `dyn A` IS A REBUILD, not a store: the shapes differ
         // by a word per dropped bound (D-159).
         IrVal:wide = raw emit_dyn_widen(x, w, v, at);
-        drop temp_transfer(x, dsrc, w, wide);
+        drop temp_transfer(x, dsrc, v.type_id, w, wide);
         pass wide;
     }
     // A BARE `T` INTO AN `Optional<T>` SLOT IS WRAPPED (D-099, 1.0.7): the one
@@ -700,7 +705,7 @@ pub func:emit_fit = IrVal(ExprEmitter->:x, int32:want, move IrVal:v, Span:at) ne
         if ((raw type_kind(x.fe.ctx.types, g)) != (raw TY_OPTIONAL())) {
             string:osrc = string_concat(v.ref, "");
             IrVal:wrapped = raw emit_opt_wrap(x, w, v, at);
-            drop temp_transfer(x, osrc, w, wrapped);
+            drop temp_transfer(x, osrc, v.type_id, w, wrapped);
             pass wrapped;
         }
     }

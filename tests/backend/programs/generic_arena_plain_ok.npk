@@ -1,0 +1,61 @@
+// expect-exit: 0
+//
+// DEF-528's RIGHT INSTANCES (landing 177d2e): `type_subst`'s arena arms ask `type_drops` of the substituted element, and an element that
+// owns nothing rides, as where it is spelled: a generic `arena<T>` and `shared_arena<T>` at a scalar, at plain data, at a `Handle<T>`, two
+// generic calls deep, in an Optional, in a generic struct's field and as a family impl's `Self`. Each value is read back. The refusals are
+// `tests/types/rejection/generic_arena_instance.npk` and `tests/backend/rejection/generic_arena_emitted.npk`.
+mod:generic_arena_plain_ok;
+error:E5;
+
+struct:PD = { int64:a; int32:b; };
+struct:AB<T> = { arena<T>:a; int32:k; };
+struct:WB<T> = { T:s; };
+
+func:keep<T> = T(move T:v) { arena<T>:a = arena_make(2i64); Handle<T>:h = a.alloc(); a.put(h, move(v)) ?! E5; T:c = a.get(h) ?! E5; pass move(c); };
+func:skeep<T> = T(move T:v) { shared_arena<T>:a = shared_arena_make(2i64); Handle<T>:h = a.alloc(move(v)); T:c = a.get(h) ?! E5; pass move(c); };
+func:outer<U> = U(move U:v) { U:r = skeep(move(v)) ?! E5; pass move(r); };
+func:okeep<T> = T(move T:v) { shared_arena<T>:a0 = shared_arena_make(2i64); shared_arena<T>?:oa = move(a0); shared_arena<T>:a = move(oa) ??! E5; Handle<T>:h = a.alloc(move(v)); T:c = a.get(h) ?! E5; pass move(c); };
+func:mkab<T> = AB<T>() never fails { arena<T>:a = arena_make(4i64); AB<T>:b = AB{ a: move(a), k: 3i32 }; pass move(b); };
+impl:<T>:WB<T> = { func:keep = Self(WB<T>->:self, move WB<T>:v) { shared_arena<Self>:a = shared_arena_make(2i64); Handle<Self>:h = a.alloc(move(v)); Self:c = a.get(h) ?! E5; pass move(c); }; };
+
+func:run = int64() {
+    int64:s = keep(5i64) ?! E5;
+    PD:p = keep(PD{ a: 7i64, b: 11i32 }) ?! E5;
+    int32:q = skeep(13i32) ?! E5;
+    shared_arena<int64>:z = shared_arena_make(2i64);
+    Handle<int64>:hz = z.alloc(17i64);
+    Handle<int64>:hh = keep(hz) ?! E5;
+    int64:zv = z.get(hh) ?! E5;
+    PD:d2 = outer(PD{ a: 19i64, b: 23i32 }) ?! E5;
+    int64:o = okeep(29i64) ?! E5;
+    AB<int64>:ab = raw mkab::<int64>();
+    WB<int32>:w = WB{ s: 1i32 };
+    WB<int32>:wr = w.keep(WB{ s: 31i32 }) ?! E5;
+    pass s + p.a + (p.b => int64) + (q => int64) + zv + d2.a + (d2.b => int64) + o + (ab.k => int64) + (wr.s => int64);
+};
+
+// 5 + 7 + 11 + 13 + 17 + 19 + 23 + 29 + 3 + 31 = 158
+func:main = int32(cstring[]:_~argv) {
+    int64:t = run() ?! E5;
+    if (t == 158i64) { exit 0i32; }
+    exit 1i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (StaleHandle)       { exit 77i32; },
+        (E5)                { exit 80i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

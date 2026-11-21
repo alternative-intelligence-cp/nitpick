@@ -1,0 +1,48 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 23:62
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 24:65
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 25:76
+// DEF-528 (landing 177d2e): D-183'S QUESTION, ASKED AT THE INSTANCE. `arena_make` and `shared_arena_make` ask `type_drops` where the
+// element is spelled, and an unsubstituted `T` answers no there, so a generic body could make an `arena<T>` at an owning `T`, and `get`
+// and `put` copied one owner out twice (on main: a shared arena reads the freed bytes, 83, 97 under the detector; a plain arena's second
+// drop traps, 74; at `T = dyn Tr`, AF4's road, 95 and 97). `type_subst`'s arena arms now ask `type_drops` of the substituted element
+// and refuse TYPE-007 with the spelled gates' words, naming the instance's type, as the channel arm asks TYPE-057.
+// THE SITES THE CHECKER SEES: a generic whose SIGNATURE carries the arena, refused at the call that instantiates it. A generic body's own
+// arenas are formed only by the emitter's worklist: `tests/backend/rejection/generic_arena_emitted.npk`. The right instances, at plain data,
+// are `tests/backend/programs/generic_arena_plain_ok.npk`, and `d_scalar_ok` below stands as this file's control.
+mod:generic_arena_instance;
+
+trait:Tr = { func:peek = int32(Self:self) never fails; };
+struct:SH = { string:s; };
+
+func:mkar<T> = arena<T>() never fails { pass arena_make(4i64); };
+func:mksar<T> = shared_arena<T>() never fails { pass shared_arena_make(4i64); };
+
+func:a_dyn = int32() never fails { arena<dyn Tr>:a = raw mkar::<dyn Tr>(); pass 1i32; };
+func:b_string = int32() never fails { arena<string>:a = raw mkar::<string>(); pass 1i32; };
+func:c_shared_struct = int32() never fails { shared_arena<SH>:a = raw mksar::<SH>(); pass 1i32; };
+func:d_scalar_ok = int32() never fails { arena<int64>:a = raw mkar::<int64>(); pass 1i32; };
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (StaleHandle)       { exit 77i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

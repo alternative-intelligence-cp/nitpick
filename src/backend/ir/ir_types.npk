@@ -105,6 +105,10 @@ pub struct:LlCtx = {
     int32:subst_params_start;
     int32:subst_params_count;
     int32:subst_args_start;
+    // THE CALL THAT ASKED FOR THIS SPECIALIZATION (DEF-528): the span a rule
+    // asked at the substitution reports at, since the body's own types name
+    // only the template's `T`. `span_none()` outside a specialization.
+    Span:subst_at;
 
     // (self type, trait) -> the vtable's symbol, interned (1.0.5c). Built by a
     // pre-pass over every impl, for the same reason `mod_of` is: the place that
@@ -182,7 +186,8 @@ pub func:llctx_init = LlCtx(Ast->:ast, TypeTable->:types, InternTable->:interns)
     LlCtx:c = LlCtx{ ast: ast, types: types, interns: interns,
                      mod_of: NULL, mod_n: 0i32,
                      subst_params_start: 0i32, subst_params_count: 0i32,
-                     subst_args_start: 0i32, impls: NULL, tr: NULL,
+                     subst_args_start: 0i32, subst_at: raw span_none(),
+                     impls: NULL, tr: NULL,
                      obl: NULL,
                      el_sites: raw list_init::<int32>(8i64),
                      el_kinds: raw list_init::<int32>(8i64),
@@ -269,10 +274,12 @@ pub func:vtmap_find = int32(LlCtx->:c, int32:self_ty, int32:trait_ty) never fail
 // Bind a specialization's parameters while its body is emitted; counts of 0
 // clear it. Saved and restored by the caller, like every other emission scope.
 pub func:llctx_set_subst = NIL(LlCtx->:c, int32:params_start,
-                               int32:params_count, int32:args_start) never fails {
+                               int32:params_count, int32:args_start,
+                               Span:at) never fails {
     c.subst_params_start = params_start;
     c.subst_params_count = params_count;
     c.subst_args_start = args_start;
+    c.subst_at = at;
     pass NIL;
 };
 
@@ -457,7 +464,7 @@ pub func:subst_emitted_type = int32(LlCtx->:c, int32:id) never fails {
     if (c.subst_params_count == 0i32) { pass id; }
     if (c.tr == NULL) { pass id; }
     if (!(raw type_mentions_param(c.types, c.ast, id, 64i32))) { pass id; }
-    pass (raw type_subst_ctx(c.tr =>! TypeResolver->, id, raw subst_emitted_scope(c), raw span_none(),   // the crossing (D-361): a wild table handle into a plain parameter
+    pass (raw type_subst_ctx(c.tr =>! TypeResolver->, id, raw subst_emitted_scope(c), c.subst_at,   // the crossing (D-361): a wild table handle into a plain parameter
                            raw SUBST_FUEL_LL(), c.impls));
 };
 

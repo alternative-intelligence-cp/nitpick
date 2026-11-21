@@ -1,0 +1,64 @@
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 26:245
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 34:239
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 43:259
+// 2026-11-21 (landing 177d2e, row 8: DEF-730, form P730c = P730b's delta with N730; rulings l.22291, l.23320, l.23532, l.23643). DEF-290'S
+// SELF-WIRING EXEMPTION ADMITTED BY THE HOLDER'S ROOT, NOT BY THE STORAGE WRITTEN: a store whose target reaches the holder through a pointer
+// (`(<-(h.a)).p = ...`, `h.a.p = ...`) is self-wiring now only when the address stored is taken through that same pointer place (`@((<-(h.a)).k)`),
+// or the pointer value stored is read through it, a slice on either path standing as the base before any pointer; anything else falls to the
+// BORROW-002 refusal, as its by-name spelling does. PRICES OFF PARITY, DEF-741 (LOW, fails closed, made by this row; l.23643 ruled item 2): N730
+// takes a slice base before any pointer as the self-wiring store's base. So when the store's target crosses a range through a pointer local or a
+// holder field, a right store is refused (BORROW-002), while its by-name spelling is accepted. Way out: drop the range, or spell the store by name;
+// BORROW-002's text names neither. Its three faces from AFA's cells, one case each below, each refused here (BORROW-002) and run right on main and
+// on row 7 (AFA, l.23643; W2E2's runs); its by-name twin `self_wire_def741_wayout_afa_n_inl_bn_ok.npk` and its way out
+// `self_wire_def741_wayout_afa_n_inl_wo_ok.npk` run 67 on main and here. The cases are AFA's cells with each declared name suffixed by the cell's,
+// in the form of main's prices files.
+mod:self_wire_def741_prices;
+error:E5;
+// PRICE OFF PARITY, DEF-741 (row 8): through a pointer local to the array, the store's target crosses a range (`(<-ap)[0i64...2i64][0i64].p`); a
+// right program, 67 on main (226ebb99) on every road 0-8 at -O0 and -O2 and under the detector. From AFA's cells, `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/n8/afa_n_inl_ok.npk`.
+struct:S_afa_n_inl_ok = { int64:k; int64->:p; };
+struct:W_afa_n_inl_ok = { S_afa_n_inl_ok[2]:a; int64:z; };
+func:clob_afa_n_inl_ok = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:f_afa_n_inl_ok = W_afa_n_inl_ok(move W_afa_n_inl_ok:w, int64:n) never fails { pass w; };
+func:g_afa_n_inl_ok = int64(int64:n) never fails { int64:z = 2i64; W_afa_n_inl_ok:w = W_afa_n_inl_ok{ a: [S_afa_n_inl_ok{ k: 2i64, p: @z }, S_afa_n_inl_ok{ k: 3i64, p: @z }], z: 0i64 }; S_afa_n_inl_ok[2]->:ap = @(w.a); (<-ap)[0i64...2i64][0i64].p = @((<-ap)[1i64].k); pass (<-(w.a[0i64].p)) + 4i64; };
+func:cell_main_afa_n_inl_ok = int32() never fails { pass (((raw g_afa_n_inl_ok(1i64)) + 60i64) =>! int32); };
+// PRICE OFF PARITY, DEF-741 (row 8): the same, the address taken through the range too (`@((<-ap)[0i64...2i64][1i64].k)`); a right program, 67
+// on main on every road 0-8 at -O0 and -O2 and under the detector. From AFA's cells, `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/n9/afa_n_rr_ok.npk`.
+struct:S_afa_n_rr_ok = { int64:k; int64->:p; };
+struct:W_afa_n_rr_ok = { S_afa_n_rr_ok[2]:a; int64:z; };
+func:clob_afa_n_rr_ok = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:f_afa_n_rr_ok = W_afa_n_rr_ok(move W_afa_n_rr_ok:w, int64:n) never fails { pass w; };
+func:g_afa_n_rr_ok = int64(int64:n) never fails { int64:z = 2i64; W_afa_n_rr_ok:w = W_afa_n_rr_ok{ a: [S_afa_n_rr_ok{ k: 2i64, p: @z }, S_afa_n_rr_ok{ k: 3i64, p: @z }], z: 0i64 }; S_afa_n_rr_ok[2]->:ap = @(w.a); (<-ap)[0i64...2i64][0i64].p = @((<-ap)[0i64...2i64][1i64].k); pass (<-(w.a[0i64].p)) + 4i64; };
+func:cell_main_afa_n_rr_ok = int32() never fails { pass (((raw g_afa_n_rr_ok(1i64)) + 60i64) =>! int32); };
+// PRICE OFF PARITY, DEF-741 (row 8): through a holder field (`h.w.a[0i64...2i64][0i64].p`); a right program, 67 on main on every road 0-8 at
+// -O0 and -O2 and under the detector. From AFA's cells, `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/n9/afa_n_hr_ok.npk`.
+struct:S_afa_n_hr_ok = { int64:k; int64->:p; };
+struct:W_afa_n_hr_ok = { S_afa_n_hr_ok[2]:a; int64:z; };
+func:clob_afa_n_hr_ok = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+struct:WH_afa_n_hr_ok = { W_afa_n_hr_ok->:w; int64:z; };
+func:f_afa_n_hr_ok = W_afa_n_hr_ok(move W_afa_n_hr_ok:w, int64:n) never fails { pass w; };
+func:g_afa_n_hr_ok = int64(int64:n) never fails { int64:z = 2i64; W_afa_n_hr_ok:w = W_afa_n_hr_ok{ a: [S_afa_n_hr_ok{ k: 2i64, p: @z }, S_afa_n_hr_ok{ k: 3i64, p: @z }], z: 0i64 }; WH_afa_n_hr_ok:h = WH_afa_n_hr_ok{ w: @w, z: 0i64 }; h.w.a[0i64...2i64][0i64].p = @(h.w.a[1i64].k); pass (<-(w.a[0i64].p)) + 4i64; };
+func:cell_main_afa_n_hr_ok = int32() never fails { pass (((raw g_afa_n_hr_ok(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

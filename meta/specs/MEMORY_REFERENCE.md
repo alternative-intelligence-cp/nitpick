@@ -386,9 +386,13 @@ free(buffer);   // NITPICK-019 — use after move, and separately
   closed direction (DEF-113, 1.6.1 step 0): either may hold any pointer. A
   BY-VALUE parameter that a call stores a borrow of this frame's storage into —
   a `move`, a `move dyn`, a copyable struct — HOLDS it from that call (DEF-114)
-  and cannot travel up; a LENT `dyn`'s cell is the caller's (the one owning-by-cell
-  kind a loan may write, through its methods), so a borrow stored into it refuses
-  at the call (`NITPICK-BORROW-002`, DEF-115).
+  and cannot travel up; a LENT `dyn`'s cell is the caller's -- a `dyn` the caller
+  holds (the one owning-by-cell kind a loan may write, through its methods) -- so a
+  borrow stored into it refuses at the call (`NITPICK-BORROW-002`, DEF-115). An
+  owning concrete place is never coerced into a lent `dyn` -- as an argument, or as a
+  method call's receiver -- and neither is a part or element of a temporary or of a
+  `move`: a coercion to `dyn` is a transfer, and the caller writes `move(x)` (D-370,
+  `NITPICK-TYPE-116`); a copyable place is copied, and a method's writes stay in the copy.
   **A holder this frame owns is bound by its block** (D-004 rule 3 as DEF-42 reads it, 1.5.5
   step 0; asked of a callee's store since DEF-252, 1.6.1e landing 116): a borrow of a local
   declared inside a block, stored into a binding declared outside that block -- by an

@@ -1,0 +1,690 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 112:247
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 123:275
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 135:259
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 146:287
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 158:252
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 169:279
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 169:310
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 180:320
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 192:258
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 192:289
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 204:328
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 204:359
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 216:298
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 228:376
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 244:637
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 259:749
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 274:638
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 289:750
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 304:638
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 319:750
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 334:569
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 349:669
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 364:569
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 379:669
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 394:568
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 409:668
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 424:568
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 439:668
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 454:568
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 469:668
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 481:323
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 493:394
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 506:459
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 518:542
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 532:383
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 545:463
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 558:410
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 570:487
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 582:335
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 594:398
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 606:284
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 618:343
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 630:342
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 642:405
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 655:377
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 668:460
+// 2026-11-21 (landing 177d2e, row 11: DEF-720's row B, form RR6a = RR6s with ARM1; rulings l.22431, l.23411, l.23500, l.23643). A PLACE UNDER THE
+// DEREFERENCE OF AN INLINE POINTER EXPRESSION -- a call's result, a ternary, a `??`/`?|` (whose default it may yield), or an unwrap over one -- IS
+// ROOTED WHERE THAT EXPRESSION MAY POINT, for a view or an element's address (P3-6's narrowing); before its kind test, an unwrap (`??!`, `?!`) is
+// peeled down to a `??`/`?|` and both of that node's sides are collected (ARM1). THE PRICES AT PARITY (l.23411 item 5, l.23500 item 3, l.23643
+// ruled item 5, l.23798 item 4), each followed by its twin, refused on main: the self-pointing set's `ap3_rp_c`, `_d` and `_t`; AP3's `ap3_tk_2p`
+// and `_2pu`; AFA's eight and ARM1's four with the bare forms and `ap3u_qc_dok`, whose pointer-local twins W2E2 wrote in DEF-732's own `_loc_ok`
+// form and measured: each is refused on main, so these are at parity and not DEF-732's off-parity class. The cases have each declared name suffixed
+// by the cell's, in the form of main's prices files.
+mod:inline_deref_prices;
+error:E5;
+// PRICE AT PARITY (the self-pointing set's, l.23128 item 5, l.23798 item 4); its way out `ap3_rp_c_wo` is in
+// tests/backend/programs/inline_deref_wayout_ok.npk: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main
+// (226ebb99) and on row 10; refused here, BORROW-015 at 9:184. From the cell `.internal/p2c-2026-11-20/cells/g2/ap3_rp_c.npk`.
+func:mk_ap3_rp_c = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rp_c = { List<int64>:l; int64:z; };
+func:idl_ap3_rp_c = L_ap3_rp_c->(L_ap3_rp_c->:p) never fails { pass p; };
+func:ido_ap3_rp_c = L_ap3_rp_c->?(L_ap3_rp_c->?:p) never fails { pass p; };
+func:growl_ap3_rp_c = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_rp_c = int64(int64:n) never fails {
+    L_ap3_rp_c:lo = L_ap3_rp_c{ l: raw mk_ap3_rp_c(), z: 1i64 }; L_ap3_rp_c:lo2 = L_ap3_rp_c{ l: raw mk_ap3_rp_c(), z: 2i64 }; int64:z0 = 1i64; int64->:e = @((<-(raw idl_ap3_rp_c(@lo))).l[0i64]); e = @z0; loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_rp_c = int32() never fails { pass (((raw f_ap3_rp_c(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3_rp_c`, by a pointer local: refused on main (226ebb99) and here, BORROW-015 at 9:195 (main: BORROW-015 at 9:195). From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_g2/ap3_rp_cl.npk`.
+func:mk_ap3_rp_cl = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rp_cl = { List<int64>:l; int64:z; };
+func:idl_ap3_rp_cl = L_ap3_rp_cl->(L_ap3_rp_cl->:p) never fails { pass p; };
+func:ido_ap3_rp_cl = L_ap3_rp_cl->?(L_ap3_rp_cl->?:p) never fails { pass p; };
+func:growl_ap3_rp_cl = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_rp_cl = int64(int64:n) never fails {
+    L_ap3_rp_cl:lo = L_ap3_rp_cl{ l: raw mk_ap3_rp_cl(), z: 1i64 }; L_ap3_rp_cl:lo2 = L_ap3_rp_cl{ l: raw mk_ap3_rp_cl(), z: 2i64 }; int64:z0 = 1i64; L_ap3_rp_cl->:cp = raw idl_ap3_rp_cl(@lo); int64->:e = @((<-cp).l[0i64]); e = @z0; loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_rp_cl = int32() never fails { pass (((raw f_ap3_rp_cl(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (l.23128 item 5, l.23798 item 4); its way out `ap3_rp_d_wo` is in tests/backend/programs/inline_deref_wayout_ok.npk: a right
+// program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main (226ebb99) and on row 10; refused here, BORROW-015 at
+// 9:196. From the cell `.internal/p2c-2026-11-20/cells/g2/ap3_rp_d.npk`.
+func:mk_ap3_rp_d = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rp_d = { List<int64>:l; int64:z; };
+func:idl_ap3_rp_d = L_ap3_rp_d->(L_ap3_rp_d->:p) never fails { pass p; };
+func:ido_ap3_rp_d = L_ap3_rp_d->?(L_ap3_rp_d->?:p) never fails { pass p; };
+func:growl_ap3_rp_d = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_rp_d = int64(int64:n) never fails {
+    L_ap3_rp_d:lo = L_ap3_rp_d{ l: raw mk_ap3_rp_d(), z: 1i64 }; L_ap3_rp_d:lo2 = L_ap3_rp_d{ l: raw mk_ap3_rp_d(), z: 2i64 }; L_ap3_rp_d->?:oq = NIL; int64:z0 = 1i64; int64->:e = @((<-(oq ?? @lo)).l[0i64]); e = @z0; loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_rp_d = int32() never fails { pass (((raw f_ap3_rp_d(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3_rp_d`, by a pointer local: refused on main (226ebb99) and here, BORROW-015 at 9:207 (main: BORROW-015 at 9:207). From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_g2/ap3_rp_dl.npk`.
+func:mk_ap3_rp_dl = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rp_dl = { List<int64>:l; int64:z; };
+func:idl_ap3_rp_dl = L_ap3_rp_dl->(L_ap3_rp_dl->:p) never fails { pass p; };
+func:ido_ap3_rp_dl = L_ap3_rp_dl->?(L_ap3_rp_dl->?:p) never fails { pass p; };
+func:growl_ap3_rp_dl = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_rp_dl = int64(int64:n) never fails {
+    L_ap3_rp_dl:lo = L_ap3_rp_dl{ l: raw mk_ap3_rp_dl(), z: 1i64 }; L_ap3_rp_dl:lo2 = L_ap3_rp_dl{ l: raw mk_ap3_rp_dl(), z: 2i64 }; L_ap3_rp_dl->?:oq = NIL; int64:z0 = 1i64; L_ap3_rp_dl->:cp = oq ?? @lo; int64->:e = @((<-cp).l[0i64]); e = @z0; loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_rp_dl = int32() never fails { pass (((raw f_ap3_rp_dl(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (l.23128 item 5, l.23798 item 4); its way out `ap3_rp_t_wo` is in tests/backend/programs/inline_deref_wayout_ok.npk: a right
+// program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main (226ebb99) and on row 10; refused here, BORROW-015 at
+// 9:198. From the cell `.internal/p2c-2026-11-20/cells/g2/ap3_rp_t.npk`.
+func:mk_ap3_rp_t = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rp_t = { List<int64>:l; int64:z; };
+func:idl_ap3_rp_t = L_ap3_rp_t->(L_ap3_rp_t->:p) never fails { pass p; };
+func:ido_ap3_rp_t = L_ap3_rp_t->?(L_ap3_rp_t->?:p) never fails { pass p; };
+func:growl_ap3_rp_t = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_rp_t = int64(int64:n) never fails {
+    L_ap3_rp_t:lo = L_ap3_rp_t{ l: raw mk_ap3_rp_t(), z: 1i64 }; L_ap3_rp_t:lo2 = L_ap3_rp_t{ l: raw mk_ap3_rp_t(), z: 2i64 }; int64:z0 = 1i64; int64->:e = @((<-(is (n > 0i64) : @lo : @lo2)).l[0i64]); e = @z0; loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_rp_t = int32() never fails { pass (((raw f_ap3_rp_t(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3_rp_t`, by a pointer local: refused on main (226ebb99) and here, BORROW-015 at 9:209, BORROW-015 at 9:240 (main: BORROW-015 at 9:209,
+// BORROW-015 at 9:240). From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_g2/ap3_rp_tl.npk`.
+func:mk_ap3_rp_tl = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rp_tl = { List<int64>:l; int64:z; };
+func:idl_ap3_rp_tl = L_ap3_rp_tl->(L_ap3_rp_tl->:p) never fails { pass p; };
+func:ido_ap3_rp_tl = L_ap3_rp_tl->?(L_ap3_rp_tl->?:p) never fails { pass p; };
+func:growl_ap3_rp_tl = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_rp_tl = int64(int64:n) never fails {
+    L_ap3_rp_tl:lo = L_ap3_rp_tl{ l: raw mk_ap3_rp_tl(), z: 1i64 }; L_ap3_rp_tl:lo2 = L_ap3_rp_tl{ l: raw mk_ap3_rp_tl(), z: 2i64 }; int64:z0 = 1i64; L_ap3_rp_tl->:cp = is (n > 0i64) : @lo : @lo2; int64->:e = @((<-cp).l[0i64]); e = @z0; loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } drop list_push(@lo2.l, 1i64); pass (<-e) + 6i64;
+};
+func:cell_main_ap3_rp_tl = int32() never fails { pass (((raw f_ap3_rp_tl(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3_rp_t`, by a pointer local: refused on main (226ebb99) and here, BORROW-015 at 9:232 (main: BORROW-015 at 9:232). From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_g2/ap3_rp_tul.npk`.
+func:mk_ap3_rp_tul = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rp_tul = { List<int64>:l; int64:z; };
+func:idl_ap3_rp_tul = L_ap3_rp_tul->(L_ap3_rp_tul->:p) never fails { pass p; };
+func:ido_ap3_rp_tul = L_ap3_rp_tul->?(L_ap3_rp_tul->?:p) never fails { pass p; };
+func:growl_ap3_rp_tul = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_rp_tul = int64(int64:n) never fails {
+    L_ap3_rp_tul:lo = L_ap3_rp_tul{ l: raw mk_ap3_rp_tul(), z: 1i64 }; L_ap3_rp_tul:lo2 = L_ap3_rp_tul{ l: raw mk_ap3_rp_tul(), z: 2i64 }; L_ap3_rp_tul->?:oq = @lo; int64:z0 = 1i64; L_ap3_rp_tul->:cp = is (n > 0i64) : (oq ??! E5) : @lo2; int64->:e = @((<-cp).l[0i64]); e = @z0; loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_rp_tul = int32() never fails { pass (((raw f_ap3_rp_tul(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (l.23411 items 5 and 6): a ternary of two addresses under a dereference: a right program, exit 67 on every road 0-8 at -O0 and 67
+// at -O2, 67 under the detector on main (226ebb99) and on row 10; refused here, BORROW-015 at 9:198, BORROW-015 at 9:229. From the cell
+// `Team/TMP/atk-177d2e-ap3-2026-11-20/cells/g1/ap3_tk_2p.npk`.
+func:mk_ap3_tk_2p = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_tk_2p = { List<int64>:l; int64:z; };
+func:idl_ap3_tk_2p = L_ap3_tk_2p->(L_ap3_tk_2p->:p) never fails { pass p; };
+func:ido_ap3_tk_2p = L_ap3_tk_2p->?(L_ap3_tk_2p->?:p) never fails { pass p; };
+func:growl_ap3_tk_2p = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_tk_2p = int64(int64:n) never fails {
+    L_ap3_tk_2p:lo = L_ap3_tk_2p{ l: raw mk_ap3_tk_2p(), z: 1i64 }; L_ap3_tk_2p:lo2 = L_ap3_tk_2p{ l: raw mk_ap3_tk_2p(), z: 2i64 }; int64:z0 = 1i64; int64->:e = @((<-(is (n > 0i64) : @lo : @lo2)).l[0i64]); e = @z0; loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } drop list_push(@lo2.l, 1i64); pass (<-e) + 6i64;
+};
+func:cell_main_ap3_tk_2p = int32() never fails { pass (((raw f_ap3_tk_2p(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3_tk_2p`, the pointer local: refused on main (226ebb99) and here, BORROW-015 at 9:209, BORROW-015 at 9:240 (main: BORROW-015 at 9:209,
+// BORROW-015 at 9:240). Written by W2E2 from the cell of the case it twins, the inline pointer bound to a pointer local first, in DEF-732's own
+// `_loc_ok` form (W2E2's `cells11/`, in seat W2E's folder).
+func:mk_ap3_tk_2p_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_tk_2p_loc_ok = { List<int64>:l; int64:z; };
+func:idl_ap3_tk_2p_loc_ok = L_ap3_tk_2p_loc_ok->(L_ap3_tk_2p_loc_ok->:p) never fails { pass p; };
+func:ido_ap3_tk_2p_loc_ok = L_ap3_tk_2p_loc_ok->?(L_ap3_tk_2p_loc_ok->?:p) never fails { pass p; };
+func:growl_ap3_tk_2p_loc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_tk_2p_loc_ok = int64(int64:n) never fails {
+    L_ap3_tk_2p_loc_ok:lo = L_ap3_tk_2p_loc_ok{ l: raw mk_ap3_tk_2p_loc_ok(), z: 1i64 }; L_ap3_tk_2p_loc_ok:lo2 = L_ap3_tk_2p_loc_ok{ l: raw mk_ap3_tk_2p_loc_ok(), z: 2i64 }; int64:z0 = 1i64; L_ap3_tk_2p_loc_ok->:cp = is (n > 0i64) : @lo : @lo2; int64->:e = @((<-cp).l[0i64]); e = @z0; loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } drop list_push(@lo2.l, 1i64); pass (<-e) + 6i64;
+};
+func:cell_main_ap3_tk_2p_loc_ok = int32() never fails { pass (((raw f_ap3_tk_2p_loc_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (l.23411 items 5 and 6): a ternary with an unwrap in one arm: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67
+// under the detector on main (226ebb99) and on row 10; refused here, BORROW-015 at 9:221. From the cell
+// `Team/TMP/atk-177d2e-ap3-2026-11-20/cells/g1/ap3_tk_2pu.npk`.
+func:mk_ap3_tk_2pu = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_tk_2pu = { List<int64>:l; int64:z; };
+func:idl_ap3_tk_2pu = L_ap3_tk_2pu->(L_ap3_tk_2pu->:p) never fails { pass p; };
+func:ido_ap3_tk_2pu = L_ap3_tk_2pu->?(L_ap3_tk_2pu->?:p) never fails { pass p; };
+func:growl_ap3_tk_2pu = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_tk_2pu = int64(int64:n) never fails {
+    L_ap3_tk_2pu:lo = L_ap3_tk_2pu{ l: raw mk_ap3_tk_2pu(), z: 1i64 }; L_ap3_tk_2pu:lo2 = L_ap3_tk_2pu{ l: raw mk_ap3_tk_2pu(), z: 2i64 }; L_ap3_tk_2pu->?:oq = @lo; int64:z0 = 1i64; int64->:e = @((<-(is (n > 0i64) : (oq ??! E5) : @lo2)).l[0i64]); e = @z0; loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_tk_2pu = int32() never fails { pass (((raw f_ap3_tk_2pu(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3_tk_2pu`, the pointer local: refused on main (226ebb99) and here, BORROW-015 at 9:232 (main: BORROW-015 at 9:232). Written by W2E2
+// from the cell of the case it twins, the inline pointer bound to a pointer local first, in DEF-732's own `_loc_ok` form (W2E2's `cells11/`, in
+// seat W2E's folder).
+func:mk_ap3_tk_2pu_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_tk_2pu_loc_ok = { List<int64>:l; int64:z; };
+func:idl_ap3_tk_2pu_loc_ok = L_ap3_tk_2pu_loc_ok->(L_ap3_tk_2pu_loc_ok->:p) never fails { pass p; };
+func:ido_ap3_tk_2pu_loc_ok = L_ap3_tk_2pu_loc_ok->?(L_ap3_tk_2pu_loc_ok->?:p) never fails { pass p; };
+func:growl_ap3_tk_2pu_loc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_tk_2pu_loc_ok = int64(int64:n) never fails {
+    L_ap3_tk_2pu_loc_ok:lo = L_ap3_tk_2pu_loc_ok{ l: raw mk_ap3_tk_2pu_loc_ok(), z: 1i64 }; L_ap3_tk_2pu_loc_ok:lo2 = L_ap3_tk_2pu_loc_ok{ l: raw mk_ap3_tk_2pu_loc_ok(), z: 2i64 }; L_ap3_tk_2pu_loc_ok->?:oq = @lo; int64:z0 = 1i64; L_ap3_tk_2pu_loc_ok->:cp = is (n > 0i64) : (oq ??! E5) : @lo2; int64->:e = @((<-cp).l[0i64]); e = @z0; loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_tk_2pu_loc_ok = int32() never fails { pass (((raw f_ap3_tk_2pu_loc_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY BY W2E2'S MEASURE (AFA's eight, l.23643 ruled item 5: refused only where row 11 is): its pointer-local twin, next, is refused on
+// main: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main (226ebb99) and on row 10; refused here,
+// BORROW-015 at 13:406. From the cell `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/h1/afa_hc1_ok.npk`.
+func:mk_afa_hc1_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_hc1_ok = { List<int64>:l; int64:z; };
+func:growl_afa_hc1_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:HP_afa_hc1_ok = { L_afa_hc1_ok->:lp; int64:z; };
+struct:HQ_afa_hc1_ok = { HP_afa_hc1_ok->:hp; int64:z; };
+struct:HO_afa_hc1_ok = { L_afa_hc1_ok->?:lp; int64:z; };
+func:wh_afa_hc1_ok = int64(HP_afa_hc1_ok->:h) never fails { (<-((<-h).lp)).l = raw mk_afa_hc1_ok(); pass 7i64; };
+func:wh2_afa_hc1_ok = int64(HQ_afa_hc1_ok->:q) never fails { (<-((<-((<-q).hp)).lp)).l = raw mk_afa_hc1_ok(); pass 7i64; };
+func:who_afa_hc1_ok = int64(HO_afa_hc1_ok->:h) never fails { (<-((<-h).lp ??! E5)).l = raw mk_afa_hc1_ok(); pass 7i64; };
+func:whg_afa_hc1_ok = int64(HP_afa_hc1_ok->:h) never fails { discard(raw growl_afa_hc1_ok(@((<-((<-h).lp)).l))); pass 7i64; };
+func:f_afa_hc1_ok = int64(int64:n) never fails { L_afa_hc1_ok:lo = L_afa_hc1_ok{ l: raw mk_afa_hc1_ok(), z: 1i64 }; L_afa_hc1_ok:lo2 = L_afa_hc1_ok{ l: raw mk_afa_hc1_ok(), z: 2i64 }; L_afa_hc1_ok->?:oq = @lo; L_afa_hc1_ok->?:oq2 = @lo2; HP_afa_hc1_ok:hp = HP_afa_hc1_ok{ lp: @lo, z: 1i64 }; HP_afa_hc1_ok:hp2 = HP_afa_hc1_ok{ lp: @lo2, z: 2i64 }; HQ_afa_hc1_ok:hq = HQ_afa_hc1_ok{ hp: @hp2, z: 1i64 }; HO_afa_hc1_ok:ho = HO_afa_hc1_ok{ lp: @lo, z: 1i64 }; HO_afa_hc1_ok:ho2 = HO_afa_hc1_ok{ lp: @lo2, z: 2i64 }; Result<L_afa_hc1_ok->?>:r = Result{ value: oq }; int64->:e = @((<-((r ?| oq2) ??! E5)).l[0i64]); discard(raw wh_afa_hc1_ok(@hp2)); pass (<-e) + 6i64; };
+func:cell_main_afa_hc1_ok = int32() never fails { pass (((raw f_afa_hc1_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `afa_hc1_ok`, the pointer local: refused on main (226ebb99) and here, BORROW-015 at 13:419 (main: BORROW-015 at 13:419). Written by W2E2
+// from the cell of the case it twins, the inline pointer bound to a pointer local first, in DEF-732's own `_loc_ok` form (W2E2's `cells11/`, in
+// seat W2E's folder).
+func:mk_afa_hc1_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_hc1_loc_ok = { List<int64>:l; int64:z; };
+func:growl_afa_hc1_loc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:HP_afa_hc1_loc_ok = { L_afa_hc1_loc_ok->:lp; int64:z; };
+struct:HQ_afa_hc1_loc_ok = { HP_afa_hc1_loc_ok->:hp; int64:z; };
+struct:HO_afa_hc1_loc_ok = { L_afa_hc1_loc_ok->?:lp; int64:z; };
+func:wh_afa_hc1_loc_ok = int64(HP_afa_hc1_loc_ok->:h) never fails { (<-((<-h).lp)).l = raw mk_afa_hc1_loc_ok(); pass 7i64; };
+func:wh2_afa_hc1_loc_ok = int64(HQ_afa_hc1_loc_ok->:q) never fails { (<-((<-((<-q).hp)).lp)).l = raw mk_afa_hc1_loc_ok(); pass 7i64; };
+func:who_afa_hc1_loc_ok = int64(HO_afa_hc1_loc_ok->:h) never fails { (<-((<-h).lp ??! E5)).l = raw mk_afa_hc1_loc_ok(); pass 7i64; };
+func:whg_afa_hc1_loc_ok = int64(HP_afa_hc1_loc_ok->:h) never fails { discard(raw growl_afa_hc1_loc_ok(@((<-((<-h).lp)).l))); pass 7i64; };
+func:f_afa_hc1_loc_ok = int64(int64:n) never fails { L_afa_hc1_loc_ok:lo = L_afa_hc1_loc_ok{ l: raw mk_afa_hc1_loc_ok(), z: 1i64 }; L_afa_hc1_loc_ok:lo2 = L_afa_hc1_loc_ok{ l: raw mk_afa_hc1_loc_ok(), z: 2i64 }; L_afa_hc1_loc_ok->?:oq = @lo; L_afa_hc1_loc_ok->?:oq2 = @lo2; HP_afa_hc1_loc_ok:hp = HP_afa_hc1_loc_ok{ lp: @lo, z: 1i64 }; HP_afa_hc1_loc_ok:hp2 = HP_afa_hc1_loc_ok{ lp: @lo2, z: 2i64 }; HQ_afa_hc1_loc_ok:hq = HQ_afa_hc1_loc_ok{ hp: @hp2, z: 1i64 }; HO_afa_hc1_loc_ok:ho = HO_afa_hc1_loc_ok{ lp: @lo, z: 1i64 }; HO_afa_hc1_loc_ok:ho2 = HO_afa_hc1_loc_ok{ lp: @lo2, z: 2i64 }; Result<L_afa_hc1_loc_ok->?>:r = Result{ value: oq }; L_afa_hc1_loc_ok->:cp = ((r ?| oq2) ??! E5); int64->:e = @((<-cp).l[0i64]); discard(raw wh_afa_hc1_loc_ok(@hp2)); pass (<-e) + 6i64; };
+func:cell_main_afa_hc1_loc_ok = int32() never fails { pass (((raw f_afa_hc1_loc_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY BY W2E2'S MEASURE (AFA's eight, l.23643 ruled item 5: refused only where row 11 is): its pointer-local twin, next, is refused on
+// main: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main (226ebb99) and on row 10; refused here,
+// BORROW-015 at 13:407. From the cell `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/h1/afa_hc2_ok.npk`.
+func:mk_afa_hc2_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_hc2_ok = { List<int64>:l; int64:z; };
+func:growl_afa_hc2_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:HP_afa_hc2_ok = { L_afa_hc2_ok->:lp; int64:z; };
+struct:HQ_afa_hc2_ok = { HP_afa_hc2_ok->:hp; int64:z; };
+struct:HO_afa_hc2_ok = { L_afa_hc2_ok->?:lp; int64:z; };
+func:wh_afa_hc2_ok = int64(HP_afa_hc2_ok->:h) never fails { (<-((<-h).lp)).l = raw mk_afa_hc2_ok(); pass 7i64; };
+func:wh2_afa_hc2_ok = int64(HQ_afa_hc2_ok->:q) never fails { (<-((<-((<-q).hp)).lp)).l = raw mk_afa_hc2_ok(); pass 7i64; };
+func:who_afa_hc2_ok = int64(HO_afa_hc2_ok->:h) never fails { (<-((<-h).lp ??! E5)).l = raw mk_afa_hc2_ok(); pass 7i64; };
+func:whg_afa_hc2_ok = int64(HP_afa_hc2_ok->:h) never fails { discard(raw growl_afa_hc2_ok(@((<-((<-h).lp)).l))); pass 7i64; };
+func:f_afa_hc2_ok = int64(int64:n) never fails { L_afa_hc2_ok:lo = L_afa_hc2_ok{ l: raw mk_afa_hc2_ok(), z: 1i64 }; L_afa_hc2_ok:lo2 = L_afa_hc2_ok{ l: raw mk_afa_hc2_ok(), z: 2i64 }; L_afa_hc2_ok->?:oq = @lo; L_afa_hc2_ok->?:oq2 = @lo2; HP_afa_hc2_ok:hp = HP_afa_hc2_ok{ lp: @lo, z: 1i64 }; HP_afa_hc2_ok:hp2 = HP_afa_hc2_ok{ lp: @lo2, z: 2i64 }; HQ_afa_hc2_ok:hq = HQ_afa_hc2_ok{ hp: @hp2, z: 1i64 }; HO_afa_hc2_ok:ho = HO_afa_hc2_ok{ lp: @lo, z: 1i64 }; HO_afa_hc2_ok:ho2 = HO_afa_hc2_ok{ lp: @lo2, z: 2i64 }; Result<L_afa_hc2_ok->?>:r = Result{ value: oq }; int64->:e = @((<-((r ?| oq2) ??! E5)).l[0i64]); discard(raw wh2_afa_hc2_ok(@hq)); pass (<-e) + 6i64; };
+func:cell_main_afa_hc2_ok = int32() never fails { pass (((raw f_afa_hc2_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `afa_hc2_ok`, the pointer local: refused on main (226ebb99) and here, BORROW-015 at 13:420 (main: BORROW-015 at 13:420). Written by W2E2
+// from the cell of the case it twins, the inline pointer bound to a pointer local first, in DEF-732's own `_loc_ok` form (W2E2's `cells11/`, in
+// seat W2E's folder).
+func:mk_afa_hc2_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_hc2_loc_ok = { List<int64>:l; int64:z; };
+func:growl_afa_hc2_loc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:HP_afa_hc2_loc_ok = { L_afa_hc2_loc_ok->:lp; int64:z; };
+struct:HQ_afa_hc2_loc_ok = { HP_afa_hc2_loc_ok->:hp; int64:z; };
+struct:HO_afa_hc2_loc_ok = { L_afa_hc2_loc_ok->?:lp; int64:z; };
+func:wh_afa_hc2_loc_ok = int64(HP_afa_hc2_loc_ok->:h) never fails { (<-((<-h).lp)).l = raw mk_afa_hc2_loc_ok(); pass 7i64; };
+func:wh2_afa_hc2_loc_ok = int64(HQ_afa_hc2_loc_ok->:q) never fails { (<-((<-((<-q).hp)).lp)).l = raw mk_afa_hc2_loc_ok(); pass 7i64; };
+func:who_afa_hc2_loc_ok = int64(HO_afa_hc2_loc_ok->:h) never fails { (<-((<-h).lp ??! E5)).l = raw mk_afa_hc2_loc_ok(); pass 7i64; };
+func:whg_afa_hc2_loc_ok = int64(HP_afa_hc2_loc_ok->:h) never fails { discard(raw growl_afa_hc2_loc_ok(@((<-((<-h).lp)).l))); pass 7i64; };
+func:f_afa_hc2_loc_ok = int64(int64:n) never fails { L_afa_hc2_loc_ok:lo = L_afa_hc2_loc_ok{ l: raw mk_afa_hc2_loc_ok(), z: 1i64 }; L_afa_hc2_loc_ok:lo2 = L_afa_hc2_loc_ok{ l: raw mk_afa_hc2_loc_ok(), z: 2i64 }; L_afa_hc2_loc_ok->?:oq = @lo; L_afa_hc2_loc_ok->?:oq2 = @lo2; HP_afa_hc2_loc_ok:hp = HP_afa_hc2_loc_ok{ lp: @lo, z: 1i64 }; HP_afa_hc2_loc_ok:hp2 = HP_afa_hc2_loc_ok{ lp: @lo2, z: 2i64 }; HQ_afa_hc2_loc_ok:hq = HQ_afa_hc2_loc_ok{ hp: @hp2, z: 1i64 }; HO_afa_hc2_loc_ok:ho = HO_afa_hc2_loc_ok{ lp: @lo, z: 1i64 }; HO_afa_hc2_loc_ok:ho2 = HO_afa_hc2_loc_ok{ lp: @lo2, z: 2i64 }; Result<L_afa_hc2_loc_ok->?>:r = Result{ value: oq }; L_afa_hc2_loc_ok->:cp = ((r ?| oq2) ??! E5); int64->:e = @((<-cp).l[0i64]); discard(raw wh2_afa_hc2_loc_ok(@hq)); pass (<-e) + 6i64; };
+func:cell_main_afa_hc2_loc_ok = int32() never fails { pass (((raw f_afa_hc2_loc_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY BY W2E2'S MEASURE (AFA's eight, l.23643 ruled item 5: refused only where row 11 is): its pointer-local twin, next, is refused on
+// main: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main (226ebb99) and on row 10; refused here,
+// BORROW-015 at 13:407. From the cell `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/h1/afa_hc4_ok.npk`.
+func:mk_afa_hc4_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_hc4_ok = { List<int64>:l; int64:z; };
+func:growl_afa_hc4_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:HP_afa_hc4_ok = { L_afa_hc4_ok->:lp; int64:z; };
+struct:HQ_afa_hc4_ok = { HP_afa_hc4_ok->:hp; int64:z; };
+struct:HO_afa_hc4_ok = { L_afa_hc4_ok->?:lp; int64:z; };
+func:wh_afa_hc4_ok = int64(HP_afa_hc4_ok->:h) never fails { (<-((<-h).lp)).l = raw mk_afa_hc4_ok(); pass 7i64; };
+func:wh2_afa_hc4_ok = int64(HQ_afa_hc4_ok->:q) never fails { (<-((<-((<-q).hp)).lp)).l = raw mk_afa_hc4_ok(); pass 7i64; };
+func:who_afa_hc4_ok = int64(HO_afa_hc4_ok->:h) never fails { (<-((<-h).lp ??! E5)).l = raw mk_afa_hc4_ok(); pass 7i64; };
+func:whg_afa_hc4_ok = int64(HP_afa_hc4_ok->:h) never fails { discard(raw growl_afa_hc4_ok(@((<-((<-h).lp)).l))); pass 7i64; };
+func:f_afa_hc4_ok = int64(int64:n) never fails { L_afa_hc4_ok:lo = L_afa_hc4_ok{ l: raw mk_afa_hc4_ok(), z: 1i64 }; L_afa_hc4_ok:lo2 = L_afa_hc4_ok{ l: raw mk_afa_hc4_ok(), z: 2i64 }; L_afa_hc4_ok->?:oq = @lo; L_afa_hc4_ok->?:oq2 = @lo2; HP_afa_hc4_ok:hp = HP_afa_hc4_ok{ lp: @lo, z: 1i64 }; HP_afa_hc4_ok:hp2 = HP_afa_hc4_ok{ lp: @lo2, z: 2i64 }; HQ_afa_hc4_ok:hq = HQ_afa_hc4_ok{ hp: @hp2, z: 1i64 }; HO_afa_hc4_ok:ho = HO_afa_hc4_ok{ lp: @lo, z: 1i64 }; HO_afa_hc4_ok:ho2 = HO_afa_hc4_ok{ lp: @lo2, z: 2i64 }; Result<L_afa_hc4_ok->?>:r = Result{ value: oq }; int64->:e = @((<-((r ?| oq2) ??! E5)).l[0i64]); discard(raw whg_afa_hc4_ok(@hp2)); pass (<-e) + 6i64; };
+func:cell_main_afa_hc4_ok = int32() never fails { pass (((raw f_afa_hc4_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `afa_hc4_ok`, the pointer local: refused on main (226ebb99) and here, BORROW-015 at 13:420 (main: BORROW-015 at 13:420). Written by W2E2
+// from the cell of the case it twins, the inline pointer bound to a pointer local first, in DEF-732's own `_loc_ok` form (W2E2's `cells11/`, in
+// seat W2E's folder).
+func:mk_afa_hc4_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_hc4_loc_ok = { List<int64>:l; int64:z; };
+func:growl_afa_hc4_loc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:HP_afa_hc4_loc_ok = { L_afa_hc4_loc_ok->:lp; int64:z; };
+struct:HQ_afa_hc4_loc_ok = { HP_afa_hc4_loc_ok->:hp; int64:z; };
+struct:HO_afa_hc4_loc_ok = { L_afa_hc4_loc_ok->?:lp; int64:z; };
+func:wh_afa_hc4_loc_ok = int64(HP_afa_hc4_loc_ok->:h) never fails { (<-((<-h).lp)).l = raw mk_afa_hc4_loc_ok(); pass 7i64; };
+func:wh2_afa_hc4_loc_ok = int64(HQ_afa_hc4_loc_ok->:q) never fails { (<-((<-((<-q).hp)).lp)).l = raw mk_afa_hc4_loc_ok(); pass 7i64; };
+func:who_afa_hc4_loc_ok = int64(HO_afa_hc4_loc_ok->:h) never fails { (<-((<-h).lp ??! E5)).l = raw mk_afa_hc4_loc_ok(); pass 7i64; };
+func:whg_afa_hc4_loc_ok = int64(HP_afa_hc4_loc_ok->:h) never fails { discard(raw growl_afa_hc4_loc_ok(@((<-((<-h).lp)).l))); pass 7i64; };
+func:f_afa_hc4_loc_ok = int64(int64:n) never fails { L_afa_hc4_loc_ok:lo = L_afa_hc4_loc_ok{ l: raw mk_afa_hc4_loc_ok(), z: 1i64 }; L_afa_hc4_loc_ok:lo2 = L_afa_hc4_loc_ok{ l: raw mk_afa_hc4_loc_ok(), z: 2i64 }; L_afa_hc4_loc_ok->?:oq = @lo; L_afa_hc4_loc_ok->?:oq2 = @lo2; HP_afa_hc4_loc_ok:hp = HP_afa_hc4_loc_ok{ lp: @lo, z: 1i64 }; HP_afa_hc4_loc_ok:hp2 = HP_afa_hc4_loc_ok{ lp: @lo2, z: 2i64 }; HQ_afa_hc4_loc_ok:hq = HQ_afa_hc4_loc_ok{ hp: @hp2, z: 1i64 }; HO_afa_hc4_loc_ok:ho = HO_afa_hc4_loc_ok{ lp: @lo, z: 1i64 }; HO_afa_hc4_loc_ok:ho2 = HO_afa_hc4_loc_ok{ lp: @lo2, z: 2i64 }; Result<L_afa_hc4_loc_ok->?>:r = Result{ value: oq }; L_afa_hc4_loc_ok->:cp = ((r ?| oq2) ??! E5); int64->:e = @((<-cp).l[0i64]); discard(raw whg_afa_hc4_loc_ok(@hp2)); pass (<-e) + 6i64; };
+func:cell_main_afa_hc4_loc_ok = int32() never fails { pass (((raw f_afa_hc4_loc_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY BY W2E2'S MEASURE (AFA's eight, l.23643 ruled item 5: refused only where row 11 is): its pointer-local twin, next, is refused on
+// main: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main (226ebb99) and on row 10; refused here,
+// BORROW-015 at 13:371. From the cell `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/m1/afa_me1_ok.npk`.
+func:mk_afa_me1_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_me1_ok = { List<int64>:l; int64:z; };
+func:growl_afa_me1_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:H3_afa_me1_ok = { L_afa_me1_ok->:lp; L_afa_me1_ok->:lq; L_afa_me1_ok->:lr; int64:z; };
+struct:HQ_afa_me1_ok = { H3_afa_me1_ok->:h; L_afa_me1_ok->:lx; int64:z; };
+func:w2p_afa_me1_ok = int64(H3_afa_me1_ok->:h) never fails { (<-((<-h).lp)).l = raw mk_afa_me1_ok(); (<-((<-h).lq)).l = raw mk_afa_me1_ok(); pass 7i64; };
+func:w3p_afa_me1_ok = int64(H3_afa_me1_ok->:h) never fails { (<-((<-h).lp)).z = 3i64; (<-((<-h).lr)).l = raw mk_afa_me1_ok(); (<-((<-h).lq)).l = raw mk_afa_me1_ok(); pass 7i64; };
+func:wz_afa_me1_ok = int64(H3_afa_me1_ok->:h) never fails { (<-h).z = 1i64; (<-((<-h).lq)).l = raw mk_afa_me1_ok(); pass 7i64; };
+func:wd_afa_me1_ok = int64(HQ_afa_me1_ok->:q) never fails { (<-((<-q).lx)).l = raw mk_afa_me1_ok(); (<-((<-((<-q).h)).lq)).l = raw mk_afa_me1_ok(); pass 7i64; };
+func:wg_afa_me1_ok = int64(H3_afa_me1_ok->:h) never fails { discard(raw growl_afa_me1_ok(@((<-((<-h).lp)).l))); discard(raw growl_afa_me1_ok(@((<-((<-h).lq)).l))); pass 7i64; };
+func:f_afa_me1_ok = int64(int64:n) never fails { L_afa_me1_ok:lo = L_afa_me1_ok{ l: raw mk_afa_me1_ok(), z: 1i64 }; L_afa_me1_ok:lo2 = L_afa_me1_ok{ l: raw mk_afa_me1_ok(), z: 2i64 }; L_afa_me1_ok:lo3 = L_afa_me1_ok{ l: raw mk_afa_me1_ok(), z: 3i64 }; L_afa_me1_ok->?:oq = @lo; L_afa_me1_ok->?:oq2 = @lo2; H3_afa_me1_ok:h3 = H3_afa_me1_ok{ lp: @lo2, lq: @lo3, lr: @lo3, z: 1i64 }; HQ_afa_me1_ok:hq = HQ_afa_me1_ok{ h: @h3, lx: @lo2, z: 1i64 }; Result<L_afa_me1_ok->?>:r = Result{ value: oq }; int64->:e = @((<-((r ?| oq2) ??! E5)).l[0i64]); discard(raw w2p_afa_me1_ok(@h3)); pass (<-e) + 6i64; };
+func:cell_main_afa_me1_ok = int32() never fails { pass (((raw f_afa_me1_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `afa_me1_ok`, the pointer local: refused on main (226ebb99) and here, BORROW-015 at 13:384 (main: BORROW-015 at 13:384). Written by W2E2
+// from the cell of the case it twins, the inline pointer bound to a pointer local first, in DEF-732's own `_loc_ok` form (W2E2's `cells11/`, in
+// seat W2E's folder).
+func:mk_afa_me1_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_me1_loc_ok = { List<int64>:l; int64:z; };
+func:growl_afa_me1_loc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:H3_afa_me1_loc_ok = { L_afa_me1_loc_ok->:lp; L_afa_me1_loc_ok->:lq; L_afa_me1_loc_ok->:lr; int64:z; };
+struct:HQ_afa_me1_loc_ok = { H3_afa_me1_loc_ok->:h; L_afa_me1_loc_ok->:lx; int64:z; };
+func:w2p_afa_me1_loc_ok = int64(H3_afa_me1_loc_ok->:h) never fails { (<-((<-h).lp)).l = raw mk_afa_me1_loc_ok(); (<-((<-h).lq)).l = raw mk_afa_me1_loc_ok(); pass 7i64; };
+func:w3p_afa_me1_loc_ok = int64(H3_afa_me1_loc_ok->:h) never fails { (<-((<-h).lp)).z = 3i64; (<-((<-h).lr)).l = raw mk_afa_me1_loc_ok(); (<-((<-h).lq)).l = raw mk_afa_me1_loc_ok(); pass 7i64; };
+func:wz_afa_me1_loc_ok = int64(H3_afa_me1_loc_ok->:h) never fails { (<-h).z = 1i64; (<-((<-h).lq)).l = raw mk_afa_me1_loc_ok(); pass 7i64; };
+func:wd_afa_me1_loc_ok = int64(HQ_afa_me1_loc_ok->:q) never fails { (<-((<-q).lx)).l = raw mk_afa_me1_loc_ok(); (<-((<-((<-q).h)).lq)).l = raw mk_afa_me1_loc_ok(); pass 7i64; };
+func:wg_afa_me1_loc_ok = int64(H3_afa_me1_loc_ok->:h) never fails { discard(raw growl_afa_me1_loc_ok(@((<-((<-h).lp)).l))); discard(raw growl_afa_me1_loc_ok(@((<-((<-h).lq)).l))); pass 7i64; };
+func:f_afa_me1_loc_ok = int64(int64:n) never fails { L_afa_me1_loc_ok:lo = L_afa_me1_loc_ok{ l: raw mk_afa_me1_loc_ok(), z: 1i64 }; L_afa_me1_loc_ok:lo2 = L_afa_me1_loc_ok{ l: raw mk_afa_me1_loc_ok(), z: 2i64 }; L_afa_me1_loc_ok:lo3 = L_afa_me1_loc_ok{ l: raw mk_afa_me1_loc_ok(), z: 3i64 }; L_afa_me1_loc_ok->?:oq = @lo; L_afa_me1_loc_ok->?:oq2 = @lo2; H3_afa_me1_loc_ok:h3 = H3_afa_me1_loc_ok{ lp: @lo2, lq: @lo3, lr: @lo3, z: 1i64 }; HQ_afa_me1_loc_ok:hq = HQ_afa_me1_loc_ok{ h: @h3, lx: @lo2, z: 1i64 }; Result<L_afa_me1_loc_ok->?>:r = Result{ value: oq }; L_afa_me1_loc_ok->:cp = ((r ?| oq2) ??! E5); int64->:e = @((<-cp).l[0i64]); discard(raw w2p_afa_me1_loc_ok(@h3)); pass (<-e) + 6i64; };
+func:cell_main_afa_me1_loc_ok = int32() never fails { pass (((raw f_afa_me1_loc_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY BY W2E2'S MEASURE (AFA's eight, l.23643 ruled item 5: refused only where row 11 is): its pointer-local twin, next, is refused on
+// main: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main (226ebb99) and on row 10; refused here,
+// BORROW-015 at 13:371. From the cell `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/m1/afa_me2_ok.npk`.
+func:mk_afa_me2_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_me2_ok = { List<int64>:l; int64:z; };
+func:growl_afa_me2_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:H3_afa_me2_ok = { L_afa_me2_ok->:lp; L_afa_me2_ok->:lq; L_afa_me2_ok->:lr; int64:z; };
+struct:HQ_afa_me2_ok = { H3_afa_me2_ok->:h; L_afa_me2_ok->:lx; int64:z; };
+func:w2p_afa_me2_ok = int64(H3_afa_me2_ok->:h) never fails { (<-((<-h).lp)).l = raw mk_afa_me2_ok(); (<-((<-h).lq)).l = raw mk_afa_me2_ok(); pass 7i64; };
+func:w3p_afa_me2_ok = int64(H3_afa_me2_ok->:h) never fails { (<-((<-h).lp)).z = 3i64; (<-((<-h).lr)).l = raw mk_afa_me2_ok(); (<-((<-h).lq)).l = raw mk_afa_me2_ok(); pass 7i64; };
+func:wz_afa_me2_ok = int64(H3_afa_me2_ok->:h) never fails { (<-h).z = 1i64; (<-((<-h).lq)).l = raw mk_afa_me2_ok(); pass 7i64; };
+func:wd_afa_me2_ok = int64(HQ_afa_me2_ok->:q) never fails { (<-((<-q).lx)).l = raw mk_afa_me2_ok(); (<-((<-((<-q).h)).lq)).l = raw mk_afa_me2_ok(); pass 7i64; };
+func:wg_afa_me2_ok = int64(H3_afa_me2_ok->:h) never fails { discard(raw growl_afa_me2_ok(@((<-((<-h).lp)).l))); discard(raw growl_afa_me2_ok(@((<-((<-h).lq)).l))); pass 7i64; };
+func:f_afa_me2_ok = int64(int64:n) never fails { L_afa_me2_ok:lo = L_afa_me2_ok{ l: raw mk_afa_me2_ok(), z: 1i64 }; L_afa_me2_ok:lo2 = L_afa_me2_ok{ l: raw mk_afa_me2_ok(), z: 2i64 }; L_afa_me2_ok:lo3 = L_afa_me2_ok{ l: raw mk_afa_me2_ok(), z: 3i64 }; L_afa_me2_ok->?:oq = @lo; L_afa_me2_ok->?:oq2 = @lo2; H3_afa_me2_ok:h3 = H3_afa_me2_ok{ lp: @lo2, lq: @lo3, lr: @lo3, z: 1i64 }; HQ_afa_me2_ok:hq = HQ_afa_me2_ok{ h: @h3, lx: @lo2, z: 1i64 }; Result<L_afa_me2_ok->?>:r = Result{ value: oq }; int64->:e = @((<-((r ?| oq2) ??! E5)).l[0i64]); discard(raw w3p_afa_me2_ok(@h3)); pass (<-e) + 6i64; };
+func:cell_main_afa_me2_ok = int32() never fails { pass (((raw f_afa_me2_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `afa_me2_ok`, the pointer local: refused on main (226ebb99) and here, BORROW-015 at 13:384 (main: BORROW-015 at 13:384). Written by W2E2
+// from the cell of the case it twins, the inline pointer bound to a pointer local first, in DEF-732's own `_loc_ok` form (W2E2's `cells11/`, in
+// seat W2E's folder).
+func:mk_afa_me2_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_me2_loc_ok = { List<int64>:l; int64:z; };
+func:growl_afa_me2_loc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:H3_afa_me2_loc_ok = { L_afa_me2_loc_ok->:lp; L_afa_me2_loc_ok->:lq; L_afa_me2_loc_ok->:lr; int64:z; };
+struct:HQ_afa_me2_loc_ok = { H3_afa_me2_loc_ok->:h; L_afa_me2_loc_ok->:lx; int64:z; };
+func:w2p_afa_me2_loc_ok = int64(H3_afa_me2_loc_ok->:h) never fails { (<-((<-h).lp)).l = raw mk_afa_me2_loc_ok(); (<-((<-h).lq)).l = raw mk_afa_me2_loc_ok(); pass 7i64; };
+func:w3p_afa_me2_loc_ok = int64(H3_afa_me2_loc_ok->:h) never fails { (<-((<-h).lp)).z = 3i64; (<-((<-h).lr)).l = raw mk_afa_me2_loc_ok(); (<-((<-h).lq)).l = raw mk_afa_me2_loc_ok(); pass 7i64; };
+func:wz_afa_me2_loc_ok = int64(H3_afa_me2_loc_ok->:h) never fails { (<-h).z = 1i64; (<-((<-h).lq)).l = raw mk_afa_me2_loc_ok(); pass 7i64; };
+func:wd_afa_me2_loc_ok = int64(HQ_afa_me2_loc_ok->:q) never fails { (<-((<-q).lx)).l = raw mk_afa_me2_loc_ok(); (<-((<-((<-q).h)).lq)).l = raw mk_afa_me2_loc_ok(); pass 7i64; };
+func:wg_afa_me2_loc_ok = int64(H3_afa_me2_loc_ok->:h) never fails { discard(raw growl_afa_me2_loc_ok(@((<-((<-h).lp)).l))); discard(raw growl_afa_me2_loc_ok(@((<-((<-h).lq)).l))); pass 7i64; };
+func:f_afa_me2_loc_ok = int64(int64:n) never fails { L_afa_me2_loc_ok:lo = L_afa_me2_loc_ok{ l: raw mk_afa_me2_loc_ok(), z: 1i64 }; L_afa_me2_loc_ok:lo2 = L_afa_me2_loc_ok{ l: raw mk_afa_me2_loc_ok(), z: 2i64 }; L_afa_me2_loc_ok:lo3 = L_afa_me2_loc_ok{ l: raw mk_afa_me2_loc_ok(), z: 3i64 }; L_afa_me2_loc_ok->?:oq = @lo; L_afa_me2_loc_ok->?:oq2 = @lo2; H3_afa_me2_loc_ok:h3 = H3_afa_me2_loc_ok{ lp: @lo2, lq: @lo3, lr: @lo3, z: 1i64 }; HQ_afa_me2_loc_ok:hq = HQ_afa_me2_loc_ok{ h: @h3, lx: @lo2, z: 1i64 }; Result<L_afa_me2_loc_ok->?>:r = Result{ value: oq }; L_afa_me2_loc_ok->:cp = ((r ?| oq2) ??! E5); int64->:e = @((<-cp).l[0i64]); discard(raw w3p_afa_me2_loc_ok(@h3)); pass (<-e) + 6i64; };
+func:cell_main_afa_me2_loc_ok = int32() never fails { pass (((raw f_afa_me2_loc_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY BY W2E2'S MEASURE (AFA's eight, l.23643 ruled item 5: refused only where row 11 is): its pointer-local twin, next, is refused on
+// main: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main (226ebb99) and on row 10; refused here,
+// BORROW-015 at 13:370. From the cell `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/m1/afa_me3_ok.npk`.
+func:mk_afa_me3_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_me3_ok = { List<int64>:l; int64:z; };
+func:growl_afa_me3_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:H3_afa_me3_ok = { L_afa_me3_ok->:lp; L_afa_me3_ok->:lq; L_afa_me3_ok->:lr; int64:z; };
+struct:HQ_afa_me3_ok = { H3_afa_me3_ok->:h; L_afa_me3_ok->:lx; int64:z; };
+func:w2p_afa_me3_ok = int64(H3_afa_me3_ok->:h) never fails { (<-((<-h).lp)).l = raw mk_afa_me3_ok(); (<-((<-h).lq)).l = raw mk_afa_me3_ok(); pass 7i64; };
+func:w3p_afa_me3_ok = int64(H3_afa_me3_ok->:h) never fails { (<-((<-h).lp)).z = 3i64; (<-((<-h).lr)).l = raw mk_afa_me3_ok(); (<-((<-h).lq)).l = raw mk_afa_me3_ok(); pass 7i64; };
+func:wz_afa_me3_ok = int64(H3_afa_me3_ok->:h) never fails { (<-h).z = 1i64; (<-((<-h).lq)).l = raw mk_afa_me3_ok(); pass 7i64; };
+func:wd_afa_me3_ok = int64(HQ_afa_me3_ok->:q) never fails { (<-((<-q).lx)).l = raw mk_afa_me3_ok(); (<-((<-((<-q).h)).lq)).l = raw mk_afa_me3_ok(); pass 7i64; };
+func:wg_afa_me3_ok = int64(H3_afa_me3_ok->:h) never fails { discard(raw growl_afa_me3_ok(@((<-((<-h).lp)).l))); discard(raw growl_afa_me3_ok(@((<-((<-h).lq)).l))); pass 7i64; };
+func:f_afa_me3_ok = int64(int64:n) never fails { L_afa_me3_ok:lo = L_afa_me3_ok{ l: raw mk_afa_me3_ok(), z: 1i64 }; L_afa_me3_ok:lo2 = L_afa_me3_ok{ l: raw mk_afa_me3_ok(), z: 2i64 }; L_afa_me3_ok:lo3 = L_afa_me3_ok{ l: raw mk_afa_me3_ok(), z: 3i64 }; L_afa_me3_ok->?:oq = @lo; L_afa_me3_ok->?:oq2 = @lo2; H3_afa_me3_ok:h3 = H3_afa_me3_ok{ lp: @lo2, lq: @lo3, lr: @lo3, z: 1i64 }; HQ_afa_me3_ok:hq = HQ_afa_me3_ok{ h: @h3, lx: @lo2, z: 1i64 }; Result<L_afa_me3_ok->?>:r = Result{ value: oq }; int64->:e = @((<-((r ?| oq2) ??! E5)).l[0i64]); discard(raw wz_afa_me3_ok(@h3)); pass (<-e) + 6i64; };
+func:cell_main_afa_me3_ok = int32() never fails { pass (((raw f_afa_me3_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `afa_me3_ok`, the pointer local: refused on main (226ebb99) and here, BORROW-015 at 13:383 (main: BORROW-015 at 13:383). Written by W2E2
+// from the cell of the case it twins, the inline pointer bound to a pointer local first, in DEF-732's own `_loc_ok` form (W2E2's `cells11/`, in
+// seat W2E's folder).
+func:mk_afa_me3_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_me3_loc_ok = { List<int64>:l; int64:z; };
+func:growl_afa_me3_loc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:H3_afa_me3_loc_ok = { L_afa_me3_loc_ok->:lp; L_afa_me3_loc_ok->:lq; L_afa_me3_loc_ok->:lr; int64:z; };
+struct:HQ_afa_me3_loc_ok = { H3_afa_me3_loc_ok->:h; L_afa_me3_loc_ok->:lx; int64:z; };
+func:w2p_afa_me3_loc_ok = int64(H3_afa_me3_loc_ok->:h) never fails { (<-((<-h).lp)).l = raw mk_afa_me3_loc_ok(); (<-((<-h).lq)).l = raw mk_afa_me3_loc_ok(); pass 7i64; };
+func:w3p_afa_me3_loc_ok = int64(H3_afa_me3_loc_ok->:h) never fails { (<-((<-h).lp)).z = 3i64; (<-((<-h).lr)).l = raw mk_afa_me3_loc_ok(); (<-((<-h).lq)).l = raw mk_afa_me3_loc_ok(); pass 7i64; };
+func:wz_afa_me3_loc_ok = int64(H3_afa_me3_loc_ok->:h) never fails { (<-h).z = 1i64; (<-((<-h).lq)).l = raw mk_afa_me3_loc_ok(); pass 7i64; };
+func:wd_afa_me3_loc_ok = int64(HQ_afa_me3_loc_ok->:q) never fails { (<-((<-q).lx)).l = raw mk_afa_me3_loc_ok(); (<-((<-((<-q).h)).lq)).l = raw mk_afa_me3_loc_ok(); pass 7i64; };
+func:wg_afa_me3_loc_ok = int64(H3_afa_me3_loc_ok->:h) never fails { discard(raw growl_afa_me3_loc_ok(@((<-((<-h).lp)).l))); discard(raw growl_afa_me3_loc_ok(@((<-((<-h).lq)).l))); pass 7i64; };
+func:f_afa_me3_loc_ok = int64(int64:n) never fails { L_afa_me3_loc_ok:lo = L_afa_me3_loc_ok{ l: raw mk_afa_me3_loc_ok(), z: 1i64 }; L_afa_me3_loc_ok:lo2 = L_afa_me3_loc_ok{ l: raw mk_afa_me3_loc_ok(), z: 2i64 }; L_afa_me3_loc_ok:lo3 = L_afa_me3_loc_ok{ l: raw mk_afa_me3_loc_ok(), z: 3i64 }; L_afa_me3_loc_ok->?:oq = @lo; L_afa_me3_loc_ok->?:oq2 = @lo2; H3_afa_me3_loc_ok:h3 = H3_afa_me3_loc_ok{ lp: @lo2, lq: @lo3, lr: @lo3, z: 1i64 }; HQ_afa_me3_loc_ok:hq = HQ_afa_me3_loc_ok{ h: @h3, lx: @lo2, z: 1i64 }; Result<L_afa_me3_loc_ok->?>:r = Result{ value: oq }; L_afa_me3_loc_ok->:cp = ((r ?| oq2) ??! E5); int64->:e = @((<-cp).l[0i64]); discard(raw wz_afa_me3_loc_ok(@h3)); pass (<-e) + 6i64; };
+func:cell_main_afa_me3_loc_ok = int32() never fails { pass (((raw f_afa_me3_loc_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY BY W2E2'S MEASURE (AFA's eight, l.23643 ruled item 5: refused only where row 11 is): its pointer-local twin, next, is refused on
+// main: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main (226ebb99) and on row 10; refused here,
+// BORROW-015 at 13:370. From the cell `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/m1/afa_me4_ok.npk`.
+func:mk_afa_me4_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_me4_ok = { List<int64>:l; int64:z; };
+func:growl_afa_me4_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:H3_afa_me4_ok = { L_afa_me4_ok->:lp; L_afa_me4_ok->:lq; L_afa_me4_ok->:lr; int64:z; };
+struct:HQ_afa_me4_ok = { H3_afa_me4_ok->:h; L_afa_me4_ok->:lx; int64:z; };
+func:w2p_afa_me4_ok = int64(H3_afa_me4_ok->:h) never fails { (<-((<-h).lp)).l = raw mk_afa_me4_ok(); (<-((<-h).lq)).l = raw mk_afa_me4_ok(); pass 7i64; };
+func:w3p_afa_me4_ok = int64(H3_afa_me4_ok->:h) never fails { (<-((<-h).lp)).z = 3i64; (<-((<-h).lr)).l = raw mk_afa_me4_ok(); (<-((<-h).lq)).l = raw mk_afa_me4_ok(); pass 7i64; };
+func:wz_afa_me4_ok = int64(H3_afa_me4_ok->:h) never fails { (<-h).z = 1i64; (<-((<-h).lq)).l = raw mk_afa_me4_ok(); pass 7i64; };
+func:wd_afa_me4_ok = int64(HQ_afa_me4_ok->:q) never fails { (<-((<-q).lx)).l = raw mk_afa_me4_ok(); (<-((<-((<-q).h)).lq)).l = raw mk_afa_me4_ok(); pass 7i64; };
+func:wg_afa_me4_ok = int64(H3_afa_me4_ok->:h) never fails { discard(raw growl_afa_me4_ok(@((<-((<-h).lp)).l))); discard(raw growl_afa_me4_ok(@((<-((<-h).lq)).l))); pass 7i64; };
+func:f_afa_me4_ok = int64(int64:n) never fails { L_afa_me4_ok:lo = L_afa_me4_ok{ l: raw mk_afa_me4_ok(), z: 1i64 }; L_afa_me4_ok:lo2 = L_afa_me4_ok{ l: raw mk_afa_me4_ok(), z: 2i64 }; L_afa_me4_ok:lo3 = L_afa_me4_ok{ l: raw mk_afa_me4_ok(), z: 3i64 }; L_afa_me4_ok->?:oq = @lo; L_afa_me4_ok->?:oq2 = @lo2; H3_afa_me4_ok:h3 = H3_afa_me4_ok{ lp: @lo2, lq: @lo3, lr: @lo3, z: 1i64 }; HQ_afa_me4_ok:hq = HQ_afa_me4_ok{ h: @h3, lx: @lo2, z: 1i64 }; Result<L_afa_me4_ok->?>:r = Result{ value: oq }; int64->:e = @((<-((r ?| oq2) ??! E5)).l[0i64]); discard(raw wd_afa_me4_ok(@hq)); pass (<-e) + 6i64; };
+func:cell_main_afa_me4_ok = int32() never fails { pass (((raw f_afa_me4_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `afa_me4_ok`, the pointer local: refused on main (226ebb99) and here, BORROW-015 at 13:383 (main: BORROW-015 at 13:383). Written by W2E2
+// from the cell of the case it twins, the inline pointer bound to a pointer local first, in DEF-732's own `_loc_ok` form (W2E2's `cells11/`, in
+// seat W2E's folder).
+func:mk_afa_me4_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_me4_loc_ok = { List<int64>:l; int64:z; };
+func:growl_afa_me4_loc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:H3_afa_me4_loc_ok = { L_afa_me4_loc_ok->:lp; L_afa_me4_loc_ok->:lq; L_afa_me4_loc_ok->:lr; int64:z; };
+struct:HQ_afa_me4_loc_ok = { H3_afa_me4_loc_ok->:h; L_afa_me4_loc_ok->:lx; int64:z; };
+func:w2p_afa_me4_loc_ok = int64(H3_afa_me4_loc_ok->:h) never fails { (<-((<-h).lp)).l = raw mk_afa_me4_loc_ok(); (<-((<-h).lq)).l = raw mk_afa_me4_loc_ok(); pass 7i64; };
+func:w3p_afa_me4_loc_ok = int64(H3_afa_me4_loc_ok->:h) never fails { (<-((<-h).lp)).z = 3i64; (<-((<-h).lr)).l = raw mk_afa_me4_loc_ok(); (<-((<-h).lq)).l = raw mk_afa_me4_loc_ok(); pass 7i64; };
+func:wz_afa_me4_loc_ok = int64(H3_afa_me4_loc_ok->:h) never fails { (<-h).z = 1i64; (<-((<-h).lq)).l = raw mk_afa_me4_loc_ok(); pass 7i64; };
+func:wd_afa_me4_loc_ok = int64(HQ_afa_me4_loc_ok->:q) never fails { (<-((<-q).lx)).l = raw mk_afa_me4_loc_ok(); (<-((<-((<-q).h)).lq)).l = raw mk_afa_me4_loc_ok(); pass 7i64; };
+func:wg_afa_me4_loc_ok = int64(H3_afa_me4_loc_ok->:h) never fails { discard(raw growl_afa_me4_loc_ok(@((<-((<-h).lp)).l))); discard(raw growl_afa_me4_loc_ok(@((<-((<-h).lq)).l))); pass 7i64; };
+func:f_afa_me4_loc_ok = int64(int64:n) never fails { L_afa_me4_loc_ok:lo = L_afa_me4_loc_ok{ l: raw mk_afa_me4_loc_ok(), z: 1i64 }; L_afa_me4_loc_ok:lo2 = L_afa_me4_loc_ok{ l: raw mk_afa_me4_loc_ok(), z: 2i64 }; L_afa_me4_loc_ok:lo3 = L_afa_me4_loc_ok{ l: raw mk_afa_me4_loc_ok(), z: 3i64 }; L_afa_me4_loc_ok->?:oq = @lo; L_afa_me4_loc_ok->?:oq2 = @lo2; H3_afa_me4_loc_ok:h3 = H3_afa_me4_loc_ok{ lp: @lo2, lq: @lo3, lr: @lo3, z: 1i64 }; HQ_afa_me4_loc_ok:hq = HQ_afa_me4_loc_ok{ h: @h3, lx: @lo2, z: 1i64 }; Result<L_afa_me4_loc_ok->?>:r = Result{ value: oq }; L_afa_me4_loc_ok->:cp = ((r ?| oq2) ??! E5); int64->:e = @((<-cp).l[0i64]); discard(raw wd_afa_me4_loc_ok(@hq)); pass (<-e) + 6i64; };
+func:cell_main_afa_me4_loc_ok = int32() never fails { pass (((raw f_afa_me4_loc_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY BY W2E2'S MEASURE (AFA's eight, l.23643 ruled item 5: refused only where row 11 is): its pointer-local twin, next, is refused on
+// main: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main (226ebb99) and on row 10; refused here,
+// BORROW-015 at 13:370. From the cell `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/m1/afa_me5_ok.npk`.
+func:mk_afa_me5_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_me5_ok = { List<int64>:l; int64:z; };
+func:growl_afa_me5_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:H3_afa_me5_ok = { L_afa_me5_ok->:lp; L_afa_me5_ok->:lq; L_afa_me5_ok->:lr; int64:z; };
+struct:HQ_afa_me5_ok = { H3_afa_me5_ok->:h; L_afa_me5_ok->:lx; int64:z; };
+func:w2p_afa_me5_ok = int64(H3_afa_me5_ok->:h) never fails { (<-((<-h).lp)).l = raw mk_afa_me5_ok(); (<-((<-h).lq)).l = raw mk_afa_me5_ok(); pass 7i64; };
+func:w3p_afa_me5_ok = int64(H3_afa_me5_ok->:h) never fails { (<-((<-h).lp)).z = 3i64; (<-((<-h).lr)).l = raw mk_afa_me5_ok(); (<-((<-h).lq)).l = raw mk_afa_me5_ok(); pass 7i64; };
+func:wz_afa_me5_ok = int64(H3_afa_me5_ok->:h) never fails { (<-h).z = 1i64; (<-((<-h).lq)).l = raw mk_afa_me5_ok(); pass 7i64; };
+func:wd_afa_me5_ok = int64(HQ_afa_me5_ok->:q) never fails { (<-((<-q).lx)).l = raw mk_afa_me5_ok(); (<-((<-((<-q).h)).lq)).l = raw mk_afa_me5_ok(); pass 7i64; };
+func:wg_afa_me5_ok = int64(H3_afa_me5_ok->:h) never fails { discard(raw growl_afa_me5_ok(@((<-((<-h).lp)).l))); discard(raw growl_afa_me5_ok(@((<-((<-h).lq)).l))); pass 7i64; };
+func:f_afa_me5_ok = int64(int64:n) never fails { L_afa_me5_ok:lo = L_afa_me5_ok{ l: raw mk_afa_me5_ok(), z: 1i64 }; L_afa_me5_ok:lo2 = L_afa_me5_ok{ l: raw mk_afa_me5_ok(), z: 2i64 }; L_afa_me5_ok:lo3 = L_afa_me5_ok{ l: raw mk_afa_me5_ok(), z: 3i64 }; L_afa_me5_ok->?:oq = @lo; L_afa_me5_ok->?:oq2 = @lo2; H3_afa_me5_ok:h3 = H3_afa_me5_ok{ lp: @lo2, lq: @lo3, lr: @lo3, z: 1i64 }; HQ_afa_me5_ok:hq = HQ_afa_me5_ok{ h: @h3, lx: @lo2, z: 1i64 }; Result<L_afa_me5_ok->?>:r = Result{ value: oq }; int64->:e = @((<-((r ?| oq2) ??! E5)).l[0i64]); discard(raw wg_afa_me5_ok(@h3)); pass (<-e) + 6i64; };
+func:cell_main_afa_me5_ok = int32() never fails { pass (((raw f_afa_me5_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `afa_me5_ok`, the pointer local: refused on main (226ebb99) and here, BORROW-015 at 13:383 (main: BORROW-015 at 13:383). Written by W2E2
+// from the cell of the case it twins, the inline pointer bound to a pointer local first, in DEF-732's own `_loc_ok` form (W2E2's `cells11/`, in
+// seat W2E's folder).
+func:mk_afa_me5_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_me5_loc_ok = { List<int64>:l; int64:z; };
+func:growl_afa_me5_loc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:H3_afa_me5_loc_ok = { L_afa_me5_loc_ok->:lp; L_afa_me5_loc_ok->:lq; L_afa_me5_loc_ok->:lr; int64:z; };
+struct:HQ_afa_me5_loc_ok = { H3_afa_me5_loc_ok->:h; L_afa_me5_loc_ok->:lx; int64:z; };
+func:w2p_afa_me5_loc_ok = int64(H3_afa_me5_loc_ok->:h) never fails { (<-((<-h).lp)).l = raw mk_afa_me5_loc_ok(); (<-((<-h).lq)).l = raw mk_afa_me5_loc_ok(); pass 7i64; };
+func:w3p_afa_me5_loc_ok = int64(H3_afa_me5_loc_ok->:h) never fails { (<-((<-h).lp)).z = 3i64; (<-((<-h).lr)).l = raw mk_afa_me5_loc_ok(); (<-((<-h).lq)).l = raw mk_afa_me5_loc_ok(); pass 7i64; };
+func:wz_afa_me5_loc_ok = int64(H3_afa_me5_loc_ok->:h) never fails { (<-h).z = 1i64; (<-((<-h).lq)).l = raw mk_afa_me5_loc_ok(); pass 7i64; };
+func:wd_afa_me5_loc_ok = int64(HQ_afa_me5_loc_ok->:q) never fails { (<-((<-q).lx)).l = raw mk_afa_me5_loc_ok(); (<-((<-((<-q).h)).lq)).l = raw mk_afa_me5_loc_ok(); pass 7i64; };
+func:wg_afa_me5_loc_ok = int64(H3_afa_me5_loc_ok->:h) never fails { discard(raw growl_afa_me5_loc_ok(@((<-((<-h).lp)).l))); discard(raw growl_afa_me5_loc_ok(@((<-((<-h).lq)).l))); pass 7i64; };
+func:f_afa_me5_loc_ok = int64(int64:n) never fails { L_afa_me5_loc_ok:lo = L_afa_me5_loc_ok{ l: raw mk_afa_me5_loc_ok(), z: 1i64 }; L_afa_me5_loc_ok:lo2 = L_afa_me5_loc_ok{ l: raw mk_afa_me5_loc_ok(), z: 2i64 }; L_afa_me5_loc_ok:lo3 = L_afa_me5_loc_ok{ l: raw mk_afa_me5_loc_ok(), z: 3i64 }; L_afa_me5_loc_ok->?:oq = @lo; L_afa_me5_loc_ok->?:oq2 = @lo2; H3_afa_me5_loc_ok:h3 = H3_afa_me5_loc_ok{ lp: @lo2, lq: @lo3, lr: @lo3, z: 1i64 }; HQ_afa_me5_loc_ok:hq = HQ_afa_me5_loc_ok{ h: @h3, lx: @lo2, z: 1i64 }; Result<L_afa_me5_loc_ok->?>:r = Result{ value: oq }; L_afa_me5_loc_ok->:cp = ((r ?| oq2) ??! E5); int64->:e = @((<-cp).l[0i64]); discard(raw wg_afa_me5_loc_ok(@h3)); pass (<-e) + 6i64; };
+func:cell_main_afa_me5_loc_ok = int32() never fails { pass (((raw f_afa_me5_loc_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY BY W2E2'S MEASURE (ARM1's four, l.23500 item 3: this row's reading of a `??`/`?
+// ` one unwrap deeper): its pointer-local twin, next, is refused on main: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under
+// the detector on main (226ebb99) and on row 10; refused here, BORROW-015 at 9:233. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g1/ap3u_rfok.npk`.
+func:mk_ap3u_rfok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rfok = { List<int64>:l; int64:z; };
+func:idl_ap3u_rfok = L_ap3u_rfok->(L_ap3u_rfok->:p) never fails { pass p; };
+func:ido_ap3u_rfok = L_ap3u_rfok->?(L_ap3u_rfok->?:p) never fails { pass p; };
+func:growl_ap3u_rfok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rfok = int64(int64:n) never fails {
+    L_ap3u_rfok:lo = L_ap3u_rfok{ l: raw mk_ap3u_rfok(), z: 1i64 }; L_ap3u_rfok:lo2 = L_ap3u_rfok{ l: raw mk_ap3u_rfok(), z: 2i64 }; L_ap3u_rfok->?:oq = @lo; L_ap3u_rfok->?:oq2 = @lo2; Result<L_ap3u_rfok->?>:r = Result{ value: oq }; int64->:e = @((<-((r ?| oq2) ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo2.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rfok = int32() never fails { pass (((raw f_ap3u_rfok(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3u_rfok`, the pointer local: refused on main (226ebb99) and here, BORROW-015 at 9:244 (main: BORROW-015 at 9:244). Written by W2E2
+// from the cell of the case it twins, the inline pointer bound to a pointer local first, in DEF-732's own `_loc_ok` form (W2E2's `cells11/`, in
+// seat W2E's folder).
+func:mk_ap3u_rf_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rf_loc_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_rf_loc_ok = L_ap3u_rf_loc_ok->(L_ap3u_rf_loc_ok->:p) never fails { pass p; };
+func:ido_ap3u_rf_loc_ok = L_ap3u_rf_loc_ok->?(L_ap3u_rf_loc_ok->?:p) never fails { pass p; };
+func:growl_ap3u_rf_loc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rf_loc_ok = int64(int64:n) never fails {
+    L_ap3u_rf_loc_ok:lo = L_ap3u_rf_loc_ok{ l: raw mk_ap3u_rf_loc_ok(), z: 1i64 }; L_ap3u_rf_loc_ok:lo2 = L_ap3u_rf_loc_ok{ l: raw mk_ap3u_rf_loc_ok(), z: 2i64 }; L_ap3u_rf_loc_ok->?:oq = @lo; L_ap3u_rf_loc_ok->?:oq2 = @lo2; Result<L_ap3u_rf_loc_ok->?>:r = Result{ value: oq }; L_ap3u_rf_loc_ok->:cp = (r ?| oq2) ??! E5; int64->:e = @((<-cp).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo2.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rf_loc_ok = int32() never fails { pass (((raw f_ap3u_rf_loc_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY BY W2E2'S MEASURE (ARM1's four, l.23500 item 3: this row's reading of a `??`/`?
+// ` one unwrap deeper): its pointer-local twin, next, is refused on main: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under
+// the detector on main (226ebb99) and on row 10; refused here, BORROW-015 at 9:327. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_rf_3ok.npk`.
+func:mk_ap3u_rf_3ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rf_3ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_rf_3ok = L_ap3u_rf_3ok->(L_ap3u_rf_3ok->:p) never fails { pass p; };
+func:ido_ap3u_rf_3ok = L_ap3u_rf_3ok->?(L_ap3u_rf_3ok->?:p) never fails { pass p; };
+func:growl_ap3u_rf_3ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rf_3ok = int64(int64:n) never fails {
+    L_ap3u_rf_3ok:lo = L_ap3u_rf_3ok{ l: raw mk_ap3u_rf_3ok(), z: 1i64 }; L_ap3u_rf_3ok:lo2 = L_ap3u_rf_3ok{ l: raw mk_ap3u_rf_3ok(), z: 2i64 }; L_ap3u_rf_3ok->?:oq = @lo; L_ap3u_rf_3ok->?:oq2 = @lo2; Result<L_ap3u_rf_3ok->?>:r = Result{ value: oq }; Result<Result<L_ap3u_rf_3ok->?>>:rr = Result{ value: r }; Result<L_ap3u_rf_3ok->?>:r9 = Result{ value: oq2 }; int64->:e = @((<-(((rr ?| r9) ?! E5) ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo2.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rf_3ok = int32() never fails { pass (((raw f_ap3u_rf_3ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3u_rf_3ok`, the pointer local: refused on main (226ebb99) and here, BORROW-015 at 9:338 (main: BORROW-015 at 9:338). Written by W2E2
+// from the cell of the case it twins, the inline pointer bound to a pointer local first, in DEF-732's own `_loc_ok` form (W2E2's `cells11/`, in
+// seat W2E's folder).
+func:mk_ap3u_rf_3_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rf_3_loc_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_rf_3_loc_ok = L_ap3u_rf_3_loc_ok->(L_ap3u_rf_3_loc_ok->:p) never fails { pass p; };
+func:ido_ap3u_rf_3_loc_ok = L_ap3u_rf_3_loc_ok->?(L_ap3u_rf_3_loc_ok->?:p) never fails { pass p; };
+func:growl_ap3u_rf_3_loc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rf_3_loc_ok = int64(int64:n) never fails {
+    L_ap3u_rf_3_loc_ok:lo = L_ap3u_rf_3_loc_ok{ l: raw mk_ap3u_rf_3_loc_ok(), z: 1i64 }; L_ap3u_rf_3_loc_ok:lo2 = L_ap3u_rf_3_loc_ok{ l: raw mk_ap3u_rf_3_loc_ok(), z: 2i64 }; L_ap3u_rf_3_loc_ok->?:oq = @lo; L_ap3u_rf_3_loc_ok->?:oq2 = @lo2; Result<L_ap3u_rf_3_loc_ok->?>:r = Result{ value: oq }; Result<Result<L_ap3u_rf_3_loc_ok->?>>:rr = Result{ value: r }; Result<L_ap3u_rf_3_loc_ok->?>:r9 = Result{ value: oq2 }; L_ap3u_rf_3_loc_ok->:cp = ((rr ?| r9) ?! E5) ??! E5; int64->:e = @((<-cp).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo2.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rf_3_loc_ok = int32() never fails { pass (((raw f_ap3u_rf_3_loc_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY BY W2E2'S MEASURE (ARM1's four, l.23500 item 3: this row's reading of a `??`/`?
+// ` one unwrap deeper): its pointer-local twin, next, is refused on main: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under
+// the detector on main (226ebb99) and on row 10; refused here, BORROW-015 at 10:243. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_rf_fldok.npk`.
+func:mk_ap3u_rf_fldok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rf_fldok = { List<int64>:l; int64:z; };
+func:idl_ap3u_rf_fldok = L_ap3u_rf_fldok->(L_ap3u_rf_fldok->:p) never fails { pass p; };
+func:ido_ap3u_rf_fldok = L_ap3u_rf_fldok->?(L_ap3u_rf_fldok->?:p) never fails { pass p; };
+func:growl_ap3u_rf_fldok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:RW_ap3u_rf_fldok = { Result<L_ap3u_rf_fldok->?>:r; int64:z; };
+func:f_ap3u_rf_fldok = int64(int64:n) never fails {
+    L_ap3u_rf_fldok:lo = L_ap3u_rf_fldok{ l: raw mk_ap3u_rf_fldok(), z: 1i64 }; L_ap3u_rf_fldok:lo2 = L_ap3u_rf_fldok{ l: raw mk_ap3u_rf_fldok(), z: 2i64 }; L_ap3u_rf_fldok->?:oq = @lo; L_ap3u_rf_fldok->?:oq2 = @lo2; RW_ap3u_rf_fldok:w = RW_ap3u_rf_fldok{ r: Result{ value: oq }, z: 1i64 }; int64->:e = @((<-((w.r ?| oq2) ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo2.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rf_fldok = int32() never fails { pass (((raw f_ap3u_rf_fldok(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3u_rf_fldok`, the pointer local: refused on main (226ebb99) and here, BORROW-015 at 10:254 (main: BORROW-015 at 10:254). Written by
+// W2E2 from the cell of the case it twins, the inline pointer bound to a pointer local first, in DEF-732's own `_loc_ok` form (W2E2's `cells11/`,
+// in seat W2E's folder).
+func:mk_ap3u_rf_fld_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rf_fld_loc_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_rf_fld_loc_ok = L_ap3u_rf_fld_loc_ok->(L_ap3u_rf_fld_loc_ok->:p) never fails { pass p; };
+func:ido_ap3u_rf_fld_loc_ok = L_ap3u_rf_fld_loc_ok->?(L_ap3u_rf_fld_loc_ok->?:p) never fails { pass p; };
+func:growl_ap3u_rf_fld_loc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:RW_ap3u_rf_fld_loc_ok = { Result<L_ap3u_rf_fld_loc_ok->?>:r; int64:z; };
+func:f_ap3u_rf_fld_loc_ok = int64(int64:n) never fails {
+    L_ap3u_rf_fld_loc_ok:lo = L_ap3u_rf_fld_loc_ok{ l: raw mk_ap3u_rf_fld_loc_ok(), z: 1i64 }; L_ap3u_rf_fld_loc_ok:lo2 = L_ap3u_rf_fld_loc_ok{ l: raw mk_ap3u_rf_fld_loc_ok(), z: 2i64 }; L_ap3u_rf_fld_loc_ok->?:oq = @lo; L_ap3u_rf_fld_loc_ok->?:oq2 = @lo2; RW_ap3u_rf_fld_loc_ok:w = RW_ap3u_rf_fld_loc_ok{ r: Result{ value: oq }, z: 1i64 }; L_ap3u_rf_fld_loc_ok->:cp = (w.r ?| oq2) ??! E5; int64->:e = @((<-cp).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo2.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rf_fld_loc_ok = int32() never fails { pass (((raw f_ap3u_rf_fld_loc_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY BY W2E2'S MEASURE (ARM1's four, l.23500 item 3: this row's reading of a `??`/`?
+// ` one unwrap deeper): its pointer-local twin, next, is refused on main: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under
+// the detector on main (226ebb99) and on row 10; refused here, BORROW-015 at 9:300. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g6/ap3u_rfxok.npk`.
+func:mk_ap3u_rfxok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rfxok = { List<int64>:l; int64:z; };
+func:idl_ap3u_rfxok = L_ap3u_rfxok->(L_ap3u_rfxok->:p) never fails { pass p; };
+func:ido_ap3u_rfxok = L_ap3u_rfxok->?(L_ap3u_rfxok->?:p) never fails { pass p; };
+func:growl_ap3u_rfxok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rfxok = int64(int64:n) never fails {
+    L_ap3u_rfxok:lo = L_ap3u_rfxok{ l: raw mk_ap3u_rfxok(), z: 1i64 }; L_ap3u_rfxok:lo2 = L_ap3u_rfxok{ l: raw mk_ap3u_rfxok(), z: 2i64 }; L_ap3u_rfxok->?:oq = @lo; L_ap3u_rfxok->?:oq2 = @lo2; Result<Result<L_ap3u_rfxok->>>:rr2 = Result{ value: Result{ value: @lo } }; Result<L_ap3u_rfxok->>:r9 = Result{ value: @lo2 }; int64->:e = @((<-((rr2 ?| r9) ?! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo2.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rfxok = int32() never fails { pass (((raw f_ap3u_rfxok(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3u_rfxok`, the pointer local: refused on main (226ebb99) and here, BORROW-015 at 9:311 (main: BORROW-015 at 9:311). Written by W2E2
+// from the cell of the case it twins, the inline pointer bound to a pointer local first, in DEF-732's own `_loc_ok` form (W2E2's `cells11/`, in
+// seat W2E's folder).
+func:mk_ap3u_rfx_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rfx_loc_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_rfx_loc_ok = L_ap3u_rfx_loc_ok->(L_ap3u_rfx_loc_ok->:p) never fails { pass p; };
+func:ido_ap3u_rfx_loc_ok = L_ap3u_rfx_loc_ok->?(L_ap3u_rfx_loc_ok->?:p) never fails { pass p; };
+func:growl_ap3u_rfx_loc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rfx_loc_ok = int64(int64:n) never fails {
+    L_ap3u_rfx_loc_ok:lo = L_ap3u_rfx_loc_ok{ l: raw mk_ap3u_rfx_loc_ok(), z: 1i64 }; L_ap3u_rfx_loc_ok:lo2 = L_ap3u_rfx_loc_ok{ l: raw mk_ap3u_rfx_loc_ok(), z: 2i64 }; L_ap3u_rfx_loc_ok->?:oq = @lo; L_ap3u_rfx_loc_ok->?:oq2 = @lo2; Result<Result<L_ap3u_rfx_loc_ok->>>:rr2 = Result{ value: Result{ value: @lo } }; Result<L_ap3u_rfx_loc_ok->>:r9 = Result{ value: @lo2 }; L_ap3u_rfx_loc_ok->:cp = (rr2 ?| r9) ?! E5; int64->:e = @((<-cp).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo2.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rfx_loc_ok = int32() never fails { pass (((raw f_ap3u_rfx_loc_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY BY W2E2'S MEASURE (a bare form, l.23500 item 3): its pointer-local twin, next, is refused on main: a right program, exit 67 on
+// every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main (226ebb99) and on row 10; refused here, BORROW-015 at 9:227. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g5/ap3u_rfb_ok.npk`.
+func:mk_ap3u_rfb_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rfb_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_rfb_ok = L_ap3u_rfb_ok->(L_ap3u_rfb_ok->:p) never fails { pass p; };
+func:ido_ap3u_rfb_ok = L_ap3u_rfb_ok->?(L_ap3u_rfb_ok->?:p) never fails { pass p; };
+func:growl_ap3u_rfb_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rfb_ok = int64(int64:n) never fails {
+    L_ap3u_rfb_ok:lo = L_ap3u_rfb_ok{ l: raw mk_ap3u_rfb_ok(), z: 1i64 }; L_ap3u_rfb_ok:lo2 = L_ap3u_rfb_ok{ l: raw mk_ap3u_rfb_ok(), z: 2i64 }; L_ap3u_rfb_ok->?:oq = @lo; L_ap3u_rfb_ok->?:oq2 = @lo2; Result<L_ap3u_rfb_ok->>:rp = Result{ value: @lo }; int64->:e = @((<-(rp ?| @lo2)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo2.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rfb_ok = int32() never fails { pass (((raw f_ap3u_rfb_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3u_rfb_ok`, the pointer local: refused on main (226ebb99) and here, BORROW-015 at 9:238 (main: BORROW-015 at 9:238). Written by W2E2
+// from the cell of the case it twins, the inline pointer bound to a pointer local first, in DEF-732's own `_loc_ok` form (W2E2's `cells11/`, in
+// seat W2E's folder).
+func:mk_ap3u_rfb_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rfb_loc_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_rfb_loc_ok = L_ap3u_rfb_loc_ok->(L_ap3u_rfb_loc_ok->:p) never fails { pass p; };
+func:ido_ap3u_rfb_loc_ok = L_ap3u_rfb_loc_ok->?(L_ap3u_rfb_loc_ok->?:p) never fails { pass p; };
+func:growl_ap3u_rfb_loc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rfb_loc_ok = int64(int64:n) never fails {
+    L_ap3u_rfb_loc_ok:lo = L_ap3u_rfb_loc_ok{ l: raw mk_ap3u_rfb_loc_ok(), z: 1i64 }; L_ap3u_rfb_loc_ok:lo2 = L_ap3u_rfb_loc_ok{ l: raw mk_ap3u_rfb_loc_ok(), z: 2i64 }; L_ap3u_rfb_loc_ok->?:oq = @lo; L_ap3u_rfb_loc_ok->?:oq2 = @lo2; Result<L_ap3u_rfb_loc_ok->>:rp = Result{ value: @lo }; L_ap3u_rfb_loc_ok->:cp = rp ?| @lo2; int64->:e = @((<-cp).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo2.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rfb_loc_ok = int32() never fails { pass (((raw f_ap3u_rfb_loc_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY BY W2E2'S MEASURE (a bare form, l.23500 item 3): its pointer-local twin, next, is refused on main: a right program, exit 67 on
+// every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main (226ebb99) and on row 10; refused here, BORROW-015 at 9:188. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g5/ap3u_dqb_ok.npk`.
+func:mk_ap3u_dqb_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_dqb_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_dqb_ok = L_ap3u_dqb_ok->(L_ap3u_dqb_ok->:p) never fails { pass p; };
+func:ido_ap3u_dqb_ok = L_ap3u_dqb_ok->?(L_ap3u_dqb_ok->?:p) never fails { pass p; };
+func:growl_ap3u_dqb_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_dqb_ok = int64(int64:n) never fails {
+    L_ap3u_dqb_ok:lo = L_ap3u_dqb_ok{ l: raw mk_ap3u_dqb_ok(), z: 1i64 }; L_ap3u_dqb_ok:lo2 = L_ap3u_dqb_ok{ l: raw mk_ap3u_dqb_ok(), z: 2i64 }; L_ap3u_dqb_ok->?:oq = @lo; L_ap3u_dqb_ok->?:oq2 = @lo2; int64->:e = @((<-(oq ?? @lo2)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo2.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_dqb_ok = int32() never fails { pass (((raw f_ap3u_dqb_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3u_dqb_ok`, the pointer local: refused on main (226ebb99) and here, BORROW-015 at 9:199 (main: BORROW-015 at 9:199). Written by W2E2
+// from the cell of the case it twins, the inline pointer bound to a pointer local first, in DEF-732's own `_loc_ok` form (W2E2's `cells11/`, in
+// seat W2E's folder).
+func:mk_ap3u_dqb_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_dqb_loc_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_dqb_loc_ok = L_ap3u_dqb_loc_ok->(L_ap3u_dqb_loc_ok->:p) never fails { pass p; };
+func:ido_ap3u_dqb_loc_ok = L_ap3u_dqb_loc_ok->?(L_ap3u_dqb_loc_ok->?:p) never fails { pass p; };
+func:growl_ap3u_dqb_loc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_dqb_loc_ok = int64(int64:n) never fails {
+    L_ap3u_dqb_loc_ok:lo = L_ap3u_dqb_loc_ok{ l: raw mk_ap3u_dqb_loc_ok(), z: 1i64 }; L_ap3u_dqb_loc_ok:lo2 = L_ap3u_dqb_loc_ok{ l: raw mk_ap3u_dqb_loc_ok(), z: 2i64 }; L_ap3u_dqb_loc_ok->?:oq = @lo; L_ap3u_dqb_loc_ok->?:oq2 = @lo2; L_ap3u_dqb_loc_ok->:cp = oq ?? @lo2; int64->:e = @((<-cp).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo2.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_dqb_loc_ok = int32() never fails { pass (((raw f_ap3u_dqb_loc_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY BY W2E2'S MEASURE (a bare form, l.23500 item 3): its pointer-local twin, next, is refused on main: a right program, exit 67 on
+// every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main (226ebb99) and on row 10; refused here, BORROW-015 at 9:234. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g5/ap3u_rfq_ok.npk`.
+func:mk_ap3u_rfq_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rfq_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_rfq_ok = L_ap3u_rfq_ok->(L_ap3u_rfq_ok->:p) never fails { pass p; };
+func:ido_ap3u_rfq_ok = L_ap3u_rfq_ok->?(L_ap3u_rfq_ok->?:p) never fails { pass p; };
+func:growl_ap3u_rfq_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rfq_ok = int64(int64:n) never fails {
+    L_ap3u_rfq_ok:lo = L_ap3u_rfq_ok{ l: raw mk_ap3u_rfq_ok(), z: 1i64 }; L_ap3u_rfq_ok:lo2 = L_ap3u_rfq_ok{ l: raw mk_ap3u_rfq_ok(), z: 2i64 }; L_ap3u_rfq_ok->?:oq = @lo; L_ap3u_rfq_ok->?:oq2 = @lo2; Result<L_ap3u_rfq_ok->?>:r = Result{ value: oq }; int64->:e = @((<-((r ?| oq2) ?? @lo2)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo2.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rfq_ok = int32() never fails { pass (((raw f_ap3u_rfq_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3u_rfq_ok`, the pointer local: refused on main (226ebb99) and here, BORROW-015 at 9:245 (main: BORROW-015 at 9:245). Written by W2E2
+// from the cell of the case it twins, the inline pointer bound to a pointer local first, in DEF-732's own `_loc_ok` form (W2E2's `cells11/`, in
+// seat W2E's folder).
+func:mk_ap3u_rfq_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rfq_loc_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_rfq_loc_ok = L_ap3u_rfq_loc_ok->(L_ap3u_rfq_loc_ok->:p) never fails { pass p; };
+func:ido_ap3u_rfq_loc_ok = L_ap3u_rfq_loc_ok->?(L_ap3u_rfq_loc_ok->?:p) never fails { pass p; };
+func:growl_ap3u_rfq_loc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rfq_loc_ok = int64(int64:n) never fails {
+    L_ap3u_rfq_loc_ok:lo = L_ap3u_rfq_loc_ok{ l: raw mk_ap3u_rfq_loc_ok(), z: 1i64 }; L_ap3u_rfq_loc_ok:lo2 = L_ap3u_rfq_loc_ok{ l: raw mk_ap3u_rfq_loc_ok(), z: 2i64 }; L_ap3u_rfq_loc_ok->?:oq = @lo; L_ap3u_rfq_loc_ok->?:oq2 = @lo2; Result<L_ap3u_rfq_loc_ok->?>:r = Result{ value: oq }; L_ap3u_rfq_loc_ok->:cp = (r ?| oq2) ?? @lo2; int64->:e = @((<-cp).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo2.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rfq_loc_ok = int32() never fails { pass (((raw f_ap3u_rfq_loc_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY BY W2E2'S MEASURE: a `?.` member with a `??` default under a dereference; its pointer-local twin, next, is refused on main: a
+// right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main (226ebb99) and on row 10; refused here, BORROW-015
+// at 10:245. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g7/ap3u_qc_dok.npk`.
+func:mk_ap3u_qc_dok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_qc_dok = { List<int64>:l; int64:z; };
+func:idl_ap3u_qc_dok = L_ap3u_qc_dok->(L_ap3u_qc_dok->:p) never fails { pass p; };
+func:ido_ap3u_qc_dok = L_ap3u_qc_dok->?(L_ap3u_qc_dok->?:p) never fails { pass p; };
+func:growl_ap3u_qc_dok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:W2_ap3u_qc_dok = { L_ap3u_qc_dok->:p; L_ap3u_qc_dok->?:q; int64:z; };
+func:f_ap3u_qc_dok = int64(int64:n) never fails {
+    L_ap3u_qc_dok:lo = L_ap3u_qc_dok{ l: raw mk_ap3u_qc_dok(), z: 1i64 }; L_ap3u_qc_dok:lo2 = L_ap3u_qc_dok{ l: raw mk_ap3u_qc_dok(), z: 2i64 }; L_ap3u_qc_dok->?:oq = @lo; L_ap3u_qc_dok->?:oq2 = @lo2; W2_ap3u_qc_dok:w2 = W2_ap3u_qc_dok{ p: @lo, q: oq, z: 1i64 }; W2_ap3u_qc_dok->?:o = @w2; int64->:e = @((<-((o?.p) ?? @lo2)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo2.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_qc_dok = int32() never fails { pass (((raw f_ap3u_qc_dok(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3u_qc_dok`, the pointer local: refused on main (226ebb99) and here, BORROW-015 at 10:256 (main: BORROW-015 at 10:256). Written by W2E2
+// from the cell of the case it twins, the inline pointer bound to a pointer local first, in DEF-732's own `_loc_ok` form (W2E2's `cells11/`, in
+// seat W2E's folder).
+func:mk_ap3u_qc_d_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_qc_d_loc_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_qc_d_loc_ok = L_ap3u_qc_d_loc_ok->(L_ap3u_qc_d_loc_ok->:p) never fails { pass p; };
+func:ido_ap3u_qc_d_loc_ok = L_ap3u_qc_d_loc_ok->?(L_ap3u_qc_d_loc_ok->?:p) never fails { pass p; };
+func:growl_ap3u_qc_d_loc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:W2_ap3u_qc_d_loc_ok = { L_ap3u_qc_d_loc_ok->:p; L_ap3u_qc_d_loc_ok->?:q; int64:z; };
+func:f_ap3u_qc_d_loc_ok = int64(int64:n) never fails {
+    L_ap3u_qc_d_loc_ok:lo = L_ap3u_qc_d_loc_ok{ l: raw mk_ap3u_qc_d_loc_ok(), z: 1i64 }; L_ap3u_qc_d_loc_ok:lo2 = L_ap3u_qc_d_loc_ok{ l: raw mk_ap3u_qc_d_loc_ok(), z: 2i64 }; L_ap3u_qc_d_loc_ok->?:oq = @lo; L_ap3u_qc_d_loc_ok->?:oq2 = @lo2; W2_ap3u_qc_d_loc_ok:w2 = W2_ap3u_qc_d_loc_ok{ p: @lo, q: oq, z: 1i64 }; W2_ap3u_qc_d_loc_ok->?:o = @w2; L_ap3u_qc_d_loc_ok->:cp = (o?.p) ?? @lo2; int64->:e = @((<-cp).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo2.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_qc_d_loc_ok = int32() never fails { pass (((raw f_ap3u_qc_d_loc_ok(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

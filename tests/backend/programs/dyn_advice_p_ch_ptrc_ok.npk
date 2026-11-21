@@ -1,0 +1,49 @@
+// expect-exit: 42
+// 2026-11-21 (landing 177d2e, row 2: D-370's advice compiles when pasted; rulings l.21783 item 3, l.21938). EVERY ROAD THE ADVICE OFFERS COMPILES
+// WHEN PASTED: where an owning place is refused at a lent `dyn` parameter (NITPICK-TYPE-116, row 1), the message offers `move` only where it
+// compiles (never through a pointer, TYPE-104; never from a lent parameter, a lending `pick`'s view or a `fixed` binding), `.clone()` only where
+// the type's `clone` comes through the prelude's `Clone`, and the pointer road. RIGHT PROGRAM: a struct with a `never fails` `impl:…:Clone` field
+// reached through a pointer (`p.h`, `p` a `HW->`) handed to a `dyn` parameter; the advice's pointer road to a concrete `Self->` parameter, `raw
+// callitp(@p.h)`, pasted: exit 42 on main (226ebb99) and here on every road 0-8, -O0 and -O2, and under the detector, one `.ll`. Its original
+// (`p3_ch_p_ref`) is NITPICK-TYPE-116 here; the withheld road `move(p.h)` is TYPE-104 on both. From seat F4M's paste test,
+// `.internal/f4m-2026-11-20/cells_paste3/p3_ch_p_ptrc.npk`.
+mod:dyn_advice_p_ch_ptrc_ok;
+error:E9;
+trait:Tr = { func:peek = int32(Self->:self) never fails; };
+struct:CHold = { buffer:b; };
+impl:CHold:Clone = { func:clone = CHold(CHold:self) never fails { buffer:nb = buffer_new(16i64); nb[0i64] = self.b[0i64]; pass CHold{ b: move(nb) }; }; };
+impl:CHold:Tr = { func:peek = int32(CHold->:self) never fails { pass ((<-self).b[0i64] => int32); }; };
+func:callit = int32(dyn Tr:d) never fails { pass (raw d.peek()); };
+func:callitp = int32(CHold->:d) never fails { pass (raw d.peek()); };
+func:callitg<T: Tr> = int32(T->:d) never fails { pass (raw Tr.peek(d)); };
+struct:HW = { CHold:h; int32:k; };
+enum:EH = { A(CHold); B; };
+func:mkx = CHold() never fails { buffer:b = buffer_new(16i64); b[0i64] = 42u8; pass CHold{ b: move(b) }; };
+func:work = int32() {
+    HW:s = HW{ h: raw mkx(), k: 1i32 };
+    HW->:p = @s;
+    int32:r = raw callitp(@p.h);
+    pass r;
+};
+func:main = int32(cstring[]:_~argv) {
+    int32:r = work() ?! E9;
+    exit r;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 96i32; },
+        (MachineFault)   { exit 97i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 94i32; },
+        (OutOfBounds)    { exit 93i32; },
+        (E9)             { exit 9i32; },
+        (LimitViolated)  { exit 87i32; },
+        (DecreasesViolated) { exit 86i32; },
+        (IntOverflow)    { exit 89i32; },
+        (DeadlineExceeded) { exit 88i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};

@@ -1,0 +1,140 @@
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 70:28
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 74:37
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 79:30
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 83:30
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 87:57
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 91:37
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 95:30
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 99:39
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 104:32
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 108:21
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 112:21
+mod:dyn_place_tmp_part;
+error:E9;
+
+// D-370 AT A PART OF A TEMPORARY (`NITPICK-TYPE-116`; rulings l.21111 as corrected at l.21131, seat F4). `(raw mkw()).h` reads a field
+// out of a value no binding holds: the coercion copied the part into the `dyn`'s cell, and the temporary dropped whole at the
+// statement's end with the part in it (95 on main, AF3's `p_tmp_part`, `zv_tmp_part_w`, `zq_trait_qual_tmp_part`). Refused read-only or
+// not: an emitter that moved the part out would be the hidden transfer D-370 rejects. Sites: a call's result, read-only, what a call's
+// pointer points at, the value of `?!`, a ternary of temporaries, an awaited result, `relay`'s, a variadic element, a trait-qualified
+// call, a receiver, a receiver of the type's own `dyn Tr:self` method. The roads compile: a whole temporary is a transfer, one owner.
+trait:Tr = { func:peek = int32(Self:self) never fails; func:op = NIL(Self->:self) never fails; };
+struct:DHold = { buffer:b; };
+impl:DHold:Tr = {
+    func:peek = int32(DHold:self) never fails { pass (self.b[0i64] => int32); };
+    func:op = NIL(DHold->:self) never fails {
+        buffer:nb = buffer_new(16i64);
+        nb[0i64] = 7u8;
+        self.b = move(nb);
+        pass NIL;
+    };
+};
+func:callit = NIL(dyn Tr:d) never fails {
+    drop d.op();
+    pass NIL;
+};
+func:peekit = int32(dyn Tr:d) never fails {
+    pass (raw d.peek());
+};
+func:yes = bool() never fails { pass true; };
+func:mkh = DHold() never fails {
+    buffer:bb = buffer_new(4096i64);
+    bb[0i64] = 6u8;
+    pass DHold{ b: move(bb) };
+};
+struct:W = { DHold:h; int32:k; };
+func:mkw = W() never fails {
+    pass W{ h: raw mkh(), k: 1i32 };
+};
+func:vcallw = int32(int32:k, ..*(dyn Tr)[]:ds) { drop ds[0i64].op(); pass k; };
+trait:Tk = { func:put = NIL(Self:self, dyn Tr:d) never fails; };
+struct:Pd = { int32:n; };
+impl:Pd:Tk = { func:put = NIL(Pd:self, dyn Tr:d) never fails { drop d.op(); pass NIL; }; };
+func:idw = W->(W->:p) never fails { pass p; };
+func:mkr = W() { pass raw mkw(); };
+func:mkr2 = DHold() { pass raw mkh(); };
+async func:amkw = W() { pass raw mkw(); };
+impl:DHold = { func:go = NIL(dyn Tr:self) never fails { drop self.op(); pass NIL; }; };
+func:t_call = int32() never fails {
+    drop callit((raw mkw()).h);   // site NITPICK-TYPE-116
+    pass 1i32;
+};
+func:t_read = int32() never fails {
+    int32:a = raw peekit((raw mkw()).h);   // site NITPICK-TYPE-116
+    pass a;
+};
+func:t_callptr = int32() never fails {
+    W:w = raw mkw();
+    drop callit((raw idw(@w)).h);   // site NITPICK-TYPE-116
+    pass (w.h.b[0i64] => int32);
+};
+func:t_unwrap = int32() {
+    drop callit((mkr() ?! E9).h);   // site NITPICK-TYPE-116
+    pass 1i32;
+};
+func:t_ternary = int32() never fails {
+    drop callit((is (raw yes()) : raw mkw() : raw mkw()).h);   // site NITPICK-TYPE-116
+    pass 1i32;
+};
+async func:t_await = int32() {
+    drop callit((await amkw() ?! E9).h);   // site NITPICK-TYPE-116
+    pass 1i32;
+};
+func:t_relay = int32() {
+    drop callit((relay mkr()).h);   // site NITPICK-TYPE-116
+    pass 1i32;
+};
+func:t_variadic = int32() {
+    int32:z = vcallw(1i32, (raw mkw()).h) ?! E9;   // site NITPICK-TYPE-116
+    pass z;
+};
+func:t_qualified = int32() never fails {
+    Pd:pd = Pd{ n: 1i32 };
+    drop Tk.put(pd, (raw mkw()).h);   // site NITPICK-TYPE-116
+    pass 1i32;
+};
+func:t_receiver = int32() never fails {
+    drop (raw mkw()).h.callit();   // site NITPICK-TYPE-116
+    pass 1i32;
+};
+func:t_inherent = int32() never fails {
+    drop (raw mkw()).h.go();   // site NITPICK-TYPE-116
+    pass 1i32;
+};
+func:roads = int32() {
+    drop callit(raw mkh());
+    drop callit(is (raw yes()) : raw mkh() : raw mkh());
+    drop callit(mkr2() ?! E9);
+    pass 0i32;
+};
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 96i32; },
+        (MachineFault)   { exit 97i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 94i32; },
+        (OutOfBounds)    { exit 93i32; },
+        (IntOverflow)    { exit 90i32; },
+        (DeadlineExceeded) { exit 89i32; },
+        (E9)             { exit 9i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};

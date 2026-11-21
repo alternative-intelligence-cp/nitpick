@@ -1,0 +1,131 @@
+// expect-exit: 0
+// 2026-11-21 (landing 177d2e, row 11: DEF-720's row B, form RR6a = RR6s with ARM1; rulings l.22431, l.23411, l.23500, l.23643). A PLACE UNDER THE
+// DEREFERENCE OF AN INLINE POINTER EXPRESSION -- a call's result, a ternary, a `??`/`?|` (whose default it may yield), or an unwrap over one -- IS
+// ROOTED WHERE THAT EXPRESSION MAY POINT, for a view or an element's address (P3-6's narrowing); before its kind test, an unwrap (`??!`, `?!`) is
+// peeled down to a `??`/`?|` and both of that node's sides are collected (ARM1). THE WAYS OUT (l.22431 item 2, l.23128 item 5, l.23798 item 4):
+// DEF-732's four pointer-local twins and the ways out of `ap3_rp_c`, `_d` and `_t`, each in an inner block. Each case runs 67 on main and here on
+// every road 0-8 at -O0 and -O2 and under the detector; `main` exits with the first case that doesn't.
+mod:inline_deref_wayout_ok;
+error:E5;
+// DEF-732'S WAY OUT, ITS POINTER-LOCAL TWIN (off parity, l.22431 item 2): exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99) and here. From the cell `Team/TMP/plan-177d2e-p3-2026-11-20/cells/p3new/p3_disj_loc_ok.npk`.
+func:mk_p3_disj_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_p3_disj_loc_ok = { List<int64>:l; int64:z; };
+func:idl_p3_disj_loc_ok = L_p3_disj_loc_ok->(L_p3_disj_loc_ok->:p) never fails { pass p; };
+func:ido_p3_disj_loc_ok = L_p3_disj_loc_ok->?(L_p3_disj_loc_ok->?:p) never fails { pass p; };
+func:f_p3_disj_loc_ok = int64(int64:n) never fails {
+    L_p3_disj_loc_ok:lo = L_p3_disj_loc_ok{ l: raw mk_p3_disj_loc_ok(), z: 1i64 };
+    L_p3_disj_loc_ok->:cp = raw idl_p3_disj_loc_ok(@lo); int64->:e = @((<-cp).l[0i64]);
+    lo.z = 5i64;
+    pass (<-e) + 6i64;
+};
+func:cell_main_p3_disj_loc_ok = int32() never fails { pass (((raw f_p3_disj_loc_ok(1i64)) + 60i64) =>! int32); };
+// DEF-732'S WAY OUT, ITS POINTER-LOCAL TWIN (off parity, l.22431 item 2): exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99) and here. From the cell `Team/TMP/plan-177d2e-p3-2026-11-20/cells/p3new2/p3_parm_loc_ok.npk`.
+func:mk_p3_parm_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_p3_parm_loc_ok = { List<int64>:l; int64:z; };
+func:idl_p3_parm_loc_ok = L_p3_parm_loc_ok->(L_p3_parm_loc_ok->:p) never fails { pass p; };
+struct:L2_p3_parm_loc_ok = { L_p3_parm_loc_ok:inr; int64:z; };
+func:g_p3_parm_loc_ok = int64(L_p3_parm_loc_ok->:p) never fails {
+    L_p3_parm_loc_ok->:cp = raw idl_p3_parm_loc_ok(p); int64->:e = @((<-cp).l[0i64]);
+    p.z = 3i64;
+    pass (<-e) + 6i64;
+};
+func:f_p3_parm_loc_ok = int64(int64:n) never fails {
+    L_p3_parm_loc_ok:lo = L_p3_parm_loc_ok{ l: raw mk_p3_parm_loc_ok(), z: 1i64 };
+    pass raw g_p3_parm_loc_ok(@lo);
+};
+func:cell_main_p3_parm_loc_ok = int32() never fails { pass (((raw f_p3_parm_loc_ok(1i64)) + 60i64) =>! int32); };
+// DEF-732'S WAY OUT, ITS POINTER-LOCAL TWIN (off parity, l.22431 item 2): exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99) and here. From the cell `Team/TMP/plan-177d2e-p3-2026-11-20/cells/p3new3/p3_dflt_par_loc_ok.npk`.
+func:mk_p3_dflt_par_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_p3_dflt_par_loc_ok = { List<int64>:l; int64:z; };
+func:idl_p3_dflt_par_loc_ok = L_p3_dflt_par_loc_ok->(L_p3_dflt_par_loc_ok->:p) never fails { pass p; };
+struct:L2_p3_dflt_par_loc_ok = { L_p3_dflt_par_loc_ok:inr; int64:z; };
+func:g_p3_dflt_par_loc_ok = int64(L_p3_dflt_par_loc_ok->?:p) never fails {
+    L_p3_dflt_par_loc_ok:lo2 = L_p3_dflt_par_loc_ok{ l: raw mk_p3_dflt_par_loc_ok(), z: 2i64 };
+    L_p3_dflt_par_loc_ok->:dp = p ?? @lo2; int64->:e = @((<-dp).l[0i64]);
+    lo2.z = 3i64;
+    pass (<-e) + 6i64;
+};
+func:f_p3_dflt_par_loc_ok = int64(int64:n) never fails {
+    L_p3_dflt_par_loc_ok->?:oq = NIL;
+    pass raw g_p3_dflt_par_loc_ok(oq);
+};
+func:cell_main_p3_dflt_par_loc_ok = int32() never fails { pass (((raw f_p3_dflt_par_loc_ok(1i64)) + 60i64) =>! int32); };
+// DEF-732'S WAY OUT, ITS POINTER-LOCAL TWIN (off parity, l.22431 item 2): exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99) and here. From the cell `Team/TMP/plan-177d2e-p3-2026-11-20/cells/p3new3/p3_dflt_sub_loc_ok.npk`.
+func:mk_p3_dflt_sub_loc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_p3_dflt_sub_loc_ok = { List<int64>:l; int64:z; };
+func:idl_p3_dflt_sub_loc_ok = L_p3_dflt_sub_loc_ok->(L_p3_dflt_sub_loc_ok->:p) never fails { pass p; };
+struct:L2_p3_dflt_sub_loc_ok = { L_p3_dflt_sub_loc_ok:inr; int64:z; };
+func:f_p3_dflt_sub_loc_ok = int64(int64:n) never fails {
+    L2_p3_dflt_sub_loc_ok:lo2 = L2_p3_dflt_sub_loc_ok{ inr: L_p3_dflt_sub_loc_ok{ l: raw mk_p3_dflt_sub_loc_ok(), z: 2i64 }, z: 2i64 };
+    L_p3_dflt_sub_loc_ok->?:oq = NIL;
+    L_p3_dflt_sub_loc_ok->:dp = oq ?? @lo2.inr; int64->:e = @((<-dp).l[0i64]);
+    lo2.z = 3i64;
+    pass (<-e) + 6i64;
+};
+func:cell_main_p3_dflt_sub_loc_ok = int32() never fails { pass (((raw f_p3_dflt_sub_loc_ok(1i64)) + 60i64) =>! int32); };
+// `ap3_rp_c`'S WAY OUT, in an inner block (l.23128 item 5, l.23798 item 4): exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector
+// on main (226ebb99) and here. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/ap3_rp_c_wo.npk`.
+func:mk_ap3_rp_c_wo = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rp_c_wo = { List<int64>:l; int64:z; };
+func:idl_ap3_rp_c_wo = L_ap3_rp_c_wo->(L_ap3_rp_c_wo->:p) never fails { pass p; };
+func:ido_ap3_rp_c_wo = L_ap3_rp_c_wo->?(L_ap3_rp_c_wo->?:p) never fails { pass p; };
+func:growl_ap3_rp_c_wo = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_rp_c_wo = int64(int64:n) never fails {
+    L_ap3_rp_c_wo:lo = L_ap3_rp_c_wo{ l: raw mk_ap3_rp_c_wo(), z: 1i64 }; L_ap3_rp_c_wo:lo2 = L_ap3_rp_c_wo{ l: raw mk_ap3_rp_c_wo(), z: 2i64 }; int64:acc = 0i64; if (n > 0i64) { int64->:e = @((<-(raw idl_ap3_rp_c_wo(@lo))).l[0i64]); acc = <-e; } loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass acc + 6i64;
+};
+func:cell_main_ap3_rp_c_wo = int32() never fails { pass (((raw f_ap3_rp_c_wo(1i64)) + 60i64) =>! int32); };
+// `ap3_rp_d`'S WAY OUT, in an inner block (l.23128 item 5, l.23798 item 4): exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector
+// on main (226ebb99) and here. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/ap3_rp_d_wo.npk`.
+func:mk_ap3_rp_d_wo = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rp_d_wo = { List<int64>:l; int64:z; };
+func:idl_ap3_rp_d_wo = L_ap3_rp_d_wo->(L_ap3_rp_d_wo->:p) never fails { pass p; };
+func:ido_ap3_rp_d_wo = L_ap3_rp_d_wo->?(L_ap3_rp_d_wo->?:p) never fails { pass p; };
+func:growl_ap3_rp_d_wo = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_rp_d_wo = int64(int64:n) never fails {
+    L_ap3_rp_d_wo:lo = L_ap3_rp_d_wo{ l: raw mk_ap3_rp_d_wo(), z: 1i64 }; L_ap3_rp_d_wo:lo2 = L_ap3_rp_d_wo{ l: raw mk_ap3_rp_d_wo(), z: 2i64 }; L_ap3_rp_d_wo->?:oq = NIL; int64:acc = 0i64; if (n > 0i64) { int64->:e = @((<-(oq ?? @lo)).l[0i64]); acc = <-e; } loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass acc + 6i64;
+};
+func:cell_main_ap3_rp_d_wo = int32() never fails { pass (((raw f_ap3_rp_d_wo(1i64)) + 60i64) =>! int32); };
+// `ap3_rp_t`'S WAY OUT, in an inner block (l.23128 item 5, l.23798 item 4): exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector
+// on main (226ebb99) and here. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/ap3_rp_t_wo.npk`.
+func:mk_ap3_rp_t_wo = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rp_t_wo = { List<int64>:l; int64:z; };
+func:idl_ap3_rp_t_wo = L_ap3_rp_t_wo->(L_ap3_rp_t_wo->:p) never fails { pass p; };
+func:ido_ap3_rp_t_wo = L_ap3_rp_t_wo->?(L_ap3_rp_t_wo->?:p) never fails { pass p; };
+func:growl_ap3_rp_t_wo = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_rp_t_wo = int64(int64:n) never fails {
+    L_ap3_rp_t_wo:lo = L_ap3_rp_t_wo{ l: raw mk_ap3_rp_t_wo(), z: 1i64 }; L_ap3_rp_t_wo:lo2 = L_ap3_rp_t_wo{ l: raw mk_ap3_rp_t_wo(), z: 2i64 }; int64:acc = 0i64; if (n > 0i64) { int64->:e = @((<-(is (n > 0i64) : @lo : @lo2)).l[0i64]); acc = <-e; } loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass acc + 6i64;
+};
+func:cell_main_ap3_rp_t_wo = int32() never fails { pass (((raw f_ap3_rp_t_wo(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) {
+    if ((raw cell_main_p3_disj_loc_ok()) != 67i32) { exit 11i32; }
+    if ((raw cell_main_p3_parm_loc_ok()) != 67i32) { exit 12i32; }
+    if ((raw cell_main_p3_dflt_par_loc_ok()) != 67i32) { exit 13i32; }
+    if ((raw cell_main_p3_dflt_sub_loc_ok()) != 67i32) { exit 14i32; }
+    if ((raw cell_main_ap3_rp_c_wo()) != 67i32) { exit 15i32; }
+    if ((raw cell_main_ap3_rp_d_wo()) != 67i32) { exit 16i32; }
+    if ((raw cell_main_ap3_rp_t_wo()) != 67i32) { exit 17i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

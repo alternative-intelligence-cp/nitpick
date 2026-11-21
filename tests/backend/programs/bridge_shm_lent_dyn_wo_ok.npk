@@ -1,0 +1,50 @@
+// expect-exit: 67
+// 2026-11-21 (landing 177d2e, row 12: DEF-719, form LBSG, `lib/nbridge.npk` alone; rulings l.23291, l.23619). `Shm`'s descriptor is hidden, `Shm`
+// is move-only by its marker, `shm_unmap` takes `move Shm` and closes the descriptor after the unmap, and `shm_seal_holds` is the public seal query
+// (D-149's note). The cell by its bytes, its `use` re-pointed from the attack's tree to this one. THE WAY OUT of
+// tests/types/rejection/bridge_shm_lent_dyn.npk (l.23619 ruled item 2): take a pointer (`Shm->`, or `<T: Tr>` with `T->`) and pass `@s`. 67 with
+// this row's library on main's compiler and on the stack, every road 0-8 at -O0 and -O2 and under the detector (AFB's runs). From seat AFB's cell
+// `Team/TMP/atk-177d2e-afb-2026-11-21/cells/lbsg/afb_l_dyn_wo.npk`.
+mod:bridge_shm_lent_dyn_wo_ok;
+use "../../../lib/nbridge.npk".*;
+error:E9;
+trait:Tr = { func:bp = int64(Self:self) never fails; };
+impl:Shm:Tr = { func:bp = int64(Shm:self) never fails { pass self.size; }; };
+func:callit<T: Tr> = int64(T->:p) never fails { pass (raw Tr.bp(<-p)); };
+func:main = int32(cstring[]:argv) {
+    Shm:s = shm_create_sealed(4096i64) ?! E9;
+    int64:z = raw callit(@s);
+    if (z != 4096i64) { exit 33i32; }
+    shm_unmap(move(s)) ?! E9;
+    exit 67i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (BadPath)          { exit 92i32; },
+        (EDriverSpawn)     { exit 93i32; },
+        (EDriverFault)     { exit 94i32; },
+        (EDriverProtocol)  { exit 95i32; },
+        (EDriverDeadline)  { exit 96i32; },
+        (EDriverError)     { exit 84i32; },
+        (ERingFull)        { exit 85i32; },
+        (EBridgePoisoned)  { exit 83i32; },
+        (EShmCreate)       { exit 97i32; },
+        (EShmSeal)         { exit 97i32; },
+        (EShmMap)          { exit 97i32; },
+        (DeadlineExceeded) { exit 98i32; },
+        (DriverLeak)       { exit 89i32; },
+        (IntOverflow)      { exit 75i32; },
+        (OutOfBounds)      { exit 76i32; },
+        (MachineFault)     { exit 77i32; },
+        (WildLeak)         { exit 88i32; },
+        (Unreachable)      { exit 87i32; },
+        (HeapOom)          { exit 87i32; },
+        (HeapBadRequest)   { exit 87i32; },
+        (StackExhausted)   { exit 78i32; },
+        (DecreasesViolated) { exit 79i32; },
+        (StaleHandle)      { exit 86i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 90i32;
+};

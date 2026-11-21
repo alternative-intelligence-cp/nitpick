@@ -1,0 +1,89 @@
+// expect-exit: 42
+mod:dyn_place_transfer_ok;
+error:E9;
+
+// WHAT D-370 KEEPS, WITH THE DROPS RUN (seat F4; rulings l.21131 item 2, l.21256 item 2). A whole temporary, a `move`, and a cast of
+// either is a transfer into the `dyn`'s cell, one owner after it: as an argument (`p_tmp_whole`, `q_live_cast_tmp`, `q_live_cast_mv`),
+// as a method call's receiver, through a `dyn Tr:self` method of the type's own `impl`, into a variadic tail; `move(w.h)` moves a field
+// itself (S-26). `work` returns, so every drop runs; each road adds its share of 42 only when the method ran on the cell and the caller
+// still reads what it owns.
+trait:Tr = { func:peek = int32(Self:self) never fails; func:op = NIL(Self->:self) never fails; };
+struct:DHold = { buffer:b; };
+impl:DHold:Tr = {
+    func:peek = int32(DHold:self) never fails { pass (self.b[0i64] => int32); };
+    func:op = NIL(DHold->:self) never fails {
+        buffer:nb = buffer_new(16i64);
+        nb[0i64] = 7u8;
+        self.b = move(nb);
+        pass NIL;
+    };
+};
+func:callit = NIL(dyn Tr:d) never fails {
+    drop d.op();
+    pass NIL;
+};
+func:peekit = int32(dyn Tr:d) never fails {
+    pass (raw d.peek());
+};
+func:yes = bool() never fails { pass true; };
+func:mkh = DHold() never fails {
+    buffer:bb = buffer_new(4096i64);
+    bb[0i64] = 6u8;
+    pass DHold{ b: move(bb) };
+};
+struct:W = { DHold:h; int32:k; };
+func:mkw = W() never fails {
+    pass W{ h: raw mkh(), k: 1i32 };
+};
+func:vcallw = int32(int32:k, ..*(dyn Tr)[]:ds) { drop ds[0i64].op(); pass k; };
+trait:Tk = { func:put = NIL(Self:self, dyn Tr:d) never fails; };
+struct:Pd = { int32:n; };
+impl:Pd:Tk = { func:put = NIL(Pd:self, dyn Tr:d) never fails { drop d.op(); pass NIL; }; };
+impl:DHold = { func:go = int32(dyn Tr:self) never fails { drop self.op(); pass (raw self.peek()); }; };
+func:callr = int32(dyn Tr:d) never fails { drop d.op(); pass (raw d.peek()); };
+func:is7 = int32(int32:v, int32:share) never fails {
+    if (v == 7i32) { pass share; }
+    pass 0i32;
+};
+func:work = int32() {
+    int32:t = 0i32;
+    t = t + raw is7(raw callr(raw mkh()), 5i32);
+    DHold:h1 = raw mkh();
+    t = t + raw is7(raw callr(move(h1)), 5i32);
+    t = t + raw is7(raw callr((raw mkh()) => DHold), 5i32);
+    DHold:h2 = raw mkh();
+    t = t + raw is7(raw callr(move(h2) => DHold), 5i32);
+    t = t + raw is7(raw (raw mkh()).callr(), 5i32);
+    DHold:h3 = raw mkh();
+    t = t + raw is7(raw (move(h3)).callr(), 5i32);
+    DHold:h4 = raw mkh();
+    t = t + raw is7(raw (move(h4)).go(), 4i32);
+    W:w = raw mkw();
+    t = t + raw is7(raw callr(move(w.h)), 4i32);
+    int32:z = vcallw(4i32, raw mkh()) ?! E9;
+    t = t + z;
+    DHold:keep = raw mkh();
+    t = t + ((keep.b[0i64] => int32) - 6i32);
+    pass t;
+};
+func:main = int32(cstring[]:_~argv) {
+    int32:r = work() ?! E9;
+    exit r;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 96i32; },
+        (MachineFault)   { exit 97i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 94i32; },
+        (OutOfBounds)    { exit 93i32; },
+        (IntOverflow)    { exit 90i32; },
+        (DeadlineExceeded) { exit 89i32; },
+        (E9)             { exit 9i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};

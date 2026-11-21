@@ -1,0 +1,61 @@
+// expect-exit: 83
+// 2026-11-21 (landing 177d2e, row 3: DEF-716's `sf` and `cs` shapes, form T716u; rulings l.22111, l.22814). THE WRITTEN-PATH CHECK WALKS THE HOP
+// GRAPH ONLY WHERE A PATH IS SUSPECT, AND A WRAPPED POINTER IS A POINTER THERE: alias.npk's pre-filter (`hop_suspects`, `hop_walk`, `hop_mark`)
+// marks the written paths that `check_hop_written_s` may report on, and `hop_mark`'s pointer test asks `type_unwrapped`, so an `Optional` or
+// `Result` pointer (DEF-671's wrapped pointer) marks as a bare one does. A getter through a method on the unwrapped receiver (`pass raw (o ??!
+// E5).sv();`), 7 pointer hops from the caller to the target, a field of a local; the view `vw` is taken through `LF->?:q = @fB` and the write
+// through `@h7` runs before its read. RIGHT PROGRAM, the twin with the view taken after the write: exit 83 on main (226ebb99) and here on every
+// road 0-8, -O0 and -O2, and under the detector, one `.ll`. From seat M716's release hunt (l.22111),
+// `.internal/m716-2026-11-20/cells/m716w/gmd/gm_d7_fld_ok.npk`.
+mod:hop_wrapped_gm_d7_fld_ok;
+error:E5;
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mks = string() never fails { pass string_concat("a", "b"); };
+struct:LF = { List<int64>:own; string:s; int64:z; };
+struct:OB = { int64:k; LF:lf; };
+struct:H1 = { LF->:p; int64:z; };
+struct:H2 = { H1->:p; int64:z; };
+struct:H3 = { H2->:p; int64:z; };
+struct:H4 = { H3->:p; int64:z; };
+struct:H5 = { H4->:p; int64:z; };
+struct:H6 = { H5->:p; int64:z; };
+struct:H7 = { H6->:p; int64:z; };
+func:ws = int64(H7->:o) never fails { (<-((<-((<-((<-((<-((<-((<-((<-(o)).p)).p)).p)).p)).p)).p)).p)).s = string_concat("q", "r"); pass 7i64; };
+impl:LF = { func:sv = fixed uint8[](LF->:self) never fails { pass string_bytes((<-self).s); }; };
+func:getv = fixed uint8[](LF->?:o) never fails { pass raw (o ??! E5).sv(); };
+func:f = int64(int64:n) never fails {
+    LF:fA = LF{ own: raw mk(), s: raw mks(), z: 1i64 };
+    OB:ob = OB{ k: 1i64, lf: LF{ own: raw mk(), s: raw mks(), z: 1i64 } };
+    H1:h1 = H1{ p: @fA, z: 1i64 };
+    h1.p = @(ob.lf);
+    H2:h2 = H2{ p: @h1, z: 1i64 };
+    H3:h3 = H3{ p: @h2, z: 1i64 };
+    H4:h4 = H4{ p: @h3, z: 1i64 };
+    H5:h5 = H5{ p: @h4, z: 1i64 };
+    H6:h6 = H6{ p: @h5, z: 1i64 };
+    H7:h7 = H7{ p: @h6, z: 1i64 };
+    LF->?:q = @(ob.lf);
+    discard(raw ws(@h7));
+    fixed uint8[]:vw = raw getv(q);
+    pass (vw[0i64] => int64) - 30i64;
+};
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) => int64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

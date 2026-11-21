@@ -1,0 +1,147 @@
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 67:25
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 72:26
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 77:34
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 82:33
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 87:27
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 93:29
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 98:32
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 103:36
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 109:29
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 114:18
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 119:34
+mod:dyn_place_cast_chain;
+error:E9;
+
+// D-370 THROUGH A CAST AT ANY DEPTH OF A PLACE'S CHAIN (`NITPICK-TYPE-116`; rulings l.21111, l.21131, seat F4). `(w => W).h` is `w.h`
+// read through an identity cast: the place is still `w.h`, and the coercion copied it into the `dyn`'s cell (97 on main, AF3's
+// `p_cast_chain`, `q_ucast_chain`, `q_cast_elem_chain`). F3 peeled casts at the top only, and `place_root` stops at a cast below a
+// field; `dyn_arg_source` steps a cast at every level. Sites: a checked and an unchecked cast below a field, a cast below an element,
+// two casts, a cast in the middle of the chain, a cast over a dereference, casts over a field, a variadic element, a trait-qualified
+// call, a receiver, a read-only callee. The roads compile: a cast of a whole temporary and of a `move`.
+trait:Tr = { func:peek = int32(Self:self) never fails; func:op = NIL(Self->:self) never fails; };
+struct:DHold = { buffer:b; };
+impl:DHold:Tr = {
+    func:peek = int32(DHold:self) never fails { pass (self.b[0i64] => int32); };
+    func:op = NIL(DHold->:self) never fails {
+        buffer:nb = buffer_new(16i64);
+        nb[0i64] = 7u8;
+        self.b = move(nb);
+        pass NIL;
+    };
+};
+func:callit = NIL(dyn Tr:d) never fails {
+    drop d.op();
+    pass NIL;
+};
+func:peekit = int32(dyn Tr:d) never fails {
+    pass (raw d.peek());
+};
+func:yes = bool() never fails { pass true; };
+func:mkh = DHold() never fails {
+    buffer:bb = buffer_new(4096i64);
+    bb[0i64] = 6u8;
+    pass DHold{ b: move(bb) };
+};
+struct:W = { DHold:h; int32:k; };
+func:mkw = W() never fails {
+    pass W{ h: raw mkh(), k: 1i32 };
+};
+func:vcallw = int32(int32:k, ..*(dyn Tr)[]:ds) { drop ds[0i64].op(); pass k; };
+trait:Tk = { func:put = NIL(Self:self, dyn Tr:d) never fails; };
+struct:Pd = { int32:n; };
+impl:Pd:Tk = { func:put = NIL(Pd:self, dyn Tr:d) never fails { drop d.op(); pass NIL; }; };
+struct:W2 = { W:w; int32:j; };
+func:c_cast = int32() never fails {
+    W:w = raw mkw();
+    drop callit((w => W).h);   // site NITPICK-TYPE-116
+    pass (w.h.b[0i64] => int32);
+};
+func:c_ucast = int32() never fails {
+    W:w = raw mkw();
+    drop callit((w =>! W).h);   // site NITPICK-TYPE-116
+    pass (w.h.b[0i64] => int32);
+};
+func:c_elem = int32() never fails {
+    DHold[2]:arr = [ raw mkh(), raw mkh() ];
+    drop callit((arr => DHold[2])[0i64]);   // site NITPICK-TYPE-116
+    pass (arr[0i64].b[0i64] => int32);
+};
+func:c_two = int32() never fails {
+    W:w = raw mkw();
+    drop callit(((w => W) =>! W).h);   // site NITPICK-TYPE-116
+    pass (w.h.b[0i64] => int32);
+};
+func:c_mid = int32() never fails {
+    W2:x = W2{ w: raw mkw(), j: 1i32 };
+    drop callit((x.w => W).h);   // site NITPICK-TYPE-116
+    pass (x.w.h.b[0i64] => int32);
+};
+func:c_deref = int32() never fails {
+    W:w = raw mkw();
+    W->:p = @w;
+    drop callit(((<-p) => W).h);   // site NITPICK-TYPE-116
+    pass (w.h.b[0i64] => int32);
+};
+func:c_leaf = int32() never fails {
+    W:w = raw mkw();
+    drop callit((w.h => DHold) => DHold);   // site NITPICK-TYPE-116
+    pass (w.h.b[0i64] => int32);
+};
+func:c_variadic = int32() {
+    W:w = raw mkw();
+    int32:z = vcallw(1i32, (w => W).h) ?! E9;   // site NITPICK-TYPE-116
+    pass (w.h.b[0i64] => int32);
+};
+func:c_qualified = int32() never fails {
+    W:w = raw mkw();
+    Pd:pd = Pd{ n: 1i32 };
+    drop Tk.put(pd, (w => W).h);   // site NITPICK-TYPE-116
+    pass (w.h.b[0i64] => int32);
+};
+func:c_receiver = int32() never fails {
+    W:w = raw mkw();
+    drop (w => W).h.callit();   // site NITPICK-TYPE-116
+    pass (w.h.b[0i64] => int32);
+};
+func:c_read = int32() never fails {
+    W:w = raw mkw();
+    int32:a = raw peekit((w => W).h);   // site NITPICK-TYPE-116
+    pass a;
+};
+func:roads = int32() never fails {
+    DHold:h = raw mkh();
+    drop callit(move(h) => DHold);
+    drop callit((raw mkh()) => DHold);
+    pass 0i32;
+};
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 96i32; },
+        (MachineFault)   { exit 97i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 94i32; },
+        (OutOfBounds)    { exit 93i32; },
+        (IntOverflow)    { exit 90i32; },
+        (DeadlineExceeded) { exit 89i32; },
+        (E9)             { exit 9i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};

@@ -1,0 +1,92 @@
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 50:26
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 55:35
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 60:19
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 65:37
+mod:dyn_place_move_part;
+error:E9;
+
+// D-370 AT A PART OF A `move` (`NITPICK-TYPE-116`; rulings l.21131 item 1, seat F4). `(move(w)).h` reads a field out of the moved
+// value, which no binding holds and which drops whole at the statement's end with the part in it, under the `dyn`'s cell (95 on main,
+// AF3's `q_move_part`, `q_move_part_ro`). Sites: an argument, read-only, a receiver, a variadic element. The road compiles: `move(w.h)`
+// moves the field itself, leaving `w`'s vacant value (S-26).
+trait:Tr = { func:peek = int32(Self:self) never fails; func:op = NIL(Self->:self) never fails; };
+struct:DHold = { buffer:b; };
+impl:DHold:Tr = {
+    func:peek = int32(DHold:self) never fails { pass (self.b[0i64] => int32); };
+    func:op = NIL(DHold->:self) never fails {
+        buffer:nb = buffer_new(16i64);
+        nb[0i64] = 7u8;
+        self.b = move(nb);
+        pass NIL;
+    };
+};
+func:callit = NIL(dyn Tr:d) never fails {
+    drop d.op();
+    pass NIL;
+};
+func:peekit = int32(dyn Tr:d) never fails {
+    pass (raw d.peek());
+};
+func:yes = bool() never fails { pass true; };
+func:mkh = DHold() never fails {
+    buffer:bb = buffer_new(4096i64);
+    bb[0i64] = 6u8;
+    pass DHold{ b: move(bb) };
+};
+struct:W = { DHold:h; int32:k; };
+func:mkw = W() never fails {
+    pass W{ h: raw mkh(), k: 1i32 };
+};
+func:vcallw = int32(int32:k, ..*(dyn Tr)[]:ds) { drop ds[0i64].op(); pass k; };
+trait:Tk = { func:put = NIL(Self:self, dyn Tr:d) never fails; };
+struct:Pd = { int32:n; };
+impl:Pd:Tk = { func:put = NIL(Pd:self, dyn Tr:d) never fails { drop d.op(); pass NIL; }; };
+func:m_arg = int32() never fails {
+    W:w = raw mkw();
+    drop callit((move(w)).h);   // site NITPICK-TYPE-116
+    pass 1i32;
+};
+func:m_read = int32() never fails {
+    W:w = raw mkw();
+    int32:a = raw peekit((move(w)).h);   // site NITPICK-TYPE-116
+    pass a;
+};
+func:m_receiver = int32() never fails {
+    W:w = raw mkw();
+    drop (move(w)).h.callit();   // site NITPICK-TYPE-116
+    pass 1i32;
+};
+func:m_variadic = int32() {
+    W:w = raw mkw();
+    int32:z = vcallw(1i32, (move(w)).h) ?! E9;   // site NITPICK-TYPE-116
+    pass z;
+};
+func:roads = int32() never fails {
+    W:w = raw mkw();
+    drop callit(move(w.h));
+    pass 0i32;
+};
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 96i32; },
+        (MachineFault)   { exit 97i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 94i32; },
+        (OutOfBounds)    { exit 93i32; },
+        (IntOverflow)    { exit 90i32; },
+        (DeadlineExceeded) { exit 89i32; },
+        (E9)             { exit 9i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};

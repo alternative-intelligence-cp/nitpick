@@ -1,0 +1,328 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 63:146
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 77:131
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 91:171
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 105:191
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 119:172
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 134:156
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 148:175
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 162:171
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 178:156
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 191:148
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 206:242
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 219:258
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 232:242
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 232:293
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 246:297
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 258:366
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 271:322
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 283:299
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 294:264
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 306:291
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 306:297
+// 2026-11-21 (landing 177d2e, row 10: DEF-720 with DEF-644's rest, DEF-691 and DEF-694's lift, form RRs; rulings l.23411, l.23500, l.23643). AN
+// UNWRAP OF A POINTER IS READ TWO WAYS, BOTH KEPT: the alias pass walks a function as main does, an unwrap no step and the place under it its root
+// whole, and when that walk met an unwrap of a pointer it walks the function again with every unwrap a step to its operand (the longer path, which
+// re-roots through the pointer), one report per site; escape roots a view through a local's or a field's unwrap too, and an unwrap whose value is
+// itself a wrapped pointer steps as well. DEF-738'S PRICES (LOW, numbered at l.23500 item 5): the longer path roots a view through a wrapped
+// local's own unwrap at that local, so a later reassignment of the local is refused. Every case runs 67 on main on every road 0-8 at -O0 and -O2
+// and under the detector. Off parity where the local isn't this frame's `@` (the pointer twins run 67 here:
+// tests/backend/programs/unwrap_reading_wayout_ok.npk, with the ways out); at parity where it is (the by-name twins, last here, are refused on
+// main). Main already reads a wrapped PARAMETER this way (`ap3u_oqpp_ok`, R4-10's); this row extends it to locals.
+mod:unwrap_reading_def738_prices;
+error:E5;
+// DEF-738'S PRICE (LOW, l.23500 item 5): the longer path roots a view through a wrapped local's own unwrap at that local, so a later reassignment
+// of the local is refused; OFF PARITY (the local is not this frame's `@`): its pointer twin runs 67 on main and here, a way out in
+// tests/backend/programs/unwrap_reading_wayout_ok.npk: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99); refused here, BORROW-015 at 8:98. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_oqp_ok.npk`.
+func:mk_ap3u_oqp_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqp_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqp_ok = L_ap3u_oqp_ok->(L_ap3u_oqp_ok->:p) never fails { pass p; };
+func:ido_ap3u_oqp_ok = L_ap3u_oqp_ok->?(L_ap3u_oqp_ok->?:p) never fails { pass p; };
+func:growl_ap3u_oqp_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:g_ap3u_oqp_ok = int64(L_ap3u_oqp_ok->?:o, L_ap3u_oqp_ok->?:o2) never fails { L_ap3u_oqp_ok->?:q = o; int64->:e = @((<-(q ??! E5)).l[0i64]); q = o2; pass (<-e) + 6i64; };
+func:f_ap3u_oqp_ok = int64(int64:n) never fails {
+    L_ap3u_oqp_ok:lo = L_ap3u_oqp_ok{ l: raw mk_ap3u_oqp_ok(), z: 1i64 }; L_ap3u_oqp_ok:lo2 = L_ap3u_oqp_ok{ l: raw mk_ap3u_oqp_ok(), z: 2i64 }; L_ap3u_oqp_ok->?:oq = @lo; L_ap3u_oqp_ok->?:oq2 = @lo2; pass raw g_ap3u_oqp_ok(oq, oq2);
+};
+func:cell_main_ap3u_oqp_ok = int32() never fails { pass (((raw f_ap3u_oqp_ok(1i64)) + 60i64) =>! int32); };
+// DEF-738'S PRICE (LOW, l.23500 item 5): the longer path roots a view through a wrapped local's own unwrap at that local, so a later reassignment
+// of the local is refused; OFF PARITY (the local is not this frame's `@`): its pointer twin runs 67 on main and here, a way out in
+// tests/backend/programs/unwrap_reading_wayout_ok.npk: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99); refused here, BORROW-015 at 8:89. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g3/ap3u_oqp_n_ok.npk`.
+func:mk_ap3u_oqp_n_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqp_n_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqp_n_ok = L_ap3u_oqp_n_ok->(L_ap3u_oqp_n_ok->:p) never fails { pass p; };
+func:ido_ap3u_oqp_n_ok = L_ap3u_oqp_n_ok->?(L_ap3u_oqp_n_ok->?:p) never fails { pass p; };
+func:growl_ap3u_oqp_n_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:g_ap3u_oqp_n_ok = int64(L_ap3u_oqp_n_ok->?:o) never fails { L_ap3u_oqp_n_ok->?:q = o; int64->:e = @((<-(q ??! E5)).l[0i64]); q = NIL; pass (<-e) + 6i64; };
+func:f_ap3u_oqp_n_ok = int64(int64:n) never fails {
+    L_ap3u_oqp_n_ok:lo = L_ap3u_oqp_n_ok{ l: raw mk_ap3u_oqp_n_ok(), z: 1i64 }; L_ap3u_oqp_n_ok:lo2 = L_ap3u_oqp_n_ok{ l: raw mk_ap3u_oqp_n_ok(), z: 2i64 }; L_ap3u_oqp_n_ok->?:oq = @lo; L_ap3u_oqp_n_ok->?:oq2 = @lo2; pass raw g_ap3u_oqp_n_ok(oq);
+};
+func:cell_main_ap3u_oqp_n_ok = int32() never fails { pass (((raw f_ap3u_oqp_n_ok(1i64)) + 60i64) =>! int32); };
+// DEF-738'S PRICE (LOW, l.23500 item 5): the longer path roots a view through a wrapped local's own unwrap at that local, so a later reassignment
+// of the local is refused; OFF PARITY (the local is not this frame's `@`): its pointer twin runs 67 on main and here, a way out in
+// tests/backend/programs/unwrap_reading_wayout_ok.npk: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99); refused here, BORROW-015 at 8:115. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g3/ap3u_oqp_m_ok.npk`.
+func:mk_ap3u_oqp_m_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqp_m_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqp_m_ok = L_ap3u_oqp_m_ok->(L_ap3u_oqp_m_ok->:p) never fails { pass p; };
+func:ido_ap3u_oqp_m_ok = L_ap3u_oqp_m_ok->?(L_ap3u_oqp_m_ok->?:p) never fails { pass p; };
+func:growl_ap3u_oqp_m_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+impl:L_ap3u_oqp_m_ok = { func:gm = int64(L_ap3u_oqp_m_ok->:self, L_ap3u_oqp_m_ok->?:o2) never fails { L_ap3u_oqp_m_ok->?:q = self; int64->:e = @((<-(q ??! E5)).l[0i64]); q = o2; pass (<-e) + 6i64; }; };
+func:f_ap3u_oqp_m_ok = int64(int64:n) never fails {
+    L_ap3u_oqp_m_ok:lo = L_ap3u_oqp_m_ok{ l: raw mk_ap3u_oqp_m_ok(), z: 1i64 }; L_ap3u_oqp_m_ok:lo2 = L_ap3u_oqp_m_ok{ l: raw mk_ap3u_oqp_m_ok(), z: 2i64 }; L_ap3u_oqp_m_ok->?:oq = @lo; L_ap3u_oqp_m_ok->?:oq2 = @lo2; pass raw lo.gm(oq2);
+};
+func:cell_main_ap3u_oqp_m_ok = int32() never fails { pass (((raw f_ap3u_oqp_m_ok(1i64)) + 60i64) =>! int32); };
+// DEF-738'S PRICE (LOW, l.23500 item 5): the longer path roots a view through a wrapped local's own unwrap at that local, so a later reassignment
+// of the local is refused; OFF PARITY (the local is not this frame's `@`): its pointer twin runs 67 on main and here, a way out in
+// tests/backend/programs/unwrap_reading_wayout_ok.npk: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99); refused here, BORROW-015 at 8:131. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g3/ap3u_oqp_rr_ok.npk`.
+func:mk_ap3u_oqp_rr_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqp_rr_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqp_rr_ok = L_ap3u_oqp_rr_ok->(L_ap3u_oqp_rr_ok->:p) never fails { pass p; };
+func:ido_ap3u_oqp_rr_ok = L_ap3u_oqp_rr_ok->?(L_ap3u_oqp_rr_ok->?:p) never fails { pass p; };
+func:growl_ap3u_oqp_rr_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:g_ap3u_oqp_rr_ok = int64(L_ap3u_oqp_rr_ok->?:o, L_ap3u_oqp_rr_ok->?:o2) never fails { Result<L_ap3u_oqp_rr_ok->?>:r = Result{ value: o }; int64->:e = @((<-((r ?! E5) ??! E5)).l[0i64]); r = Result{ value: o2 }; pass (<-e) + 6i64; };
+func:f_ap3u_oqp_rr_ok = int64(int64:n) never fails {
+    L_ap3u_oqp_rr_ok:lo = L_ap3u_oqp_rr_ok{ l: raw mk_ap3u_oqp_rr_ok(), z: 1i64 }; L_ap3u_oqp_rr_ok:lo2 = L_ap3u_oqp_rr_ok{ l: raw mk_ap3u_oqp_rr_ok(), z: 2i64 }; L_ap3u_oqp_rr_ok->?:oq = @lo; L_ap3u_oqp_rr_ok->?:oq2 = @lo2; pass raw g_ap3u_oqp_rr_ok(oq, oq2);
+};
+func:cell_main_ap3u_oqp_rr_ok = int32() never fails { pass (((raw f_ap3u_oqp_rr_ok(1i64)) + 60i64) =>! int32); };
+// DEF-738'S PRICE (LOW, l.23500 item 5): the longer path roots a view through a wrapped local's own unwrap at that local, so a later reassignment
+// of the local is refused; OFF PARITY (the local is not this frame's `@`): its pointer twin runs 67 on main and here, a way out in
+// tests/backend/programs/unwrap_reading_wayout_ok.npk: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99); refused here, BORROW-015 at 8:107. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g4/ap3u_oqpc_ok.npk`.
+func:mk_ap3u_oqpc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqpc_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqpc_ok = L_ap3u_oqpc_ok->(L_ap3u_oqpc_ok->:p) never fails { pass p; };
+func:ido_ap3u_oqpc_ok = L_ap3u_oqpc_ok->?(L_ap3u_oqpc_ok->?:p) never fails { pass p; };
+func:growl_ap3u_oqpc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:g_ap3u_oqpc_ok = int64(L_ap3u_oqpc_ok->?:o, L_ap3u_oqpc_ok->?:o2) never fails { L_ap3u_oqpc_ok->?:q = raw ido_ap3u_oqpc_ok(o); int64->:e = @((<-(q ??! E5)).l[0i64]); q = o2; pass (<-e) + 6i64; };
+func:f_ap3u_oqpc_ok = int64(int64:n) never fails {
+    L_ap3u_oqpc_ok:lo = L_ap3u_oqpc_ok{ l: raw mk_ap3u_oqpc_ok(), z: 1i64 }; L_ap3u_oqpc_ok:lo2 = L_ap3u_oqpc_ok{ l: raw mk_ap3u_oqpc_ok(), z: 2i64 }; L_ap3u_oqpc_ok->?:oq = @lo; L_ap3u_oqpc_ok->?:oq2 = @lo2; pass raw g_ap3u_oqpc_ok(oq, oq2);
+};
+func:cell_main_ap3u_oqpc_ok = int32() never fails { pass (((raw f_ap3u_oqpc_ok(1i64)) + 60i64) =>! int32); };
+// DEF-738'S PRICE (LOW, l.23500 item 5): the longer path roots a view through a wrapped local's own unwrap at that local, so a later reassignment
+// of the local is refused; OFF PARITY (the local is not this frame's `@`): its pointer twin runs 67 on main and here, a way out in
+// tests/backend/programs/unwrap_reading_wayout_ok.npk: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99); refused here, BORROW-015 at 9:104. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g4/ap3u_oqpf_ok.npk`.
+func:mk_ap3u_oqpf_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqpf_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqpf_ok = L_ap3u_oqpf_ok->(L_ap3u_oqpf_ok->:p) never fails { pass p; };
+func:ido_ap3u_oqpf_ok = L_ap3u_oqpf_ok->?(L_ap3u_oqpf_ok->?:p) never fails { pass p; };
+func:growl_ap3u_oqpf_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:WO_ap3u_oqpf_ok = { L_ap3u_oqpf_ok->?:q; L_ap3u_oqpf_ok->:p; int64:z; };
+func:g_ap3u_oqpf_ok = int64(WO_ap3u_oqpf_ok->:w, L_ap3u_oqpf_ok->?:o2) never fails { L_ap3u_oqpf_ok->?:q = (<-w).q; int64->:e = @((<-(q ??! E5)).l[0i64]); q = o2; pass (<-e) + 6i64; };
+func:f_ap3u_oqpf_ok = int64(int64:n) never fails {
+    L_ap3u_oqpf_ok:lo = L_ap3u_oqpf_ok{ l: raw mk_ap3u_oqpf_ok(), z: 1i64 }; L_ap3u_oqpf_ok:lo2 = L_ap3u_oqpf_ok{ l: raw mk_ap3u_oqpf_ok(), z: 2i64 }; L_ap3u_oqpf_ok->?:oq = @lo; L_ap3u_oqpf_ok->?:oq2 = @lo2; WO_ap3u_oqpf_ok:w = WO_ap3u_oqpf_ok{ q: oq, p: @lo, z: 1i64 }; pass raw g_ap3u_oqpf_ok(@w, oq2);
+};
+func:cell_main_ap3u_oqpf_ok = int32() never fails { pass (((raw f_ap3u_oqpf_ok(1i64)) + 60i64) =>! int32); };
+// DEF-738'S PRICE (LOW, l.23500 item 5): the longer path roots a view through a wrapped local's own unwrap at that local, so a later reassignment
+// of the local is refused; OFF PARITY (the local is not this frame's `@`): its pointer twin runs 67 on main and here, a way out in
+// tests/backend/programs/unwrap_reading_wayout_ok.npk: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99); refused here, BORROW-015 at 8:123. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g4/ap3u_oqpi_ok.npk`.
+func:mk_ap3u_oqpi_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqpi_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqpi_ok = L_ap3u_oqpi_ok->(L_ap3u_oqpi_ok->:p) never fails { pass p; };
+func:ido_ap3u_oqpi_ok = L_ap3u_oqpi_ok->?(L_ap3u_oqpi_ok->?:p) never fails { pass p; };
+func:growl_ap3u_oqpi_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:g_ap3u_oqpi_ok = int64(L_ap3u_oqpi_ok->?:o, L_ap3u_oqpi_ok->?:o2, int64:n) never fails { L_ap3u_oqpi_ok->?:q = o; int64->:e = @((<-(q ??! E5)).l[0i64]); if (n > 3i64) { q = o2; } pass (<-e) + 6i64; };
+func:f_ap3u_oqpi_ok = int64(int64:n) never fails {
+    L_ap3u_oqpi_ok:lo = L_ap3u_oqpi_ok{ l: raw mk_ap3u_oqpi_ok(), z: 1i64 }; L_ap3u_oqpi_ok:lo2 = L_ap3u_oqpi_ok{ l: raw mk_ap3u_oqpi_ok(), z: 2i64 }; L_ap3u_oqpi_ok->?:oq = @lo; L_ap3u_oqpi_ok->?:oq2 = @lo2; pass raw g_ap3u_oqpi_ok(oq, oq2, n);
+};
+func:cell_main_ap3u_oqpi_ok = int32() never fails { pass (((raw f_ap3u_oqpi_ok(1i64)) + 60i64) =>! int32); };
+// DEF-738'S PRICE (LOW, l.23500 item 5): the longer path roots a view through a wrapped local's own unwrap at that local, so a later reassignment
+// of the local is refused; OFF PARITY (the local is not this frame's `@`): its pointer twin runs 67 on main and here, a way out in
+// tests/backend/programs/unwrap_reading_wayout_ok.npk: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99); refused here, BORROW-015 at 8:119. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g4/ap3u_oqpr_ok.npk`.
+func:mk_ap3u_oqpr_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqpr_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqpr_ok = L_ap3u_oqpr_ok->(L_ap3u_oqpr_ok->:p) never fails { pass p; };
+func:ido_ap3u_oqpr_ok = L_ap3u_oqpr_ok->?(L_ap3u_oqpr_ok->?:p) never fails { pass p; };
+func:growl_ap3u_oqpr_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:g_ap3u_oqpr_ok = int64(L_ap3u_oqpr_ok->:o, L_ap3u_oqpr_ok->:o2) never fails { Result<L_ap3u_oqpr_ok->>:q = Result{ value: o }; int64->:e = @((<-(q ?! E5)).l[0i64]); q = Result{ value: o2 }; pass (<-e) + 6i64; };
+func:f_ap3u_oqpr_ok = int64(int64:n) never fails {
+    L_ap3u_oqpr_ok:lo = L_ap3u_oqpr_ok{ l: raw mk_ap3u_oqpr_ok(), z: 1i64 }; L_ap3u_oqpr_ok:lo2 = L_ap3u_oqpr_ok{ l: raw mk_ap3u_oqpr_ok(), z: 2i64 }; L_ap3u_oqpr_ok->?:oq = @lo; L_ap3u_oqpr_ok->?:oq2 = @lo2; pass raw g_ap3u_oqpr_ok(@lo, @lo2);
+};
+func:cell_main_ap3u_oqpr_ok = int32() never fails { pass (((raw f_ap3u_oqpr_ok(1i64)) + 60i64) =>! int32); };
+// DEF-738'S PRICE (LOW, l.23500 item 5): the longer path roots a view through a wrapped local's own unwrap at that local, so a later reassignment
+// of the local is refused; OFF PARITY (the local is not this frame's `@`): its pointer twin runs 67 on main and here, a way out in
+// tests/backend/programs/unwrap_reading_wayout_ok.npk: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99); refused here, BORROW-015 at 10:104. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g4/ap3u_oqps_ok.npk`.
+func:mk_ap3u_oqps_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqps_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqps_ok = L_ap3u_oqps_ok->(L_ap3u_oqps_ok->:p) never fails { pass p; };
+func:ido_ap3u_oqps_ok = L_ap3u_oqps_ok->?(L_ap3u_oqps_ok->?:p) never fails { pass p; };
+func:growl_ap3u_oqps_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3u_oqps_ok = { SS_ap3u_oqps_ok->?:p; List<int64>:own; int64:z; };
+func:link_ap3u_oqps_ok = int64(SS_ap3u_oqps_ok->:x) never fails { (<-x).p = x; pass 7i64; };
+func:g_ap3u_oqps_ok = int64(SS_ap3u_oqps_ok->:s, SS_ap3u_oqps_ok->?:o2) never fails { SS_ap3u_oqps_ok->?:q = s.p; int64->:e = @((<-(q ??! E5)).own[0i64]); q = o2; pass (<-e) + 6i64; };
+func:f_ap3u_oqps_ok = int64(int64:n) never fails {
+    SS_ap3u_oqps_ok:so = SS_ap3u_oqps_ok{ p: NIL, own: raw mk_ap3u_oqps_ok(), z: 1i64 }; SS_ap3u_oqps_ok:s2 = SS_ap3u_oqps_ok{ p: NIL, own: raw mk_ap3u_oqps_ok(), z: 2i64 }; discard(raw link_ap3u_oqps_ok(@so)); SS_ap3u_oqps_ok->?:o2 = @s2; pass raw g_ap3u_oqps_ok(@so, o2);
+};
+func:cell_main_ap3u_oqps_ok = int32() never fails { pass (((raw f_ap3u_oqps_ok(1i64)) + 60i64) =>! int32); };
+// DEF-738'S PRICE (LOW, l.23500 item 5): the longer path roots a view through a wrapped local's own unwrap at that local, so a later reassignment
+// of the local is refused; its parity isn't measured (l.23500 item 5): a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under
+// the detector on main (226ebb99); refused here, BORROW-015 at 8:96. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g4/ap3u_oqpd_ok.npk`.
+func:mk_ap3u_oqpd_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqpd_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqpd_ok = L_ap3u_oqpd_ok->(L_ap3u_oqpd_ok->:p) never fails { pass p; };
+func:ido_ap3u_oqpd_ok = L_ap3u_oqpd_ok->?(L_ap3u_oqpd_ok->?:p) never fails { pass p; };
+func:growl_ap3u_oqpd_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:g_ap3u_oqpd_ok = int64(L_ap3u_oqpd_ok->?:o, L_ap3u_oqpd_ok->:o2) never fails { L_ap3u_oqpd_ok->?:q = o; int64->:e = @((<-(q ?? o2)).l[0i64]); q = NIL; pass (<-e) + 6i64; };
+func:f_ap3u_oqpd_ok = int64(int64:n) never fails {
+    L_ap3u_oqpd_ok:lo = L_ap3u_oqpd_ok{ l: raw mk_ap3u_oqpd_ok(), z: 1i64 }; L_ap3u_oqpd_ok:lo2 = L_ap3u_oqpd_ok{ l: raw mk_ap3u_oqpd_ok(), z: 2i64 }; L_ap3u_oqpd_ok->?:oq = @lo; L_ap3u_oqpd_ok->?:oq2 = @lo2; pass raw g_ap3u_oqpd_ok(oq, @lo2);
+};
+func:cell_main_ap3u_oqpd_ok = int32() never fails { pass (((raw f_ap3u_oqpd_ok(1i64)) + 60i64) =>! int32); };
+// DEF-738'S PRICE (LOW, l.23500 item 5): the longer path roots a view through a wrapped local's own unwrap at that local, so a later reassignment
+// of the local is refused; at parity: the by-name twins below are refused on main: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2,
+// 67 under the detector on main (226ebb99); refused here, BORROW-015 at 9:146. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g1/ap3u_oqo_ok.npk`.
+func:mk_ap3u_oqo_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqo_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqo_ok = L_ap3u_oqo_ok->(L_ap3u_oqo_ok->:p) never fails { pass p; };
+func:ido_ap3u_oqo_ok = L_ap3u_oqo_ok->?(L_ap3u_oqo_ok->?:p) never fails { pass p; };
+func:growl_ap3u_oqo_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_oqo_ok = int64(int64:n) never fails {
+    L_ap3u_oqo_ok:lo = L_ap3u_oqo_ok{ l: raw mk_ap3u_oqo_ok(), z: 1i64 }; L_ap3u_oqo_ok:lo2 = L_ap3u_oqo_ok{ l: raw mk_ap3u_oqo_ok(), z: 2i64 }; L_ap3u_oqo_ok->?:oq = @lo; L_ap3u_oqo_ok->?:oq2 = @lo2; int64->:e = @((<-(oq ??! E5)).l[0i64]); oq = oq2; pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_oqo_ok = int32() never fails { pass (((raw f_ap3u_oqo_ok(1i64)) + 60i64) =>! int32); };
+// DEF-738'S PRICE (LOW, l.23500 item 5): the longer path roots a view through a wrapped local's own unwrap at that local, so a later reassignment
+// of the local is refused; at parity: the by-name twins below are refused on main: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2,
+// 67 under the detector on main (226ebb99); refused here, BORROW-015 at 9:146. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_oqo_n_ok.npk`.
+func:mk_ap3u_oqo_n_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqo_n_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqo_n_ok = L_ap3u_oqo_n_ok->(L_ap3u_oqo_n_ok->:p) never fails { pass p; };
+func:ido_ap3u_oqo_n_ok = L_ap3u_oqo_n_ok->?(L_ap3u_oqo_n_ok->?:p) never fails { pass p; };
+func:growl_ap3u_oqo_n_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_oqo_n_ok = int64(int64:n) never fails {
+    L_ap3u_oqo_n_ok:lo = L_ap3u_oqo_n_ok{ l: raw mk_ap3u_oqo_n_ok(), z: 1i64 }; L_ap3u_oqo_n_ok:lo2 = L_ap3u_oqo_n_ok{ l: raw mk_ap3u_oqo_n_ok(), z: 2i64 }; L_ap3u_oqo_n_ok->?:oq = @lo; L_ap3u_oqo_n_ok->?:oq2 = @lo2; int64->:e = @((<-(oq ??! E5)).l[0i64]); oq = NIL; pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_oqo_n_ok = int32() never fails { pass (((raw f_ap3u_oqo_n_ok(1i64)) + 60i64) =>! int32); };
+// DEF-738'S PRICE (LOW, l.23500 item 5): the longer path roots a view through a wrapped local's own unwrap at that local, so a later reassignment
+// of the local is refused; at parity: the by-name twins below are refused on main: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2,
+// 67 under the detector on main (226ebb99); refused here, BORROW-015 at 9:146, BORROW-015 at 9:197. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_oqo_g2.npk`.
+func:mk_ap3u_oqo_g2 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqo_g2 = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqo_g2 = L_ap3u_oqo_g2->(L_ap3u_oqo_g2->:p) never fails { pass p; };
+func:ido_ap3u_oqo_g2 = L_ap3u_oqo_g2->?(L_ap3u_oqo_g2->?:p) never fails { pass p; };
+func:growl_ap3u_oqo_g2 = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_oqo_g2 = int64(int64:n) never fails {
+    L_ap3u_oqo_g2:lo = L_ap3u_oqo_g2{ l: raw mk_ap3u_oqo_g2(), z: 1i64 }; L_ap3u_oqo_g2:lo2 = L_ap3u_oqo_g2{ l: raw mk_ap3u_oqo_g2(), z: 2i64 }; L_ap3u_oqo_g2->?:oq = @lo; L_ap3u_oqo_g2->?:oq2 = @lo2; int64->:e = @((<-(oq ??! E5)).l[0i64]); oq = oq2; loop(0i64, 64i64, 1i64) { drop list_push(@lo2.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_oqo_g2 = int32() never fails { pass (((raw f_ap3u_oqo_g2(1i64)) + 60i64) =>! int32); };
+// DEF-738'S PRICE (LOW, l.23500 item 5): the longer path roots a view through a wrapped local's own unwrap at that local, so a later reassignment
+// of the local is refused; at parity: the by-name twins below are refused on main: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2,
+// 67 under the detector on main (226ebb99); refused here, BORROW-015 at 10:177. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_oqf_ok.npk`.
+func:mk_ap3u_oqf_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqf_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqf_ok = L_ap3u_oqf_ok->(L_ap3u_oqf_ok->:p) never fails { pass p; };
+func:ido_ap3u_oqf_ok = L_ap3u_oqf_ok->?(L_ap3u_oqf_ok->?:p) never fails { pass p; };
+func:growl_ap3u_oqf_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:WO_ap3u_oqf_ok = { L_ap3u_oqf_ok->?:q; int64:z; };
+func:f_ap3u_oqf_ok = int64(int64:n) never fails {
+    L_ap3u_oqf_ok:lo = L_ap3u_oqf_ok{ l: raw mk_ap3u_oqf_ok(), z: 1i64 }; L_ap3u_oqf_ok:lo2 = L_ap3u_oqf_ok{ l: raw mk_ap3u_oqf_ok(), z: 2i64 }; L_ap3u_oqf_ok->?:oq = @lo; L_ap3u_oqf_ok->?:oq2 = @lo2; WO_ap3u_oqf_ok:w = WO_ap3u_oqf_ok{ q: oq, z: 1i64 }; int64->:e = @((<-(w.q ??! E5)).l[0i64]); w.q = oq2; pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_oqf_ok = int32() never fails { pass (((raw f_ap3u_oqf_ok(1i64)) + 60i64) =>! int32); };
+// DEF-738'S PRICE (LOW, l.23500 item 5): the longer path roots a view through a wrapped local's own unwrap at that local, so a later reassignment
+// of the local is refused; its twin isn't measured: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main
+// (226ebb99); refused here, BORROW-015 at 9:246. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g1/ap3u_r3o_ok.npk`.
+func:mk_ap3u_r3o_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_r3o_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_r3o_ok = L_ap3u_r3o_ok->(L_ap3u_r3o_ok->:p) never fails { pass p; };
+func:ido_ap3u_r3o_ok = L_ap3u_r3o_ok->?(L_ap3u_r3o_ok->?:p) never fails { pass p; };
+func:growl_ap3u_r3o_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_r3o_ok = int64(int64:n) never fails {
+    L_ap3u_r3o_ok:lo = L_ap3u_r3o_ok{ l: raw mk_ap3u_r3o_ok(), z: 1i64 }; L_ap3u_r3o_ok:lo2 = L_ap3u_r3o_ok{ l: raw mk_ap3u_r3o_ok(), z: 2i64 }; L_ap3u_r3o_ok->?:oq = @lo; L_ap3u_r3o_ok->?:oq2 = @lo2; Result<L_ap3u_r3o_ok->?>:r = Result{ value: oq }; Result<Result<L_ap3u_r3o_ok->?>>:rr = Result{ value: r }; int64->:e = @((<-(((rr ?! E5) ?! E5) ??! E5)).l[0i64]); rr = Result{ value: Result{ value: oq2 } }; pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_r3o_ok = int32() never fails { pass (((raw f_ap3u_r3o_ok(1i64)) + 60i64) =>! int32); };
+// DEF-738'S PRICE (LOW, l.23500 item 5): the longer path roots a view through a wrapped local's own unwrap at that local, so a later reassignment
+// of the local is refused; its twin isn't measured: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main
+// (226ebb99); refused here, BORROW-015 at 10:202. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g1/ap3u_rfo_ok.npk`.
+func:mk_ap3u_rfo_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rfo_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_rfo_ok = L_ap3u_rfo_ok->(L_ap3u_rfo_ok->:p) never fails { pass p; };
+func:ido_ap3u_rfo_ok = L_ap3u_rfo_ok->?(L_ap3u_rfo_ok->?:p) never fails { pass p; };
+func:growl_ap3u_rfo_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:RW_ap3u_rfo_ok = { Result<L_ap3u_rfo_ok->?>:r; int64:z; };
+func:f_ap3u_rfo_ok = int64(int64:n) never fails {
+    L_ap3u_rfo_ok:lo = L_ap3u_rfo_ok{ l: raw mk_ap3u_rfo_ok(), z: 1i64 }; L_ap3u_rfo_ok:lo2 = L_ap3u_rfo_ok{ l: raw mk_ap3u_rfo_ok(), z: 2i64 }; L_ap3u_rfo_ok->?:oq = @lo; L_ap3u_rfo_ok->?:oq2 = @lo2; RW_ap3u_rfo_ok:w = RW_ap3u_rfo_ok{ r: Result{ value: oq }, z: 1i64 }; int64->:e = @((<-((w.r ?! E5) ??! E5)).l[0i64]); w.r = Result{ value: oq2 }; pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rfo_ok = int32() never fails { pass (((raw f_ap3u_rfo_ok(1i64)) + 60i64) =>! int32); };
+// DEF-738'S PRICE (LOW, l.23500 item 5): the longer path roots a view through a wrapped local's own unwrap at that local, so a later reassignment
+// of the local is refused; its twin isn't measured: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main
+// (226ebb99); refused here, BORROW-015 at 9:191. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g1/ap3u_rro_ok.npk`.
+func:mk_ap3u_rro_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rro_ok = { List<int64>:l; int64:z; };
+func:idl_ap3u_rro_ok = L_ap3u_rro_ok->(L_ap3u_rro_ok->:p) never fails { pass p; };
+func:ido_ap3u_rro_ok = L_ap3u_rro_ok->?(L_ap3u_rro_ok->?:p) never fails { pass p; };
+func:growl_ap3u_rro_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rro_ok = int64(int64:n) never fails {
+    L_ap3u_rro_ok:lo = L_ap3u_rro_ok{ l: raw mk_ap3u_rro_ok(), z: 1i64 }; L_ap3u_rro_ok:lo2 = L_ap3u_rro_ok{ l: raw mk_ap3u_rro_ok(), z: 2i64 }; L_ap3u_rro_ok->?:oq = @lo; L_ap3u_rro_ok->?:oq2 = @lo2; Result<L_ap3u_rro_ok->?>:r = Result{ value: oq }; int64->:e = @((<-((r ?! E5) ??! E5)).l[0i64]); r = Result{ value: oq2 }; pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rro_ok = int32() never fails { pass (((raw f_ap3u_rro_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3u_oqo_ok`, `ap3u_oqo_n_ok` and `ap3u_oqo_g2`, by name: refused on main (226ebb99) and here, BORROW-015 at 9:156 (main: BORROW-015 at
+// 9:156). From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_oqo_bn.npk`.
+func:mk_ap3u_oqo_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqo_bn = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqo_bn = L_ap3u_oqo_bn->(L_ap3u_oqo_bn->:p) never fails { pass p; };
+func:ido_ap3u_oqo_bn = L_ap3u_oqo_bn->?(L_ap3u_oqo_bn->?:p) never fails { pass p; };
+func:growl_ap3u_oqo_bn = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_oqo_bn = int64(int64:n) never fails {
+    L_ap3u_oqo_bn:lo = L_ap3u_oqo_bn{ l: raw mk_ap3u_oqo_bn(), z: 1i64 }; L_ap3u_oqo_bn:lo2 = L_ap3u_oqo_bn{ l: raw mk_ap3u_oqo_bn(), z: 2i64 }; L_ap3u_oqo_bn->?:oq = @lo; L_ap3u_oqo_bn->?:oq2 = @lo2; L_ap3u_oqo_bn->:lp = @lo; int64->:e = @((<-lp).l[0i64]); lp = @lo2; pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_oqo_bn = int32() never fails { pass (((raw f_ap3u_oqo_bn(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3u_oqf_ok`, by name: refused on main (226ebb99) and here, BORROW-015 at 10:171, BORROW-015 at 10:177 (main: BORROW-015 at 10:171,
+// BORROW-015 at 10:177). From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_oqf_bn.npk`.
+func:mk_ap3u_oqf_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqf_bn = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqf_bn = L_ap3u_oqf_bn->(L_ap3u_oqf_bn->:p) never fails { pass p; };
+func:ido_ap3u_oqf_bn = L_ap3u_oqf_bn->?(L_ap3u_oqf_bn->?:p) never fails { pass p; };
+func:growl_ap3u_oqf_bn = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:WP_ap3u_oqf_bn = { L_ap3u_oqf_bn->:q; int64:z; };
+func:f_ap3u_oqf_bn = int64(int64:n) never fails {
+    L_ap3u_oqf_bn:lo = L_ap3u_oqf_bn{ l: raw mk_ap3u_oqf_bn(), z: 1i64 }; L_ap3u_oqf_bn:lo2 = L_ap3u_oqf_bn{ l: raw mk_ap3u_oqf_bn(), z: 2i64 }; L_ap3u_oqf_bn->?:oq = @lo; L_ap3u_oqf_bn->?:oq2 = @lo2; WP_ap3u_oqf_bn:w = WP_ap3u_oqf_bn{ q: @lo, z: 1i64 }; int64->:e = @((<-(w.q)).l[0i64]); w.q = @lo2; pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_oqf_bn = int32() never fails { pass (((raw f_ap3u_oqf_bn(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

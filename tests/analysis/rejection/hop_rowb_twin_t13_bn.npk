@@ -1,0 +1,45 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 23:46
+// 2026-11-21 (landing 177d2e, row 6: DEF-348's row b, form P2-2d, with its arm in DEF-716's hop filter; rulings l.22075, l.22238, l.23578). A WRITE
+// THROUGH A POINTER FIELD IS JUDGED AT WHAT IT REACHES: a root the hop walk can't name (a call's result, its deref) is walked again at each place
+// D-117's rule A says it reaches, a target reached through a pointer is judged at that pointer's own targets, and a `<-` target is walked as a
+// rootless place; BORROW-015 at the write. TWIN of a price at parity: the price `t13`'s write spelled by name, BORROW-015 on main (226ebb99) and
+// here at the same site. From seat AP2D's cells, `Team/TMP/atk-177d2e-ap2d-2026-11-20/cells/ap2d/ap2d_t13_bn_ok.npk`.
+mod:hop_rowb_twin_t13_bn;
+error:E5;
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF = { List<int64>:own; int64:z; };
+struct:MM = { LF->:r; LF:lf; int64:z; };
+struct:B = { MM->:r; int64:z; };
+struct:A = { B->:q; MM:inner; int64:z; };
+func:f = int64(int64:n) never fails {
+    LF:fz = LF{ own: raw mk(), z: 1i64 };
+    MM:mm = MM{ r: @fz, lf: LF{ own: raw mk(), z: 1i64 }, z: 1i64 };
+    B:b = B{ r: @mm, z: 1i64 };
+    A:a = A{ q: @b, inner: MM{ r: @fz, lf: LF{ own: raw mk(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    A:a2 = A{ q: @b, inner: MM{ r: @fz, lf: LF{ own: raw mk(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    A->:ap = @a; if (n > 100i64) { ap = @a2; } b.r = @((<-ap).inner);
+    int64->:e = @(a2.inner.lf.own[0i64]);
+    loop(0i64, 64i64, 1i64) { drop list_push(@((<-(b.r)).lf.own), 1i64); }
+    pass (<-e) + 6i64;
+};
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

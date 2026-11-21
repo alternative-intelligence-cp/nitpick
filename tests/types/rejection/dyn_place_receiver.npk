@@ -1,0 +1,160 @@
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 71:57
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 75:10
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 80:11
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 85:13
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 91:11
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 97:10
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 102:11
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 107:10
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 112:18
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 117:19
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 122:21
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 128:14
+mod:dyn_place_receiver;
+error:E9;
+
+// D-370 AT A METHOD CALL'S RECEIVER (`NITPICK-TYPE-116`; rulings l.21045 and l.21153 item 3, seat F4). `h.f()` and `f(h)` are one call
+// (D-006): when `f`'s first parameter is a `dyn` that isn't `move`, the receiver is that argument, and an owning place there was copied
+// into the `dyn`'s cell, sharing what it owns (97 or 95 on main, AF3's `u_recv_*` and `x_inh_dyn_self`). `check_args` skips the receiver's
+// slot, so `type_method_call` asks it itself: a name, a field, an element, a dereference, a receiver through a pointer (its pointee), a
+// call's pointer, `self` in a `Self->` body, a method of the type's own `impl` whose receiver is `dyn Tr:self`, a receiver in a `defer`,
+// an awaited and a spawned call, and a read-only method. The roads at the end compile: `(move(h)).f()`, a whole temporary, a cast of one.
+trait:Tr = { func:peek = int32(Self:self) never fails; func:op = NIL(Self->:self) never fails; };
+struct:DHold = { buffer:b; };
+impl:DHold:Tr = {
+    func:peek = int32(DHold:self) never fails { pass (self.b[0i64] => int32); };
+    func:op = NIL(DHold->:self) never fails {
+        buffer:nb = buffer_new(16i64);
+        nb[0i64] = 7u8;
+        self.b = move(nb);
+        pass NIL;
+    };
+};
+func:callit = NIL(dyn Tr:d) never fails {
+    drop d.op();
+    pass NIL;
+};
+func:peekit = int32(dyn Tr:d) never fails {
+    pass (raw d.peek());
+};
+func:yes = bool() never fails { pass true; };
+func:mkh = DHold() never fails {
+    buffer:bb = buffer_new(4096i64);
+    bb[0i64] = 6u8;
+    pass DHold{ b: move(bb) };
+};
+struct:W = { DHold:h; int32:k; };
+func:mkw = W() never fails {
+    pass W{ h: raw mkh(), k: 1i32 };
+};
+func:vcallw = int32(int32:k, ..*(dyn Tr)[]:ds) { drop ds[0i64].op(); pass k; };
+trait:Tk = { func:put = NIL(Self:self, dyn Tr:d) never fails; };
+struct:Pd = { int32:n; };
+impl:Pd:Tk = { func:put = NIL(Pd:self, dyn Tr:d) never fails { drop d.op(); pass NIL; }; };
+async func:acallit = int32(dyn Tr:d) { drop d.op(); pass 1i32; };
+async func:acalln = NIL(dyn Tr:d) { drop d.op(); pass NIL; };
+func:idp = DHold->(DHold->:p) never fails { pass p; };
+impl:DHold = {
+    func:go = NIL(dyn Tr:self) never fails { drop self.op(); pass NIL; };
+    func:viaself = NIL(DHold->:self) never fails { drop self.callit(); pass NIL; };   // site NITPICK-TYPE-116
+};
+func:r_name = int32() never fails {
+    DHold:h = raw mkh();
+    drop h.callit();   // site NITPICK-TYPE-116
+    pass (h.b[0i64] => int32);
+};
+func:r_field = int32() never fails {
+    W:w = raw mkw();
+    drop w.h.callit();   // site NITPICK-TYPE-116
+    pass (w.h.b[0i64] => int32);
+};
+func:r_elem = int32() never fails {
+    DHold[2]:arr = [ raw mkh(), raw mkh() ];
+    drop arr[0i64].callit();   // site NITPICK-TYPE-116
+    pass (arr[0i64].b[0i64] => int32);
+};
+func:r_deref = int32() never fails {
+    DHold:h = raw mkh();
+    DHold->:p = @h;
+    drop (<-p).callit();   // site NITPICK-TYPE-116
+    pass (h.b[0i64] => int32);
+};
+func:r_through = int32() never fails {
+    DHold:h = raw mkh();
+    DHold->:p = @h;
+    drop p.callit();   // site NITPICK-TYPE-116
+    pass (h.b[0i64] => int32);
+};
+func:r_callptr = int32() never fails {
+    DHold:h = raw mkh();
+    drop (raw idp(@h)).callit();   // site NITPICK-TYPE-116
+    pass (h.b[0i64] => int32);
+};
+func:r_inherent = int32() never fails {
+    DHold:h = raw mkh();
+    drop h.go();   // site NITPICK-TYPE-116
+    pass (h.b[0i64] => int32);
+};
+func:r_defer = int32() never fails {
+    DHold:h = raw mkh();
+    defer { drop h.callit(); }   // site NITPICK-TYPE-116
+    pass 1i32;
+};
+func:r_read = int32() never fails {
+    DHold:h = raw mkh();
+    int32:a = raw h.peekit();   // site NITPICK-TYPE-116
+    pass a;
+};
+async func:r_await = int32() {
+    DHold:h = raw mkh();
+    int32:z = await h.acallit() ?! E9;   // site NITPICK-TYPE-116
+    pass (h.b[0i64] => int32);
+};
+async func:r_spawn = int32() {
+    DHold:h = raw mkh();
+    {
+        drop h.acalln();   // site NITPICK-TYPE-116
+    }
+    pass (h.b[0i64] => int32);
+};
+func:roads = int32() never fails {
+    DHold:h = raw mkh();
+    drop (move(h)).callit();
+    drop (raw mkh()).callit();
+    drop ((raw mkh()) => DHold).callit();
+    DHold:g = raw mkh();
+    drop (move(g)).go();
+    pass 0i32;
+};
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 96i32; },
+        (MachineFault)   { exit 97i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 94i32; },
+        (OutOfBounds)    { exit 93i32; },
+        (IntOverflow)    { exit 90i32; },
+        (DeadlineExceeded) { exit 89i32; },
+        (E9)             { exit 9i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};

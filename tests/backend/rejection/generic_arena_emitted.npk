@@ -1,0 +1,71 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 31:18
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 36:41
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 42:54
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 43:49
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 45:62
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 46:59
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 47:61
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 48:144
+// DEF-528 (landing 177d2e): D-183'S QUESTION, ASKED AT THE INSTANCE. `arena_make` and `shared_arena_make` ask `type_drops` where the
+// element is spelled, and an unsubstituted `T` answers no there, so a generic body could make an `arena<T>` at an owning `T`, and `get`
+// and `put` copied one owner out twice (on main: a shared arena reads the freed bytes, 83, 97 under the detector; a plain arena's second
+// drop traps, 74; at `T = dyn Tr`, AF4's road, 95 and 97). `type_subst`'s arena arms now ask `type_drops` of the substituted element
+// and refuse TYPE-007 with the spelled gates' words, naming the instance's type, as the channel arm asks TYPE-057.
+// THE SITES ONLY EMISSION SEES: each instance below is formed by the emitter's worklist from a generic body, so `tools/check` has nothing to
+// judge (its sites are `tests/types/rejection/generic_arena_instance.npk`). A generic body's own local, at `string` and at a struct holding
+// one; a shared arena two generic calls deep; an arena held in an Optional and in an array; a generic struct's arena field (the field's
+// declaration and the call that formed the instance); a family impl's `Self`. Each is refused at the call that formed the instance.
+mod:generic_arena_emitted;
+error:E5;
+
+struct:SH = { string:s; };
+struct:Bx<X> = { X:v; };
+struct:AB<T> = { arena<T>:a; int32:k; };
+struct:WB<T> = { T:s; };
+
+func:dup<T> = T(move T:v) { arena<T>:a = arena_make(2i64); Handle<T>:h = a.alloc(); a.put(h, move(v)) ?! E5; T:c1 = a.get(h) ?! E5; discard(move(c1)); T:c2 = a.get(h) ?! E5; pass move(c2); };
+func:sdup<T> = T(move T:v) { shared_arena<T>:a = shared_arena_make(4i64); Handle<T>:h = a.alloc(move(v)); T:c1 = a.get(h) ?! E5; discard(move(c1)); T:c2 = a.get(h) ?! E5; pass move(c2); };
+func:outer<U> = U(move U:v) { U:r = sdup(move(v)) ?! E5; pass move(r); };
+func:sdup_opt<T> = T(move T:v) { shared_arena<T>:a0 = shared_arena_make(4i64); shared_arena<T>?:oa = move(a0); shared_arena<T>:a = move(oa) ??! E5; Handle<T>:h = a.alloc(move(v)); T:c = a.get(h) ?! E5; pass move(c); };
+func:sdup_arr<T> = T(move T:v) { shared_arena<T>:a0 = shared_arena_make(4i64); shared_arena<T>[1]:aa = [move(a0)]; Handle<T>:h = aa[0i64].alloc(move(v)); T:c = aa[0i64].get(h) ?! E5; pass move(c); };
+func:mkab<T> = AB<T>() never fails { arena<T>:a = arena_make(4i64); AB<T>:b = AB{ a: move(a), k: 1i32 }; pass move(b); };
+impl:<T>:WB<T> = { func:dup = Self(WB<T>->:self, move WB<T>:v) { shared_arena<Self>:a = shared_arena_make(4i64); Handle<Self>:h = a.alloc(move(v)); Self:c = a.get(h) ?! E5; pass move(c); }; };
+
+func:a_local = string(move string:v) { string:r = dup(move(v)) ?! E5; pass move(r); };
+func:b_local_struct = SH(move SH:v) { SH:r = dup(move(v)) ?! E5; pass move(r); };
+func:c_two_deep = Bx<string>(move Bx<string>:v) { Bx<string>:r = outer(move(v)) ?! E5; pass move(r); };
+func:d_optional = string(move string:v) { string:r = sdup_opt(move(v)) ?! E5; pass move(r); };
+func:e_array = string(move string:v) { string:r = sdup_arr(move(v)) ?! E5; pass move(r); };
+func:f_field = int32() never fails { AB<string>:b = raw mkab::<string>(); pass b.k; };
+func:g_family_self = string(move string:v) { WB<string>:w = WB{ s: string_concat("a", "b") }; WB<string>:x = WB{ s: move(v) }; WB<string>:r = w.dup(move(x)) ?! E5; pass move(r.s); };
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (StaleHandle)       { exit 77i32; },
+        (E5)                { exit 80i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

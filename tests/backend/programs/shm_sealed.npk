@@ -5,9 +5,11 @@
 // is the load-bearing line of the whole driver architecture: without it a
 // hostile `ftruncate(fd, 0)` from the driver makes the next runtime access
 // take SIGBUS — the driver crashing the runtime through the data plane. So
-// this proves BOTH directions: the mapping is writable and readable, AND a
-// shrink is refused with EPERM (-1) rather than succeeding. Wild-and-sys
-// code, the nlibc tier.
+// this proves BOTH: the mapping is writable and readable, AND the seals are
+// set: `shm_seal_holds` reads the seal word back (F_GET_SEALS) and asks for
+// shrink, grow and seal together. The kernel enforces a seal that's set; the
+// hostile-driver fixture (bridge_hd_f1, bridge_hd_f4) covers the driver's
+// side. Wild-and-sys code, the nlibc tier.
 mod:shm_sealed;
 use "../../../lib/nbridge.npk".*;
 error:E9;
@@ -19,20 +21,17 @@ func:main = int32(cstring[]:_~argv) {
     <-(#ptr_add<int8>(s.base, 4000i64)) = 55i8;
     if ((<-(#ptr_add<int8>(s.base, 4000i64))) != 55i8) { exit 11i32; }
 
-    // THE SEAL HOLDS: a hostile shrink to zero is refused (EPERM). `sys`
-    // maps a negative kernel return into `Result.err`, so a refused shrink
-    // shows up as is_error — which is exactly the seal doing its job. A
-    // shrink that SUCCEEDED (is_error false) would be the SIGBUS-bomb the
-    // seal exists to prevent, and fails the test.
-    Result<int64>:shrink = sys(raw SYS_FTRUNCATE(), (s.memfd => int64), 0i64);
-    if (!shrink.is_error) { exit 12i32; }   // the shrink MUST be refused
+    // THE SEAL HOLDS: the descriptor is hidden (DEF-719's row), so the test
+    // asks the library, which reads the seal word (fcntl F_GET_SEALS): shrink,
+    // grow and seal must all be set. A missing seal would let a hostile
+    // driver's `ftruncate(fd, 0)` make the next access take SIGBUS, the bomb
+    // the seal exists to prevent, and fails the test.
+    if (!(raw shm_seal_holds(@s))) { exit 12i32; }   // all three seals MUST be set
 
-    // the mapping still answers after the refused shrink
+    // the mapping still answers after the seal read
     if ((<-(#ptr_add<int8>(s.base, 4000i64))) != 55i8) { exit 14i32; }
 
-    shm_unmap(@s) ?! E9;
-    Result<NIL>:c = close(s.memfd);
-    if (c.is_error) { exit 15i32; }
+    shm_unmap(move(s)) ?! E9;   // unmaps, and closes the region's descriptor (its one owner)
     exit 42i32;
 };
 

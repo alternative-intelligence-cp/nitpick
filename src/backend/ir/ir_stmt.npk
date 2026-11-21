@@ -3226,7 +3226,7 @@ pub func:emit_pick_chain = IrVal(ExprEmitter->:x, IrVal:sel, int32:sel_tid,
 pub func:emit_fn_instance = IrVal(ExprEmitter->:x, DeclId:did,
                                   int32:args_start, int32:args_count,
                                   int32:params_start, int32:params_count,
-                                  int32:mangled_name) never fails {
+                                  int32:mangled_name, Span:at) never fails {
     DeclNode:d = raw ast_decl(x.ast, did);
     if (d.kind != DeclKind.DeclFunctionDecl) { pass (raw iv_broken(d.span)); }
     // The parameters these arguments bind, as the checker recorded them: a
@@ -3249,9 +3249,9 @@ pub func:emit_fn_instance = IrVal(ExprEmitter->:x, DeclId:did,
     // expressions carry the types the checker recorded with `T` opaque, so
     // `ll_type` needs the binding to lower them. The annotation half is the
     // resolver scope pushed inside `emit_function_body_subst`.
-    drop llctx_set_subst(x.fe.ctx, gp.start, gp.count, args_start);
+    drop llctx_set_subst(x.fe.ctx, gp.start, gp.count, args_start, at);
     IrVal:r = raw emit_function_body_subst(x, did, d, mangled_name, g, true);
-    drop llctx_set_subst(x.fe.ctx, 0i32, 0i32, 0i32);
+    drop llctx_set_subst(x.fe.ctx, 0i32, 0i32, 0i32, raw span_none());
     // A DEPTH-CAP REFUSAL THE BODY LEFT AND NO CALL CARRIED OUT (DEF-229,
     // landing 96): a family method's instance is recorded through paths that
     // are not a direct call (`note_family_instance`), so the refusal leaves

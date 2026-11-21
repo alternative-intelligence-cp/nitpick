@@ -1,0 +1,69 @@
+// expect-exit: 61
+// argv: MOCK_DRIVER
+// (177d2e, DEF-719's landing: the hostile-driver fixture, rulings l.20782 item 2 and l.20824.) DEF-707's face, closed at 177d2d's row 10
+// (BR-5g) and measured then only by seat RR's `pc_driver.c`, which isn't a tree fixture. The mock driver's kernel 333 writes the ring's tail (@128) = INT64_MIN,
+// then completes normally; the next stub call must be refused as EDriverProtocol (61), before any write. Main before row 10
+// (`aefae6e`): `dispatch` computes `head - tail` before any range check and traps, IntOverflow (75). Exit 61 on every road, -O0 and -O2, and under the detector.
+mod:bridge_hd_f4;
+use "../../../lib/nbridge.npk".*;
+error:E9;
+
+extern:"cdrv" = {
+    func:echo_add = int64(Bridge->:b, int64:x, int64:y, Duration:within);
+};
+
+async func:main = int32(cstring[]:argv) {
+    if (argv.len < 2i64) { exit 7i32; }
+    string:mp = string_from_bytes(argv[1i64].ptr, argv[1i64].len);
+    Path:p = path_parse(mp) ?! E9;
+    int64:h = raw cdrv_iface_hash();
+    Result<Bridge>:br = await spawn_driver(p, 65536i64, 64i64, h, raw duration_secs(5i64));
+    Bridge:b = move(br) ?! E9;
+    // an honest call first: the mock answers kernel 0 with 0 + 7
+    Result<int64>:r0 = await echo_add(@b, 40i64, 2i64, raw duration_secs(5i64));
+    if (r0.is_error)      { drop bridge_reap(@b); exit 21i32; }
+    if (r0.value != 7i64) { drop bridge_reap(@b); exit 22i32; }
+    // the hostile call, served normally
+    Result<int32>:r1 = await dispatch(@b, 333i64, 0i64, raw duration_secs(5i64));
+    if (r1.is_error)      { drop bridge_reap(@b); exit 31i32; }
+    // the next stub call meets what the driver wrote
+    Result<int64>:r2 = await echo_add(@b, 60i64, 7i64, raw duration_secs(5i64));
+    int32:code = 63i32;
+    if (!r2.is_error) { code = 60i32; }
+    if (r2.is_error) {
+        if (r2.err == EDriverProtocol) { code = 61i32; }
+        if (r2.err == EDriverFault)    { code = 62i32; }
+    }
+    drop bridge_reap(@b);
+    exit code;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (BadPath)          { exit 92i32; },
+        (EDriverSpawn)     { exit 93i32; },
+        (EDriverFault)     { exit 94i32; },
+        (EDriverProtocol)  { exit 95i32; },
+        (EDriverDeadline)  { exit 96i32; },
+        (EDriverError)     { exit 84i32; },
+        (ERingFull)        { exit 85i32; },
+        (EBridgePoisoned)  { exit 83i32; },
+        (EShmCreate)       { exit 97i32; },
+        (EShmSeal)         { exit 97i32; },
+        (EShmMap)          { exit 97i32; },
+        (DeadlineExceeded) { exit 98i32; },
+        (DriverLeak)       { exit 89i32; },
+        (IntOverflow)      { exit 75i32; },
+        (OutOfBounds)      { exit 76i32; },
+        (MachineFault)     { exit 77i32; },
+        (WildLeak)         { exit 88i32; },
+        (Unreachable)      { exit 87i32; },
+        (HeapOom)          { exit 87i32; },
+        (HeapBadRequest)   { exit 87i32; },
+        (StackExhausted)   { exit 78i32; },
+        (DecreasesViolated) { exit 79i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 90i32;
+};

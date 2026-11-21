@@ -1,0 +1,48 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 26:20
+// 2026-11-21 (landing 177d2e, row 6: DEF-348's row b, form P2-2d, with its arm in DEF-716's hop filter; rulings l.22075, l.22238, l.23578). A WRITE
+// THROUGH A POINTER FIELD IS JUDGED AT WHAT IT REACHES: a root the hop walk can't name (a call's result, its deref) is walked again at each place
+// D-117's rule A says it reaches, a target reached through a pointer is judged at that pointer's own targets, and a `<-` target is walked as a
+// rootless place; BORROW-015 at the write. PRICE AT PARITY (l.22238 item 3): the same as `hop_rowb_price_t08`, called `gb(@a2)`. On main (226ebb99)
+// it exits 67 on every road 0-8 at -O0 and -O2 and under the detector; refused here. Its by-name twins `hop_rowb_twin_t08_bn.npk` and
+// `hop_rowb_twin_t08_bm.npk` are refused on main at its write. Way out: `hop_rowb_wayout_t08_wo_ok.npk`, 67 on main and here. From seat AP2D's
+// cells, `Team/TMP/atk-177d2e-ap2d-2026-11-20/cells/ap2d/ap2d_t08_bc_ok.npk`.
+mod:hop_rowb_price_t08_bc;
+error:E5;
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF = { List<int64>:own; int64:z; };
+struct:MM = { LF->:r; LF:lf; int64:z; };
+struct:B = { MM->:r; int64:z; };
+struct:A = { B->:q; MM:inner; int64:z; };
+func:gb = int64(A->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:f = int64(int64:n) never fails {
+    LF:fz = LF{ own: raw mk(), z: 1i64 };
+    MM:mm = MM{ r: @fz, lf: LF{ own: raw mk(), z: 1i64 }, z: 1i64 };
+    B:b = B{ r: @mm, z: 1i64 };
+    A:a = A{ q: @b, inner: MM{ r: @fz, lf: LF{ own: raw mk(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    A:a2 = A{ q: @b, inner: MM{ r: @fz, lf: LF{ own: raw mk(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    A->:ap = @a2; b.r = @((<-ap).inner); ap = @a;
+    int64->:e = @(a.inner.lf.own[0i64]);
+    discard(raw gb(@a2));
+    pass (<-e) + 6i64;
+};
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

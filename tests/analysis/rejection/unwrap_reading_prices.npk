@@ -1,0 +1,629 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 159:65
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 244:58
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 330:56
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 348:259
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 359:287
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 372:157
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 384:161
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 396:135
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 408:157
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 421:188
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 433:138
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 446:329
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 458:298
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 458:304
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 469:319
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 481:286
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 481:311
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 493:330
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 493:346
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 505:295
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 505:305
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 519:100
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 519:128
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 534:106
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 534:123
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 549:142
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 549:159
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 565:103
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 565:140
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 580:151
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 580:168
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 595:344
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 595:376
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 607:404
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 607:420
+// 2026-11-21 (landing 177d2e, row 10: DEF-720 with DEF-644's rest, DEF-691 and DEF-694's lift, form RRs; rulings l.23411, l.23500, l.23643). AN
+// UNWRAP OF A POINTER IS READ TWO WAYS, BOTH KEPT: the alias pass walks a function as main does, an unwrap no step and the place under it its root
+// whole, and when that walk met an unwrap of a pointer it walks the function again with every unwrap a step to its operand (the longer path, which
+// re-roots through the pointer), one report per site; escape roots a view through a local's or a field's unwrap too, and an unwrap whose value is
+// itself a wrapped pointer steps as well. THE PRICES AT PARITY (l.23411 item 5, l.23500 item 5, l.23643 ruled item 4, l.23798 item 4), each with a
+// twin refused on main: `p3_z54o` (main's own `z54q_ok` case was here at row 10 and went back to
+// tests/backend/programs/store_through_pointer_value_ok.npk at row 11, which accepts it again, l.23411 items 5 and 6); the self-pointing set's
+// `ap3_rp_u`; interaction 1's four; this row's own `afa_q_hl_ok`; the computed pair under an unwrap. The cases from cells have each declared name
+// suffixed by the cell's, in the form of main's prices files.
+mod:unwrap_reading_prices;
+error:E5;
+// PRICE AT PARITY (l.23411 item 5): `so.o ??! E5` handed to a five-deep store: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67
+// under the detector on main (226ebb99); refused here, BORROW-015 at 77:57. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_z54/p3_z54o.npk`.
+struct:K_z54q_ok_p3_z54o = { int64:k; };
+struct:H_z54q_ok_p3_z54o = { List<int64>:l; int64:k; K_z54q_ok_p3_z54o:kk; };
+func:mk_z54q_ok_p3_z54o = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_z54q_ok_p3_z54o = H_z54q_ok_p3_z54o() never fails { pass H_z54q_ok_p3_z54o{ l: raw mk_z54q_ok_p3_z54o(), k: 2i64, kk: K_z54q_ok_p3_z54o{ k: 3i64 } }; };
+func:growh_z54q_ok_p3_z54o = int64(H_z54q_ok_p3_z54o->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_z54q_ok_p3_z54o = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_z54q_ok_p3_z54o = int64->(H_z54q_ok_p3_z54o->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_z54q_ok_p3_z54o = H_z54q_ok_p3_z54o->(H_z54q_ok_p3_z54o->:q) never fails { pass q; };
+func:getl_z54q_ok_p3_z54o = List<int64>->(H_z54q_ok_p3_z54o->:w) never fails { pass @w.l; };
+struct:HPO_z54q_ok_p3_z54o = { H_z54q_ok_p3_z54o->:lp; List<int64>:own; };
+struct:SQ_z54q_ok_p3_z54o = { HPO_z54q_ok_p3_z54o->:q; int64:z; };
+struct:SR_z54q_ok_p3_z54o = { SQ_z54q_ok_p3_z54o->:sq; int64:z; };
+struct:SL_z54q_ok_p3_z54o = { List<int64>->:l; int64:z; };
+struct:SL2_z54q_ok_p3_z54o = { SL_z54q_ok_p3_z54o:s; int64:z; };
+struct:SLP_z54q_ok_p3_z54o = { SL_z54q_ok_p3_z54o->:sp; int64:z; };
+struct:SQB_z54q_ok_p3_z54o = { HPO_z54q_ok_p3_z54o->:q; int64:z; };
+struct:HPB_z54q_ok_p3_z54o = { H_z54q_ok_p3_z54o->:lp; List<int64>:own; };
+struct:PV_z54q_ok_p3_z54o = { H_z54q_ok_p3_z54o->:p; int64:v; };
+struct:HPV_z54q_ok_p3_z54o = { H_z54q_ok_p3_z54o->:lp; List<PV_z54q_ok_p3_z54o>:own; };
+struct:SLV_z54q_ok_p3_z54o = { List<PV_z54q_ok_p3_z54o>->:l; int64:z; };
+struct:SQV_z54q_ok_p3_z54o = { HPV_z54q_ok_p3_z54o->:q; int64:z; };
+func:getown_z54q_ok_p3_z54o = List<int64>->(HPO_z54q_ok_p3_z54o->:w) never fails { pass @w.own; };
+func:getownv_z54q_ok_p3_z54o = List<PV_z54q_ok_p3_z54o>->(HPV_z54q_ok_p3_z54o->:w) never fails { pass @w.own; };
+func:mkv_z54q_ok_p3_z54o = List<PV_z54q_ok_p3_z54o>(H_z54q_ok_p3_z54o->:h) never fails { List<PV_z54q_ok_p3_z54o>:l = raw list_init::<PV_z54q_ok_p3_z54o>(1i64); drop list_push(@l, PV_z54q_ok_p3_z54o{ p: h, v: 1i64 }); pass l; };
+func:idp_z54q_ok_p3_z54o = HPO_z54q_ok_p3_z54o->(HPO_z54q_ok_p3_z54o->:w) never fails { pass w; };
+func:cvq_z54q_ok_p3_z54o = SQ_z54q_ok_p3_z54o->(SQB_z54q_ok_p3_z54o->:b) never fails { pass ((b =>! any->) =>! SQ_z54q_ok_p3_z54o->); };
+func:put_z54q_ok_p3_z54o = int64(HPO_z54q_ok_p3_z54o->:p, H_z54q_ok_p3_z54o->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_z54q_ok_p3_z54o = { SQ_z54q_ok_p3_z54o->:sq; int64:z; };
+struct:SPP_z54q_ok_p3_z54o = { HPO_z54q_ok_p3_z54o->->:qq; int64:z; };
+struct:SPPP_z54q_ok_p3_z54o = { HPO_z54q_ok_p3_z54o->->->:qqq; int64:z; };
+struct:SPPPP_z54q_ok_p3_z54o = { HPO_z54q_ok_p3_z54o->->->->:qqqq; int64:z; };
+struct:HN_z54q_ok_p3_z54o = { int64:a; int64:b; };
+struct:SN_z54q_ok_p3_z54o = { HN_z54q_ok_p3_z54o->:q; int64:z; };
+struct:SNPP_z54q_ok_p3_z54o = { HN_z54q_ok_p3_z54o->->:qq; int64:z; };
+struct:SN4_z54q_ok_p3_z54o = { HN_z54q_ok_p3_z54o->->->->:qqqq; int64:z; };
+struct:W_z54q_ok_p3_z54o = { HPO_z54q_ok_p3_z54o:h; int64:z; };
+struct:W2_z54q_ok_p3_z54o = { HPO_z54q_ok_p3_z54o->:a; HPO_z54q_ok_p3_z54o->:b; int64:z; };
+struct:SO2_z54q_ok_p3_z54o = { HPO_z54q_ok_p3_z54o->->?:oqq; int64:z; };
+func:geth_z54q_ok_p3_z54o = HPO_z54q_ok_p3_z54o->(W_z54q_ok_p3_z54o->:w) never fails { pass @w.h; };
+func:geta_z54q_ok_p3_z54o = HPO_z54q_ok_p3_z54o->->(W2_z54q_ok_p3_z54o->:w) never fails { pass @w.a; };
+func:mksqw_z54q_ok_p3_z54o = SQ_z54q_ok_p3_z54o(W_z54q_ok_p3_z54o->:w) never fails { pass SQ_z54q_ok_p3_z54o{ q: @w.h, z: 1i64 }; };
+func:idpp_z54q_ok_p3_z54o = HPO_z54q_ok_p3_z54o->->(HPO_z54q_ok_p3_z54o->->:p) never fails { pass p; };
+func:rety_z54q_ok_p3_z54o = HPO_z54q_ok_p3_z54o->(HN_z54q_ok_p3_z54o->:p) never fails { pass ((p =>! any->) =>! HPO_z54q_ok_p3_z54o->); };
+func:put2pp_z54q_ok_p3_z54o = int64(HPO_z54q_ok_p3_z54o->->:pp, H_z54q_ok_p3_z54o->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
+func:put3_z54q_ok_p3_z54o = int64(HPO_z54q_ok_p3_z54o->->->:pp, H_z54q_ok_p3_z54o->:v) never fails { (<-(<-(<-pp))).lp = v; pass 7i64; };
+func:put4_z54q_ok_p3_z54o = int64(HPO_z54q_ok_p3_z54o->->->->:pp, H_z54q_ok_p3_z54o->:v) never fails { (<-(<-(<-(<-pp)))).lp = v; pass 7i64; };
+impl:HPO_z54q_ok_p3_z54o = { func:setme = int64(HPO_z54q_ok_p3_z54o->:self, H_z54q_ok_p3_z54o->:v) never fails { (<-self).lp = v; pass 7i64; }; };
+struct:WX3_z54q_ok_p3_z54o = { HN_z54q_ok_p3_z54o->->:x; int64:z; };
+struct:WX4_z54q_ok_p3_z54o = { HN_z54q_ok_p3_z54o->->->:x; int64:z; };
+struct:SA_z54q_ok_p3_z54o = { any->:p; int64:z; };
+struct:SX3_z54q_ok_p3_z54o = { HN_z54q_ok_p3_z54o->->->:x3; int64:z; };
+struct:SN5_z54q_ok_p3_z54o = { HN_z54q_ok_p3_z54o->->->->->:q5; int64:z; };
+struct:SP5_z54q_ok_p3_z54o = { HPO_z54q_ok_p3_z54o->->->->->:q5; int64:z; };
+func:getx3_z54q_ok_p3_z54o = HN_z54q_ok_p3_z54o->->->(WX3_z54q_ok_p3_z54o->:w) never fails { pass @w.x; };
+func:getx3c_z54q_ok_p3_z54o = HPO_z54q_ok_p3_z54o->->->(WX3_z54q_ok_p3_z54o->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_z54q_ok_p3_z54o->->->; };
+func:getx4_z54q_ok_p3_z54o = HN_z54q_ok_p3_z54o->->->->(WX4_z54q_ok_p3_z54o->:w) never fails { pass @w.x; };
+func:getx4c_z54q_ok_p3_z54o = HPO_z54q_ok_p3_z54o->->->->(WX4_z54q_ok_p3_z54o->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_z54q_ok_p3_z54o->->->->; };
+func:toany_z54q_ok_p3_z54o = any->(HN_z54q_ok_p3_z54o->->:p) never fails { pass (p =>! any->); };
+func:put5_z54q_ok_p3_z54o = int64(HPO_z54q_ok_p3_z54o->->->->->:pp, H_z54q_ok_p3_z54o->:v) never fails { (<-(<-(<-(<-(<-pp))))).lp = v; pass 7i64; };
+struct:KO_z54q_ok_p3_z54o = { H_z54q_ok_p3_z54o->:lp; List<int64>:own; };
+struct:Y3_z54q_ok_p3_z54o = { HN_z54q_ok_p3_z54o->->->:x; int64:z; };
+struct:YO3_z54q_ok_p3_z54o = { HN_z54q_ok_p3_z54o->->->?:o; int64:z; };
+func:idn3_z54q_ok_p3_z54o = HN_z54q_ok_p3_z54o->->->(HN_z54q_ok_p3_z54o->->->:p) never fails { pass p; };
+struct:Y4_z54q_ok_p3_z54o = { HN_z54q_ok_p3_z54o->->->->:x; int64:z; };
+struct:YO4_z54q_ok_p3_z54o = { HN_z54q_ok_p3_z54o->->->->?:o; int64:z; };
+func:idn4_z54q_ok_p3_z54o = HN_z54q_ok_p3_z54o->->->->(HN_z54q_ok_p3_z54o->->->->:p) never fails { pass p; };
+struct:Y5_z54q_ok_p3_z54o = { HN_z54q_ok_p3_z54o->->->->->:x; int64:z; };
+struct:YO5_z54q_ok_p3_z54o = { HN_z54q_ok_p3_z54o->->->->->?:o; int64:z; };
+func:idn5_z54q_ok_p3_z54o = HN_z54q_ok_p3_z54o->->->->->(HN_z54q_ok_p3_z54o->->->->->:p) never fails { pass p; };
+func:g_z54q_ok_p3_z54o = int64(H_z54q_ok_p3_z54o->:h0p, H_z54q_ok_p3_z54o->:hq, H_z54q_ok_p3_z54o->:hz, int64:n) never fails {
+    int64->:e = raw fp_z54q_ok_p3_z54o(hz);
+    HPO_z54q_ok_p3_z54o:mo = HPO_z54q_ok_p3_z54o{ lp: h0p, own: raw mk_z54q_ok_p3_z54o() };
+    HN_z54q_ok_p3_z54o->:s4 = ((@mo) =>! any->) =>! HN_z54q_ok_p3_z54o->; HN_z54q_ok_p3_z54o->->:s3 = @s4; HN_z54q_ok_p3_z54o->->->:s2 = @s3; HN_z54q_ok_p3_z54o->->->->:s1 = @s2;
+    Y5_z54q_ok_p3_z54o:sx = Y5_z54q_ok_p3_z54o{ x: @s1, z: 1i64 }; Y5_z54q_ok_p3_z54o:sx2 = Y5_z54q_ok_p3_z54o{ x: @s1, z: 1i64 }; YO5_z54q_ok_p3_z54o:so = YO5_z54q_ok_p3_z54o{ o: @s1, z: 1i64 };
+    discard(raw put5_z54q_ok_p3_z54o((((so.o ??! E5) =>! any->) =>! HPO_z54q_ok_p3_z54o->->->->->), hq));
+    e = raw fp_z54q_ok_p3_z54o(mo.lp);
+    pass (<-e) + 6i64;
+};
+func:f_z54q_ok_p3_z54o = int64(int64:n) never fails {
+    H_z54q_ok_p3_z54o:hz = raw mkh_z54q_ok_p3_z54o(); H_z54q_ok_p3_z54o:h0 = raw mkh_z54q_ok_p3_z54o(); H_z54q_ok_p3_z54o:h2 = raw mkh_z54q_ok_p3_z54o();
+    pass raw g_z54q_ok_p3_z54o(@h0, @h2, @hz, n);
+};
+func:cell_main_p3_z54o = int32() never fails { pass (((raw f_z54q_ok_p3_z54o(1i64)) + 60i64) =>! int32); };
+// TWIN of `p3_z54o`, the plain pointer: refused on main (226ebb99) and here, BORROW-015 at 77:50 (main: BORROW-015 at
+// 77:50). From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_z54/p3_z54x.npk`.
+struct:K_z54q_ok_p3_z54x = { int64:k; };
+struct:H_z54q_ok_p3_z54x = { List<int64>:l; int64:k; K_z54q_ok_p3_z54x:kk; };
+func:mk_z54q_ok_p3_z54x = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_z54q_ok_p3_z54x = H_z54q_ok_p3_z54x() never fails { pass H_z54q_ok_p3_z54x{ l: raw mk_z54q_ok_p3_z54x(), k: 2i64, kk: K_z54q_ok_p3_z54x{ k: 3i64 } }; };
+func:growh_z54q_ok_p3_z54x = int64(H_z54q_ok_p3_z54x->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_z54q_ok_p3_z54x = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_z54q_ok_p3_z54x = int64->(H_z54q_ok_p3_z54x->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_z54q_ok_p3_z54x = H_z54q_ok_p3_z54x->(H_z54q_ok_p3_z54x->:q) never fails { pass q; };
+func:getl_z54q_ok_p3_z54x = List<int64>->(H_z54q_ok_p3_z54x->:w) never fails { pass @w.l; };
+struct:HPO_z54q_ok_p3_z54x = { H_z54q_ok_p3_z54x->:lp; List<int64>:own; };
+struct:SQ_z54q_ok_p3_z54x = { HPO_z54q_ok_p3_z54x->:q; int64:z; };
+struct:SR_z54q_ok_p3_z54x = { SQ_z54q_ok_p3_z54x->:sq; int64:z; };
+struct:SL_z54q_ok_p3_z54x = { List<int64>->:l; int64:z; };
+struct:SL2_z54q_ok_p3_z54x = { SL_z54q_ok_p3_z54x:s; int64:z; };
+struct:SLP_z54q_ok_p3_z54x = { SL_z54q_ok_p3_z54x->:sp; int64:z; };
+struct:SQB_z54q_ok_p3_z54x = { HPO_z54q_ok_p3_z54x->:q; int64:z; };
+struct:HPB_z54q_ok_p3_z54x = { H_z54q_ok_p3_z54x->:lp; List<int64>:own; };
+struct:PV_z54q_ok_p3_z54x = { H_z54q_ok_p3_z54x->:p; int64:v; };
+struct:HPV_z54q_ok_p3_z54x = { H_z54q_ok_p3_z54x->:lp; List<PV_z54q_ok_p3_z54x>:own; };
+struct:SLV_z54q_ok_p3_z54x = { List<PV_z54q_ok_p3_z54x>->:l; int64:z; };
+struct:SQV_z54q_ok_p3_z54x = { HPV_z54q_ok_p3_z54x->:q; int64:z; };
+func:getown_z54q_ok_p3_z54x = List<int64>->(HPO_z54q_ok_p3_z54x->:w) never fails { pass @w.own; };
+func:getownv_z54q_ok_p3_z54x = List<PV_z54q_ok_p3_z54x>->(HPV_z54q_ok_p3_z54x->:w) never fails { pass @w.own; };
+func:mkv_z54q_ok_p3_z54x = List<PV_z54q_ok_p3_z54x>(H_z54q_ok_p3_z54x->:h) never fails { List<PV_z54q_ok_p3_z54x>:l = raw list_init::<PV_z54q_ok_p3_z54x>(1i64); drop list_push(@l, PV_z54q_ok_p3_z54x{ p: h, v: 1i64 }); pass l; };
+func:idp_z54q_ok_p3_z54x = HPO_z54q_ok_p3_z54x->(HPO_z54q_ok_p3_z54x->:w) never fails { pass w; };
+func:cvq_z54q_ok_p3_z54x = SQ_z54q_ok_p3_z54x->(SQB_z54q_ok_p3_z54x->:b) never fails { pass ((b =>! any->) =>! SQ_z54q_ok_p3_z54x->); };
+func:put_z54q_ok_p3_z54x = int64(HPO_z54q_ok_p3_z54x->:p, H_z54q_ok_p3_z54x->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_z54q_ok_p3_z54x = { SQ_z54q_ok_p3_z54x->:sq; int64:z; };
+struct:SPP_z54q_ok_p3_z54x = { HPO_z54q_ok_p3_z54x->->:qq; int64:z; };
+struct:SPPP_z54q_ok_p3_z54x = { HPO_z54q_ok_p3_z54x->->->:qqq; int64:z; };
+struct:SPPPP_z54q_ok_p3_z54x = { HPO_z54q_ok_p3_z54x->->->->:qqqq; int64:z; };
+struct:HN_z54q_ok_p3_z54x = { int64:a; int64:b; };
+struct:SN_z54q_ok_p3_z54x = { HN_z54q_ok_p3_z54x->:q; int64:z; };
+struct:SNPP_z54q_ok_p3_z54x = { HN_z54q_ok_p3_z54x->->:qq; int64:z; };
+struct:SN4_z54q_ok_p3_z54x = { HN_z54q_ok_p3_z54x->->->->:qqqq; int64:z; };
+struct:W_z54q_ok_p3_z54x = { HPO_z54q_ok_p3_z54x:h; int64:z; };
+struct:W2_z54q_ok_p3_z54x = { HPO_z54q_ok_p3_z54x->:a; HPO_z54q_ok_p3_z54x->:b; int64:z; };
+struct:SO2_z54q_ok_p3_z54x = { HPO_z54q_ok_p3_z54x->->?:oqq; int64:z; };
+func:geth_z54q_ok_p3_z54x = HPO_z54q_ok_p3_z54x->(W_z54q_ok_p3_z54x->:w) never fails { pass @w.h; };
+func:geta_z54q_ok_p3_z54x = HPO_z54q_ok_p3_z54x->->(W2_z54q_ok_p3_z54x->:w) never fails { pass @w.a; };
+func:mksqw_z54q_ok_p3_z54x = SQ_z54q_ok_p3_z54x(W_z54q_ok_p3_z54x->:w) never fails { pass SQ_z54q_ok_p3_z54x{ q: @w.h, z: 1i64 }; };
+func:idpp_z54q_ok_p3_z54x = HPO_z54q_ok_p3_z54x->->(HPO_z54q_ok_p3_z54x->->:p) never fails { pass p; };
+func:rety_z54q_ok_p3_z54x = HPO_z54q_ok_p3_z54x->(HN_z54q_ok_p3_z54x->:p) never fails { pass ((p =>! any->) =>! HPO_z54q_ok_p3_z54x->); };
+func:put2pp_z54q_ok_p3_z54x = int64(HPO_z54q_ok_p3_z54x->->:pp, H_z54q_ok_p3_z54x->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
+func:put3_z54q_ok_p3_z54x = int64(HPO_z54q_ok_p3_z54x->->->:pp, H_z54q_ok_p3_z54x->:v) never fails { (<-(<-(<-pp))).lp = v; pass 7i64; };
+func:put4_z54q_ok_p3_z54x = int64(HPO_z54q_ok_p3_z54x->->->->:pp, H_z54q_ok_p3_z54x->:v) never fails { (<-(<-(<-(<-pp)))).lp = v; pass 7i64; };
+impl:HPO_z54q_ok_p3_z54x = { func:setme = int64(HPO_z54q_ok_p3_z54x->:self, H_z54q_ok_p3_z54x->:v) never fails { (<-self).lp = v; pass 7i64; }; };
+struct:WX3_z54q_ok_p3_z54x = { HN_z54q_ok_p3_z54x->->:x; int64:z; };
+struct:WX4_z54q_ok_p3_z54x = { HN_z54q_ok_p3_z54x->->->:x; int64:z; };
+struct:SA_z54q_ok_p3_z54x = { any->:p; int64:z; };
+struct:SX3_z54q_ok_p3_z54x = { HN_z54q_ok_p3_z54x->->->:x3; int64:z; };
+struct:SN5_z54q_ok_p3_z54x = { HN_z54q_ok_p3_z54x->->->->->:q5; int64:z; };
+struct:SP5_z54q_ok_p3_z54x = { HPO_z54q_ok_p3_z54x->->->->->:q5; int64:z; };
+func:getx3_z54q_ok_p3_z54x = HN_z54q_ok_p3_z54x->->->(WX3_z54q_ok_p3_z54x->:w) never fails { pass @w.x; };
+func:getx3c_z54q_ok_p3_z54x = HPO_z54q_ok_p3_z54x->->->(WX3_z54q_ok_p3_z54x->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_z54q_ok_p3_z54x->->->; };
+func:getx4_z54q_ok_p3_z54x = HN_z54q_ok_p3_z54x->->->->(WX4_z54q_ok_p3_z54x->:w) never fails { pass @w.x; };
+func:getx4c_z54q_ok_p3_z54x = HPO_z54q_ok_p3_z54x->->->->(WX4_z54q_ok_p3_z54x->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_z54q_ok_p3_z54x->->->->; };
+func:toany_z54q_ok_p3_z54x = any->(HN_z54q_ok_p3_z54x->->:p) never fails { pass (p =>! any->); };
+func:put5_z54q_ok_p3_z54x = int64(HPO_z54q_ok_p3_z54x->->->->->:pp, H_z54q_ok_p3_z54x->:v) never fails { (<-(<-(<-(<-(<-pp))))).lp = v; pass 7i64; };
+struct:KO_z54q_ok_p3_z54x = { H_z54q_ok_p3_z54x->:lp; List<int64>:own; };
+struct:Y3_z54q_ok_p3_z54x = { HN_z54q_ok_p3_z54x->->->:x; int64:z; };
+struct:YO3_z54q_ok_p3_z54x = { HN_z54q_ok_p3_z54x->->->?:o; int64:z; };
+func:idn3_z54q_ok_p3_z54x = HN_z54q_ok_p3_z54x->->->(HN_z54q_ok_p3_z54x->->->:p) never fails { pass p; };
+struct:Y4_z54q_ok_p3_z54x = { HN_z54q_ok_p3_z54x->->->->:x; int64:z; };
+struct:YO4_z54q_ok_p3_z54x = { HN_z54q_ok_p3_z54x->->->->?:o; int64:z; };
+func:idn4_z54q_ok_p3_z54x = HN_z54q_ok_p3_z54x->->->->(HN_z54q_ok_p3_z54x->->->->:p) never fails { pass p; };
+struct:Y5_z54q_ok_p3_z54x = { HN_z54q_ok_p3_z54x->->->->->:x; int64:z; };
+struct:YO5_z54q_ok_p3_z54x = { HN_z54q_ok_p3_z54x->->->->->?:o; int64:z; };
+func:idn5_z54q_ok_p3_z54x = HN_z54q_ok_p3_z54x->->->->->(HN_z54q_ok_p3_z54x->->->->->:p) never fails { pass p; };
+func:g_z54q_ok_p3_z54x = int64(H_z54q_ok_p3_z54x->:h0p, H_z54q_ok_p3_z54x->:hq, H_z54q_ok_p3_z54x->:hz, int64:n) never fails {
+    int64->:e = raw fp_z54q_ok_p3_z54x(hz);
+    HPO_z54q_ok_p3_z54x:mo = HPO_z54q_ok_p3_z54x{ lp: h0p, own: raw mk_z54q_ok_p3_z54x() };
+    HN_z54q_ok_p3_z54x->:s4 = ((@mo) =>! any->) =>! HN_z54q_ok_p3_z54x->; HN_z54q_ok_p3_z54x->->:s3 = @s4; HN_z54q_ok_p3_z54x->->->:s2 = @s3; HN_z54q_ok_p3_z54x->->->->:s1 = @s2;
+    Y5_z54q_ok_p3_z54x:sx = Y5_z54q_ok_p3_z54x{ x: @s1, z: 1i64 }; Y5_z54q_ok_p3_z54x:sx2 = Y5_z54q_ok_p3_z54x{ x: @s1, z: 1i64 }; YO5_z54q_ok_p3_z54x:so = YO5_z54q_ok_p3_z54x{ o: @s1, z: 1i64 };
+    discard(raw put5_z54q_ok_p3_z54x((((sx.x) =>! any->) =>! HPO_z54q_ok_p3_z54x->->->->->), hq));
+    e = raw fp_z54q_ok_p3_z54x(mo.lp);
+    pass (<-e) + 6i64;
+};
+func:f_z54q_ok_p3_z54x = int64(int64:n) never fails {
+    H_z54q_ok_p3_z54x:hz = raw mkh_z54q_ok_p3_z54x(); H_z54q_ok_p3_z54x:h0 = raw mkh_z54q_ok_p3_z54x(); H_z54q_ok_p3_z54x:h2 = raw mkh_z54q_ok_p3_z54x();
+    pass raw g_z54q_ok_p3_z54x(@h0, @h2, @hz, n);
+};
+func:cell_main_p3_z54x = int32() never fails { pass (((raw f_z54q_ok_p3_z54x(1i64)) + 60i64) =>! int32); };
+// TWIN of `p3_z54o`, the value bound to a pointer local first: refused on main (226ebb99) and here, BORROW-015 at 78:48
+// (main: BORROW-015 at 78:48). From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_z54/p3_z54l.npk`.
+struct:K_z54q_ok_p3_z54l = { int64:k; };
+struct:H_z54q_ok_p3_z54l = { List<int64>:l; int64:k; K_z54q_ok_p3_z54l:kk; };
+func:mk_z54q_ok_p3_z54l = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_z54q_ok_p3_z54l = H_z54q_ok_p3_z54l() never fails { pass H_z54q_ok_p3_z54l{ l: raw mk_z54q_ok_p3_z54l(), k: 2i64, kk: K_z54q_ok_p3_z54l{ k: 3i64 } }; };
+func:growh_z54q_ok_p3_z54l = int64(H_z54q_ok_p3_z54l->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_z54q_ok_p3_z54l = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_z54q_ok_p3_z54l = int64->(H_z54q_ok_p3_z54l->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_z54q_ok_p3_z54l = H_z54q_ok_p3_z54l->(H_z54q_ok_p3_z54l->:q) never fails { pass q; };
+func:getl_z54q_ok_p3_z54l = List<int64>->(H_z54q_ok_p3_z54l->:w) never fails { pass @w.l; };
+struct:HPO_z54q_ok_p3_z54l = { H_z54q_ok_p3_z54l->:lp; List<int64>:own; };
+struct:SQ_z54q_ok_p3_z54l = { HPO_z54q_ok_p3_z54l->:q; int64:z; };
+struct:SR_z54q_ok_p3_z54l = { SQ_z54q_ok_p3_z54l->:sq; int64:z; };
+struct:SL_z54q_ok_p3_z54l = { List<int64>->:l; int64:z; };
+struct:SL2_z54q_ok_p3_z54l = { SL_z54q_ok_p3_z54l:s; int64:z; };
+struct:SLP_z54q_ok_p3_z54l = { SL_z54q_ok_p3_z54l->:sp; int64:z; };
+struct:SQB_z54q_ok_p3_z54l = { HPO_z54q_ok_p3_z54l->:q; int64:z; };
+struct:HPB_z54q_ok_p3_z54l = { H_z54q_ok_p3_z54l->:lp; List<int64>:own; };
+struct:PV_z54q_ok_p3_z54l = { H_z54q_ok_p3_z54l->:p; int64:v; };
+struct:HPV_z54q_ok_p3_z54l = { H_z54q_ok_p3_z54l->:lp; List<PV_z54q_ok_p3_z54l>:own; };
+struct:SLV_z54q_ok_p3_z54l = { List<PV_z54q_ok_p3_z54l>->:l; int64:z; };
+struct:SQV_z54q_ok_p3_z54l = { HPV_z54q_ok_p3_z54l->:q; int64:z; };
+func:getown_z54q_ok_p3_z54l = List<int64>->(HPO_z54q_ok_p3_z54l->:w) never fails { pass @w.own; };
+func:getownv_z54q_ok_p3_z54l = List<PV_z54q_ok_p3_z54l>->(HPV_z54q_ok_p3_z54l->:w) never fails { pass @w.own; };
+func:mkv_z54q_ok_p3_z54l = List<PV_z54q_ok_p3_z54l>(H_z54q_ok_p3_z54l->:h) never fails { List<PV_z54q_ok_p3_z54l>:l = raw list_init::<PV_z54q_ok_p3_z54l>(1i64); drop list_push(@l, PV_z54q_ok_p3_z54l{ p: h, v: 1i64 }); pass l; };
+func:idp_z54q_ok_p3_z54l = HPO_z54q_ok_p3_z54l->(HPO_z54q_ok_p3_z54l->:w) never fails { pass w; };
+func:cvq_z54q_ok_p3_z54l = SQ_z54q_ok_p3_z54l->(SQB_z54q_ok_p3_z54l->:b) never fails { pass ((b =>! any->) =>! SQ_z54q_ok_p3_z54l->); };
+func:put_z54q_ok_p3_z54l = int64(HPO_z54q_ok_p3_z54l->:p, H_z54q_ok_p3_z54l->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_z54q_ok_p3_z54l = { SQ_z54q_ok_p3_z54l->:sq; int64:z; };
+struct:SPP_z54q_ok_p3_z54l = { HPO_z54q_ok_p3_z54l->->:qq; int64:z; };
+struct:SPPP_z54q_ok_p3_z54l = { HPO_z54q_ok_p3_z54l->->->:qqq; int64:z; };
+struct:SPPPP_z54q_ok_p3_z54l = { HPO_z54q_ok_p3_z54l->->->->:qqqq; int64:z; };
+struct:HN_z54q_ok_p3_z54l = { int64:a; int64:b; };
+struct:SN_z54q_ok_p3_z54l = { HN_z54q_ok_p3_z54l->:q; int64:z; };
+struct:SNPP_z54q_ok_p3_z54l = { HN_z54q_ok_p3_z54l->->:qq; int64:z; };
+struct:SN4_z54q_ok_p3_z54l = { HN_z54q_ok_p3_z54l->->->->:qqqq; int64:z; };
+struct:W_z54q_ok_p3_z54l = { HPO_z54q_ok_p3_z54l:h; int64:z; };
+struct:W2_z54q_ok_p3_z54l = { HPO_z54q_ok_p3_z54l->:a; HPO_z54q_ok_p3_z54l->:b; int64:z; };
+struct:SO2_z54q_ok_p3_z54l = { HPO_z54q_ok_p3_z54l->->?:oqq; int64:z; };
+func:geth_z54q_ok_p3_z54l = HPO_z54q_ok_p3_z54l->(W_z54q_ok_p3_z54l->:w) never fails { pass @w.h; };
+func:geta_z54q_ok_p3_z54l = HPO_z54q_ok_p3_z54l->->(W2_z54q_ok_p3_z54l->:w) never fails { pass @w.a; };
+func:mksqw_z54q_ok_p3_z54l = SQ_z54q_ok_p3_z54l(W_z54q_ok_p3_z54l->:w) never fails { pass SQ_z54q_ok_p3_z54l{ q: @w.h, z: 1i64 }; };
+func:idpp_z54q_ok_p3_z54l = HPO_z54q_ok_p3_z54l->->(HPO_z54q_ok_p3_z54l->->:p) never fails { pass p; };
+func:rety_z54q_ok_p3_z54l = HPO_z54q_ok_p3_z54l->(HN_z54q_ok_p3_z54l->:p) never fails { pass ((p =>! any->) =>! HPO_z54q_ok_p3_z54l->); };
+func:put2pp_z54q_ok_p3_z54l = int64(HPO_z54q_ok_p3_z54l->->:pp, H_z54q_ok_p3_z54l->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
+func:put3_z54q_ok_p3_z54l = int64(HPO_z54q_ok_p3_z54l->->->:pp, H_z54q_ok_p3_z54l->:v) never fails { (<-(<-(<-pp))).lp = v; pass 7i64; };
+func:put4_z54q_ok_p3_z54l = int64(HPO_z54q_ok_p3_z54l->->->->:pp, H_z54q_ok_p3_z54l->:v) never fails { (<-(<-(<-(<-pp)))).lp = v; pass 7i64; };
+impl:HPO_z54q_ok_p3_z54l = { func:setme = int64(HPO_z54q_ok_p3_z54l->:self, H_z54q_ok_p3_z54l->:v) never fails { (<-self).lp = v; pass 7i64; }; };
+struct:WX3_z54q_ok_p3_z54l = { HN_z54q_ok_p3_z54l->->:x; int64:z; };
+struct:WX4_z54q_ok_p3_z54l = { HN_z54q_ok_p3_z54l->->->:x; int64:z; };
+struct:SA_z54q_ok_p3_z54l = { any->:p; int64:z; };
+struct:SX3_z54q_ok_p3_z54l = { HN_z54q_ok_p3_z54l->->->:x3; int64:z; };
+struct:SN5_z54q_ok_p3_z54l = { HN_z54q_ok_p3_z54l->->->->->:q5; int64:z; };
+struct:SP5_z54q_ok_p3_z54l = { HPO_z54q_ok_p3_z54l->->->->->:q5; int64:z; };
+func:getx3_z54q_ok_p3_z54l = HN_z54q_ok_p3_z54l->->->(WX3_z54q_ok_p3_z54l->:w) never fails { pass @w.x; };
+func:getx3c_z54q_ok_p3_z54l = HPO_z54q_ok_p3_z54l->->->(WX3_z54q_ok_p3_z54l->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_z54q_ok_p3_z54l->->->; };
+func:getx4_z54q_ok_p3_z54l = HN_z54q_ok_p3_z54l->->->->(WX4_z54q_ok_p3_z54l->:w) never fails { pass @w.x; };
+func:getx4c_z54q_ok_p3_z54l = HPO_z54q_ok_p3_z54l->->->->(WX4_z54q_ok_p3_z54l->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_z54q_ok_p3_z54l->->->->; };
+func:toany_z54q_ok_p3_z54l = any->(HN_z54q_ok_p3_z54l->->:p) never fails { pass (p =>! any->); };
+func:put5_z54q_ok_p3_z54l = int64(HPO_z54q_ok_p3_z54l->->->->->:pp, H_z54q_ok_p3_z54l->:v) never fails { (<-(<-(<-(<-(<-pp))))).lp = v; pass 7i64; };
+struct:KO_z54q_ok_p3_z54l = { H_z54q_ok_p3_z54l->:lp; List<int64>:own; };
+struct:Y3_z54q_ok_p3_z54l = { HN_z54q_ok_p3_z54l->->->:x; int64:z; };
+struct:YO3_z54q_ok_p3_z54l = { HN_z54q_ok_p3_z54l->->->?:o; int64:z; };
+func:idn3_z54q_ok_p3_z54l = HN_z54q_ok_p3_z54l->->->(HN_z54q_ok_p3_z54l->->->:p) never fails { pass p; };
+struct:Y4_z54q_ok_p3_z54l = { HN_z54q_ok_p3_z54l->->->->:x; int64:z; };
+struct:YO4_z54q_ok_p3_z54l = { HN_z54q_ok_p3_z54l->->->->?:o; int64:z; };
+func:idn4_z54q_ok_p3_z54l = HN_z54q_ok_p3_z54l->->->->(HN_z54q_ok_p3_z54l->->->->:p) never fails { pass p; };
+struct:Y5_z54q_ok_p3_z54l = { HN_z54q_ok_p3_z54l->->->->->:x; int64:z; };
+struct:YO5_z54q_ok_p3_z54l = { HN_z54q_ok_p3_z54l->->->->->?:o; int64:z; };
+func:idn5_z54q_ok_p3_z54l = HN_z54q_ok_p3_z54l->->->->->(HN_z54q_ok_p3_z54l->->->->->:p) never fails { pass p; };
+func:g_z54q_ok_p3_z54l = int64(H_z54q_ok_p3_z54l->:h0p, H_z54q_ok_p3_z54l->:hq, H_z54q_ok_p3_z54l->:hz, int64:n) never fails {
+    int64->:e = raw fp_z54q_ok_p3_z54l(hz);
+    HPO_z54q_ok_p3_z54l:mo = HPO_z54q_ok_p3_z54l{ lp: h0p, own: raw mk_z54q_ok_p3_z54l() };
+    HN_z54q_ok_p3_z54l->:s4 = ((@mo) =>! any->) =>! HN_z54q_ok_p3_z54l->; HN_z54q_ok_p3_z54l->->:s3 = @s4; HN_z54q_ok_p3_z54l->->->:s2 = @s3; HN_z54q_ok_p3_z54l->->->->:s1 = @s2;
+    Y5_z54q_ok_p3_z54l:sx = Y5_z54q_ok_p3_z54l{ x: @s1, z: 1i64 }; Y5_z54q_ok_p3_z54l:sx2 = Y5_z54q_ok_p3_z54l{ x: @s1, z: 1i64 }; YO5_z54q_ok_p3_z54l:so = YO5_z54q_ok_p3_z54l{ o: @s1, z: 1i64 };
+    HN_z54q_ok_p3_z54l->->->->->:tq = so.o ?? sx.x;
+    discard(raw put5_z54q_ok_p3_z54l((((tq) =>! any->) =>! HPO_z54q_ok_p3_z54l->->->->->), hq));
+    e = raw fp_z54q_ok_p3_z54l(mo.lp);
+    pass (<-e) + 6i64;
+};
+func:f_z54q_ok_p3_z54l = int64(int64:n) never fails {
+    H_z54q_ok_p3_z54l:hz = raw mkh_z54q_ok_p3_z54l(); H_z54q_ok_p3_z54l:h0 = raw mkh_z54q_ok_p3_z54l(); H_z54q_ok_p3_z54l:h2 = raw mkh_z54q_ok_p3_z54l();
+    pass raw g_z54q_ok_p3_z54l(@h0, @h2, @hz, n);
+};
+func:cell_main_p3_z54l = int32() never fails { pass (((raw f_z54q_ok_p3_z54l(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (the self-pointing set's, l.23128 item 5, l.23798 item 4): a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67
+// under the detector on main (226ebb99); refused here, BORROW-015 at 9:196. From the cell `.internal/p2c-2026-11-20/cells/g2/ap3_rp_u.npk`. Its way
+// out, `ap3_rp_u_wo`, is in tests/backend/programs/unwrap_reading_wayout_ok.npk.
+func:mk_ap3_rp_u = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rp_u = { List<int64>:l; int64:z; };
+func:idl_ap3_rp_u = L_ap3_rp_u->(L_ap3_rp_u->:p) never fails { pass p; };
+func:ido_ap3_rp_u = L_ap3_rp_u->?(L_ap3_rp_u->?:p) never fails { pass p; };
+func:growl_ap3_rp_u = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_rp_u = int64(int64:n) never fails {
+    L_ap3_rp_u:lo = L_ap3_rp_u{ l: raw mk_ap3_rp_u(), z: 1i64 }; L_ap3_rp_u:lo2 = L_ap3_rp_u{ l: raw mk_ap3_rp_u(), z: 2i64 }; L_ap3_rp_u->?:oq = @lo; int64:z0 = 1i64; int64->:e = @((<-(oq ??! E5)).l[0i64]); e = @z0; loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_rp_u = int32() never fails { pass (((raw f_ap3_rp_u(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3_rp_u`, the pointer local: refused on main (226ebb99) and here, BORROW-015 at 9:207 (main: BORROW-015 at 9:207). From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_g2/ap3_rp_ul.npk`.
+func:mk_ap3_rp_ul = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rp_ul = { List<int64>:l; int64:z; };
+func:idl_ap3_rp_ul = L_ap3_rp_ul->(L_ap3_rp_ul->:p) never fails { pass p; };
+func:ido_ap3_rp_ul = L_ap3_rp_ul->?(L_ap3_rp_ul->?:p) never fails { pass p; };
+func:growl_ap3_rp_ul = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_rp_ul = int64(int64:n) never fails {
+    L_ap3_rp_ul:lo = L_ap3_rp_ul{ l: raw mk_ap3_rp_ul(), z: 1i64 }; L_ap3_rp_ul:lo2 = L_ap3_rp_ul{ l: raw mk_ap3_rp_ul(), z: 2i64 }; L_ap3_rp_ul->?:oq = @lo; int64:z0 = 1i64; L_ap3_rp_ul->:cp = oq ??! E5; int64->:e = @((<-cp).l[0i64]); e = @z0; loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_rp_ul = int32() never fails { pass (((raw f_ap3_rp_ul(1i64)) + 60i64) =>! int32); };
+// INTERACTION 1'S PRICE AT PARITY (rows 9 x 10, l.23643 item 2): a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the
+// detector on main (226ebb99); refused here, BORROW-015 at 10:109. From the cell
+// `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/i/afa_q_rp_ok.npk`.
+func:mk_afa_q_rp_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_q_rp_ok = { List<int64>:l; int64:z; };
+func:idl_afa_q_rp_ok = L_afa_q_rp_ok->(L_afa_q_rp_ok->:p) never fails { pass p; };
+func:ido_afa_q_rp_ok = L_afa_q_rp_ok->?(L_afa_q_rp_ok->?:p) never fails { pass p; };
+func:growl_afa_q_rp_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_afa_q_rp_ok = { SS_afa_q_rp_ok->?:p; List<int64>:own; int64:z; };
+func:link_afa_q_rp_ok = int64(SS_afa_q_rp_ok->:x) never fails { (<-x).p = x; pass 7i64; };
+func:g2_afa_q_rp_ok = int64(SS_afa_q_rp_ok->:s, SS_afa_q_rp_ok->:s2) never fails { SS_afa_q_rp_ok->?:q = s.p; int64->:e = @((<-(q ??! E5)).own[0i64]); (<-s).p = s2; pass (<-e) + 6i64; };
+func:f_afa_q_rp_ok = int64(int64:n) never fails { SS_afa_q_rp_ok:so = SS_afa_q_rp_ok{ p: NIL, own: raw mk_afa_q_rp_ok(), z: 1i64 }; SS_afa_q_rp_ok:so2 = SS_afa_q_rp_ok{ p: NIL, own: raw mk_afa_q_rp_ok(), z: 2i64 }; discard(raw link_afa_q_rp_ok(@so)); discard(raw link_afa_q_rp_ok(@so2)); pass raw g2_afa_q_rp_ok(@so, @so2); };
+func:cell_main_afa_q_rp_ok = int32() never fails { pass (((raw f_afa_q_rp_ok(1i64)) + 60i64) =>! int32); };
+// INTERACTION 1'S PRICE AT PARITY: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main (226ebb99);
+// refused here, BORROW-015 at 10:109. From the cell `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/i/afa_q_rpn_ok.npk`.
+func:mk_afa_q_rpn_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_q_rpn_ok = { List<int64>:l; int64:z; };
+func:idl_afa_q_rpn_ok = L_afa_q_rpn_ok->(L_afa_q_rpn_ok->:p) never fails { pass p; };
+func:ido_afa_q_rpn_ok = L_afa_q_rpn_ok->?(L_afa_q_rpn_ok->?:p) never fails { pass p; };
+func:growl_afa_q_rpn_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_afa_q_rpn_ok = { SS_afa_q_rpn_ok->?:p; List<int64>:own; int64:z; };
+func:link_afa_q_rpn_ok = int64(SS_afa_q_rpn_ok->:x) never fails { (<-x).p = x; pass 7i64; };
+func:g2_afa_q_rpn_ok = int64(SS_afa_q_rpn_ok->:s, SS_afa_q_rpn_ok->:s2) never fails { SS_afa_q_rpn_ok->?:q = s.p; int64->:e = @((<-(q ??! E5)).own[0i64]); (<-s).p = NIL; pass (<-e) + 6i64; };
+func:f_afa_q_rpn_ok = int64(int64:n) never fails { SS_afa_q_rpn_ok:so = SS_afa_q_rpn_ok{ p: NIL, own: raw mk_afa_q_rpn_ok(), z: 1i64 }; SS_afa_q_rpn_ok:so2 = SS_afa_q_rpn_ok{ p: NIL, own: raw mk_afa_q_rpn_ok(), z: 2i64 }; discard(raw link_afa_q_rpn_ok(@so)); discard(raw link_afa_q_rpn_ok(@so2)); pass raw g2_afa_q_rpn_ok(@so, @so2); };
+func:cell_main_afa_q_rpn_ok = int32() never fails { pass (((raw f_afa_q_rpn_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `afa_q_rp_ok` and `afa_q_rpn_ok`, by name: refused on main (226ebb99) and here, BORROW-015 at 10:96 (main: BORROW-015 at 10:96). From the
+// cell `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/b4/afa_q_bnx_ok.npk`.
+func:mk_afa_q_bnx_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_q_bnx_ok = { List<int64>:l; int64:z; };
+func:idl_afa_q_bnx_ok = L_afa_q_bnx_ok->(L_afa_q_bnx_ok->:p) never fails { pass p; };
+func:ido_afa_q_bnx_ok = L_afa_q_bnx_ok->?(L_afa_q_bnx_ok->?:p) never fails { pass p; };
+func:growl_afa_q_bnx_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_afa_q_bnx_ok = { SS_afa_q_bnx_ok->?:p; List<int64>:own; int64:z; };
+func:link_afa_q_bnx_ok = int64(SS_afa_q_bnx_ok->:x) never fails { (<-x).p = x; pass 7i64; };
+func:g2_afa_q_bnx_ok = int64(SS_afa_q_bnx_ok->:s, SS_afa_q_bnx_ok->:s2) never fails { int64->:e = @((<-(s.p ??! E5)).own[0i64]); (<-s).p = s2; pass (<-e) + 6i64; };
+func:f_afa_q_bnx_ok = int64(int64:n) never fails { SS_afa_q_bnx_ok:so = SS_afa_q_bnx_ok{ p: NIL, own: raw mk_afa_q_bnx_ok(), z: 1i64 }; SS_afa_q_bnx_ok:so2 = SS_afa_q_bnx_ok{ p: NIL, own: raw mk_afa_q_bnx_ok(), z: 2i64 }; discard(raw link_afa_q_bnx_ok(@so)); discard(raw link_afa_q_bnx_ok(@so2)); pass raw g2_afa_q_bnx_ok(@so, @so2); };
+func:cell_main_afa_q_bnx_ok = int32() never fails { pass (((raw f_afa_q_bnx_ok(1i64)) + 60i64) =>! int32); };
+// INTERACTION 1'S PRICE AT PARITY: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main (226ebb99);
+// refused here, BORROW-015 at 10:109. From the cell `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/i/afa_q_hp_ok.npk`.
+func:mk_afa_q_hp_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_q_hp_ok = { List<int64>:l; int64:z; };
+func:idl_afa_q_hp_ok = L_afa_q_hp_ok->(L_afa_q_hp_ok->:p) never fails { pass p; };
+func:ido_afa_q_hp_ok = L_afa_q_hp_ok->?(L_afa_q_hp_ok->?:p) never fails { pass p; };
+func:growl_afa_q_hp_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:HO_afa_q_hp_ok = { List<int64>:own; int64:z; };
+struct:SH_afa_q_hp_ok = { HO_afa_q_hp_ok->?:h; int64:z; };
+func:g2_afa_q_hp_ok = int64(SH_afa_q_hp_ok->:s, HO_afa_q_hp_ok->:o2) never fails { HO_afa_q_hp_ok->?:q = s.h; int64->:e = @((<-(q ??! E5)).own[0i64]); (<-s).h = o2; pass (<-e) + 6i64; };
+func:f_afa_q_hp_ok = int64(int64:n) never fails { HO_afa_q_hp_ok:o = HO_afa_q_hp_ok{ own: raw mk_afa_q_hp_ok(), z: 1i64 }; HO_afa_q_hp_ok:o2 = HO_afa_q_hp_ok{ own: raw mk_afa_q_hp_ok(), z: 2i64 }; SH_afa_q_hp_ok:sh = SH_afa_q_hp_ok{ h: @o, z: 1i64 }; pass raw g2_afa_q_hp_ok(@sh, @o2); };
+func:cell_main_afa_q_hp_ok = int32() never fails { pass (((raw f_afa_q_hp_ok(1i64)) + 60i64) =>! int32); };
+// INTERACTION 1'S PRICE AT PARITY: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main (226ebb99);
+// refused here, BORROW-015 at 11:118. From the cell `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/b4/afa_q_hpwc_ok.npk`.
+func:mk_afa_q_hpwc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_q_hpwc_ok = { List<int64>:l; int64:z; };
+func:idl_afa_q_hpwc_ok = L_afa_q_hpwc_ok->(L_afa_q_hpwc_ok->:p) never fails { pass p; };
+func:ido_afa_q_hpwc_ok = L_afa_q_hpwc_ok->?(L_afa_q_hpwc_ok->?:p) never fails { pass p; };
+func:growl_afa_q_hpwc_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:HO_afa_q_hpwc_ok = { List<int64>:own; int64:z; };
+struct:SH_afa_q_hpwc_ok = { HO_afa_q_hpwc_ok->?:h; int64:z; };
+func:idq_afa_q_hpwc_ok = HO_afa_q_hpwc_ok->?(HO_afa_q_hpwc_ok->?:p) never fails { pass p; };
+func:g2_afa_q_hpwc_ok = int64(SH_afa_q_hpwc_ok->:s, HO_afa_q_hpwc_ok->:o2) never fails { HO_afa_q_hpwc_ok->?:q = raw idq_afa_q_hpwc_ok(s.h); int64->:e = @((<-(q ??! E5)).own[0i64]); (<-s).h = o2; pass (<-e) + 6i64; };
+func:f_afa_q_hpwc_ok = int64(int64:n) never fails { HO_afa_q_hpwc_ok:o = HO_afa_q_hpwc_ok{ own: raw mk_afa_q_hpwc_ok(), z: 1i64 }; HO_afa_q_hpwc_ok:o2 = HO_afa_q_hpwc_ok{ own: raw mk_afa_q_hpwc_ok(), z: 2i64 }; SH_afa_q_hpwc_ok:sh = SH_afa_q_hpwc_ok{ h: @o, z: 1i64 }; pass raw g2_afa_q_hpwc_ok(@sh, @o2); };
+func:cell_main_afa_q_hpwc_ok = int32() never fails { pass (((raw f_afa_q_hpwc_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `afa_q_hp_ok` and `afa_q_hpwc_ok`, by name: refused on main (226ebb99) and here, BORROW-015 at 10:96 (main: BORROW-015 at 10:96). From
+// the cell `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/b4/afa_q_hpbn_ok.npk`.
+func:mk_afa_q_hpbn_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_q_hpbn_ok = { List<int64>:l; int64:z; };
+func:idl_afa_q_hpbn_ok = L_afa_q_hpbn_ok->(L_afa_q_hpbn_ok->:p) never fails { pass p; };
+func:ido_afa_q_hpbn_ok = L_afa_q_hpbn_ok->?(L_afa_q_hpbn_ok->?:p) never fails { pass p; };
+func:growl_afa_q_hpbn_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:HO_afa_q_hpbn_ok = { List<int64>:own; int64:z; };
+struct:SH_afa_q_hpbn_ok = { HO_afa_q_hpbn_ok->?:h; int64:z; };
+func:g2_afa_q_hpbn_ok = int64(SH_afa_q_hpbn_ok->:s, HO_afa_q_hpbn_ok->:o2) never fails { int64->:e = @((<-(s.h ??! E5)).own[0i64]); (<-s).h = o2; pass (<-e) + 6i64; };
+func:f_afa_q_hpbn_ok = int64(int64:n) never fails { HO_afa_q_hpbn_ok:o = HO_afa_q_hpbn_ok{ own: raw mk_afa_q_hpbn_ok(), z: 1i64 }; HO_afa_q_hpbn_ok:o2 = HO_afa_q_hpbn_ok{ own: raw mk_afa_q_hpbn_ok(), z: 2i64 }; SH_afa_q_hpbn_ok:sh = SH_afa_q_hpbn_ok{ h: @o, z: 1i64 }; pass raw g2_afa_q_hpbn_ok(@sh, @o2); };
+func:cell_main_afa_q_hpbn_ok = int32() never fails { pass (((raw f_afa_q_hpbn_ok(1i64)) + 60i64) =>! int32); };
+// THIS ROW'S OWN PRICE AT PARITY (l.23643 item 4, ruled item 4): the reassigned place is the field, not a copy, so it is not DEF-738's class: a
+// right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main (226ebb99); refused here, BORROW-015 at 10:209. From
+// the cell `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/b4/afa_q_hl_ok.npk`. Its by-name twin is next; it moves with it.
+func:mk_afa_q_hl_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_q_hl_ok = { List<int64>:l; int64:z; };
+func:idl_afa_q_hl_ok = L_afa_q_hl_ok->(L_afa_q_hl_ok->:p) never fails { pass p; };
+func:ido_afa_q_hl_ok = L_afa_q_hl_ok->?(L_afa_q_hl_ok->?:p) never fails { pass p; };
+func:growl_afa_q_hl_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:HO_afa_q_hl_ok = { List<int64>:own; int64:z; };
+struct:SH_afa_q_hl_ok = { HO_afa_q_hl_ok->?:h; int64:z; };
+func:f_afa_q_hl_ok = int64(int64:n) never fails { HO_afa_q_hl_ok:o = HO_afa_q_hl_ok{ own: raw mk_afa_q_hl_ok(), z: 1i64 }; HO_afa_q_hl_ok:o2 = HO_afa_q_hl_ok{ own: raw mk_afa_q_hl_ok(), z: 2i64 }; SH_afa_q_hl_ok:sh = SH_afa_q_hl_ok{ h: @o, z: 1i64 }; HO_afa_q_hl_ok->?:q = sh.h; int64->:e = @((<-(q ??! E5)).own[0i64]); sh.h = @o2; pass (<-e) + 6i64; };
+func:cell_main_afa_q_hl_ok = int32() never fails { pass (((raw f_afa_q_hl_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `afa_q_hl_ok`, by name, which moves with it: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99); refused here, BORROW-015 at 10:190, BORROW-015 at 10:196. From the cell
+// `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/hl/afa_q_hl_bn.npk`.
+func:mk_afa_q_hl_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_q_hl_bn = { List<int64>:l; int64:z; };
+func:idl_afa_q_hl_bn = L_afa_q_hl_bn->(L_afa_q_hl_bn->:p) never fails { pass p; };
+func:ido_afa_q_hl_bn = L_afa_q_hl_bn->?(L_afa_q_hl_bn->?:p) never fails { pass p; };
+func:growl_afa_q_hl_bn = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:HO_afa_q_hl_bn = { List<int64>:own; int64:z; };
+struct:SH_afa_q_hl_bn = { HO_afa_q_hl_bn->?:h; int64:z; };
+func:f_afa_q_hl_bn = int64(int64:n) never fails { HO_afa_q_hl_bn:o = HO_afa_q_hl_bn{ own: raw mk_afa_q_hl_bn(), z: 1i64 }; HO_afa_q_hl_bn:o2 = HO_afa_q_hl_bn{ own: raw mk_afa_q_hl_bn(), z: 2i64 }; SH_afa_q_hl_bn:sh = SH_afa_q_hl_bn{ h: @o, z: 1i64 }; int64->:e = @((<-(sh.h ??! E5)).own[0i64]); sh.h = @o2; pass (<-e) + 6i64; };
+func:cell_main_afa_q_hl_bn = int32() never fails { pass (((raw f_afa_q_hl_bn(1i64)) + 60i64) =>! int32); };
+// TWIN of `afa_q_hl_ok`, through a plain pointer: refused on main (226ebb99) and here, BORROW-015 at 10:199 (main: BORROW-015 at 10:199). From the
+// cell `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/hl/afa_q_hl_pt.npk`.
+func:mk_afa_q_hl_pt = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_q_hl_pt = { List<int64>:l; int64:z; };
+func:idl_afa_q_hl_pt = L_afa_q_hl_pt->(L_afa_q_hl_pt->:p) never fails { pass p; };
+func:ido_afa_q_hl_pt = L_afa_q_hl_pt->?(L_afa_q_hl_pt->?:p) never fails { pass p; };
+func:growl_afa_q_hl_pt = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:HO_afa_q_hl_pt = { List<int64>:own; int64:z; };
+struct:SH_afa_q_hl_pt = { HO_afa_q_hl_pt->:h; int64:z; };
+func:f_afa_q_hl_pt = int64(int64:n) never fails { HO_afa_q_hl_pt:o = HO_afa_q_hl_pt{ own: raw mk_afa_q_hl_pt(), z: 1i64 }; HO_afa_q_hl_pt:o2 = HO_afa_q_hl_pt{ own: raw mk_afa_q_hl_pt(), z: 2i64 }; SH_afa_q_hl_pt:sh = SH_afa_q_hl_pt{ h: @o, z: 1i64 }; HO_afa_q_hl_pt->:q = sh.h; int64->:e = @((<-q).own[0i64]); sh.h = @o2; pass (<-e) + 6i64; };
+func:cell_main_afa_q_hl_pt = int32() never fails { pass (((raw f_afa_q_hl_pt(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (l.23500 item 5): the computed pair under an unwrap handed to one call: a right program, exit 67 on every road 0-8 at -O0 and 67
+// at -O2, 67 under the detector on main (226ebb99); refused here, BORROW-015 at 10:196, BORROW-015 at 10:221. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_t_l2.npk`.
+func:mk_ap3u_t_l2 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_t_l2 = { List<int64>:l; int64:z; };
+func:idl_ap3u_t_l2 = L_ap3u_t_l2->(L_ap3u_t_l2->:p) never fails { pass p; };
+func:ido_ap3u_t_l2 = L_ap3u_t_l2->?(L_ap3u_t_l2->?:p) never fails { pass p; };
+func:growl_ap3u_t_l2 = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:sw2_ap3u_t_l2 = int64(int64->:a, int64->:b) never fails { <-a = 5i64; <-b = 6i64; pass 7i64; };
+func:f_ap3u_t_l2 = int64(int64:n) never fails {
+    L_ap3u_t_l2:lo = L_ap3u_t_l2{ l: raw mk_ap3u_t_l2(), z: 1i64 }; L_ap3u_t_l2:lo2 = L_ap3u_t_l2{ l: raw mk_ap3u_t_l2(), z: 2i64 }; L_ap3u_t_l2->?:oq = @lo; L_ap3u_t_l2->?:oq2 = @lo2; drop list_push(@lo.l, 2i64); int64:i = 0i64; int64:j = 1i64 + (n * 0i64); discard(raw sw2_ap3u_t_l2(@((<-(oq ??! E5)).l[i]), @((<-(oq ??! E5)).l[j]))); pass 7i64;
+};
+func:cell_main_ap3u_t_l2 = int32() never fails { pass (((raw f_ap3u_t_l2(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3u_t_l2`, by name: refused on main (226ebb99) and here, BORROW-015 at 10:210, BORROW-015 at 10:226 (main: BORROW-015 at 10:210,
+// BORROW-015 at 10:226). From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_t_l2bn.npk`.
+func:mk_ap3u_t_l2bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_t_l2bn = { List<int64>:l; int64:z; };
+func:idl_ap3u_t_l2bn = L_ap3u_t_l2bn->(L_ap3u_t_l2bn->:p) never fails { pass p; };
+func:ido_ap3u_t_l2bn = L_ap3u_t_l2bn->?(L_ap3u_t_l2bn->?:p) never fails { pass p; };
+func:growl_ap3u_t_l2bn = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:sw2_ap3u_t_l2bn = int64(int64->:a, int64->:b) never fails { <-a = 5i64; <-b = 6i64; pass 7i64; };
+func:f_ap3u_t_l2bn = int64(int64:n) never fails {
+    L_ap3u_t_l2bn:lo = L_ap3u_t_l2bn{ l: raw mk_ap3u_t_l2bn(), z: 1i64 }; L_ap3u_t_l2bn:lo2 = L_ap3u_t_l2bn{ l: raw mk_ap3u_t_l2bn(), z: 2i64 }; L_ap3u_t_l2bn->?:oq = @lo; L_ap3u_t_l2bn->?:oq2 = @lo2; drop list_push(@lo.l, 2i64); L_ap3u_t_l2bn->:lp = @lo; int64:i = 0i64; int64:j = 1i64 + (n * 0i64); discard(raw sw2_ap3u_t_l2bn(@((<-lp).l[i]), @((<-lp).l[j]))); pass 7i64;
+};
+func:cell_main_ap3u_t_l2bn = int32() never fails { pass (((raw f_ap3u_t_l2bn(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3u_t_l2`, by name, dereferenced: refused on main (226ebb99) and here, BORROW-015 at 10:196, BORROW-015 at 10:206 (main: BORROW-015 at
+// 10:196, BORROW-015 at 10:206). From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_t_l2d.npk`.
+func:mk_ap3u_t_l2d = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_t_l2d = { List<int64>:l; int64:z; };
+func:idl_ap3u_t_l2d = L_ap3u_t_l2d->(L_ap3u_t_l2d->:p) never fails { pass p; };
+func:ido_ap3u_t_l2d = L_ap3u_t_l2d->?(L_ap3u_t_l2d->?:p) never fails { pass p; };
+func:growl_ap3u_t_l2d = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:sw2_ap3u_t_l2d = int64(int64->:a, int64->:b) never fails { <-a = 5i64; <-b = 6i64; pass 7i64; };
+func:f_ap3u_t_l2d = int64(int64:n) never fails {
+    L_ap3u_t_l2d:lo = L_ap3u_t_l2d{ l: raw mk_ap3u_t_l2d(), z: 1i64 }; L_ap3u_t_l2d:lo2 = L_ap3u_t_l2d{ l: raw mk_ap3u_t_l2d(), z: 2i64 }; L_ap3u_t_l2d->?:oq = @lo; L_ap3u_t_l2d->?:oq2 = @lo2; drop list_push(@lo.l, 2i64); int64:i = 0i64; int64:j = 1i64 + (n * 0i64); discard(raw sw2_ap3u_t_l2d(@lo.l[i], @lo.l[j])); pass 7i64;
+};
+func:cell_main_ap3u_t_l2d = int32() never fails { pass (((raw f_ap3u_t_l2d(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (l.23500 item 5): the computed pair: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99); refused here, BORROW-015 at 11:73, BORROW-015 at 11:101. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g1/ap3u_t_s.npk`.
+func:mk_ap3u_t_s = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_t_s = { List<int64>:l; int64:z; };
+func:idl_ap3u_t_s = L_ap3u_t_s->(L_ap3u_t_s->:p) never fails { pass p; };
+func:ido_ap3u_t_s = L_ap3u_t_s->?(L_ap3u_t_s->?:p) never fails { pass p; };
+func:growl_ap3u_t_s = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3u_t_s = { SS_ap3u_t_s->?:p; List<int64>:own; int64:z; };
+func:link_ap3u_t_s = int64(SS_ap3u_t_s->:x) never fails { (<-x).p = x; pass 7i64; };
+func:sw2_ap3u_t_s = int64(int64->:a, int64->:b) never fails { <-a = 5i64; <-b = 6i64; pass 7i64; };
+func:g2_ap3u_t_s = int64(SS_ap3u_t_s->:s, int64:i, int64:j) never fails { discard(raw sw2_ap3u_t_s(@((<-(s.p ??! E5)).own[i]), @((<-(s.p ??! E5)).own[j]))); pass 7i64; };
+func:f_ap3u_t_s = int64(int64:n) never fails {
+    SS_ap3u_t_s:so = SS_ap3u_t_s{ p: NIL, own: raw mk_ap3u_t_s(), z: 1i64 }; drop list_push(@so.own, 2i64); discard(raw link_ap3u_t_s(@so)); pass raw g2_ap3u_t_s(@so, 0i64, 1i64 + (n * 0i64));
+};
+func:cell_main_ap3u_t_s = int32() never fails { pass (((raw f_ap3u_t_s(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3u_t_s`, by name: refused on main (226ebb99) and here, BORROW-015 at 11:73, BORROW-015 at 11:90 (main: BORROW-015 at 11:73, BORROW-015
+// at 11:90). From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_t_sbn.npk`.
+func:mk_ap3u_t_sbn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_t_sbn = { List<int64>:l; int64:z; };
+func:idl_ap3u_t_sbn = L_ap3u_t_sbn->(L_ap3u_t_sbn->:p) never fails { pass p; };
+func:ido_ap3u_t_sbn = L_ap3u_t_sbn->?(L_ap3u_t_sbn->?:p) never fails { pass p; };
+func:growl_ap3u_t_sbn = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3u_t_sbn = { SS_ap3u_t_sbn->?:p; List<int64>:own; int64:z; };
+func:link_ap3u_t_sbn = int64(SS_ap3u_t_sbn->:x) never fails { (<-x).p = x; pass 7i64; };
+func:sw2_ap3u_t_sbn = int64(int64->:a, int64->:b) never fails { <-a = 5i64; <-b = 6i64; pass 7i64; };
+func:g2_ap3u_t_sbn = int64(SS_ap3u_t_sbn->:s, int64:i, int64:j) never fails { discard(raw sw2_ap3u_t_sbn(@((<-s).own[i]), @((<-s).own[j]))); pass 7i64; };
+func:f_ap3u_t_sbn = int64(int64:n) never fails {
+    SS_ap3u_t_sbn:so = SS_ap3u_t_sbn{ p: NIL, own: raw mk_ap3u_t_sbn(), z: 1i64 }; drop list_push(@so.own, 2i64); discard(raw link_ap3u_t_sbn(@so)); pass raw g2_ap3u_t_sbn(@so, 0i64, 1i64 + (n * 0i64));
+};
+func:cell_main_ap3u_t_sbn = int32() never fails { pass (((raw f_ap3u_t_sbn(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3u_t_s`, by name: refused on main (226ebb99) and here, BORROW-015 at 11:94, BORROW-015 at 11:111 (main: BORROW-015 at 11:94,
+// BORROW-015 at 11:111). From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_t_sbn2.npk`.
+func:mk_ap3u_t_sbn2 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_t_sbn2 = { List<int64>:l; int64:z; };
+func:idl_ap3u_t_sbn2 = L_ap3u_t_sbn2->(L_ap3u_t_sbn2->:p) never fails { pass p; };
+func:ido_ap3u_t_sbn2 = L_ap3u_t_sbn2->?(L_ap3u_t_sbn2->?:p) never fails { pass p; };
+func:growl_ap3u_t_sbn2 = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3u_t_sbn2 = { SS_ap3u_t_sbn2->?:p; List<int64>:own; int64:z; };
+func:link_ap3u_t_sbn2 = int64(SS_ap3u_t_sbn2->:x) never fails { (<-x).p = x; pass 7i64; };
+func:sw2_ap3u_t_sbn2 = int64(int64->:a, int64->:b) never fails { <-a = 5i64; <-b = 6i64; pass 7i64; };
+func:g2_ap3u_t_sbn2 = int64(SS_ap3u_t_sbn2->:s, int64:i, int64:j) never fails { SS_ap3u_t_sbn2->:q = s.p ??! E5; discard(raw sw2_ap3u_t_sbn2(@((<-q).own[i]), @((<-q).own[j]))); pass 7i64; };
+func:f_ap3u_t_sbn2 = int64(int64:n) never fails {
+    SS_ap3u_t_sbn2:so = SS_ap3u_t_sbn2{ p: NIL, own: raw mk_ap3u_t_sbn2(), z: 1i64 }; drop list_push(@so.own, 2i64); discard(raw link_ap3u_t_sbn2(@so)); pass raw g2_ap3u_t_sbn2(@so, 0i64, 1i64 + (n * 0i64));
+};
+func:cell_main_ap3u_t_sbn2 = int32() never fails { pass (((raw f_ap3u_t_sbn2(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (l.23500 item 5): the computed pair: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99); refused here, BORROW-015 at 11:73, BORROW-015 at 11:110. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g1/ap3u_t_ss.npk`.
+func:mk_ap3u_t_ss = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_t_ss = { List<int64>:l; int64:z; };
+func:idl_ap3u_t_ss = L_ap3u_t_ss->(L_ap3u_t_ss->:p) never fails { pass p; };
+func:ido_ap3u_t_ss = L_ap3u_t_ss->?(L_ap3u_t_ss->?:p) never fails { pass p; };
+func:growl_ap3u_t_ss = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SR_ap3u_t_ss = { Result<SR_ap3u_t_ss->?>:rp; List<int64>:own; int64:z; };
+func:linkr_ap3u_t_ss = int64(SR_ap3u_t_ss->:x) never fails { SR_ap3u_t_ss->?:xo = x; (<-x).rp = Result{ value: xo }; pass 7i64; };
+func:sw2_ap3u_t_ss = int64(int64->:a, int64->:b) never fails { <-a = 5i64; <-b = 6i64; pass 7i64; };
+func:g3_ap3u_t_ss = int64(SR_ap3u_t_ss->:s, int64:i, int64:j) never fails { discard(raw sw2_ap3u_t_ss(@((<-((s.rp ?! E5) ??! E5)).own[i]), @((<-((s.rp ?! E5) ??! E5)).own[j]))); pass 7i64; };
+func:f_ap3u_t_ss = int64(int64:n) never fails {
+    SR_ap3u_t_ss->?:nz = NIL; SR_ap3u_t_ss:so = SR_ap3u_t_ss{ rp: Result{ value: nz }, own: raw mk_ap3u_t_ss(), z: 1i64 }; discard(raw linkr_ap3u_t_ss(@so)); drop list_push(@so.own, 2i64); pass raw g3_ap3u_t_ss(@so, 0i64, 1i64 + (n * 0i64));
+};
+func:cell_main_ap3u_t_ss = int32() never fails { pass (((raw f_ap3u_t_ss(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3u_t_ss`, by name: refused on main (226ebb99) and here, BORROW-015 at 11:103, BORROW-015 at 11:120 (main: BORROW-015 at 11:103,
+// BORROW-015 at 11:120). From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_t_ssbn.npk`.
+func:mk_ap3u_t_ssbn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_t_ssbn = { List<int64>:l; int64:z; };
+func:idl_ap3u_t_ssbn = L_ap3u_t_ssbn->(L_ap3u_t_ssbn->:p) never fails { pass p; };
+func:ido_ap3u_t_ssbn = L_ap3u_t_ssbn->?(L_ap3u_t_ssbn->?:p) never fails { pass p; };
+func:growl_ap3u_t_ssbn = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SR_ap3u_t_ssbn = { Result<SR_ap3u_t_ssbn->?>:rp; List<int64>:own; int64:z; };
+func:linkr_ap3u_t_ssbn = int64(SR_ap3u_t_ssbn->:x) never fails { SR_ap3u_t_ssbn->?:xo = x; (<-x).rp = Result{ value: xo }; pass 7i64; };
+func:sw2_ap3u_t_ssbn = int64(int64->:a, int64->:b) never fails { <-a = 5i64; <-b = 6i64; pass 7i64; };
+func:g3_ap3u_t_ssbn = int64(SR_ap3u_t_ssbn->:s, int64:i, int64:j) never fails { SR_ap3u_t_ssbn->:q = (s.rp ?! E5) ??! E5; discard(raw sw2_ap3u_t_ssbn(@((<-q).own[i]), @((<-q).own[j]))); pass 7i64; };
+func:f_ap3u_t_ssbn = int64(int64:n) never fails {
+    SR_ap3u_t_ssbn->?:nz = NIL; SR_ap3u_t_ssbn:so = SR_ap3u_t_ssbn{ rp: Result{ value: nz }, own: raw mk_ap3u_t_ssbn(), z: 1i64 }; discard(raw linkr_ap3u_t_ssbn(@so)); drop list_push(@so.own, 2i64); pass raw g3_ap3u_t_ssbn(@so, 0i64, 1i64 + (n * 0i64));
+};
+func:cell_main_ap3u_t_ssbn = int32() never fails { pass (((raw f_ap3u_t_ssbn(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (l.23500 item 5): the computed pair: a right program, exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99); refused here, BORROW-015 at 10:234, BORROW-015 at 10:266. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_t_r2b.npk`.
+func:mk_ap3u_t_r2b = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_t_r2b = { List<int64>:l; int64:z; };
+func:idl_ap3u_t_r2b = L_ap3u_t_r2b->(L_ap3u_t_r2b->:p) never fails { pass p; };
+func:ido_ap3u_t_r2b = L_ap3u_t_r2b->?(L_ap3u_t_r2b->?:p) never fails { pass p; };
+func:growl_ap3u_t_r2b = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:sw2_ap3u_t_r2b = int64(int64->:a, int64->:b) never fails { <-a = 5i64; <-b = 6i64; pass 7i64; };
+func:f_ap3u_t_r2b = int64(int64:n) never fails {
+    L_ap3u_t_r2b:lo = L_ap3u_t_r2b{ l: raw mk_ap3u_t_r2b(), z: 1i64 }; L_ap3u_t_r2b:lo2 = L_ap3u_t_r2b{ l: raw mk_ap3u_t_r2b(), z: 2i64 }; L_ap3u_t_r2b->?:oq = @lo; L_ap3u_t_r2b->?:oq2 = @lo2; drop list_push(@lo.l, 2i64); Result<L_ap3u_t_r2b->?>:r = Result{ value: oq }; int64:i = 0i64; int64:j = 1i64 + (n * 0i64); discard(raw sw2_ap3u_t_r2b(@((<-((r ?! E5) ??! E5)).l[i]), @((<-((r ?! E5) ??! E5)).l[j]))); pass 7i64;
+};
+func:cell_main_ap3u_t_r2b = int32() never fails { pass (((raw f_ap3u_t_r2b(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3u_t_r2b`, by name: refused on main (226ebb99) and here, BORROW-015 at 10:261, BORROW-015 at 10:277 (main: BORROW-015 at 10:261,
+// BORROW-015 at 10:277). From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g4/ap3u_t_r2bbn.npk`.
+func:mk_ap3u_t_r2bbn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_t_r2bbn = { List<int64>:l; int64:z; };
+func:idl_ap3u_t_r2bbn = L_ap3u_t_r2bbn->(L_ap3u_t_r2bbn->:p) never fails { pass p; };
+func:ido_ap3u_t_r2bbn = L_ap3u_t_r2bbn->?(L_ap3u_t_r2bbn->?:p) never fails { pass p; };
+func:growl_ap3u_t_r2bbn = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:sw2_ap3u_t_r2bbn = int64(int64->:a, int64->:b) never fails { <-a = 5i64; <-b = 6i64; pass 7i64; };
+func:f_ap3u_t_r2bbn = int64(int64:n) never fails {
+    L_ap3u_t_r2bbn:lo = L_ap3u_t_r2bbn{ l: raw mk_ap3u_t_r2bbn(), z: 1i64 }; L_ap3u_t_r2bbn:lo2 = L_ap3u_t_r2bbn{ l: raw mk_ap3u_t_r2bbn(), z: 2i64 }; L_ap3u_t_r2bbn->?:oq = @lo; L_ap3u_t_r2bbn->?:oq2 = @lo2; drop list_push(@lo.l, 2i64); Result<L_ap3u_t_r2bbn->?>:r = Result{ value: oq }; L_ap3u_t_r2bbn->:lp = (r ?! E5) ??! E5; int64:i = 0i64; int64:j = 1i64 + (n * 0i64); discard(raw sw2_ap3u_t_r2bbn(@((<-lp).l[i]), @((<-lp).l[j]))); pass 7i64;
+};
+func:cell_main_ap3u_t_r2bbn = int32() never fails { pass (((raw f_ap3u_t_r2bbn(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

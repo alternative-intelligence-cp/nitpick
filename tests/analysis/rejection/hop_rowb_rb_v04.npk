@@ -1,0 +1,48 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 26:20
+// 2026-11-21 (landing 177d2e, row 6: DEF-348's row b, form P2-2d, with its arm in DEF-716's hop filter; rulings l.22075, l.22238, l.23578). A WRITE
+// THROUGH A POINTER FIELD IS JUDGED AT WHAT IT REACHES: a root the hop walk can't name (a call's result, its deref) is walked again at each place
+// D-117's rule A says it reaches, a target reached through a pointer is judged at that pointer's own targets, and a `<-` target is walked as a
+// rootless place; BORROW-015 at the write. CLOSED FACE: on main (226ebb99) it is accepted and exits 236 on every road 0-8 at -O0 and -O2, and 97
+// under the detector (a read of freed storage); refused here. P2-2d's census (l.22075 item 2), root B's record (`rbv`). From seat P2's cells,
+// `Team/TMP/plan-177d2e-p2-2026-11-20/cells/rbv/rb_v04.npk`.
+mod:hop_rowb_rb_v04;
+error:E5;
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF = { List<int64>:own; int64:z; };
+struct:MM = { LF->:r; LF:lf; int64:z; };
+struct:B = { MM->:r; int64:z; };
+struct:A = { B->:q; MM:inner; int64:z; };
+func:gb = int64(A->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+struct:H = { A->:pa; int64:z; };
+func:f = int64(int64:n) never fails {
+    LF:fz = LF{ own: raw mk(), z: 1i64 };
+    MM:mm = MM{ r: @fz, lf: LF{ own: raw mk(), z: 1i64 }, z: 1i64 };
+    B:b = B{ r: @mm, z: 1i64 };
+    A:a = A{ q: @b, inner: MM{ r: @fz, lf: LF{ own: raw mk(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    H:h = H{ pa: @a, z: 1i64 }; H->:hp = @h; b.r = @((<-((<-hp).pa)).inner);
+    LF:m3 = LF{ own: raw mk(), z: 1i64 };
+    int64->:e = @(a.inner.lf.own[0i64]);
+    discard(raw gb(@a));
+    pass (<-e) + 6i64;
+};
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

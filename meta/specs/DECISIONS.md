@@ -11051,6 +11051,8 @@ with zero compiler work), and the wire-conformance suite are 1.1 work
 C reference driver and conformance harness are buildable out-of-tree at any
 time — the v3 POC (18/18 kernel checks) is their seed.
 
+*[⟦FILL: DATE⟧, 1.6.1e landing 177d2e — a dated note (DEF-719, row 12, LBSG; rulings `MANAGEMENT/briefs/177d-held-rulings-2026-11-02.md` line 22693, its text line 22702 as amended at line 23217 item 2, line 23315).]* `Shm.memfd` is hidden; `Shm` is move-only by its marker; `shm_unmap` takes `move Shm` and closes the memfd after the unmap; `shm_seal_holds` is the public seal query. The comment over `shm_unmap` says so. DEF-719's row (LBSG) cites DEF-468, whose `Shm` face closes by the marker and the consuming unmap (line 23936).
+
 ## D-150 — The heap: out-of-band slabs, canaries, and the request rules — **SETTLED**
 
 Cycle 0.10.0. The bump-never-free floor is replaced by the real allocator in
@@ -24268,3 +24270,53 @@ in 169; the author's words are recorded as relayed through management, and regis
 landing 167, which already rewrites the queue.
 
 *[2026-11-01, 1.6.1e landing 177b — a dated note (DEF-345 FIXED).]* BUILT at landing 177b (the placement above read landing 169; DEF-345's row carried it, management_13's ruling of 16:07:27 EST, item 3): `assign_mark_place`'s bare-name branch (bindings.npk) reports `NITPICK-ASSIGN-001` when the claimed binding is a LOCAL (`origin_kind == SYM_STMT`; a `for`, `pick`, parameter or module binding is written at its binding -- the eighth build, review B's finding 2) not definitely assigned on every path reaching the `$$m` (`state_must`) and its type drops nothing (`type_drops`; a `TY_PARAM` counted as non-dropping, the closed direction), one report per site (D-332); a dropping type keeps D-225's vacant value and its `$$m` stays legal (`Front:f; … $$m f` in npkc.npk and check.npk). The tree's census: 153 `$$m` claims, 15 declarations without an initialiser first mentioned as `$$m name`, ten sites in nine test files re-spelled (landing 173's vacant-discriminant trap tests among them, a dropping field keeping their trap road; `claim_index.npk`'s `$$m k` inside an index the tenth). The tests: `tests/analysis/rejection/claim_unassigned_nodrop.npk` (11 rows; 85 is a sibling frame's byte read as assigned, 74 the trap reached through the hole) and `tests/backend/programs/claim_unassigned_drop_ok.npk`. The libraries' PLAYBOOK §2 write-none holds until a re-pin carries the fix (their pin stays `2e1cb4a`). The `out` relaxation above stays later.
+
+## D-370 — A COERCION TO `dyn` IS A TRANSFER: AN OWNING PLACE IS NO ARGUMENT TO A `dyn` PARAMETER THAT ISN'T `move` (`NITPICK-TYPE-116`) — **SETTLED (management_70's ruling, 2026-11-20 05:17:29 EST, rulings l.20925, route (R) in its any-trait form, after the independent read `team-d370-read-2026-11-20`; a narrowing that applies D-065 and D-183, so not one of the author's very major matters, and the author told in the status file's plain words)**
+
+**A coercion to `dyn` is a transfer.** An argument to a `dyn` parameter that isn't `move` may not be a place -- a name, a field, an
+element or a dereference, with a cast at any depth of its chain -- nor a part or element of a value no binding holds (a temporary's,
+a `move`'s, or what a call's pointer points at), whose type owns memory in D-183's sense; a bare `T` counts unless it is bounded by
+`Copy`. A method call's receiver is that argument when the method's first parameter is such a `dyn` (`h.f()` and `f(h)` are one call,
+D-006), whether the method was found by scope or in the type's own `impl`. A whole temporary and a `move(x)` are transfers, one
+owner after them. The coercion moves the value into the `dyn`'s heap cell (D-183, 1.2.4), so taking it from a place would leave two
+owners, and taking it from a temporary's part leaves the temporary to drop the part under the cell. The roads:
+`move(x)` to hand it over; `x.clone()` to hand a copy; hold the value as a `dyn` from the start (`dyn Tr:d = move(h); f(d);`), since a
+`dyn` argument is a loan of the caller's own cell (DEF-115) and a method's write lands there; and, for a callee that must change the
+caller's concrete value, a pointer -- `T->`, or `<T: Tr>` with `T->` -- with `@x` at the call (TRAITS_REFERENCE §5.1: a call through a
+bound reaches the impl, `Self->` methods included). A copyable place is copied, and a method's writes stay in the copy (MEMORY_REFERENCE:
+"a copyable parameter is a copy and keeps every write").
+
+**Why.** D-065: "Ownership moves only where `move` is written." D-183: "passing or assigning a value whose type has a drop, without
+`move`, is a type error", and since 1.2.4 "a coercion now moves the concrete value into a managed heap cell the `dyn` owns". The local,
+literal, assignment, cast and return sites of a coercion already required `move` (`NITPICK-TYPE-046`, `NITPICK-TYPE-047`); the
+non-`move` `dyn` parameter was the one road where the transfer happened with nothing written. There the cell was a COPY that shared what
+the place owns: its drop freed it under the place (DEF-710, a freed read or a double free on main, 95 and 97), and a `Self->` method
+freed or replaced what the place still names (DEF-715). Lending the place's address instead (route (L)) would have given `f(h)` an
+address with no `@`, against D-004's "`@x` means exactly one thing everywhere", and a second implicit address every analysis must
+model: the receiver's implicit address alone cost DEF-24, DEF-94, DEF-402, DEF-431 and DEF-484, and of route (L)'s thirteen consumers
+the census found four no list had named, two of them wrong on its build (`nitpick-compiler_155`, Opus 5.5,
+`.internal/t3r-2026-11-19/REPORT.md`).
+
+**What it cost.** Measured on the probe that became the rule (`nitpick-compiler_155`, Opus 5.5, 2026-11-20): of the 3,842 programs main
+accepted in the gate's population of 7,199 (the libraries' and applications' list-land11 and the compiler's tests), none is refused -- a
+measure of breakage, not of demand, since the libraries' rule 148 already steered authors off the road. Of the 110 cells it refuses,
+none ran right on main. The idiom given up is a read-only polymorphic call on an owned value the caller keeps (logging a `string`
+through a `dyn` sink), which now costs a `.clone()`, or a pointer road. The hunt of the added pieces (`Ailp-team_231`, Opus 5.5, rulings
+l.21440 item 7) measured five distinct prices, accepted by design, each with its way out: "three owners by type that hold nothing at run
+time: `p4_strview_peek2`, `p4_optnil_peek2`, and `p4_optnil_recv2`, which is new with F4's receiver piece (F3 runs it 42). D-370 judges
+by type, and a `move` pays them"; and "two bare-`T` generics at plain data, `p4_gen_bare_plain` and `_op`. That's D-370 item 1, and a
+`Copy` bound pays them." The narrower form, a trait with a `Self->` method alone (R-w), was not ruled: it keeps a road that shares
+ownership, and the set of programs that compile would change when a trait gains a method. An explicit in-place road (`@h` coercing to a
+lent `dyn`) would be a later decision, if it is ever needed. The rework after the first attack (`Ailp-team_227`, Opus 5.5, three roots,
+each faulting on main too: the receiver, a cast inside the chain, a temporary's or a `move`'s part; rulings l.21045, l.21111, l.21131,
+l.21153) refuses the read-only form of a temporary's part as well: it faults on main, and an emitter that moved the part out of the
+temporary would be the hidden transfer this decision rejects.
+
+**Where.** One check, `refuse_dyn_place_transfer` (type_members.npk), before any analysis runs, asked at the two places a call's
+slots are checked: `check_args`, which every argument passes through (a direct, method, qualified, indirect, field or awaited call,
+and each element of a variadic tail), and `type_method_call`'s receiver slot, which `check_args` skips. `dyn_arg_source` reads where
+the value comes from, stepping a field, an element, `?.` and a cast at every level; where the root's own rule has already spoken (an
+operator handing back a place's value, `NITPICK-TYPE-046`; a literal's part, `NITPICK-TYPE-105`) it adds no second report. A spread `..^` of a
+slice of a concrete type into a `..*(dyn Tr)[]` tail is a type mismatch (`NITPICK-TYPE-007`), so it needs no rule. The over-refusal --
+a struct that holds only `T->` at a `T`, or a `Copy`-bounded `Bx<T>`, refused by `type_may_drop`'s answer from the type arguments and
+hidden today by DEF-717's `EMIT-002` -- is written on DEF-717's row.

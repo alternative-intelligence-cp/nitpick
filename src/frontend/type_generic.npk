@@ -32,6 +32,7 @@ use "./parse_type.npk".*;
 use "./symbols.npk".*;
 use "./type_resolve.npk".*;
 use "./type_trait.npk".*;
+use "./type_layout.npk".*;   // type_drops, for D-183's question at the instance (DEF-528)
 
 // --- substitution -------------------------------------------------------------------------
 //
@@ -150,13 +151,27 @@ pub func:type_subst = int32(TypeResolver->:r, int32:t, GenericScope:g, Span:at,
     //
     // A channel's LEVEL and CAP ride through unchanged: they are constants,
     // not types, and substitution has nothing to say about them.
+    // D-183'S QUESTION, AT THE INSTANCE (DEF-528, TYPE-007): `arena_make` and
+    // `shared_arena_make` ask `type_drops` where the element is spelled, and an
+    // unsubstituted `T` answers no there, so a generic body's arena at an
+    // owning `T` (a `string`, a `dyn Tr`) handed one owner out twice. The
+    // instance is where `T` has an answer: asked here, as the channel arm asks
+    // TYPE-057, with the spelled gates' words.
     if (k == (raw TY_ARENA())) {
-        pass (raw tt_arena(r.types,
-                  raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls)));
+        int32:ael = raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
+        if (raw type_drops(r, ael, 0i32, 64i32)) {
+            string:am = string_concat(string_concat("`arena<", raw type_display(r.types, r.interns, ael)), ">` at this instance: ");
+            drop diaglist_push(r.diags, raw diag_error(raw TYPE_MISMATCH(), string_concat(am, "this element type OWNS heap storage, and `get`/`put` copy bytes — a copy of an owner is two owners, and one arena body freed twice; owning elements await the generated deep-view accessors (D-183). An element of scalars, `Handle<T>` links and other non-owning data rides"), at));
+        }
+        pass (raw tt_arena(r.types, ael));
     }
     if (k == (raw TY_SHARED_ARENA())) {
-        pass (raw tt_shared_arena(r.types,
-                  raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls)));
+        int32:sael = raw type_subst(r, raw type_elem(r.types, t), g, at, fuel - 1i32, impls);
+        if (raw type_drops(r, sael, 0i32, 64i32)) {
+            string:sam = string_concat(string_concat("`shared_arena<", raw type_display(r.types, r.interns, sael)), ">` at this instance: ");
+            drop diaglist_push(r.diags, raw diag_error(raw TYPE_MISMATCH(), string_concat(sam, "this element type OWNS heap storage, and a shared arena's `get` copies bytes — a copy of an owner is two owners; owning elements await the generated deep-view accessors (D-183)"), at));
+        }
+        pass (raw tt_shared_arena(r.types, sael));
     }
     if (k == (raw TY_HANDLE())) {
         pass (raw tt_handle(r.types,

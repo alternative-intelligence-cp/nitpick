@@ -1,0 +1,38 @@
+// expect-error: NITPICK-BORROW-001
+// expect-error-at: 16:128
+// 2026-11-21 (landing 177d2e, row 7: DEF-718, form P2-1d = P2-1c with N718; rulings l.22510, l.23320, l.23532). DEF-290'S SELF-WIRING EXEMPTION
+// MARKED THE POINTER, NOT THE STORAGE: a self-wiring store through a pointer (`(<-sp).p = @((<-sp).k)`) now marks each address target of that
+// pointer as its store by name would be (`s.p = @s.k`), walked on through its own pointer base and through a slice view on the path, a view taken
+// through a pointer too; where the walk can't name the storage (its fuel of 8 spent, a pointer read out of a call's result, no address target), the
+// store is refused (BORROW-009). PRICE OFF PARITY, DEF-737 (LOW, fails closed, made by this row; l.23320 item 3): the row marks the targets of a
+// self-wiring store's whole pointer chain over the whole function, so a store through a pointer whose chain also holds the parameter's address, or
+// a holder or an array that holds it, refuses a right program. Way out: a fresh pointer local per struct, or the by-name spelling. Its fix (NM, net
+// 117) is 177d2f's planning. On main (226ebb99) it exits 67 on every road 0-8 at -O0 and -O2 and under the detector; refused here. Its way out: a
+// fresh pointer local per struct, as in `self_wire_def737_wayout_ap1b_ra1_wo_ok.npk` (this cell has no by-name twin). From seat AP1B's cells,
+// `Team/TMP/atk-177d2e-ap1b-2026-11-20/cells/ap1b/ap1b_rc_ok.npk`.
+mod:self_wire_def737_ap1b_rc;
+error:E5;
+struct:S = { int64:k; int64->:p; };
+func:f = S(move S:s) never fails { S:t = S{ k: 1i64, p: s.p }; S->:sp = @t; S->:sq = sp; (<-sq).p = @((<-sq).k); sp = @s; pass s; };
+func:clob = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:g = int64(int64:n) never fails { int64:z = 2i64; S:r = raw f(S{ k: 2i64, p: @z }); int64:junk = raw clob(n); pass (<-(r.p)) + junk - 9i64; };
+func:main = int32(cstring[]:argv) { int64:v = raw g(argv.len - 1i64); exit ((v + 65i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

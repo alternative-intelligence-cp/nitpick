@@ -1,0 +1,101 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 64:93
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 65:111
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 65:134
+// 2026-11-21 (landing 177d2e, row 4: DEF-716's `sp` and `cd` shapes, form F3u; rulings l.22543, l.22814). THE HOP WALK'S MEMOS ANSWER WHAT THE WALK
+// WOULD: alias.npk's `sp` memo (the four cheap filters `check_pointer_view_parties` asks before it makes its lists) and escape.npk's `cd` memo (a
+// member's type held while what it reads is fixed) save a walk and never change its answer. MEMO PIN, the twin of `v1_ldir_a1` without the growth
+// `discard(raw growh(hq))` (refused on main too): refused here at main's (226ebb99) codes and sites, every one; with every memo hit answering no
+// (seat SPCD's plant PLANT2u, `ad3d52591a0378c2`) the report at 53:134 of the cell's own numbering is lost, so a memo that answers wrongly fails
+// this header. From seat SPCD's gate, `.internal/spcd-2026-11-20/cells/d716/c887/roadv/v1_ldir_a1_ok.npk`.
+mod:hop_memo_v1_ldir_a1_twin;
+error:E5;
+struct:K = { int64:k; };
+struct:H = { List<int64>:l; int64:k; K:kk; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh = H->(H->:q) never fails { pass q; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+struct:HPO = { H->:lp; List<int64>:own; };
+struct:SQ = { HPO->:q; int64:z; };
+struct:SR = { SQ->:sq; int64:z; };
+struct:SL = { List<int64>->:l; int64:z; };
+struct:SL2 = { SL:s; int64:z; };
+struct:SLP = { SL->:sp; int64:z; };
+struct:SQB = { HPO->:q; int64:z; };
+struct:HPB = { H->:lp; List<int64>:own; };
+struct:PV = { H->:p; int64:v; };
+struct:HPV = { H->:lp; List<PV>:own; };
+struct:SLV = { List<PV>->:l; int64:z; };
+struct:SQV = { HPV->:q; int64:z; };
+func:getown = List<int64>->(HPO->:w) never fails { pass @w.own; };
+func:getownv = List<PV>->(HPV->:w) never fails { pass @w.own; };
+func:mkv = List<PV>(H->:h) never fails { List<PV>:l = raw list_init::<PV>(1i64); drop list_push(@l, PV{ p: h, v: 1i64 }); pass l; };
+func:idp = HPO->(HPO->:w) never fails { pass w; };
+func:cvq = SQ->(SQB->:b) never fails { pass ((b =>! any->) =>! SQ->); };
+func:put = int64(HPO->:p, H->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2 = { SQ->:sq; int64:z; };
+struct:ST = { SR->:sr; int64:z; };
+struct:SPP = { HPO->->:qq; int64:z; };
+struct:SPPP = { HPO->->->:qqq; int64:z; };
+struct:SQX = { HPB->:q; int64:z; };
+struct:HN = { int64:a; int64:b; };
+struct:SN = { HN->:q; int64:z; };
+struct:SA = { any->:q; int64:z; };
+func:put2 = int64(SQ->:p, H->:v) never fails { (<-((<-p).q)).lp = v; pass 7i64; };
+func:getq = HPO->(SQ->:w) never fails { pass (<-w).q; };
+func:putgrow = int64(HPO->:p, H->:v) never fails { p.lp = v; loop(0i64, 64i64, 1i64) { drop list_push(@p.own, 1i64); } pass 7i64; };
+func:mksq = SQ(HPO->:p) never fails { pass SQ{ q: p, z: 1i64 }; };
+func:cpsq = SQ(SQ->:w) never fails { pass SQ{ q: (<-w).q, z: 2i64 }; };
+struct:SO = { HPO->?:oq; int64:z; };
+struct:SRO = { SO->:so; int64:z; };
+func:setp = int64(HPO->->:sp, HPO->:v) never fails { <-sp = v; pass 7i64; };
+func:idpp = HPO->->(HPO->->:p) never fails { pass p; };
+func:put2pp = int64(HPO->->:pp, H->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
+func:wown = int64(HPO->:p) never fails { p.own = raw mk(); pass 7i64; };
+struct:VB = { HPO->:hp; int64:z; };
+enum:EV = { A(VB); Z; };
+struct:TS = { EV:ev; int64:z; };
+func:W = int64(TS->->:pp, H->:v) never fails { pick ((<-(<-pp)).ev) { (EV.A(b)) { (<-(b.hp)).lp = v; }, (EV.Z) { } } pass 7i64; };
+func:gx = int64(TS->:pp, TS->:p2, TS->:p3, H->:v, int64:n) never fails { pp = p2; TS->->:q0 = @pp; TS->->:r = @(<-q0); discard(raw W(r, v)); pass 7i64; };
+func:g = int64(H->:h0p, H->:hq, H->:hz, int64:n) never fails {
+    int64->:e = raw fp(hz);
+    HPO:hd = HPO{ lp: h0p, own: raw mk() };
+    HPO:hd0 = HPO{ lp: h0p, own: raw mk() };
+    HPO:hd3 = HPO{ lp: h0p, own: raw mk() };
+    TS:m = TS{ ev: EV.A(VB{ hp: @hd, z: 0i64 }), z: 1i64 };
+    TS:m0 = TS{ ev: EV.A(VB{ hp: @hd0, z: 0i64 }), z: 1i64 };
+    TS:m3 = TS{ ev: EV.A(VB{ hp: @hd3, z: 0i64 }), z: 1i64 };
+    discard(raw gx(@m0, @m, @m3, hq, n));
+    e = raw fp(hd.lp);
+    pass (<-e) + 6i64;
+};
+func:f = int64(int64:n) never fails {
+    H:hz = raw mkh(); H:h0 = raw mkh(); H:h2 = raw mkh();
+    pass raw g(@h0, @h2, @hz, n);
+};
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

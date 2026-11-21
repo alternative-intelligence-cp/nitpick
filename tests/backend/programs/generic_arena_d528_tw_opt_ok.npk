@@ -1,0 +1,34 @@
+// expect-exit: 67
+// 2026-11-21 (landing 177d2e, row 5: DEF-528, form D528-4; rulings l.22208, l.22666). D-183'S QUESTION AT THE INSTANCE: a generic `arena<T>` or
+// `shared_arena<T>` whose substituted element owns heap storage (a `string`, a `dyn Tr`, a guard holder) is refused NITPICK-TYPE-007 at the
+// instance (`type_subst`'s arena arms ask `type_drops`), as the same arena spelled at the concrete type is on main. RIGHT PROGRAM: a spelled
+// `shared_arena<string>?` local never filled, accepted on main (226ebb99) and here, exit 67 on every road 0-8, -O0 and -O2, and under the detector
+// (D528's twin of the field prices: a local mention is not reached). From seat D528's cells,
+// `Team/TMP/plan-177d2e-d528-2026-11-20/cells/d528/d528_tw_opt.npk`.
+mod:generic_arena_d528_tw_opt_ok;
+error:E5;
+error:E9;
+func:g = int32() never fails { shared_arena<string>?:oa = NIL; pass 7i32; };
+async func:main = int32(cstring[]:_~argv) { int32:v = raw g(); exit v + 60i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 80i32; },
+        (E9)               { exit 75i32; },
+        (TbbErr)           { exit 79i32; },
+        (DeadlineExceeded) { exit 78i32; },
+        (StaleHandle)      { exit 77i32; },
+        (ChannelClosed)    { exit 76i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

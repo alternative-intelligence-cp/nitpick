@@ -1,0 +1,38 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 15:194
+// 2026-11-21 (landing 177d2e, row 5: DEF-528, form D528-4; rulings l.22208, l.22666). D-183'S QUESTION AT THE INSTANCE: a generic `arena<T>` or
+// `shared_arena<T>` whose substituted element owns heap storage (a `string`, a `dyn Tr`, a guard holder) is refused NITPICK-TYPE-007 at the
+// instance (`type_subst`'s arena arms ask `type_drops`), as the same arena spelled at the concrete type is on main. PRICE AT PARITY (D528's table,
+// l.22208 item 2): a generic arena of a guard holder, locked first (DEF-528's lock-first controls): it takes two owners of one guard out of one
+// slot and exits 67 on main (226ebb99) only by drop order; refused here at the instance, by emission (the checker is silent). Its spelled twin,
+// `generic_arena_twin_d528_tw_guard.npk`, is TYPE-007 on main. Way out: hold the guard in a scope, never in an arena; a `Handle` to plain data.
+// From seat D528's cells, `Team/TMP/plan-177d2e-d528-2026-11-20/cells/b1b/b1b_genarena_dup_guard_plain_c.npk`.
+mod:generic_arena_price_b1b_genarena_dup_guard_plain_c;
+error:E5;
+error:E9;
+struct:GO = { Guard<int32>?:g; };
+func:dup2<T> = T(move T:v) { arena<T>:a = arena_make(2i64); Handle<T>:h = a.alloc(); a.put(h, move(v)) ?! E5; T:c1 = a.get(h) ?! E5; discard(move(c1)); T:c2 = a.get(h) ?! E5; pass move(c2); };
+async func:f = int32() { Mutex<int32, 1i32>:z = mutex(1i32) ?! E5; GO:keep = GO{ g: NIL }; Guard<int32>:t = await z.acquire(raw duration_ms(500i64)) ?! E5; GO:h2 = GO{ g: move(t) }; keep = dup2(move(h2)) ?! E5; pass 7i32; };
+async func:main = int32(cstring[]:_~argv) { int32:v = await f() ?! E5; exit v + 60i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 80i32; },
+        (E9)               { exit 75i32; },
+        (TbbErr)           { exit 79i32; },
+        (DeadlineExceeded) { exit 78i32; },
+        (StaleHandle)      { exit 77i32; },
+        (ChannelClosed)    { exit 76i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

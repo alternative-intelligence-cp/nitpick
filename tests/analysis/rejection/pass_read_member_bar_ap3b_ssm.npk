@@ -1,0 +1,47 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 21:120
+// 2026-11-21 (landing 177d2e, row 9: DEF-714, form P2-3cs; rulings l.22075, l.22099, l.22316, l.22396, l.22479, l.23320, l.23532 item 3). A POINTER
+// MEMBER OF A POINTER PARAMETER'S POINTEE, COPIED TO A LOCAL (`HO->:hp = s.oq;`), LENT AN ELEMENT THAT A WRITER HANDED THE MEMBER ITSELF DIDN'T
+// MEET: the PASS ref now has a copy carrying the read member, judged beside the ref as it was (at the parameter AND at the member), with a
+// dereference on the member's operand peeled and a nested member carried outward; a copy takes its twin's verdict where nothing else differs. THE
+// BAR (l.22396, l.23032): one of P2-3b's 10 releases, a self- or mutually-pointing struct whose longer read path missed a write main catches. Main
+// refuses it (BORROW-015 at 12:120 in the cell), and this row refuses it at main's code, site and stderr bytes, since the copy keeps the ref main
+// judged. From seat AP3B's cells, P2C's gate copy `.internal/p2c-2026-11-20/cells/b3/ap3b_ssm.npk`.
+mod:pass_read_member_bar_ap3b_ssm;
+error:E5;
+struct:HO = { List<int64>:own; List<int64>:oth; int64:z; };
+struct:SOP = { HO->:oq; int64:z; };
+struct:SOQ = { HO->:oq; HO->:oq2; int64:z; };
+struct:SO = { HO->?:oq; int64:z; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkho = HO() never fails { pass HO{ own: raw mk(), oth: raw mk(), z: 1i64 }; };
+func:repo = int64(HO->:r) never fails { (<-r).own = raw mk(); pass 7i64; };
+struct:SS = { SS->?:p; List<int64>:own; int64:z; };
+func:link = int64(SS->:x) never fails { (<-x).p = x; pass 7i64; };
+impl:SS = { func:wr = int64(SS->:self) never fails { SS->:hp = self.p ??! E5; int64->:e = @((<-hp).own[0i64]); (<-self).own = raw mk(); pass (<-e) + 6i64; }; };
+func:g2 = int64(SS->:s) never fails { pass raw s.wr(); };
+func:g = int64(int64:n) never fails {
+    SS:so = SS{ p: NIL, own: raw mk(), z: 1i64 }; discard(raw link(@so));
+    pass raw g2(@so);
+};
+func:f = int64(int64:n) never fails { pass raw g(n); };
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

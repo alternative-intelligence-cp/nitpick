@@ -1,0 +1,44 @@
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 27:27
+mod:dyn_place_n3_snap;
+error:E9;
+
+// D-370 AND A LATER SNAPSHOT (seat T3R's N3, `alias.npk`'s `rejudge_earlier`): `callit2(h, h.b)` hands `h` and a copy of `h.b`'s
+// header; `op` frees `h.b`'s buffer and the callee reads the snapshot (97 on main, T3-710a and route (L)'s build). Its pointer twin
+// `wr2(@h, h.b)` is `NITPICK-BORROW-015`. Refused now at the coercion.
+
+trait:Tr = { func:peek = int32(Self:self) never fails; func:op = NIL(Self->:self) never fails; };
+struct:DHold = { buffer:b; };
+impl:DHold:Tr = {
+    func:peek = int32(DHold:self) never fails { pass (self.b[0i64] => int32); };
+    func:op = NIL(DHold->:self) never fails {
+        buffer:nb = buffer_new(16i64);
+        nb[0i64] = 7u8;
+        self.b = move(nb);
+        pass NIL;
+    };
+};
+func:callit2 = int32(dyn Tr:d, buffer:b) never fails { drop d.op(); pass (b[0i64] => int32); };
+
+func:main = int32(cstring[]:_~argv) {
+    buffer:bb = buffer_new(4096i64);
+    bb[0i64] = 42u8;
+    DHold:h = DHold{ b: move(bb) };
+    int32:v = raw callit2(h, h.b);   // site NITPICK-TYPE-116
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 96i32; },
+        (MachineFault)   { exit 97i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 94i32; },
+        (OutOfBounds)    { exit 93i32; },
+        (E9)             { exit 9i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};

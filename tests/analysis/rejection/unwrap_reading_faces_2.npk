@@ -1,0 +1,1002 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 119:216
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 135:212
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 149:256
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 162:323
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 174:326
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 186:263
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 198:258
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 209:160
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 226:161
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 241:246
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 256:204
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 271:190
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 284:123
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 299:132
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 313:260
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 326:301
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 338:261
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 353:308
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 366:316
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 379:345
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 392:335
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 405:347
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 417:234
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 417:285
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 428:142
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 428:191
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 442:367
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 454:305
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 466:437
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 478:331
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 490:310
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 503:363
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 515:345
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 529:219
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 543:263
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 556:294
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 568:308
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 581:342
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 593:315
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 605:390
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 619:219
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 632:284
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 645:132
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 677:31
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 708:31
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 811:29
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 918:30
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 936:46
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 953:46
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 966:46
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 979:46
+// 2026-11-21 (landing 177d2e, row 10: DEF-720 with DEF-644's rest, DEF-691 and DEF-694's lift, form RRs; rulings l.23411, l.23500, l.23643). AN
+// UNWRAP OF A POINTER IS READ TWO WAYS, BOTH KEPT: the alias pass walks a function as main does, an unwrap no step and the place under it its root
+// whole, and when that walk met an unwrap of a pointer it walks the function again with every unwrap a step to its operand (the longer path, which
+// re-roots through the pointer), one report per site; escape roots a view through a local's or a field's unwrap too, and an unwrap whose value is
+// itself a wrapped pointer steps as well. THE OTHER FACES THIS ROW CLOSES (P3U's census, l.23411 item 2; AP3U's, l.23500): 49 freed reads on main,
+// each refused here.
+mod:unwrap_reading_faces_2;
+error:E5;
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 8:168. From the cell
+// `.internal/p2c-2026-11-20/cells/g2/ap3_fbq.npk`.
+func:mk_ap3_fbq = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_fbq = { List<int64>:l; int64:z; };
+func:idl_ap3_fbq = L_ap3_fbq->(L_ap3_fbq->:p) never fails { pass p; };
+func:ido_ap3_fbq = L_ap3_fbq->?(L_ap3_fbq->?:p) never fails { pass p; };
+func:growl_ap3_fbq = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:g2_ap3_fbq = int64(L_ap3_fbq->:lp) never fails { L_ap3_fbq->?:oq = lp; L_ap3_fbq->?[1]:ls = [oq]; int64:acc = 0i64; for (L_ap3_fbq->?:o in ls) { int64->:e = @((<-(o ??! E5)).l[0i64]); discard(raw growl_ap3_fbq(@((<-lp).l))); acc = acc + (<-e); } pass acc + 6i64; };
+func:f_ap3_fbq = int64(int64:n) never fails {
+    L_ap3_fbq:lo = L_ap3_fbq{ l: raw mk_ap3_fbq(), z: 1i64 }; L_ap3_fbq:lo2 = L_ap3_fbq{ l: raw mk_ap3_fbq(), z: 2i64 }; pass raw g2_ap3_fbq(@lo);
+};
+func:cell_main_ap3_fbq = int32() never fails { pass (((raw f_ap3_fbq(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 11:167. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_m74/ap3_mu_l.npk`.
+func:mk_ap3_mu_l = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_mu_l = { List<int64>:l; int64:z; };
+func:idl_ap3_mu_l = L_ap3_mu_l->(L_ap3_mu_l->:p) never fails { pass p; };
+func:ido_ap3_mu_l = L_ap3_mu_l->?(L_ap3_mu_l->?:p) never fails { pass p; };
+func:growl_ap3_mu_l = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:MB_ap3_mu_l = { MA_ap3_mu_l->?:a; int64:z; };
+struct:MA_ap3_mu_l = { MB_ap3_mu_l->?:b; List<int64>:own; int64:z; };
+func:f_ap3_mu_l = int64(int64:n) never fails {
+    MA_ap3_mu_l:ma = MA_ap3_mu_l{ b: NIL, own: raw mk_ap3_mu_l(), z: 1i64 }; MB_ap3_mu_l:mb = MB_ap3_mu_l{ a: NIL, z: 1i64 }; ma.b = @mb; mb.a = @ma; int64->:e = @((<-((<-(ma.b ??! E5)).a ??! E5)).own[0i64]); ma.own = raw mk_ap3_mu_l(); pass (<-e) + 6i64;
+};
+func:cell_main_ap3_mu_l = int32() never fails { pass (((raw f_ap3_mu_l(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 11:206. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_m74/ap3_mu_lg.npk`.
+func:mk_ap3_mu_lg = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_mu_lg = { List<int64>:l; int64:z; };
+func:idl_ap3_mu_lg = L_ap3_mu_lg->(L_ap3_mu_lg->:p) never fails { pass p; };
+func:ido_ap3_mu_lg = L_ap3_mu_lg->?(L_ap3_mu_lg->?:p) never fails { pass p; };
+func:growl_ap3_mu_lg = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:MB_ap3_mu_lg = { MA_ap3_mu_lg->?:a; int64:z; };
+struct:MA_ap3_mu_lg = { MB_ap3_mu_lg->?:b; List<int64>:own; int64:z; };
+func:f_ap3_mu_lg = int64(int64:n) never fails {
+    MA_ap3_mu_lg:ma = MA_ap3_mu_lg{ b: NIL, own: raw mk_ap3_mu_lg(), z: 1i64 }; MB_ap3_mu_lg:mb = MB_ap3_mu_lg{ a: NIL, z: 1i64 }; ma.b = @mb; mb.a = @ma; int64->:e = @((<-((<-(ma.b ??! E5)).a ??! E5)).own[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@ma.own, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_mu_lg = int32() never fails { pass (((raw f_ap3_mu_lg(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:215. From the cell
+// `Team/TMP/atk-177d2e-ap3-2026-11-20/cells/g1/ap3_nu_owq2.npk`.
+func:mk_ap3_nu_owq2 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_nu_owq2 = { List<int64>:l; int64:z; };
+func:idl_ap3_nu_owq2 = L_ap3_nu_owq2->(L_ap3_nu_owq2->:p) never fails { pass p; };
+func:ido_ap3_nu_owq2 = L_ap3_nu_owq2->?(L_ap3_nu_owq2->?:p) never fails { pass p; };
+func:growl_ap3_nu_owq2 = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:W_ap3_nu_owq2 = { L_ap3_nu_owq2->?:q; L_ap3_nu_owq2->:q2; int64:z; };
+func:f_ap3_nu_owq2 = int64(int64:n) never fails {
+    L_ap3_nu_owq2:lo = L_ap3_nu_owq2{ l: raw mk_ap3_nu_owq2(), z: 1i64 }; L_ap3_nu_owq2:lo2 = L_ap3_nu_owq2{ l: raw mk_ap3_nu_owq2(), z: 2i64 }; W_ap3_nu_owq2:w = W_ap3_nu_owq2{ q: @lo, q2: @lo, z: 1i64 }; W_ap3_nu_owq2->?:ow = @w; int64->:e = @((<-((<-(ow ??! E5)).q2)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_nu_owq2 = int32() never fails { pass (((raw f_ap3_nu_owq2(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:227. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/ap3_rr_one.npk`.
+func:mk_ap3_rr_one = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rr_one = { List<int64>:l; int64:z; };
+func:idl_ap3_rr_one = L_ap3_rr_one->(L_ap3_rr_one->:p) never fails { pass p; };
+func:ido_ap3_rr_one = L_ap3_rr_one->?(L_ap3_rr_one->?:p) never fails { pass p; };
+func:growl_ap3_rr_one = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_rr_one = int64(int64:n) never fails {
+    L_ap3_rr_one:lo = L_ap3_rr_one{ l: raw mk_ap3_rr_one(), z: 1i64 }; L_ap3_rr_one:lo2 = L_ap3_rr_one{ l: raw mk_ap3_rr_one(), z: 2i64 }; L_ap3_rr_one->?:oq = @lo; Result<L_ap3_rr_one->?>:r = Result{ value: oq }; L_ap3_rr_one->?:o2 = r ?! E5; int64->:e = @((<-(o2 ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_rr_one = int32() never fails { pass (((raw f_ap3_rr_one(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:193. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/ap3_rr_rq.npk`.
+func:mk_ap3_rr_rq = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rr_rq = { List<int64>:l; int64:z; };
+func:idl_ap3_rr_rq = L_ap3_rr_rq->(L_ap3_rr_rq->:p) never fails { pass p; };
+func:ido_ap3_rr_rq = L_ap3_rr_rq->?(L_ap3_rr_rq->?:p) never fails { pass p; };
+func:growl_ap3_rr_rq = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_rr_rq = int64(int64:n) never fails {
+    L_ap3_rr_rq:lo = L_ap3_rr_rq{ l: raw mk_ap3_rr_rq(), z: 1i64 }; L_ap3_rr_rq:lo2 = L_ap3_rr_rq{ l: raw mk_ap3_rr_rq(), z: 2i64 }; Result<L_ap3_rr_rq->>:rq = Result{ value: @lo }; int64->:e = @((<-(rq ?! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_rr_rq = int32() never fails { pass (((raw f_ap3_rr_rq(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:202. From the cell
+// `Team/TMP/atk-177d2e-ap3-2026-11-20/cells/g1/ap3_sh.npk`.
+func:mk_ap3_sh = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_sh = { List<int64>:l; int64:z; };
+func:idl_ap3_sh = L_ap3_sh->(L_ap3_sh->:p) never fails { pass p; };
+func:ido_ap3_sh = L_ap3_sh->?(L_ap3_sh->?:p) never fails { pass p; };
+func:growl_ap3_sh = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_sh = int64(int64:n) never fails {
+    L_ap3_sh:lo = L_ap3_sh{ l: raw mk_ap3_sh(), z: 1i64 }; L_ap3_sh:lo2 = L_ap3_sh{ l: raw mk_ap3_sh(), z: 2i64 }; L_ap3_sh->?:oq = @lo2; if (n > 0i64) { L_ap3_sh->?:oq = @lo; int64->:e = @((<-(oq ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64; } pass 7i64;
+};
+func:cell_main_ap3_sh = int32() never fails { pass (((raw f_ap3_sh(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 8:120. From the cell
+// `Team/TMP/atk-177d2e-ap3-2026-11-20/cells/g1/ap3_shp.npk`.
+func:mk_ap3_shp = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_shp = { List<int64>:l; int64:z; };
+func:idl_ap3_shp = L_ap3_shp->(L_ap3_shp->:p) never fails { pass p; };
+func:ido_ap3_shp = L_ap3_shp->?(L_ap3_shp->?:p) never fails { pass p; };
+func:growl_ap3_shp = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:g3_ap3_shp = int64(L_ap3_shp->?:oq, L_ap3_shp->:lp) never fails { L_ap3_shp->?:oq = lp; int64->:e = @((<-(oq ??! E5)).l[0i64]); discard(raw growl_ap3_shp(@((<-lp).l))); pass (<-e) + 6i64; };
+func:f_ap3_shp = int64(int64:n) never fails {
+    L_ap3_shp:lo = L_ap3_shp{ l: raw mk_ap3_shp(), z: 1i64 }; L_ap3_shp:lo2 = L_ap3_shp{ l: raw mk_ap3_shp(), z: 2i64 }; pass raw g3_ap3_shp(@lo2, @lo);
+};
+func:cell_main_ap3_shp = int32() never fails { pass (((raw f_ap3_shp(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 12:121. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_m74/ap3_ssu_l.npk`.
+func:mk_ap3_ssu_l = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_ssu_l = { List<int64>:l; int64:z; };
+func:idl_ap3_ssu_l = L_ap3_ssu_l->(L_ap3_ssu_l->:p) never fails { pass p; };
+func:ido_ap3_ssu_l = L_ap3_ssu_l->?(L_ap3_ssu_l->?:p) never fails { pass p; };
+func:growl_ap3_ssu_l = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3_ssu_l = { SS_ap3_ssu_l->?:p; List<int64>:own; int64:z; };
+func:link_ap3_ssu_l = int64(SS_ap3_ssu_l->:x) never fails { (<-x).p = x; pass 7i64; };
+func:wss_ap3_ssu_l = int64(SS_ap3_ssu_l->:x) never fails { (<-x).own = raw mk_ap3_ssu_l(); pass 7i64; };
+func:f_ap3_ssu_l = int64(int64:n) never fails {
+    SS_ap3_ssu_l:so = SS_ap3_ssu_l{ p: NIL, own: raw mk_ap3_ssu_l(), z: 1i64 }; discard(raw link_ap3_ssu_l(@so)); int64->:e = @((<-(so.p ??! E5)).own[0i64]); so.own = raw mk_ap3_ssu_l(); pass (<-e) + 6i64;
+};
+func:cell_main_ap3_ssu_l = int32() never fails { pass (((raw f_ap3_ssu_l(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 12:169. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_m74/ap3_ssu_ld.npk`.
+func:mk_ap3_ssu_ld = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_ssu_ld = { List<int64>:l; int64:z; };
+func:idl_ap3_ssu_ld = L_ap3_ssu_ld->(L_ap3_ssu_ld->:p) never fails { pass p; };
+func:ido_ap3_ssu_ld = L_ap3_ssu_ld->?(L_ap3_ssu_ld->?:p) never fails { pass p; };
+func:growl_ap3_ssu_ld = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3_ssu_ld = { SS_ap3_ssu_ld->?:p; List<int64>:own; int64:z; };
+func:link_ap3_ssu_ld = int64(SS_ap3_ssu_ld->:x) never fails { (<-x).p = x; pass 7i64; };
+func:wss_ap3_ssu_ld = int64(SS_ap3_ssu_ld->:x) never fails { (<-x).own = raw mk_ap3_ssu_ld(); pass 7i64; };
+func:f_ap3_ssu_ld = int64(int64:n) never fails {
+    SS_ap3_ssu_ld:so = SS_ap3_ssu_ld{ p: NIL, own: raw mk_ap3_ssu_ld(), z: 1i64 }; discard(raw link_ap3_ssu_ld(@so)); SS_ap3_ssu_ld:so2 = SS_ap3_ssu_ld{ p: NIL, own: raw mk_ap3_ssu_ld(), z: 2i64 }; int64->:e = @((<-(so.p ?? @so2)).own[0i64]); so.own = raw mk_ap3_ssu_ld(); pass (<-e) + 6i64;
+};
+func:cell_main_ap3_ssu_ld = int32() never fails { pass (((raw f_ap3_ssu_ld(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 12:160. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_m74/ap3_ssu_lg.npk`.
+func:mk_ap3_ssu_lg = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_ssu_lg = { List<int64>:l; int64:z; };
+func:idl_ap3_ssu_lg = L_ap3_ssu_lg->(L_ap3_ssu_lg->:p) never fails { pass p; };
+func:ido_ap3_ssu_lg = L_ap3_ssu_lg->?(L_ap3_ssu_lg->?:p) never fails { pass p; };
+func:growl_ap3_ssu_lg = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3_ssu_lg = { SS_ap3_ssu_lg->?:p; List<int64>:own; int64:z; };
+func:link_ap3_ssu_lg = int64(SS_ap3_ssu_lg->:x) never fails { (<-x).p = x; pass 7i64; };
+func:wss_ap3_ssu_lg = int64(SS_ap3_ssu_lg->:x) never fails { (<-x).own = raw mk_ap3_ssu_lg(); pass 7i64; };
+func:f_ap3_ssu_lg = int64(int64:n) never fails {
+    SS_ap3_ssu_lg:so = SS_ap3_ssu_lg{ p: NIL, own: raw mk_ap3_ssu_lg(), z: 1i64 }; discard(raw link_ap3_ssu_lg(@so)); int64->:e = @((<-(so.p ??! E5)).own[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@so.own, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_ssu_lg = int32() never fails { pass (((raw f_ap3_ssu_lg(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 12:135. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_m74/ap3_ssu_lw.npk`.
+func:mk_ap3_ssu_lw = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_ssu_lw = { List<int64>:l; int64:z; };
+func:idl_ap3_ssu_lw = L_ap3_ssu_lw->(L_ap3_ssu_lw->:p) never fails { pass p; };
+func:ido_ap3_ssu_lw = L_ap3_ssu_lw->?(L_ap3_ssu_lw->?:p) never fails { pass p; };
+func:growl_ap3_ssu_lw = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3_ssu_lw = { SS_ap3_ssu_lw->?:p; List<int64>:own; int64:z; };
+func:link_ap3_ssu_lw = int64(SS_ap3_ssu_lw->:x) never fails { (<-x).p = x; pass 7i64; };
+func:wss_ap3_ssu_lw = int64(SS_ap3_ssu_lw->:x) never fails { (<-x).own = raw mk_ap3_ssu_lw(); pass 7i64; };
+func:f_ap3_ssu_lw = int64(int64:n) never fails {
+    SS_ap3_ssu_lw:so = SS_ap3_ssu_lw{ p: NIL, own: raw mk_ap3_ssu_lw(), z: 1i64 }; discard(raw link_ap3_ssu_lw(@so)); int64->:e = @((<-(so.p ??! E5)).own[0i64]); discard(raw wss_ap3_ssu_lw(@so)); pass (<-e) + 6i64;
+};
+func:cell_main_ap3_ssu_lw = int32() never fails { pass (((raw f_ap3_ssu_lw(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:93. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g1/ap3u_b_dt.npk`.
+func:mk_ap3u_b_dt = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_b_dt = { List<int64>:l; int64:z; };
+func:idl_ap3u_b_dt = L_ap3u_b_dt->(L_ap3u_b_dt->:p) never fails { pass p; };
+func:ido_ap3u_b_dt = L_ap3u_b_dt->?(L_ap3u_b_dt->?:p) never fails { pass p; };
+func:growl_ap3u_b_dt = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3u_b_dt = { SS_ap3u_b_dt->?:p; List<int64>:own; int64:z; };
+func:link_ap3u_b_dt = int64(SS_ap3u_b_dt->:x) never fails { (<-x).p = x; pass 7i64; };
+func:g2_ap3u_b_dt = int64(SS_ap3u_b_dt->:s, SS_ap3u_b_dt->:t) never fails { int64->:e = @((<-(s.p ?? t)).own[0i64]); (<-t).own = raw mk_ap3u_b_dt(); pass (<-e) + 6i64; };
+func:f_ap3u_b_dt = int64(int64:n) never fails {
+    SS_ap3u_b_dt:so = SS_ap3u_b_dt{ p: NIL, own: raw mk_ap3u_b_dt(), z: 1i64 }; SS_ap3u_b_dt:st = SS_ap3u_b_dt{ p: NIL, own: raw mk_ap3u_b_dt(), z: 2i64 }; pass raw g2_ap3u_b_dt(@so, @st);
+};
+func:cell_main_ap3u_b_dt = int32() never fails { pass (((raw f_ap3u_b_dt(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:102. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g1/ap3u_b_rq.npk`.
+func:mk_ap3u_b_rq = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_b_rq = { List<int64>:l; int64:z; };
+func:idl_ap3u_b_rq = L_ap3u_b_rq->(L_ap3u_b_rq->:p) never fails { pass p; };
+func:ido_ap3u_b_rq = L_ap3u_b_rq->?(L_ap3u_b_rq->?:p) never fails { pass p; };
+func:growl_ap3u_b_rq = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SR_ap3u_b_rq = { Result<SR_ap3u_b_rq->?>:rp; List<int64>:own; int64:z; };
+func:linkr_ap3u_b_rq = int64(SR_ap3u_b_rq->:x) never fails { SR_ap3u_b_rq->?:xo = x; (<-x).rp = Result{ value: xo }; pass 7i64; };
+func:g3_ap3u_b_rq = int64(SR_ap3u_b_rq->:s, SR_ap3u_b_rq->:t) never fails { int64->:e = @((<-((s.rp ?! E5) ?? t)).own[0i64]); (<-t).own = raw mk_ap3u_b_rq(); pass (<-e) + 6i64; };
+func:f_ap3u_b_rq = int64(int64:n) never fails {
+    SR_ap3u_b_rq->?:nz = NIL; SR_ap3u_b_rq:so = SR_ap3u_b_rq{ rp: Result{ value: nz }, own: raw mk_ap3u_b_rq(), z: 1i64 }; SR_ap3u_b_rq:st = SR_ap3u_b_rq{ rp: Result{ value: nz }, own: raw mk_ap3u_b_rq(), z: 2i64 }; pass raw g3_ap3u_b_rq(@so, @st);
+};
+func:cell_main_ap3u_b_rq = int32() never fails { pass (((raw f_ap3u_b_rq(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:188. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g5/ap3u_dqb.npk`.
+func:mk_ap3u_dqb = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_dqb = { List<int64>:l; int64:z; };
+func:idl_ap3u_dqb = L_ap3u_dqb->(L_ap3u_dqb->:p) never fails { pass p; };
+func:ido_ap3u_dqb = L_ap3u_dqb->?(L_ap3u_dqb->?:p) never fails { pass p; };
+func:growl_ap3u_dqb = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_dqb = int64(int64:n) never fails {
+    L_ap3u_dqb:lo = L_ap3u_dqb{ l: raw mk_ap3u_dqb(), z: 1i64 }; L_ap3u_dqb:lo2 = L_ap3u_dqb{ l: raw mk_ap3u_dqb(), z: 2i64 }; L_ap3u_dqb->?:oq = @lo; L_ap3u_dqb->?:oq2 = @lo2; int64->:e = @((<-(oq ?? @lo2)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_dqb = int32() never fails { pass (((raw f_ap3u_dqb(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:213. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g1/ap3u_g_blk.npk`.
+func:mk_ap3u_g_blk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_g_blk = { List<int64>:l; int64:z; };
+func:idl_ap3u_g_blk = L_ap3u_g_blk->(L_ap3u_g_blk->:p) never fails { pass p; };
+func:ido_ap3u_g_blk = L_ap3u_g_blk->?(L_ap3u_g_blk->?:p) never fails { pass p; };
+func:growl_ap3u_g_blk = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:W_ap3u_g_blk = { L_ap3u_g_blk->?:q; L_ap3u_g_blk->:q2; int64:z; };
+func:f_ap3u_g_blk = int64(int64:n) never fails {
+    L_ap3u_g_blk:lo = L_ap3u_g_blk{ l: raw mk_ap3u_g_blk(), z: 1i64 }; L_ap3u_g_blk:lo2 = L_ap3u_g_blk{ l: raw mk_ap3u_g_blk(), z: 2i64 }; W_ap3u_g_blk:w = W_ap3u_g_blk{ q: @lo, q2: @lo, z: 1i64 }; int64:out = 0i64; { int64->:e = @((<-(w.q ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } out = (<-e) + 6i64; } pass out;
+};
+func:cell_main_ap3u_g_blk = int32() never fails { pass (((raw f_ap3u_g_blk(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:201. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g1/ap3u_g_gn.npk`.
+func:mk_ap3u_g_gn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_g_gn = { List<int64>:l; int64:z; };
+func:idl_ap3u_g_gn = L_ap3u_g_gn->(L_ap3u_g_gn->:p) never fails { pass p; };
+func:ido_ap3u_g_gn = L_ap3u_g_gn->?(L_ap3u_g_gn->?:p) never fails { pass p; };
+func:growl_ap3u_g_gn = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:W_ap3u_g_gn = { L_ap3u_g_gn->?:q; L_ap3u_g_gn->:q2; int64:z; };
+func:gg_ap3u_g_gn<T> = int64(T:t, int64:n) never fails { L_ap3u_g_gn:lo = L_ap3u_g_gn{ l: raw mk_ap3u_g_gn(), z: 1i64 }; W_ap3u_g_gn:w = W_ap3u_g_gn{ q: @lo, q2: @lo, z: 1i64 }; int64->:e = @((<-(w.q ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64; };
+func:f_ap3u_g_gn = int64(int64:n) never fails {
+    pass raw gg_ap3u_g_gn::<int64>(1i64, n);
+};
+func:cell_main_ap3u_g_gn = int32() never fails { pass (((raw f_ap3u_g_gn(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:228. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g1/ap3u_g_if.npk`.
+func:mk_ap3u_g_if = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_g_if = { List<int64>:l; int64:z; };
+func:idl_ap3u_g_if = L_ap3u_g_if->(L_ap3u_g_if->:p) never fails { pass p; };
+func:ido_ap3u_g_if = L_ap3u_g_if->?(L_ap3u_g_if->?:p) never fails { pass p; };
+func:growl_ap3u_g_if = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:W_ap3u_g_if = { L_ap3u_g_if->?:q; L_ap3u_g_if->:q2; int64:z; };
+func:f_ap3u_g_if = int64(int64:n) never fails {
+    L_ap3u_g_if:lo = L_ap3u_g_if{ l: raw mk_ap3u_g_if(), z: 1i64 }; L_ap3u_g_if:lo2 = L_ap3u_g_if{ l: raw mk_ap3u_g_if(), z: 2i64 }; W_ap3u_g_if:w = W_ap3u_g_if{ q: @lo, q2: @lo, z: 1i64 }; int64:out = 7i64; if (n >= 0i64) { int64->:e = @((<-(w.q ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } out = (<-e) + 6i64; } pass out;
+};
+func:cell_main_ap3u_g_if = int32() never fails { pass (((raw f_ap3u_g_if(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:236. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g1/ap3u_g_lp.npk`.
+func:mk_ap3u_g_lp = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_g_lp = { List<int64>:l; int64:z; };
+func:idl_ap3u_g_lp = L_ap3u_g_lp->(L_ap3u_g_lp->:p) never fails { pass p; };
+func:ido_ap3u_g_lp = L_ap3u_g_lp->?(L_ap3u_g_lp->?:p) never fails { pass p; };
+func:growl_ap3u_g_lp = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:W_ap3u_g_lp = { L_ap3u_g_lp->?:q; L_ap3u_g_lp->:q2; int64:z; };
+func:f_ap3u_g_lp = int64(int64:n) never fails {
+    L_ap3u_g_lp:lo = L_ap3u_g_lp{ l: raw mk_ap3u_g_lp(), z: 1i64 }; L_ap3u_g_lp:lo2 = L_ap3u_g_lp{ l: raw mk_ap3u_g_lp(), z: 2i64 }; W_ap3u_g_lp:w = W_ap3u_g_lp{ q: @lo, q2: @lo, z: 1i64 }; int64:out = 0i64; loop(0i64, 1i64, 1i64) { int64->:e = @((<-(w.q ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } out = (<-e) + 6i64; } pass out;
+};
+func:cell_main_ap3u_g_lp = int32() never fails { pass (((raw f_ap3u_g_lp(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:265. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g1/ap3u_g_wh.npk`.
+func:mk_ap3u_g_wh = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_g_wh = { List<int64>:l; int64:z; };
+func:idl_ap3u_g_wh = L_ap3u_g_wh->(L_ap3u_g_wh->:p) never fails { pass p; };
+func:ido_ap3u_g_wh = L_ap3u_g_wh->?(L_ap3u_g_wh->?:p) never fails { pass p; };
+func:growl_ap3u_g_wh = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:W_ap3u_g_wh = { L_ap3u_g_wh->?:q; L_ap3u_g_wh->:q2; int64:z; };
+func:f_ap3u_g_wh = int64(int64:n) never fails {
+    L_ap3u_g_wh:lo = L_ap3u_g_wh{ l: raw mk_ap3u_g_wh(), z: 1i64 }; L_ap3u_g_wh:lo2 = L_ap3u_g_wh{ l: raw mk_ap3u_g_wh(), z: 2i64 }; W_ap3u_g_wh:w = W_ap3u_g_wh{ q: @lo, q2: @lo, z: 1i64 }; int64:out = 0i64; int64:k = 0i64; while (k < 1i64) decreases 1i64 - k { int64->:e = @((<-(w.q ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } out = (<-e) + 6i64; k = k + 1i64; } pass out;
+};
+func:cell_main_ap3u_g_wh = int32() never fails { pass (((raw f_ap3u_g_wh(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:247. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g6/ap3u_gr.npk`.
+func:mk_ap3u_gr = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_gr = { List<int64>:l; int64:z; };
+func:idl_ap3u_gr = L_ap3u_gr->(L_ap3u_gr->:p) never fails { pass p; };
+func:ido_ap3u_gr = L_ap3u_gr->?(L_ap3u_gr->?:p) never fails { pass p; };
+func:growl_ap3u_gr = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:GR_ap3u_gr<T> = { Result<T?>:r; int64:z; };
+func:f_ap3u_gr = int64(int64:n) never fails {
+    L_ap3u_gr:lo = L_ap3u_gr{ l: raw mk_ap3u_gr(), z: 1i64 }; L_ap3u_gr:lo2 = L_ap3u_gr{ l: raw mk_ap3u_gr(), z: 2i64 }; L_ap3u_gr->?:oq = @lo; L_ap3u_gr->?:oq2 = @lo2; GR_ap3u_gr<L_ap3u_gr->>:w = GR_ap3u_gr{ r: Result{ value: oq }, z: 1i64 }; int64->:e = @((<-((w.r ?! E5) ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_gr = int32() never fails { pass (((raw f_ap3u_gr(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:248. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g6/ap3u_grf.npk`.
+func:mk_ap3u_grf = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_grf = { List<int64>:l; int64:z; };
+func:idl_ap3u_grf = L_ap3u_grf->(L_ap3u_grf->:p) never fails { pass p; };
+func:ido_ap3u_grf = L_ap3u_grf->?(L_ap3u_grf->?:p) never fails { pass p; };
+func:growl_ap3u_grf = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:GR_ap3u_grf<T> = { Result<T?>:r; int64:z; };
+func:f_ap3u_grf = int64(int64:n) never fails {
+    L_ap3u_grf:lo = L_ap3u_grf{ l: raw mk_ap3u_grf(), z: 1i64 }; L_ap3u_grf:lo2 = L_ap3u_grf{ l: raw mk_ap3u_grf(), z: 2i64 }; L_ap3u_grf->?:oq = @lo; L_ap3u_grf->?:oq2 = @lo2; GR_ap3u_grf<L_ap3u_grf->>:w = GR_ap3u_grf{ r: Result{ value: oq }, z: 1i64 }; int64->:e = @((<-((w.r ?| oq2) ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_grf = int32() never fails { pass (((raw f_ap3u_grf(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:146, BORROW-015 at 9:197. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_oqo_g.npk`.
+func:mk_ap3u_oqo_g = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqo_g = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqo_g = L_ap3u_oqo_g->(L_ap3u_oqo_g->:p) never fails { pass p; };
+func:ido_ap3u_oqo_g = L_ap3u_oqo_g->?(L_ap3u_oqo_g->?:p) never fails { pass p; };
+func:growl_ap3u_oqo_g = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_oqo_g = int64(int64:n) never fails {
+    L_ap3u_oqo_g:lo = L_ap3u_oqo_g{ l: raw mk_ap3u_oqo_g(), z: 1i64 }; L_ap3u_oqo_g:lo2 = L_ap3u_oqo_g{ l: raw mk_ap3u_oqo_g(), z: 2i64 }; L_ap3u_oqo_g->?:oq = @lo; L_ap3u_oqo_g->?:oq2 = @lo2; int64->:e = @((<-(oq ??! E5)).l[0i64]); oq = oq2; loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_oqo_g = int32() never fails { pass (((raw f_ap3u_oqo_g(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 8:98, BORROW-015 at 8:147. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g3/ap3u_oqp_g.npk`.
+func:mk_ap3u_oqp_g = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqp_g = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqp_g = L_ap3u_oqp_g->(L_ap3u_oqp_g->:p) never fails { pass p; };
+func:ido_ap3u_oqp_g = L_ap3u_oqp_g->?(L_ap3u_oqp_g->?:p) never fails { pass p; };
+func:growl_ap3u_oqp_g = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:g_ap3u_oqp_g = int64(L_ap3u_oqp_g->?:o, L_ap3u_oqp_g->?:o2) never fails { L_ap3u_oqp_g->?:q = o; int64->:e = @((<-(q ??! E5)).l[0i64]); q = o2; loop(0i64, 64i64, 1i64) { drop list_push(@((<-(o ??! E5)).l), 1i64); } pass (<-e) + 6i64; };
+func:f_ap3u_oqp_g = int64(int64:n) never fails {
+    L_ap3u_oqp_g:lo = L_ap3u_oqp_g{ l: raw mk_ap3u_oqp_g(), z: 1i64 }; L_ap3u_oqp_g:lo2 = L_ap3u_oqp_g{ l: raw mk_ap3u_oqp_g(), z: 2i64 }; L_ap3u_oqp_g->?:oq = @lo; L_ap3u_oqp_g->?:oq2 = @lo2; pass raw g_ap3u_oqp_g(oq, oq2);
+};
+func:cell_main_ap3u_oqp_g = int32() never fails { pass (((raw f_ap3u_oqp_g(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:287. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g1/ap3u_r3.npk`.
+func:mk_ap3u_r3 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_r3 = { List<int64>:l; int64:z; };
+func:idl_ap3u_r3 = L_ap3u_r3->(L_ap3u_r3->:p) never fails { pass p; };
+func:ido_ap3u_r3 = L_ap3u_r3->?(L_ap3u_r3->?:p) never fails { pass p; };
+func:growl_ap3u_r3 = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_r3 = int64(int64:n) never fails {
+    L_ap3u_r3:lo = L_ap3u_r3{ l: raw mk_ap3u_r3(), z: 1i64 }; L_ap3u_r3:lo2 = L_ap3u_r3{ l: raw mk_ap3u_r3(), z: 2i64 }; L_ap3u_r3->?:oq = @lo; L_ap3u_r3->?:oq2 = @lo2; Result<L_ap3u_r3->?>:r = Result{ value: oq }; Result<Result<L_ap3u_r3->?>>:rr = Result{ value: r }; int64->:e = @((<-(((rr ?! E5) ?! E5) ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_r3 = int32() never fails { pass (((raw f_ap3u_r3(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:233. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g1/ap3u_rf.npk`.
+func:mk_ap3u_rf = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rf = { List<int64>:l; int64:z; };
+func:idl_ap3u_rf = L_ap3u_rf->(L_ap3u_rf->:p) never fails { pass p; };
+func:ido_ap3u_rf = L_ap3u_rf->?(L_ap3u_rf->?:p) never fails { pass p; };
+func:growl_ap3u_rf = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rf = int64(int64:n) never fails {
+    L_ap3u_rf:lo = L_ap3u_rf{ l: raw mk_ap3u_rf(), z: 1i64 }; L_ap3u_rf:lo2 = L_ap3u_rf{ l: raw mk_ap3u_rf(), z: 2i64 }; L_ap3u_rf->?:oq = @lo; L_ap3u_rf->?:oq2 = @lo2; Result<L_ap3u_rf->?>:r = Result{ value: oq }; int64->:e = @((<-((r ?| oq2) ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rf = int32() never fails { pass (((raw f_ap3u_rf(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:327. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_rf_3.npk`.
+func:mk_ap3u_rf_3 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rf_3 = { List<int64>:l; int64:z; };
+func:idl_ap3u_rf_3 = L_ap3u_rf_3->(L_ap3u_rf_3->:p) never fails { pass p; };
+func:ido_ap3u_rf_3 = L_ap3u_rf_3->?(L_ap3u_rf_3->?:p) never fails { pass p; };
+func:growl_ap3u_rf_3 = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rf_3 = int64(int64:n) never fails {
+    L_ap3u_rf_3:lo = L_ap3u_rf_3{ l: raw mk_ap3u_rf_3(), z: 1i64 }; L_ap3u_rf_3:lo2 = L_ap3u_rf_3{ l: raw mk_ap3u_rf_3(), z: 2i64 }; L_ap3u_rf_3->?:oq = @lo; L_ap3u_rf_3->?:oq2 = @lo2; Result<L_ap3u_rf_3->?>:r = Result{ value: oq }; Result<Result<L_ap3u_rf_3->?>>:rr = Result{ value: r }; Result<L_ap3u_rf_3->?>:r9 = Result{ value: oq2 }; int64->:e = @((<-(((rr ?| r9) ?! E5) ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rf_3 = int32() never fails { pass (((raw f_ap3u_rf_3(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:232. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_rf_bn.npk`.
+func:mk_ap3u_rf_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rf_bn = { List<int64>:l; int64:z; };
+func:idl_ap3u_rf_bn = L_ap3u_rf_bn->(L_ap3u_rf_bn->:p) never fails { pass p; };
+func:ido_ap3u_rf_bn = L_ap3u_rf_bn->?(L_ap3u_rf_bn->?:p) never fails { pass p; };
+func:growl_ap3u_rf_bn = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rf_bn = int64(int64:n) never fails {
+    L_ap3u_rf_bn:lo = L_ap3u_rf_bn{ l: raw mk_ap3u_rf_bn(), z: 1i64 }; L_ap3u_rf_bn:lo2 = L_ap3u_rf_bn{ l: raw mk_ap3u_rf_bn(), z: 2i64 }; L_ap3u_rf_bn->?:oq = @lo; L_ap3u_rf_bn->?:oq2 = @lo2; Result<L_ap3u_rf_bn->?>:r = Result{ value: oq }; int64->:e = @((<-((r ?! E5) ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rf_bn = int32() never fails { pass (((raw f_ap3u_rf_bn(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:210. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_rf_c.npk`.
+func:mk_ap3u_rf_c = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rf_c = { List<int64>:l; int64:z; };
+func:idl_ap3u_rf_c = L_ap3u_rf_c->(L_ap3u_rf_c->:p) never fails { pass p; };
+func:ido_ap3u_rf_c = L_ap3u_rf_c->?(L_ap3u_rf_c->?:p) never fails { pass p; };
+func:growl_ap3u_rf_c = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rf_c = int64(int64:n) never fails {
+    L_ap3u_rf_c:lo = L_ap3u_rf_c{ l: raw mk_ap3u_rf_c(), z: 1i64 }; L_ap3u_rf_c:lo2 = L_ap3u_rf_c{ l: raw mk_ap3u_rf_c(), z: 2i64 }; L_ap3u_rf_c->?:oq = @lo; L_ap3u_rf_c->?:oq2 = @lo2; Result<L_ap3u_rf_c->?>:r = Result{ value: oq }; int64->:e = @((<-((r ?| oq2) ??! E5)).l[0i64]); discard(raw growl_ap3u_rf_c(@lo.l)); pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rf_c = int32() never fails { pass (((raw f_ap3u_rf_c(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:243. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_rf_fld.npk`.
+func:mk_ap3u_rf_fld = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rf_fld = { List<int64>:l; int64:z; };
+func:idl_ap3u_rf_fld = L_ap3u_rf_fld->(L_ap3u_rf_fld->:p) never fails { pass p; };
+func:ido_ap3u_rf_fld = L_ap3u_rf_fld->?(L_ap3u_rf_fld->?:p) never fails { pass p; };
+func:growl_ap3u_rf_fld = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:RW_ap3u_rf_fld = { Result<L_ap3u_rf_fld->?>:r; int64:z; };
+func:f_ap3u_rf_fld = int64(int64:n) never fails {
+    L_ap3u_rf_fld:lo = L_ap3u_rf_fld{ l: raw mk_ap3u_rf_fld(), z: 1i64 }; L_ap3u_rf_fld:lo2 = L_ap3u_rf_fld{ l: raw mk_ap3u_rf_fld(), z: 2i64 }; L_ap3u_rf_fld->?:oq = @lo; L_ap3u_rf_fld->?:oq2 = @lo2; RW_ap3u_rf_fld:w = RW_ap3u_rf_fld{ r: Result{ value: oq }, z: 1i64 }; int64->:e = @((<-((w.r ?| oq2) ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rf_fld = int32() never fails { pass (((raw f_ap3u_rf_fld(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:245. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_rf_l.npk`.
+func:mk_ap3u_rf_l = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rf_l = { List<int64>:l; int64:z; };
+func:idl_ap3u_rf_l = L_ap3u_rf_l->(L_ap3u_rf_l->:p) never fails { pass p; };
+func:ido_ap3u_rf_l = L_ap3u_rf_l->?(L_ap3u_rf_l->?:p) never fails { pass p; };
+func:growl_ap3u_rf_l = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rf_l = int64(int64:n) never fails {
+    L_ap3u_rf_l:lo = L_ap3u_rf_l{ l: raw mk_ap3u_rf_l(), z: 1i64 }; L_ap3u_rf_l:lo2 = L_ap3u_rf_l{ l: raw mk_ap3u_rf_l(), z: 2i64 }; L_ap3u_rf_l->?:oq = @lo; L_ap3u_rf_l->?:oq2 = @lo2; Result<L_ap3u_rf_l->?>:r = Result{ value: oq }; L_ap3u_rf_l->?:o3 = r ?| oq2; int64->:e = @((<-(o3 ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rf_l = int32() never fails { pass (((raw f_ap3u_rf_l(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 11:164. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g3/ap3u_rf_ls.npk`.
+func:mk_ap3u_rf_ls = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rf_ls = { List<int64>:l; int64:z; };
+func:idl_ap3u_rf_ls = L_ap3u_rf_ls->(L_ap3u_rf_ls->:p) never fails { pass p; };
+func:ido_ap3u_rf_ls = L_ap3u_rf_ls->?(L_ap3u_rf_ls->?:p) never fails { pass p; };
+func:growl_ap3u_rf_ls = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SR_ap3u_rf_ls = { Result<SR_ap3u_rf_ls->?>:rp; List<int64>:own; int64:z; };
+func:linkr_ap3u_rf_ls = int64(SR_ap3u_rf_ls->:x) never fails { SR_ap3u_rf_ls->?:xo = x; (<-x).rp = Result{ value: xo }; pass 7i64; };
+func:f_ap3u_rf_ls = int64(int64:n) never fails {
+    SR_ap3u_rf_ls->?:nz = NIL; SR_ap3u_rf_ls:so = SR_ap3u_rf_ls{ rp: Result{ value: nz }, own: raw mk_ap3u_rf_ls(), z: 1i64 }; discard(raw linkr_ap3u_rf_ls(@so)); int64->:e = @((<-((so.rp ?| nz) ??! E5)).own[0i64]); so.own = raw mk_ap3u_rf_ls(); pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rf_ls = int32() never fails { pass (((raw f_ap3u_rf_ls(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 11:203. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g3/ap3u_rf_lsg.npk`.
+func:mk_ap3u_rf_lsg = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rf_lsg = { List<int64>:l; int64:z; };
+func:idl_ap3u_rf_lsg = L_ap3u_rf_lsg->(L_ap3u_rf_lsg->:p) never fails { pass p; };
+func:ido_ap3u_rf_lsg = L_ap3u_rf_lsg->?(L_ap3u_rf_lsg->?:p) never fails { pass p; };
+func:growl_ap3u_rf_lsg = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SR_ap3u_rf_lsg = { Result<SR_ap3u_rf_lsg->?>:rp; List<int64>:own; int64:z; };
+func:linkr_ap3u_rf_lsg = int64(SR_ap3u_rf_lsg->:x) never fails { SR_ap3u_rf_lsg->?:xo = x; (<-x).rp = Result{ value: xo }; pass 7i64; };
+func:f_ap3u_rf_lsg = int64(int64:n) never fails {
+    SR_ap3u_rf_lsg->?:nz = NIL; SR_ap3u_rf_lsg:so = SR_ap3u_rf_lsg{ rp: Result{ value: nz }, own: raw mk_ap3u_rf_lsg(), z: 1i64 }; discard(raw linkr_ap3u_rf_lsg(@so)); int64->:e = @((<-((so.rp ?| nz) ??! E5)).own[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@so.own, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rf_lsg = int32() never fails { pass (((raw f_ap3u_rf_lsg(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:204. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_rf_v.npk`.
+func:mk_ap3u_rf_v = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rf_v = { List<int64>:l; int64:z; };
+func:idl_ap3u_rf_v = L_ap3u_rf_v->(L_ap3u_rf_v->:p) never fails { pass p; };
+func:ido_ap3u_rf_v = L_ap3u_rf_v->?(L_ap3u_rf_v->?:p) never fails { pass p; };
+func:growl_ap3u_rf_v = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+impl:L_ap3u_rf_v = { func:gw = int64(L_ap3u_rf_v->:self) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-self).l), 1i64); } pass 7i64; }; };
+func:f_ap3u_rf_v = int64(int64:n) never fails {
+    L_ap3u_rf_v:lo = L_ap3u_rf_v{ l: raw mk_ap3u_rf_v(), z: 1i64 }; L_ap3u_rf_v:lo2 = L_ap3u_rf_v{ l: raw mk_ap3u_rf_v(), z: 2i64 }; L_ap3u_rf_v->?:oq = @lo; L_ap3u_rf_v->?:oq2 = @lo2; Result<L_ap3u_rf_v->?>:r = Result{ value: oq }; int64->:e = @((<-((r ?| oq2) ??! E5)).l[0i64]); discard(raw lo.gw()); pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rf_v = int32() never fails { pass (((raw f_ap3u_rf_v(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:227. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g5/ap3u_rfb.npk`.
+func:mk_ap3u_rfb = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rfb = { List<int64>:l; int64:z; };
+func:idl_ap3u_rfb = L_ap3u_rfb->(L_ap3u_rfb->:p) never fails { pass p; };
+func:ido_ap3u_rfb = L_ap3u_rfb->?(L_ap3u_rfb->?:p) never fails { pass p; };
+func:growl_ap3u_rfb = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rfb = int64(int64:n) never fails {
+    L_ap3u_rfb:lo = L_ap3u_rfb{ l: raw mk_ap3u_rfb(), z: 1i64 }; L_ap3u_rfb:lo2 = L_ap3u_rfb{ l: raw mk_ap3u_rfb(), z: 2i64 }; L_ap3u_rfb->?:oq = @lo; L_ap3u_rfb->?:oq2 = @lo2; Result<L_ap3u_rfb->>:rp = Result{ value: @lo }; int64->:e = @((<-(rp ?| @lo2)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rfb = int32() never fails { pass (((raw f_ap3u_rfb(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:242. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g1/ap3u_rfld.npk`.
+func:mk_ap3u_rfld = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rfld = { List<int64>:l; int64:z; };
+func:idl_ap3u_rfld = L_ap3u_rfld->(L_ap3u_rfld->:p) never fails { pass p; };
+func:ido_ap3u_rfld = L_ap3u_rfld->?(L_ap3u_rfld->?:p) never fails { pass p; };
+func:growl_ap3u_rfld = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:RW_ap3u_rfld = { Result<L_ap3u_rfld->?>:r; int64:z; };
+func:f_ap3u_rfld = int64(int64:n) never fails {
+    L_ap3u_rfld:lo = L_ap3u_rfld{ l: raw mk_ap3u_rfld(), z: 1i64 }; L_ap3u_rfld:lo2 = L_ap3u_rfld{ l: raw mk_ap3u_rfld(), z: 2i64 }; L_ap3u_rfld->?:oq = @lo; L_ap3u_rfld->?:oq2 = @lo2; RW_ap3u_rfld:w = RW_ap3u_rfld{ r: Result{ value: oq }, z: 1i64 }; int64->:e = @((<-((w.r ?! E5) ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rfld = int32() never fails { pass (((raw f_ap3u_rfld(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:234. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g1/ap3u_rfq.npk`.
+func:mk_ap3u_rfq = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rfq = { List<int64>:l; int64:z; };
+func:idl_ap3u_rfq = L_ap3u_rfq->(L_ap3u_rfq->:p) never fails { pass p; };
+func:ido_ap3u_rfq = L_ap3u_rfq->?(L_ap3u_rfq->?:p) never fails { pass p; };
+func:growl_ap3u_rfq = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rfq = int64(int64:n) never fails {
+    L_ap3u_rfq:lo = L_ap3u_rfq{ l: raw mk_ap3u_rfq(), z: 1i64 }; L_ap3u_rfq:lo2 = L_ap3u_rfq{ l: raw mk_ap3u_rfq(), z: 2i64 }; L_ap3u_rfq->?:oq = @lo; L_ap3u_rfq->?:oq2 = @lo2; Result<L_ap3u_rfq->?>:r = Result{ value: oq }; int64->:e = @((<-((r ?| oq2) ?? @lo2)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rfq = int32() never fails { pass (((raw f_ap3u_rfq(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:300. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g6/ap3u_rfx.npk`.
+func:mk_ap3u_rfx = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rfx = { List<int64>:l; int64:z; };
+func:idl_ap3u_rfx = L_ap3u_rfx->(L_ap3u_rfx->:p) never fails { pass p; };
+func:ido_ap3u_rfx = L_ap3u_rfx->?(L_ap3u_rfx->?:p) never fails { pass p; };
+func:growl_ap3u_rfx = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rfx = int64(int64:n) never fails {
+    L_ap3u_rfx:lo = L_ap3u_rfx{ l: raw mk_ap3u_rfx(), z: 1i64 }; L_ap3u_rfx:lo2 = L_ap3u_rfx{ l: raw mk_ap3u_rfx(), z: 2i64 }; L_ap3u_rfx->?:oq = @lo; L_ap3u_rfx->?:oq2 = @lo2; Result<Result<L_ap3u_rfx->>>:rr2 = Result{ value: Result{ value: @lo } }; Result<L_ap3u_rfx->>:r9 = Result{ value: @lo2 }; int64->:e = @((<-((rr2 ?| r9) ?! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rfx = int32() never fails { pass (((raw f_ap3u_rfx(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 11:164. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g3/ap3u_rr_ls.npk`.
+func:mk_ap3u_rr_ls = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rr_ls = { List<int64>:l; int64:z; };
+func:idl_ap3u_rr_ls = L_ap3u_rr_ls->(L_ap3u_rr_ls->:p) never fails { pass p; };
+func:ido_ap3u_rr_ls = L_ap3u_rr_ls->?(L_ap3u_rr_ls->?:p) never fails { pass p; };
+func:growl_ap3u_rr_ls = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SR_ap3u_rr_ls = { Result<SR_ap3u_rr_ls->?>:rp; List<int64>:own; int64:z; };
+func:linkr_ap3u_rr_ls = int64(SR_ap3u_rr_ls->:x) never fails { SR_ap3u_rr_ls->?:xo = x; (<-x).rp = Result{ value: xo }; pass 7i64; };
+func:f_ap3u_rr_ls = int64(int64:n) never fails {
+    SR_ap3u_rr_ls->?:nz = NIL; SR_ap3u_rr_ls:so = SR_ap3u_rr_ls{ rp: Result{ value: nz }, own: raw mk_ap3u_rr_ls(), z: 1i64 }; discard(raw linkr_ap3u_rr_ls(@so)); int64->:e = @((<-((so.rp ?! E5) ??! E5)).own[0i64]); so.own = raw mk_ap3u_rr_ls(); pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rr_ls = int32() never fails { pass (((raw f_ap3u_rr_ls(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:203. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g1/ap3u_rvm.npk`.
+func:mk_ap3u_rvm = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rvm = { List<int64>:l; int64:z; };
+func:idl_ap3u_rvm = L_ap3u_rvm->(L_ap3u_rvm->:p) never fails { pass p; };
+func:ido_ap3u_rvm = L_ap3u_rvm->?(L_ap3u_rvm->?:p) never fails { pass p; };
+func:growl_ap3u_rvm = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+impl:L_ap3u_rvm = { func:gw = int64(L_ap3u_rvm->:self) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-self).l), 1i64); } pass 7i64; }; };
+func:f_ap3u_rvm = int64(int64:n) never fails {
+    L_ap3u_rvm:lo = L_ap3u_rvm{ l: raw mk_ap3u_rvm(), z: 1i64 }; L_ap3u_rvm:lo2 = L_ap3u_rvm{ l: raw mk_ap3u_rvm(), z: 2i64 }; L_ap3u_rvm->?:oq = @lo; L_ap3u_rvm->?:oq2 = @lo2; Result<L_ap3u_rvm->?>:r = Result{ value: oq }; int64->:e = @((<-((r ?! E5) ??! E5)).l[0i64]); discard(raw lo.gw()); pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rvm = int32() never fails { pass (((raw f_ap3u_rvm(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:99. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g4/ap3u_sp_e2.npk`.
+func:mk_ap3u_sp_e2 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_sp_e2 = { List<int64>:l; int64:z; };
+func:idl_ap3u_sp_e2 = L_ap3u_sp_e2->(L_ap3u_sp_e2->:p) never fails { pass p; };
+func:ido_ap3u_sp_e2 = L_ap3u_sp_e2->?(L_ap3u_sp_e2->?:p) never fails { pass p; };
+func:growl_ap3u_sp_e2 = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3u_sp_e2 = { SS_ap3u_sp_e2->?:p; List<int64>:own; int64:z; };
+func:link_ap3u_sp_e2 = int64(SS_ap3u_sp_e2->:x) never fails { (<-x).p = x; pass 7i64; };
+func:g2_ap3u_sp_e2 = int64(SS_ap3u_sp_e2->:s) never fails { SS_ap3u_sp_e2->?:q = s; int64->:e2 = @((<-(q ??! E5)).own[0i64]); (<-s).own = raw mk_ap3u_sp_e2(); pass (<-e2) + 6i64; };
+func:f_ap3u_sp_e2 = int64(int64:n) never fails {
+    SS_ap3u_sp_e2:so = SS_ap3u_sp_e2{ p: NIL, own: raw mk_ap3u_sp_e2(), z: 1i64 }; discard(raw link_ap3u_sp_e2(@so)); pass raw g2_ap3u_sp_e2(@so);
+};
+func:cell_main_ap3u_sp_e2 = int32() never fails { pass (((raw f_ap3u_sp_e2(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 27:21. From the cell
+// `Team/TMP/plan-177d2e-p3-2026-11-20/cells/es/es_p4_won.npk`.
+func:mk_es_p4_won = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_es_p4_won = { List<int64>:l; int64:z; };
+struct:S_es_p4_won = { L_es_p4_won->?:oq; Result<L_es_p4_won->>:rq; L_es_p4_won->:rp; Result<Result<L_es_p4_won->>>:rr; int64:z; };
+func:idp_es_p4_won = S_es_p4_won->(S_es_p4_won->:w) never fails { pass w; };
+func:idr_es_p4_won = Result<L_es_p4_won->>->(Result<L_es_p4_won->>->:w) never fails { pass w; };
+func:idl_es_p4_won = L_es_p4_won->->(L_es_p4_won->->:w) never fails { pass w; };
+func:wrr_es_p4_won = int64(Result<L_es_p4_won->>->:q) never fails {
+    Result<L_es_p4_won->>:rv = <-q;
+    if (rv.is_error) { pass 7i64; }
+    L_es_p4_won->:lp = rv.value;
+    loop(0i64, 64i64, 1i64) { drop list_push(@((<-lp).l), 1i64); }
+    pass 7i64;
+};
+func:wro_es_p4_won = int64(L_es_p4_won->?->:q) never fails {
+    loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-q) ??! E5)).l), 1i64); }
+    pass 7i64;
+};
+func:idq_es_p4_won = L_es_p4_won->?->(L_es_p4_won->?->:w) never fails { pass w; };
+func:f_es_p4_won = int64(int64:n) never fails {
+    L_es_p4_won:lo = L_es_p4_won{ l: raw mk_es_p4_won(), z: 1i64 };
+    L_es_p4_won:lo2 = L_es_p4_won{ l: raw mk_es_p4_won(), z: 2i64 };
+    S_es_p4_won:s = S_es_p4_won{ oq: @lo, rq: Result{ value: @lo }, rp: @lo, rr: Result{ value: Result{ value: @lo } }, z: 1i64 };
+    Result<L_es_p4_won->>:r1 = Result{ value: @lo };
+    int64->:e = @((<-(s.oq ??! E5)).l[0i64]);
+    discard(raw wro_es_p4_won(@s.oq));
+    pass (<-e) + 6i64;
+};
+func:cell_main_es_p4_won = int32() never fails { pass (((raw f_es_p4_won(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 27:21. From the cell
+// `Team/TMP/plan-177d2e-p3-2026-11-20/cells/es/es_p5_won.npk`.
+func:mk_es_p5_won = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_es_p5_won = { List<int64>:l; int64:z; };
+struct:S_es_p5_won = { L_es_p5_won->?:oq; Result<L_es_p5_won->>:rq; L_es_p5_won->:rp; Result<Result<L_es_p5_won->>>:rr; int64:z; };
+func:idp_es_p5_won = S_es_p5_won->(S_es_p5_won->:w) never fails { pass w; };
+func:idr_es_p5_won = Result<L_es_p5_won->>->(Result<L_es_p5_won->>->:w) never fails { pass w; };
+func:idl_es_p5_won = L_es_p5_won->->(L_es_p5_won->->:w) never fails { pass w; };
+func:wrr_es_p5_won = int64(Result<L_es_p5_won->>->:q) never fails {
+    Result<L_es_p5_won->>:rv = <-q;
+    if (rv.is_error) { pass 7i64; }
+    L_es_p5_won->:lp = rv.value;
+    loop(0i64, 64i64, 1i64) { drop list_push(@((<-lp).l), 1i64); }
+    pass 7i64;
+};
+func:wro_es_p5_won = int64(L_es_p5_won->?->:q) never fails {
+    loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-q) ??! E5)).l), 1i64); }
+    pass 7i64;
+};
+func:idq_es_p5_won = L_es_p5_won->?->(L_es_p5_won->?->:w) never fails { pass w; };
+func:f_es_p5_won = int64(int64:n) never fails {
+    L_es_p5_won:lo = L_es_p5_won{ l: raw mk_es_p5_won(), z: 1i64 };
+    L_es_p5_won:lo2 = L_es_p5_won{ l: raw mk_es_p5_won(), z: 2i64 };
+    S_es_p5_won:s = S_es_p5_won{ oq: @lo, rq: Result{ value: @lo }, rp: @lo, rr: Result{ value: Result{ value: @lo } }, z: 1i64 };
+    Result<L_es_p5_won->>:r1 = Result{ value: @lo };
+    int64->:e = @((<-(s.oq ?? @lo2)).l[0i64]);
+    discard(raw wro_es_p5_won(@s.oq));
+    pass (<-e) + 6i64;
+};
+func:cell_main_es_p5_won = int32() never fails { pass (((raw f_es_p5_won(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 99:23. From the cell
+// `.internal/m716-2026-11-20/cells/d716/c887/a1_cellsR3kp/kp_un.npk`.
+struct:K_kp_un = { int64:k; };
+struct:H_kp_un = { List<int64>:l; int64:k; K_kp_un:kk; };
+func:mk_kp_un = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_kp_un = H_kp_un() never fails { pass H_kp_un{ l: raw mk_kp_un(), k: 2i64, kk: K_kp_un{ k: 3i64 } }; };
+func:growh_kp_un = int64(H_kp_un->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_kp_un = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_kp_un = int64->(H_kp_un->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_kp_un = H_kp_un->(H_kp_un->:q) never fails { pass q; };
+func:getl_kp_un = List<int64>->(H_kp_un->:w) never fails { pass @w.l; };
+struct:HPO_kp_un = { H_kp_un->:lp; List<int64>:own; };
+struct:SQ_kp_un = { HPO_kp_un->:q; int64:z; };
+struct:SR_kp_un = { SQ_kp_un->:sq; int64:z; };
+struct:SL_kp_un = { List<int64>->:l; int64:z; };
+struct:SL2_kp_un = { SL_kp_un:s; int64:z; };
+struct:SLP_kp_un = { SL_kp_un->:sp; int64:z; };
+struct:SQB_kp_un = { HPO_kp_un->:q; int64:z; };
+struct:HPB_kp_un = { H_kp_un->:lp; List<int64>:own; };
+struct:PV_kp_un = { H_kp_un->:p; int64:v; };
+struct:HPV_kp_un = { H_kp_un->:lp; List<PV_kp_un>:own; };
+struct:SLV_kp_un = { List<PV_kp_un>->:l; int64:z; };
+struct:SQV_kp_un = { HPV_kp_un->:q; int64:z; };
+func:getown_kp_un = List<int64>->(HPO_kp_un->:w) never fails { pass @w.own; };
+func:getownv_kp_un = List<PV_kp_un>->(HPV_kp_un->:w) never fails { pass @w.own; };
+func:mkv_kp_un = List<PV_kp_un>(H_kp_un->:h) never fails { List<PV_kp_un>:l = raw list_init::<PV_kp_un>(1i64); drop list_push(@l, PV_kp_un{ p: h, v: 1i64 }); pass l; };
+func:idp_kp_un = HPO_kp_un->(HPO_kp_un->:w) never fails { pass w; };
+func:cvq_kp_un = SQ_kp_un->(SQB_kp_un->:b) never fails { pass ((b =>! any->) =>! SQ_kp_un->); };
+func:put_kp_un = int64(HPO_kp_un->:p, H_kp_un->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_kp_un = { SQ_kp_un->:sq; int64:z; };
+struct:SPP_kp_un = { HPO_kp_un->->:qq; int64:z; };
+struct:SPPP_kp_un = { HPO_kp_un->->->:qqq; int64:z; };
+struct:SPPPP_kp_un = { HPO_kp_un->->->->:qqqq; int64:z; };
+struct:HN_kp_un = { int64:a; int64:b; };
+struct:SN_kp_un = { HN_kp_un->:q; int64:z; };
+struct:SNPP_kp_un = { HN_kp_un->->:qq; int64:z; };
+struct:SN4_kp_un = { HN_kp_un->->->->:qqqq; int64:z; };
+struct:W_kp_un = { HPO_kp_un:h; int64:z; };
+struct:W2_kp_un = { HPO_kp_un->:a; HPO_kp_un->:b; int64:z; };
+struct:SO2_kp_un = { HPO_kp_un->->?:oqq; int64:z; };
+func:geth_kp_un = HPO_kp_un->(W_kp_un->:w) never fails { pass @w.h; };
+func:geta_kp_un = HPO_kp_un->->(W2_kp_un->:w) never fails { pass @w.a; };
+func:mksqw_kp_un = SQ_kp_un(W_kp_un->:w) never fails { pass SQ_kp_un{ q: @w.h, z: 1i64 }; };
+func:idpp_kp_un = HPO_kp_un->->(HPO_kp_un->->:p) never fails { pass p; };
+func:rety_kp_un = HPO_kp_un->(HN_kp_un->:p) never fails { pass ((p =>! any->) =>! HPO_kp_un->); };
+func:put2pp_kp_un = int64(HPO_kp_un->->:pp, H_kp_un->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
+func:put3_kp_un = int64(HPO_kp_un->->->:pp, H_kp_un->:v) never fails { (<-(<-(<-pp))).lp = v; pass 7i64; };
+func:put4_kp_un = int64(HPO_kp_un->->->->:pp, H_kp_un->:v) never fails { (<-(<-(<-(<-pp)))).lp = v; pass 7i64; };
+impl:HPO_kp_un = { func:setme = int64(HPO_kp_un->:self, H_kp_un->:v) never fails { (<-self).lp = v; pass 7i64; }; };
+struct:WX3_kp_un = { HN_kp_un->->:x; int64:z; };
+struct:WX4_kp_un = { HN_kp_un->->->:x; int64:z; };
+struct:SA_kp_un = { any->:p; int64:z; };
+struct:SX3_kp_un = { HN_kp_un->->->:x3; int64:z; };
+struct:SN5_kp_un = { HN_kp_un->->->->->:q5; int64:z; };
+struct:SP5_kp_un = { HPO_kp_un->->->->->:q5; int64:z; };
+func:getx3_kp_un = HN_kp_un->->->(WX3_kp_un->:w) never fails { pass @w.x; };
+func:getx3c_kp_un = HPO_kp_un->->->(WX3_kp_un->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_kp_un->->->; };
+func:getx4_kp_un = HN_kp_un->->->->(WX4_kp_un->:w) never fails { pass @w.x; };
+func:getx4c_kp_un = HPO_kp_un->->->->(WX4_kp_un->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_kp_un->->->->; };
+func:toany_kp_un = any->(HN_kp_un->->:p) never fails { pass (p =>! any->); };
+func:put5_kp_un = int64(HPO_kp_un->->->->->:pp, H_kp_un->:v) never fails { (<-(<-(<-(<-(<-pp))))).lp = v; pass 7i64; };
+struct:WP_kp_un = { HPO_kp_un->:p; int64:z; };
+struct:SW_kp_un = { WP_kp_un:w; int64:z; };
+struct:SWP_kp_un = { SW_kp_un->:sw; int64:z; };
+struct:SO_kp_un = { HPO_kp_un->?:o; int64:z; };
+struct:SA2_kp_un = { HPO_kp_un->[2]:arr; int64:z; };
+struct:SI_kp_un = { int64:i; int64:z; };
+struct:WPP_kp_un = { HPO_kp_un->->:pp; int64:z; };
+struct:SWPP_kp_un = { WPP_kp_un:w; int64:z; };
+func:putwp_kp_un = int64(WP_kp_un:w, H_kp_un->:v) never fails { (<-(w.p)).lp = v; pass 7i64; };
+func:conv_kp_un = HPO_kp_un->(HPB_kp_un->:p) never fails { pass ((p =>! any->) =>! HPO_kp_un->); };
+func:conv2_kp_un = HPO_kp_un->(HPB_kp_un->:p) never fails { pass ((p =>! any->) =>! HPO_kp_un->); };
+struct:RR_kp_un = { SQ_kp_un->:sq; HPO_kp_un->:q; int64:z; };
+struct:X2_kp_un = { H_kp_un->:lp; HPB_kp_un:inner; };
+func:cvh_kp_un = X2_kp_un->(HPB_kp_un->:p) never fails { pass ((p =>! any->) =>! X2_kp_un->); };
+func:putx_kp_un = int64(X2_kp_un->:p, H_kp_un->:v) never fails { p.lp = v; pass 7i64; };
+func:idh2_kp_un = HPB_kp_un->(HPB_kp_un->:p) never fails { pass p; };
+func:putb_kp_un = int64(HPB_kp_un->:p, H_kp_un->:v) never fails { p.lp = v; pass 7i64; };
+struct:SX_kp_un = { X2_kp_un->:q; int64:z; };
+struct:SB_kp_un = { HPB_kp_un->:p; int64:z; };
+struct:Y2_kp_un = { X2_kp_un:x; int64:z; };
+struct:XA_kp_un = { HPB_kp_un[2]:arr; int64:z; };
+struct:XL_kp_un = { List<HPB_kp_un>:l; int64:z; };
+enum:EB_kp_un = { A(HPB_kp_un); Z; };
+func:idx_kp_un = X2_kp_un->(X2_kp_un->:q) never fails { pass q; };
+func:getq_kp_un = X2_kp_un->(SX_kp_un->:s) never fails { pass s.q; };
+func:inr_kp_un = HPB_kp_un->(X2_kp_un->:q) never fails { pass @((<-q).inner); };
+func:st_kp_un = int64(X2_kp_un->:qp, H_kp_un->:v) never fails { HPB_kp_un->:r = @((<-qp).inner); (<-r).lp = v; pass 7i64; };
+func:stq_kp_un = int64(SX_kp_un->:sp, H_kp_un->:v) never fails { HPB_kp_un->:r = @((<-((<-sp).q)).inner); (<-r).lp = v; pass 7i64; };
+struct:X4_kp_un = { H_kp_un->:lp; HPB_kp_un->:inner; };
+struct:X5_kp_un = { H_kp_un->:lp; HPB_kp_un->[2]:arr; };
+func:put2b_kp_un = int64(HPB_kp_un->->:pp, H_kp_un->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
+func:g_kp_un = int64(H_kp_un->:h0p, H_kp_un->:hq, H_kp_un->:hz, int64:n) never fails {
+    X2_kp_un:mx = X2_kp_un{ lp: h0p, inner: HPB_kp_un{ lp: h0p, own: raw mk_kp_un() } };
+    X2_kp_un->?:oq = @mx;
+    HPB_kp_un->:r = @((<-(oq ??! E5)).inner);
+    (<-r).lp = hq;
+    int64->:e = raw fp_kp_un(mx.inner.lp);
+    discard(raw growh_kp_un(hq));
+    pass (<-e) + 6i64;
+};
+func:f_kp_un = int64(int64:n) never fails {
+    H_kp_un:hz = raw mkh_kp_un(); H_kp_un:h0 = raw mkh_kp_un(); H_kp_un:h2 = raw mkh_kp_un();
+    pass raw g_kp_un(@h0, @h2, @hz, n);
+};
+func:cell_main_kp_un = int32() never fails { pass (((raw f_kp_un(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 99:23. From the cell
+// `.internal/m716-2026-11-20/cells/d716/c887/a1_cellsR3kp/kp_unc.npk`.
+struct:K_kp_unc = { int64:k; };
+struct:H_kp_unc = { List<int64>:l; int64:k; K_kp_unc:kk; };
+func:mk_kp_unc = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh_kp_unc = H_kp_unc() never fails { pass H_kp_unc{ l: raw mk_kp_unc(), k: 2i64, kk: K_kp_unc{ k: 3i64 } }; };
+func:growh_kp_unc = int64(H_kp_unc->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl_kp_unc = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp_kp_unc = int64->(H_kp_unc->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh_kp_unc = H_kp_unc->(H_kp_unc->:q) never fails { pass q; };
+func:getl_kp_unc = List<int64>->(H_kp_unc->:w) never fails { pass @w.l; };
+struct:HPO_kp_unc = { H_kp_unc->:lp; List<int64>:own; };
+struct:SQ_kp_unc = { HPO_kp_unc->:q; int64:z; };
+struct:SR_kp_unc = { SQ_kp_unc->:sq; int64:z; };
+struct:SL_kp_unc = { List<int64>->:l; int64:z; };
+struct:SL2_kp_unc = { SL_kp_unc:s; int64:z; };
+struct:SLP_kp_unc = { SL_kp_unc->:sp; int64:z; };
+struct:SQB_kp_unc = { HPO_kp_unc->:q; int64:z; };
+struct:HPB_kp_unc = { H_kp_unc->:lp; List<int64>:own; };
+struct:PV_kp_unc = { H_kp_unc->:p; int64:v; };
+struct:HPV_kp_unc = { H_kp_unc->:lp; List<PV_kp_unc>:own; };
+struct:SLV_kp_unc = { List<PV_kp_unc>->:l; int64:z; };
+struct:SQV_kp_unc = { HPV_kp_unc->:q; int64:z; };
+func:getown_kp_unc = List<int64>->(HPO_kp_unc->:w) never fails { pass @w.own; };
+func:getownv_kp_unc = List<PV_kp_unc>->(HPV_kp_unc->:w) never fails { pass @w.own; };
+func:mkv_kp_unc = List<PV_kp_unc>(H_kp_unc->:h) never fails { List<PV_kp_unc>:l = raw list_init::<PV_kp_unc>(1i64); drop list_push(@l, PV_kp_unc{ p: h, v: 1i64 }); pass l; };
+func:idp_kp_unc = HPO_kp_unc->(HPO_kp_unc->:w) never fails { pass w; };
+func:cvq_kp_unc = SQ_kp_unc->(SQB_kp_unc->:b) never fails { pass ((b =>! any->) =>! SQ_kp_unc->); };
+func:put_kp_unc = int64(HPO_kp_unc->:p, H_kp_unc->:v) never fails { p.lp = v; pass 7i64; };
+struct:SR2_kp_unc = { SQ_kp_unc->:sq; int64:z; };
+struct:SPP_kp_unc = { HPO_kp_unc->->:qq; int64:z; };
+struct:SPPP_kp_unc = { HPO_kp_unc->->->:qqq; int64:z; };
+struct:SPPPP_kp_unc = { HPO_kp_unc->->->->:qqqq; int64:z; };
+struct:HN_kp_unc = { int64:a; int64:b; };
+struct:SN_kp_unc = { HN_kp_unc->:q; int64:z; };
+struct:SNPP_kp_unc = { HN_kp_unc->->:qq; int64:z; };
+struct:SN4_kp_unc = { HN_kp_unc->->->->:qqqq; int64:z; };
+struct:W_kp_unc = { HPO_kp_unc:h; int64:z; };
+struct:W2_kp_unc = { HPO_kp_unc->:a; HPO_kp_unc->:b; int64:z; };
+struct:SO2_kp_unc = { HPO_kp_unc->->?:oqq; int64:z; };
+func:geth_kp_unc = HPO_kp_unc->(W_kp_unc->:w) never fails { pass @w.h; };
+func:geta_kp_unc = HPO_kp_unc->->(W2_kp_unc->:w) never fails { pass @w.a; };
+func:mksqw_kp_unc = SQ_kp_unc(W_kp_unc->:w) never fails { pass SQ_kp_unc{ q: @w.h, z: 1i64 }; };
+func:idpp_kp_unc = HPO_kp_unc->->(HPO_kp_unc->->:p) never fails { pass p; };
+func:rety_kp_unc = HPO_kp_unc->(HN_kp_unc->:p) never fails { pass ((p =>! any->) =>! HPO_kp_unc->); };
+func:put2pp_kp_unc = int64(HPO_kp_unc->->:pp, H_kp_unc->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
+func:put3_kp_unc = int64(HPO_kp_unc->->->:pp, H_kp_unc->:v) never fails { (<-(<-(<-pp))).lp = v; pass 7i64; };
+func:put4_kp_unc = int64(HPO_kp_unc->->->->:pp, H_kp_unc->:v) never fails { (<-(<-(<-(<-pp)))).lp = v; pass 7i64; };
+impl:HPO_kp_unc = { func:setme = int64(HPO_kp_unc->:self, H_kp_unc->:v) never fails { (<-self).lp = v; pass 7i64; }; };
+struct:WX3_kp_unc = { HN_kp_unc->->:x; int64:z; };
+struct:WX4_kp_unc = { HN_kp_unc->->->:x; int64:z; };
+struct:SA_kp_unc = { any->:p; int64:z; };
+struct:SX3_kp_unc = { HN_kp_unc->->->:x3; int64:z; };
+struct:SN5_kp_unc = { HN_kp_unc->->->->->:q5; int64:z; };
+struct:SP5_kp_unc = { HPO_kp_unc->->->->->:q5; int64:z; };
+func:getx3_kp_unc = HN_kp_unc->->->(WX3_kp_unc->:w) never fails { pass @w.x; };
+func:getx3c_kp_unc = HPO_kp_unc->->->(WX3_kp_unc->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_kp_unc->->->; };
+func:getx4_kp_unc = HN_kp_unc->->->->(WX4_kp_unc->:w) never fails { pass @w.x; };
+func:getx4c_kp_unc = HPO_kp_unc->->->->(WX4_kp_unc->:w) never fails { pass ((@w.x) =>! any->) =>! HPO_kp_unc->->->->; };
+func:toany_kp_unc = any->(HN_kp_unc->->:p) never fails { pass (p =>! any->); };
+func:put5_kp_unc = int64(HPO_kp_unc->->->->->:pp, H_kp_unc->:v) never fails { (<-(<-(<-(<-(<-pp))))).lp = v; pass 7i64; };
+struct:WP_kp_unc = { HPO_kp_unc->:p; int64:z; };
+struct:SW_kp_unc = { WP_kp_unc:w; int64:z; };
+struct:SWP_kp_unc = { SW_kp_unc->:sw; int64:z; };
+struct:SO_kp_unc = { HPO_kp_unc->?:o; int64:z; };
+struct:SA2_kp_unc = { HPO_kp_unc->[2]:arr; int64:z; };
+struct:SI_kp_unc = { int64:i; int64:z; };
+struct:WPP_kp_unc = { HPO_kp_unc->->:pp; int64:z; };
+struct:SWPP_kp_unc = { WPP_kp_unc:w; int64:z; };
+func:putwp_kp_unc = int64(WP_kp_unc:w, H_kp_unc->:v) never fails { (<-(w.p)).lp = v; pass 7i64; };
+func:conv_kp_unc = HPO_kp_unc->(HPB_kp_unc->:p) never fails { pass ((p =>! any->) =>! HPO_kp_unc->); };
+func:conv2_kp_unc = HPO_kp_unc->(HPB_kp_unc->:p) never fails { pass ((p =>! any->) =>! HPO_kp_unc->); };
+struct:RR_kp_unc = { SQ_kp_unc->:sq; HPO_kp_unc->:q; int64:z; };
+struct:X2_kp_unc = { H_kp_unc->:lp; HPB_kp_unc:inner; };
+func:cvh_kp_unc = X2_kp_unc->(HPB_kp_unc->:p) never fails { pass ((p =>! any->) =>! X2_kp_unc->); };
+func:putx_kp_unc = int64(X2_kp_unc->:p, H_kp_unc->:v) never fails { p.lp = v; pass 7i64; };
+func:idh2_kp_unc = HPB_kp_unc->(HPB_kp_unc->:p) never fails { pass p; };
+func:putb_kp_unc = int64(HPB_kp_unc->:p, H_kp_unc->:v) never fails { p.lp = v; pass 7i64; };
+struct:SX_kp_unc = { X2_kp_unc->:q; int64:z; };
+struct:SB_kp_unc = { HPB_kp_unc->:p; int64:z; };
+struct:Y2_kp_unc = { X2_kp_unc:x; int64:z; };
+struct:XA_kp_unc = { HPB_kp_unc[2]:arr; int64:z; };
+struct:XL_kp_unc = { List<HPB_kp_unc>:l; int64:z; };
+enum:EB_kp_unc = { A(HPB_kp_unc); Z; };
+func:idx_kp_unc = X2_kp_unc->(X2_kp_unc->:q) never fails { pass q; };
+func:getq_kp_unc = X2_kp_unc->(SX_kp_unc->:s) never fails { pass s.q; };
+func:inr_kp_unc = HPB_kp_unc->(X2_kp_unc->:q) never fails { pass @((<-q).inner); };
+func:st_kp_unc = int64(X2_kp_unc->:qp, H_kp_unc->:v) never fails { HPB_kp_unc->:r = @((<-qp).inner); (<-r).lp = v; pass 7i64; };
+func:stq_kp_unc = int64(SX_kp_unc->:sp, H_kp_unc->:v) never fails { HPB_kp_unc->:r = @((<-((<-sp).q)).inner); (<-r).lp = v; pass 7i64; };
+struct:X4_kp_unc = { H_kp_unc->:lp; HPB_kp_unc->:inner; };
+struct:X5_kp_unc = { H_kp_unc->:lp; HPB_kp_unc->[2]:arr; };
+func:put2b_kp_unc = int64(HPB_kp_unc->->:pp, H_kp_unc->:v) never fails { (<-(<-pp)).lp = v; pass 7i64; };
+func:g_kp_unc = int64(H_kp_unc->:h0p, H_kp_unc->:hq, H_kp_unc->:hz, int64:n) never fails {
+    X2_kp_unc:mx = X2_kp_unc{ lp: h0p, inner: HPB_kp_unc{ lp: h0p, own: raw mk_kp_unc() } };
+    X2_kp_unc->?:oq = @mx;
+    HPB_kp_unc->:r = @((<-(oq ?? @mx)).inner);
+    (<-r).lp = hq;
+    int64->:e = raw fp_kp_unc(mx.inner.lp);
+    discard(raw growh_kp_unc(hq));
+    pass (<-e) + 6i64;
+};
+func:f_kp_unc = int64(int64:n) never fails {
+    H_kp_unc:hz = raw mkh_kp_unc(); H_kp_unc:h0 = raw mkh_kp_unc(); H_kp_unc:h2 = raw mkh_kp_unc();
+    pass raw g_kp_unc(@h0, @h2, @hz, n);
+};
+func:cell_main_kp_unc = int32() never fails { pass (((raw f_kp_unc(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:46. From the cell
+// `Team/TMP/plan-177d2e-p3-2026-11-20/cells/p3new2/p3_dflt_par.npk`.
+func:mk_p3_dflt_par = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_p3_dflt_par = { List<int64>:l; int64:z; };
+func:idl_p3_dflt_par = L_p3_dflt_par->(L_p3_dflt_par->:p) never fails { pass p; };
+struct:L2_p3_dflt_par = { L_p3_dflt_par:inr; int64:z; };
+func:g_p3_dflt_par = int64(L_p3_dflt_par->?:p) never fails {
+    L_p3_dflt_par:lo2 = L_p3_dflt_par{ l: raw mk_p3_dflt_par(), z: 2i64 };
+    int64->:e = @((<-(p ?? @lo2)).l[0i64]);
+    loop(0i64, 64i64, 1i64) { drop list_push(@lo2.l, 1i64); }
+    pass (<-e) + 6i64;
+};
+func:f_p3_dflt_par = int64(int64:n) never fails {
+    L_p3_dflt_par->?:oq = NIL;
+    pass raw g_p3_dflt_par(oq);
+};
+func:cell_main_p3_dflt_par = int32() never fails { pass (((raw f_p3_dflt_par(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:46. From the cell
+// `Team/TMP/plan-177d2e-p3-2026-11-20/cells/def720/uw_oq.npk`.
+func:mk_uw_oq = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_uw_oq = { List<int64>:l; int64:z; };
+func:f_uw_oq = int64(int64:n) never fails {
+    L_uw_oq:lo = L_uw_oq{ l: raw mk_uw_oq(), z: 1i64 };
+    L_uw_oq->?:oq = @lo;
+    int64->:e = @((<-(oq ??! E5)).l[0i64]);
+    loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); }
+    pass (<-e) + 6i64;
+};
+func:cell_main_uw_oq = int32() never fails { pass (((raw f_uw_oq(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:46. From the cell
+// `Team/TMP/plan-177d2e-p3-2026-11-20/cells/def720/uw_oqw.npk`.
+func:mk_uw_oqw = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_uw_oqw = { List<int64>:l; int64:z; };
+func:f_uw_oqw = int64(int64:n) never fails {
+    L_uw_oqw:lo = L_uw_oqw{ l: raw mk_uw_oqw(), z: 1i64 };
+    L_uw_oqw->?:oq = @lo;
+    int64->:e = @((<-(oq ??! E5)).l[0i64]);
+    loop(0i64, 64i64, 1i64) { drop list_push(@((<-(oq ??! E5)).l), 1i64); }
+    pass (<-e) + 6i64;
+};
+func:cell_main_uw_oqw = int32() never fails { pass (((raw f_uw_oqw(1i64)) + 60i64) =>! int32); };
+// A FACE THIS ROW CLOSES (P3U's and AP3U's censuses, l.23411 item 2, l.23500): on main (226ebb99) it is accepted and reads freed storage, exit 236
+// on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:46. From the cell
+// `Team/TMP/plan-177d2e-p3-2026-11-20/cells/def720/uw_rq.npk`.
+func:mk_uw_rq = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_uw_rq = { List<int64>:l; int64:z; };
+func:f_uw_rq = int64(int64:n) never fails {
+    L_uw_rq:lo = L_uw_rq{ l: raw mk_uw_rq(), z: 1i64 };
+    Result<L_uw_rq->>:rq = Result{ value: @lo };
+    int64->:e = @((<-(rq ?! E5)).l[0i64]);
+    loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); }
+    pass (<-e) + 6i64;
+};
+func:cell_main_uw_rq = int32() never fails { pass (((raw f_uw_rq(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

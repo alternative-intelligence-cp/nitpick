@@ -1,0 +1,109 @@
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 58:18
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 64:20
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 70:19
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 76:11
+// expect-error: NITPICK-TYPE-105
+// expect-error-at: 80:43
+// expect-error: NITPICK-TYPE-043
+// expect-error-at: 86:9
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 86:14
+mod:dyn_place_one_report;
+error:E9;
+
+// ONE MISTAKE, ONE REPORT AT D-370's ARGUMENT (D-240; seat F4). Where the root of a `dyn` argument's chain has its own rule, that rule
+// speaks and TYPE-116 adds nothing: an operator handing back a place's value is `NITPICK-TYPE-046` at its span (DEF-419) -- a ternary,
+// `??`, a cast over a ternary, a ternary receiver -- and a part of a literal is `NITPICK-TYPE-105`. A spawned call whose result is not
+// `NIL` is two mistakes, `NITPICK-TYPE-043` at the `drop` and TYPE-116 at the owning receiver, as its argument twin is.
+trait:Tr = { func:peek = int32(Self:self) never fails; func:op = NIL(Self->:self) never fails; };
+struct:DHold = { buffer:b; };
+impl:DHold:Tr = {
+    func:peek = int32(DHold:self) never fails { pass (self.b[0i64] => int32); };
+    func:op = NIL(DHold->:self) never fails {
+        buffer:nb = buffer_new(16i64);
+        nb[0i64] = 7u8;
+        self.b = move(nb);
+        pass NIL;
+    };
+};
+func:callit = NIL(dyn Tr:d) never fails {
+    drop d.op();
+    pass NIL;
+};
+func:peekit = int32(dyn Tr:d) never fails {
+    pass (raw d.peek());
+};
+func:yes = bool() never fails { pass true; };
+func:mkh = DHold() never fails {
+    buffer:bb = buffer_new(4096i64);
+    bb[0i64] = 6u8;
+    pass DHold{ b: move(bb) };
+};
+struct:W = { DHold:h; int32:k; };
+func:mkw = W() never fails {
+    pass W{ h: raw mkh(), k: 1i32 };
+};
+func:vcallw = int32(int32:k, ..*(dyn Tr)[]:ds) { drop ds[0i64].op(); pass k; };
+trait:Tk = { func:put = NIL(Self:self, dyn Tr:d) never fails; };
+struct:Pd = { int32:n; };
+impl:Pd:Tk = { func:put = NIL(Pd:self, dyn Tr:d) never fails { drop d.op(); pass NIL; }; };
+async func:acallit = int32(dyn Tr:d) { drop d.op(); pass 1i32; };
+func:o_ternary = int32() never fails {
+    W:w = raw mkw();
+    W:w2 = raw mkw();
+    drop callit((is (raw yes()) : w : w2).h);   // site NITPICK-TYPE-046
+    pass (w.h.b[0i64] => int32);
+};
+func:o_coalesce = int32() never fails {
+    W:w2 = raw mkw();
+    W?:o = raw mkw();
+    drop callit((o ?? w2).h);   // site NITPICK-TYPE-046
+    pass (w2.h.b[0i64] => int32);
+};
+func:o_cast_ternary = int32() never fails {
+    W:w = raw mkw();
+    W:w2 = raw mkw();
+    drop callit(((is (raw yes()) : w : w2) => W).h);   // site NITPICK-TYPE-046
+    pass (w.h.b[0i64] => int32);
+};
+func:o_ternary_receiver = int32() never fails {
+    DHold:h1 = raw mkh();
+    DHold:h2 = raw mkh();
+    drop (is (raw yes()) : h1 : h2).callit();   // site NITPICK-TYPE-046
+    pass (h1.b[0i64] => int32);
+};
+func:o_literal = int32() never fails {
+    drop callit(W{ h: raw mkh(), k: 1i32 }.h);   // site NITPICK-TYPE-105
+    pass 1i32;
+};
+async func:o_spawn = int32() {
+    DHold:h = raw mkh();
+    {
+        drop h.acallit();   // site NITPICK-TYPE-043 NITPICK-TYPE-116
+    }
+    pass (h.b[0i64] => int32);
+};
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 96i32; },
+        (MachineFault)   { exit 97i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 94i32; },
+        (OutOfBounds)    { exit 93i32; },
+        (IntOverflow)    { exit 90i32; },
+        (DeadlineExceeded) { exit 89i32; },
+        (E9)             { exit 9i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};

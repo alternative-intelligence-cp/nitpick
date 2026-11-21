@@ -1429,6 +1429,15 @@ pub func:fnem_temp_take = NIL(FnEmitter->:fe, string:ref) never fails {
     pass NIL;
 };
 
+// IS `ref` A LIVE TEMPORARY? (DEF-710: `temp_transfer` asks before it takes.) A place's value is nobody's temporary.
+pub func:fnem_temp_is_live = bool(FnEmitter->:fe, string:ref) never fails {
+    int64:i = fe.ttypes.count;
+    while (i > 0i64) decreases i {
+        i = i - 1i64;
+        if ((fe.tlive[i] != 0i32) && (raw string_eq(fe.trefs[i], ref))) { pass true; }
+    }
+    pass false;
+};
 pub func:fnem_temp_live_at = int32(FnEmitter->:fe, int64:i) never fails { pass (fe.tlive[i]); };
 pub func:fnem_temp_type_at = int32(FnEmitter->:fe, int64:i) never fails { pass (fe.ttypes[i]); };
 // Views of container-owned storage (D-183): cap 0, drops free nothing.

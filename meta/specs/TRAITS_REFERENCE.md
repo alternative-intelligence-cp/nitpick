@@ -907,6 +907,14 @@ Message:msg = Message{ id: 1i32 };
 dyn Serializable:obj = msg;
 ```
 
+> *[2026-11-20, D-370:]* **A coercion to `dyn` is a transfer.** It moves the value into the `dyn`'s heap cell (D-183), so
+> `msg` above, a copyable struct, is copied, and a method's writes stay in the copy. A place that owns memory is coerced only by
+> `move(x)` at every site -- a local, a literal, an assignment, a cast, a return (`NITPICK-TYPE-046`, `NITPICK-TYPE-047`), and an
+> argument to a `dyn` parameter that isn't `move`, a method call's receiver included (`NITPICK-TYPE-116`); a part of a temporary
+> is bound first, and its part moved out of the binding. Hand a copy with `x.clone()`, or hold the value as a
+> `dyn` from the start and pass that (a loan of your own cell, DEF-115). To change the caller's concrete value in place, take a
+> pointer, `T->` or `<T: Tr>` with `T->` (§5.1), and pass `@x`.
+
 ### 5.3 Multi-bound `dyn`
 
 ```nitpick

@@ -1,0 +1,235 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 47:161
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 63:146
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 78:180
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 94:165
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 111:135
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 127:124
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 144:160
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 161:151
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 177:154
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 189:181
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 201:191
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 213:150
+// 2026-11-21 (landing 177d2e, row 9: DEF-714, form P2-3cs; rulings l.22075, l.22099, l.22316, l.22396, l.22479, l.23320, l.23532 item 3). A POINTER
+// MEMBER OF A POINTER PARAMETER'S POINTEE, COPIED TO A LOCAL (`HO->:hp = s.oq;`), LENT AN ELEMENT THAT A WRITER HANDED THE MEMBER ITSELF DIDN'T
+// MEET: the PASS ref now has a copy carrying the read member, judged beside the ref as it was (at the parameter AND at the member), with a
+// dereference on the member's operand peeled and a nested member carried outward; a copy takes its twin's verdict where nothing else differs. THE
+// PRICES AT PARITY (l.22099 item 2, l.22485, l.23643 ruled item 4), 8, each with a twin that main already refuses: main's own `a9_selfd_ok` case,
+// moved here from tests/backend/programs/unwrap_param_roots_ok.npk with its comment lines (l.23320 item 5), with P2's twin; P2's `a12_mthd_ok` with
+// its twin; AP3B's `ap3b_rp` and `ap3b_rpc` with theirs; and AFA's four spellings of `ap3b_rp`'s class, whose twin is `ap3b_rp_bn`. Every price
+// runs 67 on main on every road 0-8 at -O0 and -O2 and under the detector (W2E2's runs of the cells). The cases from cells have each declared name
+// suffixed by the cell's, in the form of main's prices files.
+mod:pass_read_member_prices;
+error:E5;
+// PRICE AT PARITY (177d2e row 9, DEF-714; P2-3b's ruled price, l.22075 and l.22099 item 2): main's own case, moved here whole with its two
+// comment lines from tests/backend/programs/unwrap_param_roots_ok.npk (main's l.2413-2428), as `xu7cl` moved; refused here (BORROW-015). Its twin is next.
+// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AA's attack on R4-2 (l.19154),
+// `Team/TMP/plan-177d2d-r4c-2026-11-19/cells/r4/aa/r4e/a9_selfd_ok.npk`.
+struct:HO_a9_selfd_ok = { List<int64>:own; List<int64>:oth; int64:z; };
+struct:SO_a9_selfd_ok = { HO_a9_selfd_ok->?:oq; int64:z; };
+struct:SOP_a9_selfd_ok = { HO_a9_selfd_ok->:oq; int64:z; };
+func:mk_a9_selfd_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkho_a9_selfd_ok = HO_a9_selfd_ok() never fails { pass HO_a9_selfd_ok{ own: raw mk_a9_selfd_ok(), oth: raw mk_a9_selfd_ok(), z: 1i64 }; };
+func:growl_a9_selfd_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:repo_a9_selfd_ok = int64(HO_a9_selfd_ok->?:r) never fails { (<-(r ??! E5)).own = raw mk_a9_selfd_ok(); pass 7i64; };
+func:g2_a9_selfd_ok = int64(SO_a9_selfd_ok->:s) never fails { HO_a9_selfd_ok->:hp = s.oq ??! E5; int64->:e = @((<-hp).oth[0i64]); discard(raw repo_a9_selfd_ok(s.oq)); pass (<-e) + 6i64; };
+func:g_a9_selfd_ok = int64(int64:n) never fails {
+    HO_a9_selfd_ok:m = raw mkho_a9_selfd_ok(); SO_a9_selfd_ok:so = SO_a9_selfd_ok{ oq: @m, z: 1i64 };
+    pass raw g2_a9_selfd_ok(@so);
+};
+func:f_a9_selfd_ok = int64(int64:n) never fails { pass raw g_a9_selfd_ok(n); };
+func:cell_main_a9_selfd_ok = int32() never fails { pass (((raw f_a9_selfd_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `a9_selfd_ok` above, the read spelled by name: refused on main and here at the same site (BORROW-015), which puts its price at parity.
+// From seat P2's cells, P2C's gate copy `.internal/p2c-2026-11-20/cells/s714/p2_a9_selfd_bn.npk`.
+struct:HO_p2_a9_selfd_bn = { List<int64>:own; List<int64>:oth; int64:z; };
+struct:SO_p2_a9_selfd_bn = { HO_p2_a9_selfd_bn->?:oq; int64:z; };
+struct:SOP_p2_a9_selfd_bn = { HO_p2_a9_selfd_bn->:oq; int64:z; };
+func:mk_p2_a9_selfd_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkho_p2_a9_selfd_bn = HO_p2_a9_selfd_bn() never fails { pass HO_p2_a9_selfd_bn{ own: raw mk_p2_a9_selfd_bn(), oth: raw mk_p2_a9_selfd_bn(), z: 1i64 }; };
+func:growl_p2_a9_selfd_bn = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:repo_p2_a9_selfd_bn = int64(HO_p2_a9_selfd_bn->?:r) never fails { (<-(r ??! E5)).own = raw mk_p2_a9_selfd_bn(); pass 7i64; };
+func:g2_p2_a9_selfd_bn = int64(SO_p2_a9_selfd_bn->:s) never fails { int64->:e = @((<-(s.oq ??! E5)).oth[0i64]); discard(raw repo_p2_a9_selfd_bn(s.oq)); pass (<-e) + 6i64; };
+func:g_p2_a9_selfd_bn = int64(int64:n) never fails {
+    HO_p2_a9_selfd_bn:m = raw mkho_p2_a9_selfd_bn(); SO_p2_a9_selfd_bn:so = SO_p2_a9_selfd_bn{ oq: @m, z: 1i64 };
+    pass raw g2_p2_a9_selfd_bn(@so);
+};
+func:f_p2_a9_selfd_bn = int64(int64:n) never fails { pass raw g_p2_a9_selfd_bn(n); };
+func:cell_main_p2_a9_selfd_bn = int32() never fails { pass (((raw f_p2_a9_selfd_bn(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (177d2e row 9, DEF-714; P2-3b's, l.22075, l.22099 item 2): a right program, 67 on main (226ebb99) on every road 0-8 at -O0 and -O2 and under the detector; refused here (BORROW-015).
+// Its twin is next. From P2C's gate copy `.internal/p2c-2026-11-20/cells/d714/a12_mthd_ok.npk`.
+struct:HO_a12_mthd_ok = { List<int64>:own; List<int64>:oth; int64:z; };
+struct:SO_a12_mthd_ok = { HO_a12_mthd_ok->?:oq; int64:z; };
+struct:SOP_a12_mthd_ok = { HO_a12_mthd_ok->:oq; int64:z; };
+func:mk_a12_mthd_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkho_a12_mthd_ok = HO_a12_mthd_ok() never fails { pass HO_a12_mthd_ok{ own: raw mk_a12_mthd_ok(), oth: raw mk_a12_mthd_ok(), z: 1i64 }; };
+func:growl_a12_mthd_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+impl:SO_a12_mthd_ok = { func:wr = int64(SO_a12_mthd_ok->:self) never fails { HO_a12_mthd_ok->:hp = self.oq ??! E5; int64->:e = @((<-hp).oth[0i64]); discard(raw rp_a12_mthd_ok(self.oq)); pass (<-e) + 6i64; }; };
+func:rp_a12_mthd_ok = int64(HO_a12_mthd_ok->?:r) never fails { (<-(r ??! E5)).own = raw mk_a12_mthd_ok(); pass 7i64; };
+func:g_a12_mthd_ok = int64(int64:n) never fails {
+    HO_a12_mthd_ok:m = raw mkho_a12_mthd_ok(); SO_a12_mthd_ok:so = SO_a12_mthd_ok{ oq: @m, z: 1i64 };
+    pass raw so.wr();
+};
+func:f_a12_mthd_ok = int64(int64:n) never fails { pass raw g_a12_mthd_ok(n); };
+func:cell_main_a12_mthd_ok = int32() never fails { pass (((raw f_a12_mthd_ok(1i64)) + 60i64) =>! int32); };
+// TWIN of `a12_mthd_ok`, by name: refused on main and here at the same site (BORROW-015), which puts its price at parity.
+// From seat P2's cells, P2C's gate copy `.internal/p2c-2026-11-20/cells/s714/p2_a12_mthd_bn.npk`.
+struct:HO_p2_a12_mthd_bn = { List<int64>:own; List<int64>:oth; int64:z; };
+struct:SO_p2_a12_mthd_bn = { HO_p2_a12_mthd_bn->?:oq; int64:z; };
+struct:SOP_p2_a12_mthd_bn = { HO_p2_a12_mthd_bn->:oq; int64:z; };
+func:mk_p2_a12_mthd_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkho_p2_a12_mthd_bn = HO_p2_a12_mthd_bn() never fails { pass HO_p2_a12_mthd_bn{ own: raw mk_p2_a12_mthd_bn(), oth: raw mk_p2_a12_mthd_bn(), z: 1i64 }; };
+func:growl_p2_a12_mthd_bn = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+impl:SO_p2_a12_mthd_bn = { func:wr = int64(SO_p2_a12_mthd_bn->:self) never fails { int64->:e = @((<-(self.oq ??! E5)).oth[0i64]); discard(raw rp_p2_a12_mthd_bn(self.oq)); pass (<-e) + 6i64; }; };
+func:rp_p2_a12_mthd_bn = int64(HO_p2_a12_mthd_bn->?:r) never fails { (<-(r ??! E5)).own = raw mk_p2_a12_mthd_bn(); pass 7i64; };
+func:g_p2_a12_mthd_bn = int64(int64:n) never fails {
+    HO_p2_a12_mthd_bn:m = raw mkho_p2_a12_mthd_bn(); SO_p2_a12_mthd_bn:so = SO_p2_a12_mthd_bn{ oq: @m, z: 1i64 };
+    pass raw so.wr();
+};
+func:f_p2_a12_mthd_bn = int64(int64:n) never fails { pass raw g_p2_a12_mthd_bn(n); };
+func:cell_main_p2_a12_mthd_bn = int32() never fails { pass (((raw f_p2_a12_mthd_bn(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (177d2e row 9, DEF-714; AP3B's, l.22485): re-pointing the member while an element is held; a right program, 67 on main (226ebb99) on every road 0-8 at -O0 and -O2 and under the detector; refused here (BORROW-015).
+// Its twin is next. From AP3B's cells, P2C's gate copy `.internal/p2c-2026-11-20/cells/b2/ap3b_rp.npk`.
+struct:HO_ap3b_rp = { List<int64>:own; List<int64>:oth; int64:z; };
+struct:SOP_ap3b_rp = { HO_ap3b_rp->:oq; int64:z; };
+struct:SOQ_ap3b_rp = { HO_ap3b_rp->:oq; HO_ap3b_rp->:oq2; int64:z; };
+struct:SO_ap3b_rp = { HO_ap3b_rp->?:oq; int64:z; };
+func:mk_ap3b_rp = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkho_ap3b_rp = HO_ap3b_rp() never fails { pass HO_ap3b_rp{ own: raw mk_ap3b_rp(), oth: raw mk_ap3b_rp(), z: 1i64 }; };
+func:repo_ap3b_rp = int64(HO_ap3b_rp->:r) never fails { (<-r).own = raw mk_ap3b_rp(); pass 7i64; };
+func:g2_ap3b_rp = int64(SOP_ap3b_rp->:s, HO_ap3b_rp->:o2) never fails { HO_ap3b_rp->:hp = s.oq; int64->:e = @((<-hp).own[0i64]); (<-s).oq = o2; pass (<-e) + 6i64; };
+func:g_ap3b_rp = int64(int64:n) never fails {
+    HO_ap3b_rp:m = raw mkho_ap3b_rp(); HO_ap3b_rp:m2 = raw mkho_ap3b_rp(); SOP_ap3b_rp:so = SOP_ap3b_rp{ oq: @m, z: 1i64 };
+    pass raw g2_ap3b_rp(@so, @m2);
+};
+func:f_ap3b_rp = int64(int64:n) never fails { pass raw g_ap3b_rp(n); };
+func:cell_main_ap3b_rp = int32() never fails { pass (((raw f_ap3b_rp(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3b_rp`, by name: refused on main and here at the same site (BORROW-015), which puts its price at parity.
+// From P2C's gate copy `.internal/p2c-2026-11-20/cells/b2/ap3b_rp_bn.npk`.
+struct:HO_ap3b_rp_bn = { List<int64>:own; List<int64>:oth; int64:z; };
+struct:SOP_ap3b_rp_bn = { HO_ap3b_rp_bn->:oq; int64:z; };
+struct:SOQ_ap3b_rp_bn = { HO_ap3b_rp_bn->:oq; HO_ap3b_rp_bn->:oq2; int64:z; };
+struct:SO_ap3b_rp_bn = { HO_ap3b_rp_bn->?:oq; int64:z; };
+func:mk_ap3b_rp_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkho_ap3b_rp_bn = HO_ap3b_rp_bn() never fails { pass HO_ap3b_rp_bn{ own: raw mk_ap3b_rp_bn(), oth: raw mk_ap3b_rp_bn(), z: 1i64 }; };
+func:repo_ap3b_rp_bn = int64(HO_ap3b_rp_bn->:r) never fails { (<-r).own = raw mk_ap3b_rp_bn(); pass 7i64; };
+func:g2_ap3b_rp_bn = int64(SOP_ap3b_rp_bn->:s, HO_ap3b_rp_bn->:o2) never fails { int64->:e = @((<-(s.oq)).own[0i64]); (<-s).oq = o2; pass (<-e) + 6i64; };
+func:g_ap3b_rp_bn = int64(int64:n) never fails {
+    HO_ap3b_rp_bn:m = raw mkho_ap3b_rp_bn(); HO_ap3b_rp_bn:m2 = raw mkho_ap3b_rp_bn(); SOP_ap3b_rp_bn:so = SOP_ap3b_rp_bn{ oq: @m, z: 1i64 };
+    pass raw g2_ap3b_rp_bn(@so, @m2);
+};
+func:f_ap3b_rp_bn = int64(int64:n) never fails { pass raw g_ap3b_rp_bn(n); };
+func:cell_main_ap3b_rp_bn = int32() never fails { pass (((raw f_ap3b_rp_bn(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (177d2e row 9, DEF-714; AP3B's, l.22485): the same through a copy; a right program, 67 on main (226ebb99) on every road 0-8 at -O0 and -O2 and under the detector; refused here (BORROW-015).
+// Its twin is next. From P2C's gate copy `.internal/p2c-2026-11-20/cells/b2/ap3b_rpc.npk`.
+struct:HO_ap3b_rpc = { List<int64>:own; List<int64>:oth; int64:z; };
+struct:SOP_ap3b_rpc = { HO_ap3b_rpc->:oq; int64:z; };
+struct:SOQ_ap3b_rpc = { HO_ap3b_rpc->:oq; HO_ap3b_rpc->:oq2; int64:z; };
+struct:SO_ap3b_rpc = { HO_ap3b_rpc->?:oq; int64:z; };
+func:mk_ap3b_rpc = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkho_ap3b_rpc = HO_ap3b_rpc() never fails { pass HO_ap3b_rpc{ own: raw mk_ap3b_rpc(), oth: raw mk_ap3b_rpc(), z: 1i64 }; };
+func:repo_ap3b_rpc = int64(HO_ap3b_rpc->:r) never fails { (<-r).own = raw mk_ap3b_rpc(); pass 7i64; };
+func:setq_ap3b_rpc = int64(SOP_ap3b_rpc->:p, HO_ap3b_rpc->:o) never fails { (<-p).oq = o; pass 7i64; };
+func:g2_ap3b_rpc = int64(SOP_ap3b_rpc->:s, HO_ap3b_rpc->:o2) never fails { HO_ap3b_rpc->:hp = s.oq; int64->:e = @((<-hp).own[0i64]); discard(raw setq_ap3b_rpc(s, o2)); pass (<-e) + 6i64; };
+func:g_ap3b_rpc = int64(int64:n) never fails {
+    HO_ap3b_rpc:m = raw mkho_ap3b_rpc(); HO_ap3b_rpc:m2 = raw mkho_ap3b_rpc(); SOP_ap3b_rpc:so = SOP_ap3b_rpc{ oq: @m, z: 1i64 };
+    pass raw g2_ap3b_rpc(@so, @m2);
+};
+func:f_ap3b_rpc = int64(int64:n) never fails { pass raw g_ap3b_rpc(n); };
+func:cell_main_ap3b_rpc = int32() never fails { pass (((raw f_ap3b_rpc(1i64)) + 60i64) =>! int32); };
+// TWIN of `ap3b_rpc`, by name: refused on main and here at the same site (BORROW-015), which puts its price at parity.
+// From P2C's gate copy `.internal/p2c-2026-11-20/cells/b2/ap3b_rpc_bn.npk`.
+struct:HO_ap3b_rpc_bn = { List<int64>:own; List<int64>:oth; int64:z; };
+struct:SOP_ap3b_rpc_bn = { HO_ap3b_rpc_bn->:oq; int64:z; };
+struct:SOQ_ap3b_rpc_bn = { HO_ap3b_rpc_bn->:oq; HO_ap3b_rpc_bn->:oq2; int64:z; };
+struct:SO_ap3b_rpc_bn = { HO_ap3b_rpc_bn->?:oq; int64:z; };
+func:mk_ap3b_rpc_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkho_ap3b_rpc_bn = HO_ap3b_rpc_bn() never fails { pass HO_ap3b_rpc_bn{ own: raw mk_ap3b_rpc_bn(), oth: raw mk_ap3b_rpc_bn(), z: 1i64 }; };
+func:repo_ap3b_rpc_bn = int64(HO_ap3b_rpc_bn->:r) never fails { (<-r).own = raw mk_ap3b_rpc_bn(); pass 7i64; };
+func:setq_ap3b_rpc_bn = int64(SOP_ap3b_rpc_bn->:p, HO_ap3b_rpc_bn->:o) never fails { (<-p).oq = o; pass 7i64; };
+func:g2_ap3b_rpc_bn = int64(SOP_ap3b_rpc_bn->:s, HO_ap3b_rpc_bn->:o2) never fails { int64->:e = @((<-(s.oq)).own[0i64]); discard(raw setq_ap3b_rpc_bn(s, o2)); pass (<-e) + 6i64; };
+func:g_ap3b_rpc_bn = int64(int64:n) never fails {
+    HO_ap3b_rpc_bn:m = raw mkho_ap3b_rpc_bn(); HO_ap3b_rpc_bn:m2 = raw mkho_ap3b_rpc_bn(); SOP_ap3b_rpc_bn:so = SOP_ap3b_rpc_bn{ oq: @m, z: 1i64 };
+    pass raw g2_ap3b_rpc_bn(@so, @m2);
+};
+func:f_ap3b_rpc_bn = int64(int64:n) never fails { pass raw g_ap3b_rpc_bn(n); };
+func:cell_main_ap3b_rpc_bn = int32() never fails { pass (((raw f_ap3b_rpc_bn(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (177d2e row 9, DEF-714; `ap3b_rp`'s class, AFA's spelling, l.23643 ruled item 4): a right program, 67 on main (226ebb99) on every road 0-8 at -O0 and -O2 and under the detector; refused here (BORROW-015).
+// Its twin is `ap3b_rp_bn` above. From AFA's cells, `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/b3/afa_q_bn_ok.npk`.
+func:mk_afa_q_bn_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_q_bn_ok = { List<int64>:l; int64:z; };
+func:idl_afa_q_bn_ok = L_afa_q_bn_ok->(L_afa_q_bn_ok->:p) never fails { pass p; };
+func:ido_afa_q_bn_ok = L_afa_q_bn_ok->?(L_afa_q_bn_ok->?:p) never fails { pass p; };
+func:growl_afa_q_bn_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_afa_q_bn_ok = { SS_afa_q_bn_ok->?:p; List<int64>:own; int64:z; };
+func:link_afa_q_bn_ok = int64(SS_afa_q_bn_ok->:x) never fails { (<-x).p = x; pass 7i64; };
+func:g2_afa_q_bn_ok = int64(SS_afa_q_bn_ok->:s, SS_afa_q_bn_ok->:s2) never fails { SS_afa_q_bn_ok->:q = s.p ??! E5; int64->:e = @((<-q).own[0i64]); (<-s).p = s2; pass (<-e) + 6i64; };
+func:f_afa_q_bn_ok = int64(int64:n) never fails { SS_afa_q_bn_ok:so = SS_afa_q_bn_ok{ p: NIL, own: raw mk_afa_q_bn_ok(), z: 1i64 }; SS_afa_q_bn_ok:so2 = SS_afa_q_bn_ok{ p: NIL, own: raw mk_afa_q_bn_ok(), z: 2i64 }; discard(raw link_afa_q_bn_ok(@so)); discard(raw link_afa_q_bn_ok(@so2)); pass raw g2_afa_q_bn_ok(@so, @so2); };
+func:cell_main_afa_q_bn_ok = int32() never fails { pass (((raw f_afa_q_bn_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (177d2e row 9, DEF-714; `ap3b_rp`'s class, AFA's spelling, l.23643 ruled item 4): a right program, 67 on main (226ebb99) on every road 0-8 at -O0 and -O2 and under the detector; refused here (BORROW-015).
+// Its twin is `ap3b_rp_bn` above. From AFA's cells, `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/b3/afa_q_wo_ok.npk`.
+func:mk_afa_q_wo_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_q_wo_ok = { List<int64>:l; int64:z; };
+func:idl_afa_q_wo_ok = L_afa_q_wo_ok->(L_afa_q_wo_ok->:p) never fails { pass p; };
+func:ido_afa_q_wo_ok = L_afa_q_wo_ok->?(L_afa_q_wo_ok->?:p) never fails { pass p; };
+func:growl_afa_q_wo_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_afa_q_wo_ok = { SS_afa_q_wo_ok->?:p; List<int64>:own; int64:z; };
+func:link_afa_q_wo_ok = int64(SS_afa_q_wo_ok->:x) never fails { (<-x).p = x; pass 7i64; };
+func:g2_afa_q_wo_ok = int64(SS_afa_q_wo_ok->:s, SS_afa_q_wo_ok->:s2) never fails { SS_afa_q_wo_ok->?:q = s.p; SS_afa_q_wo_ok->:qq = q ??! E5; int64->:e = @((<-qq).own[0i64]); (<-s).p = s2; pass (<-e) + 6i64; };
+func:f_afa_q_wo_ok = int64(int64:n) never fails { SS_afa_q_wo_ok:so = SS_afa_q_wo_ok{ p: NIL, own: raw mk_afa_q_wo_ok(), z: 1i64 }; SS_afa_q_wo_ok:so2 = SS_afa_q_wo_ok{ p: NIL, own: raw mk_afa_q_wo_ok(), z: 2i64 }; discard(raw link_afa_q_wo_ok(@so)); discard(raw link_afa_q_wo_ok(@so2)); pass raw g2_afa_q_wo_ok(@so, @so2); };
+func:cell_main_afa_q_wo_ok = int32() never fails { pass (((raw f_afa_q_wo_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (177d2e row 9, DEF-714; `ap3b_rp`'s class, AFA's spelling, l.23643 ruled item 4): a right program, 67 on main (226ebb99) on every road 0-8 at -O0 and -O2 and under the detector; refused here (BORROW-015).
+// Its twin is `ap3b_rp_bn` above. From AFA's cells, `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/b4/afa_q_hpwo_ok.npk`.
+func:mk_afa_q_hpwo_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_q_hpwo_ok = { List<int64>:l; int64:z; };
+func:idl_afa_q_hpwo_ok = L_afa_q_hpwo_ok->(L_afa_q_hpwo_ok->:p) never fails { pass p; };
+func:ido_afa_q_hpwo_ok = L_afa_q_hpwo_ok->?(L_afa_q_hpwo_ok->?:p) never fails { pass p; };
+func:growl_afa_q_hpwo_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:HO_afa_q_hpwo_ok = { List<int64>:own; int64:z; };
+struct:SH_afa_q_hpwo_ok = { HO_afa_q_hpwo_ok->?:h; int64:z; };
+func:g2_afa_q_hpwo_ok = int64(SH_afa_q_hpwo_ok->:s, HO_afa_q_hpwo_ok->:o2) never fails { HO_afa_q_hpwo_ok->?:q = s.h; HO_afa_q_hpwo_ok->:hq = q ??! E5; int64->:e = @((<-hq).own[0i64]); (<-s).h = o2; pass (<-e) + 6i64; };
+func:f_afa_q_hpwo_ok = int64(int64:n) never fails { HO_afa_q_hpwo_ok:o = HO_afa_q_hpwo_ok{ own: raw mk_afa_q_hpwo_ok(), z: 1i64 }; HO_afa_q_hpwo_ok:o2 = HO_afa_q_hpwo_ok{ own: raw mk_afa_q_hpwo_ok(), z: 2i64 }; SH_afa_q_hpwo_ok:sh = SH_afa_q_hpwo_ok{ h: @o, z: 1i64 }; pass raw g2_afa_q_hpwo_ok(@sh, @o2); };
+func:cell_main_afa_q_hpwo_ok = int32() never fails { pass (((raw f_afa_q_hpwo_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (177d2e row 9, DEF-714; `ap3b_rp`'s class, AFA's spelling, l.23643 ruled item 4): a right program, 67 on main (226ebb99) on every road 0-8 at -O0 and -O2 and under the detector; refused here (BORROW-015).
+// Its twin is `ap3b_rp_bn` above. From AFA's cells, `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/b4/afa_q_np_ok.npk`.
+func:mk_afa_q_np_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_q_np_ok = { List<int64>:l; int64:z; };
+func:idl_afa_q_np_ok = L_afa_q_np_ok->(L_afa_q_np_ok->:p) never fails { pass p; };
+func:ido_afa_q_np_ok = L_afa_q_np_ok->?(L_afa_q_np_ok->?:p) never fails { pass p; };
+func:growl_afa_q_np_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:HO_afa_q_np_ok = { List<int64>:own; int64:z; };
+struct:SOP_afa_q_np_ok = { HO_afa_q_np_ok->:h; int64:z; };
+func:g2_afa_q_np_ok = int64(SOP_afa_q_np_ok->:s, HO_afa_q_np_ok->:o2) never fails { HO_afa_q_np_ok->:hp = s.h; int64->:e = @((<-hp).own[0i64]); (<-s).h = o2; pass (<-e) + 6i64; };
+func:f_afa_q_np_ok = int64(int64:n) never fails { HO_afa_q_np_ok:o = HO_afa_q_np_ok{ own: raw mk_afa_q_np_ok(), z: 1i64 }; HO_afa_q_np_ok:o2 = HO_afa_q_np_ok{ own: raw mk_afa_q_np_ok(), z: 2i64 }; SOP_afa_q_np_ok:sh = SOP_afa_q_np_ok{ h: @o, z: 1i64 }; pass raw g2_afa_q_np_ok(@sh, @o2); };
+func:cell_main_afa_q_np_ok = int32() never fails { pass (((raw f_afa_q_np_ok(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

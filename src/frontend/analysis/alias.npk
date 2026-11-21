@@ -178,6 +178,17 @@ pub struct:Alias = {
     bool:skip_lent;
     bool:skip_view;   // a lock's own operation is judged: a view of the lock stays good (DEF-438)
     int32:judge_only;   // 177a: 0, every party; -1, the assignment targets alone (DEF-415); > 0, the parties sited at that expression alone (E-a)
+    // SP (DEF-716): `check_pointer_view_parties`' FULL RUNS at a write with no skip: how many, and the last one's span and root. A full run asked
+    // `pointer_targets_of` of every party it reads, so what those asks push has landed (`diaglist_push` keeps one of each): asked again, they push nothing.
+    int64:pv_n;
+    Span:pv_at;
+    int32:pv_root;
+    // DEF-720: TWO READINGS OF AN UNWRAP, BOTH KEPT. 1: no unwrap is a step, so a place under the unwrap of a pointer stands for its root WHOLE,
+    // main's party (ap3_ssu_p: `s.p` may be `s`; the store `(<-(orr ??! E5)).lp = hq;` stays rootless, its D-286 site kept); 0: an unwrap steps to its
+    // operand, the longer path, which re-roots through the pointer (ap3_nu_wq). `alias_fn` walks under 1, and again under 0 when the first met an unwrap.
+    int32:uwm;
+    bool:uw_seen;   // the walk under 1 met an unwrap of a pointer, which the walk under 0 steps
+    int64:dmark;    // under the second walk, the diagnostics' count before the first: one report per site, the first walk's
 };
 
 pub func:alias_init = Alias(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
@@ -211,7 +222,9 @@ pub func:alias_init = Alias(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                 pre: raw list_init::<Party>(16i64),
                 call_marks: raw list_init::<int64>(8i64),
                 stmt_sym: map, stmt_count: sc, decl_sym: dmap, decl_count: dc,
-                spawn_call: raw expr_none(), skip_lent: false, skip_view: false, judge_only: 0i32 };
+                spawn_call: raw expr_none(), skip_lent: false, skip_view: false, judge_only: 0i32,
+                pv_n: 0i64, pv_at: raw span_none(), pv_root: 0i32,
+                uwm: 1i32, uw_seen: false, dmark: 0i64 - 1i64 };
 };
 
 // The symbol a declaration (a parameter) made, or 0.
@@ -227,6 +240,13 @@ func:party_in_scope = bool(Alias->:x, Party:p) never fails {
     pass (p.site.index == x.judge_only);
 };
 func:alias_err = NIL(Alias->:x, move string:code, move string:msg, Span:sp) never fails {
+    if (x.dmark >= 0i64) {   // DEF-720: the second walk adds a site, never a second report at one
+        int64:dn = raw diaglist_count(x.diags);
+        for (int64:i in x.dmark...dn) {
+            Diagnostic:dg = raw diaglist_at(x.diags, i);
+            if ((dg.span.file == sp.file) && (dg.span.line == sp.line) && (dg.span.col == sp.col)) { pass NIL; }
+        }
+    }
     drop diaglist_push(x.diags, raw diag_error(move(code), move(msg), sp));
     pass NIL;
 };
@@ -293,6 +313,21 @@ func:alias_decl = NIL(Alias->:x, DeclId:id, int32:scope) never fails {
 // ONE FUNCTION: the pre-scan, then the walk over the body with the parameters'
 // assignment-admitted parties live from the entry.
 func:alias_fn = NIL(Alias->:x, DeclNode:d, StmtId:body) never fails {
+    int64:m0 = raw diaglist_count(x.diags);
+    x.uwm = 1i32;
+    x.uw_seen = false;
+    drop alias_fn_walk(x, d, body);
+    if (x.uw_seen) {   // DEF-720: the longer path's walk beside main's reading, never in its place
+        x.uwm = 0i32;
+        x.dmark = m0;
+        drop alias_fn_walk(x, d, body);
+        x.dmark = 0i64 - 1i64;
+        x.uwm = 1i32;
+    }
+    pass NIL;
+};
+
+func:alias_fn_walk = NIL(Alias->:x, DeclNode:d, StmtId:body) never fails {
     drop list_clear(@x.live);
     drop list_clear(@x.frames);
     drop list_clear(@x.pre);
@@ -587,20 +622,20 @@ func:write_into_elements = bool(Alias->:x, List<Step>:tp, int64:m) never fails {
 // assignment's address is pre-scanned after the declaration's refs were. One
 // party per address, never two.
 // A party of ANY kind this holder already has at this place (the bare `@h` initialiser's, `prescan_party`'s).
-func:pre_has_party = bool(Alias->:x, int32:holder, ExprId:place) never fails {
+func:pre_has_party = bool(Alias->:x, int32:holder, ExprId:place, int32:root) never fails {   // DEF-720: keyed by root too
     for (int64:i in 0i64...x.pre.count) {
         Party:pp = x.pre[i];
         // DEF-666 (177d2b6's fix row): a party a cast retyped (DEF-585's ELEM party, `view_kind` -2) is not the plain one -- the cast copy's ref lands first
         // on the holder's chain, and counted here it dropped DEF-413's PLAIN party, so a `dalloc` of a `wild` member was judged against no party (`zl_d`)
-        if ((pp.holder == holder) && (pp.place.index == place.index) && (pp.view_kind != (0i32 - 2i32))) { pass true; }
+        if ((pp.holder == holder) && (pp.place.index == place.index) && (pp.root == root) && (pp.view_kind != (0i32 - 2i32))) { pass true; }
     }
     pass false;
 };
 
-func:pre_has_elem_party = bool(Alias->:x, int32:holder, ExprId:place) never fails {
+func:pre_has_elem_party = bool(Alias->:x, int32:holder, ExprId:place, int32:root) never fails {   // DEF-720: keyed by root too
     for (int64:i in 0i64...x.pre.count) {
         Party:pp = x.pre[i];
-        if ((pp.kind == (raw PARTY_ELEM_ADDR())) && (pp.holder == holder) && (pp.place.index == place.index)) { pass true; }
+        if ((pp.kind == (raw PARTY_ELEM_ADDR())) && (pp.holder == holder) && (pp.place.index == place.index) && (pp.root == root)) { pass true; }
     }
     pass false;
 };
@@ -719,7 +754,7 @@ func:prescan_party = NIL(Alias->:x, ExprId:site, int32:kind, int32:holder) never
     if (kind == (raw PARTY_ELEM_ADDR())) {
         // ONE PARTY PER ADDRESS (DEF-307, landing 165): the holder's recorded refs
         // carry this address too (`prescan_view_parties`).
-        if (raw pre_has_elem_party(x, holder, place)) { pass NIL; }
+        if (raw pre_has_elem_party(x, holder, place, root)) { pass NIL; }
         // AN ELEMENT ADDRESSED THROUGH A POINTER (`@(<-lp0)[0i64]`) roots at the
         // pointer, whose own re-pointing leaves the `List` alone (D-286, as a view's
         // pointer root does); the `List` it reaches is resolved by the pointer
@@ -793,7 +828,7 @@ func:chain_view_parties = NIL(Alias->:x, int32:first, int32:holder, bool:ptr_hol
         // rooted at the parameter, as `@hp.l[0i64]`'s is; a copy of the parameter (`H->:q = hp;`) answers NO by its type and stays no party.
         int32:ppt = raw passed_pointee(x, vr);
         if ((ppt != 0i32) && (hty != 0i32) && (raw type_holds_elem_pointer(x, hty, is (vr.xc == (0i32 - 2i32)) : 0i32 : ppt, 8i32, vr.xc)) && ((vr.xc == (0i32 - 2i32)) || (raw type_heap_holds(x, ppt, 0i32, false, 8i32)))) {
-            if (!(raw pre_has_elem_party(x, holder, place))) {
+            if (!(raw pre_has_elem_party(x, holder, place, vr.root))) {
                 drop list_push(@x.pre, Party{ site: place, kind: raw PARTY_ELEM_ADDR(), root: vr.root, holder: holder, place: place, view_kind: is (vr.xc == (0i32 - 2i32)) : (0i32 - 2i32) : 0i32, root_ptr: true, path: vr.path });
             }
             continue;
@@ -827,13 +862,13 @@ func:chain_view_parties = NIL(Alias->:x, int32:first, int32:holder, bool:ptr_hol
                     if (dt == 0i32) { dt = raw resolve_type(x.tr, dtn, x.scope); }
                     can_hold = raw type_holds_elem_pointer(x, dt, 0i32, 8i32, 0i32);   // `lt` 0: ANY pointer counts
                 }
-                if (can_hold && (!(raw pre_has_party(x, holder, place)))) {
+                if (can_hold && (!(raw pre_has_party(x, holder, place, vr.root)))) {
                     drop list_push(@x.pre, Party{ site: place, kind: raw PARTY_PLAIN(), root: vr.root, holder: holder,
                                                   place: place, view_kind: 0i32, root_ptr: raw root_ident_is_pointer(x, place), path: vr.path });
                 }
                 if (!elem) { continue; }
             }
-            if (raw pre_has_elem_party(x, holder, place)) { continue; }
+            if (raw pre_has_elem_party(x, holder, place, vr.root)) { continue; }
             drop list_push(@x.pre, Party{ site: place, kind: raw PARTY_ELEM_ADDR(), root: vr.root, holder: holder,
                                           place: place, view_kind: is (vr.xc == (0i32 - 2i32)) : (0i32 - 2i32) : 0i32, root_ptr: raw root_ident_is_pointer(x, place),
                                           path: vr.path });
@@ -870,6 +905,8 @@ func:root_ident_is_pointer = bool(Alias->:x, ExprId:place) never fails {
         // the binding, the party met no write through the pointee (f9j6b, f9j6b2, f9j6b7:
         // 113 at both legs; the plain twins f9j6b5, f9j6b6 refused).
         if ((rn.kind == ExprKind.ExprDerefExpr) || (rn.kind == ExprKind.ExprCastExpr) || (rn.kind == ExprKind.ExprUncheckedCastExpr)) { cur = raw expr_operand(rn); continue; }
+        ExprId:uo = raw unwrap_ptr_operand(x, r.id, rn);
+        if (!(raw expr_is_none(uo))) { cur = uo; continue; }
         if (rn.kind != ExprKind.ExprIdentifierExpr) { pass false; }
         if (rn.a == 0i32) { pass false; }
         if (!(raw sym_is_view(x.tab, x.ast, rn.a))) {
@@ -904,6 +941,19 @@ func:bare_local_symbol = int32(Alias->:x, ExprId:id) never fails {
     pass 0i32;
 };
 
+// DEF-720: AN UNWRAP OF AN `Optional` OR `Result` POINTER (`??!`, `?!`, and `??`/`?|`'s left, as `escape_unwrap_root` reads it)
+// is a step to its operand, as a cast is: `(<-(oq ??! E5)).l` is rooted at `oq`. None for any other node, or an unwrap whose value isn't a pointer.
+func:unwrap_ptr_operand = ExprId(Alias->:x, ExprId:id, ExprNode:n) never fails {
+    if ((n.kind != ExprKind.ExprEmphaticCoalesceExpr) && (n.kind != ExprKind.ExprEmphaticUnwrapExpr)) { pass (raw expr_none()); }   // DEF-720: `??`, `?|` have two sides
+    int32:t = raw exprtypes_get(x.etypes, id);
+    // DEF-720's nested face (ap3_nu_rr): an unwrap whose value is itself a wrapped pointer (`(r ?! E5)` under `??! E5`) steps too, as `escape_unwrap_root` does
+    if ((t == 0i32) || ((raw type_kind(x.types, raw type_unwrapped(x.types, t))) != (raw TY_POINTER()))) { pass (raw expr_none()); }
+    ExprId:op = raw expr_operand(n);
+    // DEF-720: under the first walk no unwrap steps (main's reading, the root whole); under the second every one does (the longer path's)
+    if (x.uwm != 0i32) { x.uw_seen = true; pass (raw expr_none()); }
+    pass op;
+};
+
 // The root symbol of a place, through views (a lending `pick`'s binding stands
 // in for its selector's root, D-266), or 0 when the place has no named root.
 func:place_root_symbol = int32(Alias->:x, ExprId:id) never fails {
@@ -920,6 +970,8 @@ func:place_root_symbol = int32(Alias->:x, ExprId:id) never fails {
         // resolved a view through such a dereference to nothing, and the pointee written by
         // its own name or through another pointer met no party (f9j6b8, f9j6b9, f9j6b11).
         if ((rn.kind == ExprKind.ExprCastExpr) || (rn.kind == ExprKind.ExprUncheckedCastExpr)) { cur = raw expr_operand(rn); continue; }
+        ExprId:uo = raw unwrap_ptr_operand(x, r.id, rn);
+        if (!(raw expr_is_none(uo))) { cur = uo; continue; }
         if (rn.kind != ExprKind.ExprIdentifierExpr) { pass 0i32; }
         if (rn.a == 0i32) { pass 0i32; }
         if (!(raw sym_is_view(x.tab, x.ast, rn.a))) { pass rn.a; }
@@ -1016,6 +1068,8 @@ func:path_steps = bool(Alias->:x, ExprId:place, ExprId:stop, List<Step>->:out) n
         // AN EXPLICIT `<-` IS NO STEP (DEF-272): `(<-p).f`'s steps are `p.f`'s,
         // and the whole pointee `<-p` is the root with no step -- which is why
         // `check_access_reported`'s pointer-root exemption asks for the bare name.
+        ExprId:uo = raw unwrap_ptr_operand(x, cur, n);
+        if (!(raw expr_is_none(uo))) { cur = uo; continue; }
         if (n.kind == ExprKind.ExprDerefExpr) { cur = raw expr_operand(n); continue; }
         if (n.kind == ExprKind.ExprIdentifierExpr) {
             if (n.a == 0i32) { pass false; }
@@ -1912,6 +1966,7 @@ func:target_is_pointee = bool(Alias->:x, ViewRef:vr, ExprId:pe) never fails {
 // plus its interned path below).
 func:ptr_target_steps = bool(Alias->:x, ViewRef:vr, List<Step>->:out) never fails {
     ExprId:pl = ExprId{ index: vr.place };
+    if ((vr.kind == (raw REF_PASS())) && (vr.rm > 0i32)) { pl = ExprId{ index: vr.rm }; }   // DEF-714: the read member's steps
     if (raw expr_is_none(pl)) { pass false; }
     ExprNode:pn = raw ast_expr(x.ast, pl);
     if (pn.kind == ExprKind.ExprAddressOfExpr) { pl = raw expr_operand(pn); }
@@ -2167,6 +2222,35 @@ func:check_pointer_targets = bool(Alias->:x, ExprId:place, List<Step>:ap, int32:
     pass false;
 };
 
+// THE POINTER `check_pointer_view_parties` READS PARTY `p` THROUGH at a write of `root` (`akind`, `skip` as its own), the party's steps in `pp` and the
+// pointer's in `pre` (both emptied first); none where it reads nothing of `p`. ONE reader for it and `hop_pv_roots` (SP, DEF-716), which asks what it asks.
+// Its four cheap filters, asked first by it and by `check_pointer_view_parties` before that makes the lists (DEF-716: the sf shape's cost).
+func:pv_party_asked = bool(Alias->:x, Party:p, int32:akind, int32:skip) never fails {
+    if (!(raw party_in_scope(x, p))) { pass false; }
+    if ((p.kind != (raw PARTY_VIEW())) && (p.kind != (raw PARTY_ELEM_ADDR())) && (p.kind != (raw PARTY_TARGET()))) { pass false; }
+    // A PARTY AT THE WRITE'S OWN ROOT TAKEN THROUGH A POINTER INTO THAT ROOT is re-rooted below like any other (DEF-665)
+    if ((skip != 0i32) && (p.root == skip)) { pass false; }
+    pass (raw conflicts(p.kind, akind));
+};
+func:pv_party_ptr = ExprId(Alias->:x, Party:p, int32:root, int32:akind, int32:skip, List<Step>->:pp, List<Step>->:pre) never fails {
+    drop list_truncate(pp, 0i64);
+    drop list_truncate(pre, 0i64);
+    if (!(raw pv_party_asked(x, p, akind, skip))) { pass (raw expr_none()); }
+    if (!(raw party_steps(x, p, pp))) { drop list_truncate(pp, 0i64); }   // unreadable: the root WHOLE (DEF-343)
+    ExprId:pe = raw ptr_write_base(x, p.place, pp.count);
+    // A VIEW RETURNED THROUGH THE BARE POINTER ITSELF (DEF-355, landing 177a): `fixed uint8[]:vw = raw getv(p);` with `p = @s` raises a view party at `p`, its path empty, and
+    // `ptr_write_base` looks for a pointer BELOW the place and answers none, so `s = …` by its own name met nothing (113, 170: the freed bytes read). The place itself is the pointer.
+    if (raw expr_is_none(pe)) {
+        int32:pvt = raw exprtypes_get(x.etypes, p.place);
+        // Never the holder's own storage (`Holder->:b = @hd;` under `hd`'s possible view of `b`).
+        if ((pvt == 0i32) || ((raw type_kind(x.types, pvt)) != (raw TY_POINTER())) || (p.holder == root)) { pass (raw expr_none()); }
+        pe = p.place;
+    }
+    if (!(raw path_steps(x, pe, raw expr_none(), pre))) { pass (raw expr_none()); }
+    if (pre.count > pp.count) { pass (raw expr_none()); }
+    pass pe;
+};
+
 // REVERSE (DEF-302): a write to `root` at `ap` by the pointee's own name, against
 // each live VIEW party taken THROUGH a pointer whose storage includes `root`
 // (`vw = string_bytes(hp.o)`, write `h.o`; two-level `bp.p.o`). `skip` is the
@@ -2180,25 +2264,11 @@ func:check_pointer_targets = bool(Alias->:x, ExprId:place, List<Step>:ap, int32:
 func:check_pointer_view_parties = bool(Alias->:x, int32:root, List<Step>:ap, int32:akind, Span:at, int32:skip) never fails {
     for (int64:i in 0i64...x.live.count) {
         Party:p = x.live[i];
-        if (!(raw party_in_scope(x, p))) { continue; }
-        if ((p.kind != (raw PARTY_VIEW())) && (p.kind != (raw PARTY_ELEM_ADDR())) && (p.kind != (raw PARTY_TARGET()))) { continue; }
-        // A PARTY AT THE WRITE'S OWN ROOT TAKEN THROUGH A POINTER INTO THAT ROOT is re-rooted below like any other (DEF-665)
-        if ((skip != 0i32) && (p.root == skip)) { continue; }
-        if (!(raw conflicts(p.kind, akind))) { continue; }
-        List<Step>:pp = raw list_init::<Step>(8i64);
-        if (!(raw party_steps(x, p, @pp))) { drop list_truncate(@pp, 0i64); }   // unreadable: the root WHOLE (DEF-343)
-        ExprId:pe = raw ptr_write_base(x, p.place, pp.count);
-        // A VIEW RETURNED THROUGH THE BARE POINTER ITSELF (DEF-355, landing 177a): `fixed uint8[]:vw = raw getv(p);` with `p = @s` raises a view party at `p`, its path empty, and
-        // `ptr_write_base` looks for a pointer BELOW the place and answers none, so `s = …` by its own name met nothing (113, 170: the freed bytes read). The place itself is the pointer.
-        if (raw expr_is_none(pe)) {
-            int32:pvt = raw exprtypes_get(x.etypes, p.place);
-            // Never the holder's own storage (`Holder->:b = @hd;` under `hd`'s possible view of `b`).
-            if ((pvt == 0i32) || ((raw type_kind(x.types, pvt)) != (raw TY_POINTER())) || (p.holder == root)) { continue; }
-            pe = p.place;
-        }
+        if (!(raw pv_party_asked(x, p, akind, skip))) { continue; }   // the lists are made only for a party past the cheap filters, as before
+        List<Step>:pp = raw list_init::<Step>(8i64);   // the party's steps and its pointer's, filled by `pv_party_ptr`
         List<Step>:pre = raw list_init::<Step>(8i64);
-        if (!(raw path_steps(x, pe, raw expr_none(), @pre))) { continue; }
-        if (pre.count > pp.count) { continue; }
+        ExprId:pe = raw pv_party_ptr(x, p, root, akind, skip, @pp, @pre);
+        if (raw expr_is_none(pe)) { continue; }
         List<ViewRef>:tgts = raw list_init::<ViewRef>(4i64);
         drop pointer_targets_of(x, at, pe, 8i32, @tgts);
         for (int64:j in 0i64...tgts.count) {
@@ -2224,6 +2294,7 @@ func:check_pointer_view_parties = bool(Alias->:x, int32:root, List<Step>:ap, int
             pass true;
         }
     }
+    if ((skip == 0i32) && (akind == (raw ACC_WRITE()))) { x.pv_n = x.pv_n + 1i64; x.pv_at = at; x.pv_root = root; }   // SP (DEF-716): a full run; `hop_pv_roots` reads it
     pass false;
 };
 
@@ -2902,9 +2973,17 @@ func:check_written_mode = NIL(Alias->:x, ExprId:place, int32:callee, int32:pos, 
         drop check_access_ex(x, place, 0i32, raw ACC_WRITE(), raw expr_none(), at, mode);
         pass NIL;
     }
+    List<int32>:sus = raw list_init::<int32>(8i64);   // DEF-716: the paths whose own walk can say something (`hop_suspects`)
+    HopW:w = raw hop_suspects(x, place, e, mode, @sus);
+    int64:n0 = x.pv_n;   // SP (DEF-716): the full runs before this write's own
+    int64:k = 0i64;
     while (e >= 0i32) decreases e + 1i32 {
         if (raw check_access_reported(x, place, raw escape_mut_path(x.esc, e), raw ACC_WRITE(), raw expr_none(), at, mode)) { pass NIL; }
-        if (raw check_hop_written(x, place, raw escape_mut_path(x.esc, e), at, mode, 8i32)) { pass NIL; }   // RB-1
+        if (sus[k] == 2i32) { drop hop_resus(x, @w, @sus, n0, at); }
+        if (sus[k] != 0i32) {
+            if (raw check_hop_written(x, place, raw escape_mut_path(x.esc, e), at, mode, 8i32)) { pass NIL; }   // RB-1
+        }
+        k = k + 1i64;
         e = raw escape_mut_next(x.esc, e);
     }
     pass NIL;
@@ -2927,19 +3006,28 @@ func:check_hop_written_s = bool(Alias->:x, ExprId:place, int32:path, Span:at, in
     int32:ht = raw escape_path_hop(x.esc, raw exprtypes_get(x.etypes, place), path, @hs);
     if (ht == 0i32) { pass false; }
     int32:r = raw place_root_symbol(x, place);
-    if (r == 0i32) { pass false; }
+    if (r == 0i32) { pass (raw check_hop_rootless(x, place, path, at, mode, fuel - 1i32, seen)); }   // DEF-348 row b: a root the walk can't name (l.20463)
     int32:pty = raw exprtypes_get(x.etypes, place);
     int64:sf = 0i64 - 1i64;
     for (int64:si in 0i64...(seen.count / 4i64)) { if (((<-seen)[4i64 * si] == r) && ((<-seen)[(4i64 * si) + 1i64] == pty) && ((<-seen)[(4i64 * si) + 2i64] == path)) { sf = (4i64 * si) + 3i64; } }
     if ((sf >= 0i64) && ((<-seen)[sf] >= fuel)) { pass false; }
     if (sf >= 0i64) { (<-seen)[sf] = fuel; } else { drop list_push(seen, r); drop list_push(seen, pty); drop list_push(seen, path); drop list_push(seen, fuel); }
-    Symbol:sy = raw symtab_get(x.tab, r);
-    if (sy.origin_kind != (raw SYM_STMT())) { pass false; }
     int32:pte = raw type_elem(x.types, ht);
-    int32:e = raw escape_view_ref_first(x.esc, sy.origin);
-    while (e >= 0i32) decreases e + 1i32 {
-        ViewRef:vr = raw escape_view_ref(x.esc, e);
-        e = raw escape_view_ref_next(x.esc, e);
+    List<ViewRef>:cand = raw list_init::<ViewRef>(4i64);
+    if (r == 0i32) {
+        // DEF-348 row b (l.20463): A ROOT THE WALK CAN'T NAME (a call's result, `gb(raw ida(@a))`) is judged at what rule A says it points at, not passed unwritten
+        drop escape_pointer_targets(x.esc, place, @cand);
+    } else {
+        Symbol:sy = raw symtab_get(x.tab, r);
+        if (sy.origin_kind != (raw SYM_STMT())) { pass false; }
+        int32:e = raw escape_view_ref_first(x.esc, sy.origin);
+        while (e >= 0i32) decreases e + 1i32 {
+            drop list_push(@cand, raw escape_view_ref(x.esc, e));
+            e = raw escape_view_ref_next(x.esc, e);
+        }
+    }
+    for (int64:ci in 0i64...cand.count) {
+        ViewRef:vr = cand[ci];
         if ((vr.root == 0i32) || (!(raw ptr_ref_is_target(x, vr, ht, pte)))) { continue; }
         List<Step>:tp = raw list_init::<Step>(8i64);
         if (!(raw ptr_target_steps(x, vr, @tp))) { continue; }
@@ -2949,14 +3037,248 @@ func:check_hop_written_s = bool(Alias->:x, ExprId:place, int32:path, Span:at, in
         if (pointee) { drop decode_path(x, hs[1i64], @tp); }
         if (raw check_view_parties_at(x, vr, tp, 0i32, 0i32, raw expr_none(), raw ACC_WRITE(), at, mode)) { pass true; }
         if (raw check_pointer_view_parties(x, vr.root, tp, raw ACC_WRITE(), at, 0i32)) { pass true; }
+        // DEF-348 row b (its 14 hop spellings, l.20403): A TARGET REACHED THROUGH A POINTER (`b.r = @((<-ap).inner)`, rooted at `ap`) is judged at that pointer's own targets
+        ExprId:tq = ExprId{ index: vr.place };
+        ExprNode:tqn = raw ast_expr(x.ast, tq);
+        if (tqn.kind == ExprKind.ExprAddressOfExpr) { tq = raw expr_operand(tqn); }
+        if (raw check_pointer_targets(x, tq, tp, raw ACC_WRITE(), at, mode)) { pass true; }
         if (pointee && (vr.kind == (raw REF_ADDR())) && (vr.path == 0i32)) {
             ExprId:tpl = ExprId{ index: vr.place };
             ExprNode:tpn = raw ast_expr(x.ast, tpl);
             if (tpn.kind == ExprKind.ExprAddressOfExpr) { tpl = raw expr_operand(tpn); }
             if (raw check_hop_written_s(x, tpl, hs[1i64], at, mode, fuel - 1i32, seen)) { pass true; }
+            if (((raw ast_expr(x.ast, tpl)).kind == ExprKind.ExprDerefExpr) && (raw check_hop_rootless(x, tpl, hs[1i64], at, mode, fuel - 1i32, seen))) { pass true; }   // DEF-348 row b: a `<-` target is walked as a root the walk can't name
         }
     }
     pass false;
+};
+
+// DEF-348 row b (its premise at l.20463): A ROOT THE HOP WALK CAN'T NAME (a call's result, `gb(raw ida(@a))`; its deref, `gw(@(<-(raw idl(@v1))))`)
+// was judged unwritten. Each place rule A says it reaches is walked again with the same path, as its named spelling is (`gb(@a)`, `gb(ap)`, `gw(@v1)`);
+// a target of any other type is judged whole.
+func:check_hop_rootless = bool(Alias->:x, ExprId:place, int32:path, Span:at, int32:mode, int32:fuel, List<int32>->:seen) decreases fuel never fails {
+    if (fuel <= 0i32) { pass false; }
+    int32:plt = raw exprtypes_get(x.etypes, place);
+    ExprId:pp = place;
+    ExprNode:pn = raw ast_expr(x.ast, place);
+    if (pn.kind == ExprKind.ExprDerefExpr) { pp = raw expr_operand(pn); }
+    List<ViewRef>:rq = raw list_init::<ViewRef>(4i64);
+    drop escape_pointer_targets(x.esc, pp, @rq);
+    for (int64:qi in 0i64...rq.count) {
+        ViewRef:qv = rq[qi];
+        ExprId:qp = ExprId{ index: qv.place };
+        ExprNode:qn = raw ast_expr(x.ast, qp);
+        if (qn.kind == ExprKind.ExprAddressOfExpr) { qp = raw expr_operand(qn); }
+        int32:qt = raw exprtypes_get(x.etypes, qp);
+        bool:same = (qt != 0i32) && ((qt == plt) || (((raw type_kind(x.types, plt)) == (raw TY_POINTER())) && (qt == (raw type_elem(x.types, plt)))));
+        if (same && (qv.path == 0i32) && ((raw place_root_symbol(x, qp)) != 0i32)) {
+            if (raw check_hop_written_s(x, qp, path, at, mode, fuel - 1i32, seen)) { pass true; }
+            continue;
+        }
+        List<Step>:qs = raw list_init::<Step>(8i64);
+        if (!(raw ptr_target_steps(x, qv, @qs))) { continue; }
+        if (raw check_view_parties_at(x, qv, qs, 0i32, 0i32, raw expr_none(), raw ACC_WRITE(), at, mode)) { pass true; }
+        if (raw check_pointer_view_parties(x, qv.root, qs, raw ACC_WRITE(), at, 0i32)) { pass true; }
+    }
+    pass false;
+};
+
+// DEF-716: ONE WALK OF A CALL'S HOP GRAPH FOR ALL ITS WRITTEN PATHS. The check walked the graph once per written path, each with a fresh `seen`, though
+// the paths share every hop but the last: about W x C x K^2.D x P (the cost cell `sf_w64d7k12c64p4`: 147 s, main 1.1 s, the same `.ll`). Here the paths go down
+// TOGETHER, grouped by hop, and a path's own walk runs only where it can say something. Its walk reports, or pushes anything, only from a party: a live one
+// rooted where a target it meets is rooted (`check_view_parties_at` reads only those), or one taken through a pointer (`check_pointer_view_parties` reads
+// what that pointer reaches, and that read may itself report). Where neither stands, its walk meets no party, says nothing and changes nothing, so it is not
+// run; where one does, it runs as it did before this filter, in its order. `sus[k]`: 1 where path k's own walk runs.
+pub struct:HopW = {
+    List<int64>:mp;    // members: the path's index in the call's chain
+    List<int32>:mr;    // ... its rest below the group's place
+    List<int64>:gs;    // groups: the first member
+    List<int64>:gn;    // ... the count
+    List<int32>:gm;    // ... marked (its paths' walks run)
+    List<int64>:ik;    // the child groups: parent, place type, hop type, child
+    List<int64>:seen;  // `check_hop_written_s`'s key, the group for the rest: root, place type, group, best fuel
+    List<int32>:pr;    // the live parties' roots, read at the first target met
+    int32:pst;         // 0: not read yet; 1: read; 2: a party is taken through a pointer, so every path that meets a target runs (sus 2) until
+                       // `hop_resus` re-judges it: 3, its targets read; 4, they can't be (every such path runs)
+    int32:md;          // the call's check mode
+    List<int64>:gp;    // SP: (group, root) met where a pointer party alone marked the group
+};
+
+func:hop_suspects = HopW(Alias->:x, ExprId:place, int32:e0, int32:mode, List<int32>->:sus) never fails {
+    HopW:w = HopW{ mp: raw list_init::<int64>(8i64), mr: raw list_init::<int32>(8i64), gs: raw list_init::<int64>(4i64), gn: raw list_init::<int64>(4i64), gm: raw list_init::<int32>(4i64), ik: raw list_init::<int64>(8i64), seen: raw list_init::<int64>(16i64), pr: raw list_init::<int32>(8i64), pst: 0i32, md: mode, gp: raw list_init::<int64>(8i64) };
+    int32:e = e0;
+    while (e >= 0i32) decreases e + 1i32 {
+        drop list_push(@w.mp, sus.count);
+        drop list_push(@w.mr, raw escape_mut_path(x.esc, e));
+        drop list_push(sus, 0i32);
+        e = raw escape_mut_next(x.esc, e);
+    }
+    drop list_push(@w.gs, 0i64);
+    drop list_push(@w.gn, w.mp.count);
+    drop list_push(@w.gm, 0i32);
+    drop hop_walk(x, @w, sus, place, 0i64, 8i32);
+    pass w;
+};
+
+// DEF-716: the group `g`'s paths at `place`, walked as `check_hop_written_s` walks one (its tests, its targets, its fuel), less the parties. Per hop type its
+// members meet under `place`'s type, the members through it are one child group (interned by parent, place type and hop type: the same members, the same
+// rests), each target met is marked against that group (`hop_mark`), and a pointee target is walked on with it. A path's own walk meets exactly the targets
+// marked against the groups it is in: its `seen` skips only a key it has walked, and this `seen` only a group key walked with the same members.
+func:hop_walk = NIL(Alias->:x, HopW->:w, List<int32>->:sus, ExprId:place, int64:g, int32:fuel) decreases fuel never fails {
+    if (fuel <= 0i32) { pass NIL; }
+    int32:r = raw place_root_symbol(x, place);
+    if (r == 0i32) { drop hop_mark_run(w, sus, g); pass NIL; }   // DEF-348 row b, road (i): `check_hop_written_s` walks a rootless place by `check_hop_rootless`
+    int32:pty = raw exprtypes_get(x.etypes, place);
+    int64:sf = 0i64 - 1i64;
+    for (int64:si in 0i64...(w.seen.count / 4i64)) { if ((w.seen[4i64 * si] == (r => int64)) && (w.seen[(4i64 * si) + 1i64] == (pty => int64)) && (w.seen[(4i64 * si) + 2i64] == g)) { sf = (4i64 * si) + 3i64; } }
+    if ((sf >= 0i64) && (w.seen[sf] >= (fuel => int64))) { pass NIL; }
+    if (sf >= 0i64) { w.seen[sf] = fuel => int64; } else { drop list_push(@w.seen, r => int64); drop list_push(@w.seen, pty => int64); drop list_push(@w.seen, g); drop list_push(@w.seen, fuel => int64); }
+    Symbol:sy = raw symtab_get(x.tab, r);
+    if (sy.origin_kind != (raw SYM_STMT())) { pass NIL; }
+    int64:g0 = w.gs[g];
+    int64:g1 = g0 + w.gn[g];
+    List<int32>:hts = raw list_init::<int32>(8i64);   // per member: its hop's pointer type (0: none) and the rest below the pointee
+    List<int32>:rs = raw list_init::<int32>(8i64);
+    for (int64:m in g0...g1) {
+        List<int32>:hs = raw list_init::<int32>(2i64);
+        int32:h = raw escape_path_hop(x.esc, pty, w.mr[m], @hs);
+        drop list_push(@hts, h);
+        if (h == 0i32) { drop list_push(@rs, 0i32); } else { drop list_push(@rs, hs[1i64]); }
+    }
+    for (int64:j in 0i64...hts.count) {
+        int32:ht = hts[j];
+        if (ht == 0i32) { continue; }
+        bool:dup = false;
+        for (int64:j2 in 0i64...j) { if (hts[j2] == ht) { dup = true; break; } }
+        if (dup) { continue; }
+        int64:cg = 0i64 - 1i64;
+        for (int64:q in 0i64...(w.ik.count / 4i64)) { if ((w.ik[4i64 * q] == g) && (w.ik[(4i64 * q) + 1i64] == (pty => int64)) && (w.ik[(4i64 * q) + 2i64] == (ht => int64))) { cg = w.ik[(4i64 * q) + 3i64]; } }
+        if (cg < 0i64) {
+            cg = w.gs.count;
+            drop list_push(@w.ik, g); drop list_push(@w.ik, pty => int64); drop list_push(@w.ik, ht => int64); drop list_push(@w.ik, cg);
+            drop list_push(@w.gs, w.mp.count);
+            for (int64:j3 in j...hts.count) {
+                if (hts[j3] != ht) { continue; }
+                int64:pm = w.mp[g0 + j3];
+                drop list_push(@w.mp, pm);
+                drop list_push(@w.mr, rs[j3]);
+            }
+            drop list_push(@w.gn, w.mp.count - w.gs[cg]);
+            drop list_push(@w.gm, 0i32);
+        }
+        int32:pte = raw type_elem(x.types, ht);
+        int32:e = raw escape_view_ref_first(x.esc, sy.origin);
+        while (e >= 0i32) decreases e + 1i32 {
+            ViewRef:vr = raw escape_view_ref(x.esc, e);
+            e = raw escape_view_ref_next(x.esc, e);
+            if ((vr.root == 0i32) || (!(raw ptr_ref_is_target(x, vr, ht, pte)))) { continue; }
+            List<Step>:tp = raw list_init::<Step>(8i64);
+            if (!(raw ptr_target_steps(x, vr, @tp))) { continue; }
+            drop hop_mark(x, w, sus, cg, vr.root);
+            ExprId:tq = ExprId{ index: vr.place };
+            ExprNode:tqn = raw ast_expr(x.ast, tq);
+            if (tqn.kind == ExprKind.ExprAddressOfExpr) { tq = raw expr_operand(tqn); }
+            if (raw hop_tq_ptr(x, tq)) { drop hop_mark_run(w, sus, cg); }   // DEF-348 row b, road (ii): `check_pointer_targets` reads this target's pointer
+            int32:et = raw escape_path_end_type(x.esc, raw exprtypes_get(x.etypes, ExprId{ index: vr.place }), vr.path);
+            if ((vr.kind == (raw REF_ADDR())) && (vr.path == 0i32) && (et != 0i32) && (et == pte)) {
+                ExprId:tpl = ExprId{ index: vr.place };
+                ExprNode:tpn = raw ast_expr(x.ast, tpl);
+                if (tpn.kind == ExprKind.ExprAddressOfExpr) { tpl = raw expr_operand(tpn); }
+                if ((raw ast_expr(x.ast, tpl)).kind == ExprKind.ExprDerefExpr) { drop hop_mark_run(w, sus, cg); }   // DEF-348 row b, road (iii): a `<-` target is walked rootless too
+                drop hop_walk(x, w, sus, tpl, cg, fuel - 1i32);
+            }
+        }
+    }
+    pass NIL;
+};
+
+// DEF-716: a target rooted at `root`, met by group `cg`'s paths. Their walks run where a live party of a kind `check_view_parties_at` reads stands on `root`
+// (the only parties it reads for it), or where any party is a view, an element address or a target with a pointer on its place or the place a pointer
+// (the only parties `check_pointer_view_parties` reads past its filters; it asks what that pointer reaches, and the asking may report). Both over-read.
+func:hop_mark = NIL(Alias->:x, HopW->:w, List<int32>->:sus, int64:cg, int32:root) never fails {
+    if (w.gm[cg] == 1i32) { pass NIL; }
+    if (w.pst == 0i32) {
+        w.pst = 1i32;
+        for (int64:i in 0i64...x.live.count) {
+            Party:p = x.live[i];
+            if ((p.kind == (raw PARTY_VIEW())) || (p.kind == (raw PARTY_LENT())) || (p.kind == (raw PARTY_ELEM_ADDR()))
+                || ((p.kind == (raw PARTY_TARGET())) && ((w.md != (raw CHECK_VIEWS())) || (x.judge_only != 0i32)))) { drop list_push(@w.pr, p.root); }   // `check_view_parties_at`'s kinds
+            if ((p.kind != (raw PARTY_VIEW())) && (p.kind != (raw PARTY_ELEM_ADDR())) && (p.kind != (raw PARTY_TARGET()))) { continue; }
+            int32:pvt = raw exprtypes_get(x.etypes, p.place);
+            // A WRAPPED POINTER IS A POINTER HERE TOO (DEF-671): `ptr_write_base` answers a party's own place when it is an Optional or `Result` of a
+            // pointer with the party's path below it, so `check_pointer_view_parties` reads that party (`getv(q)` with `LF->?:q = @fB`).
+            if ((!(raw expr_is_none(raw ptr_last_base(x, p.place)))) || ((pvt != 0i32) && ((raw type_kind(x.types, raw type_unwrapped(x.types, pvt))) == (raw TY_POINTER())))) { w.pst = 2i32; }
+        }
+    }
+    bool:hit = false;
+    for (int64:i in 0i64...w.pr.count) { if (w.pr[i] == root) { hit = true; } }
+    if (!hit) {
+        if (w.pst != 2i32) { pass NIL; }
+        drop list_push(@w.gp, cg);   // SP (DEF-716): a pointer party alone: the pair is re-judged by `hop_resus`, and the paths run till then
+        drop list_push(@w.gp, root => int64);
+        if (w.gm[cg] != 0i32) { pass NIL; }
+        w.gm[cg] = 2i32;
+        for (int64:m2 in w.gs[cg]...(w.gs[cg] + w.gn[cg])) { if ((<-sus)[w.mp[m2]] == 0i32) { (<-sus)[w.mp[m2]] = 2i32; } }
+        pass NIL;
+    }
+    w.gm[cg] = 1i32;
+    for (int64:m in w.gs[cg]...(w.gs[cg] + w.gn[cg])) { (<-sus)[w.mp[m]] = 1i32; }
+    pass NIL;
+};
+
+// DEF-348 ROW b IN DEF-716'S FILTER: row b's three roads in `check_hop_written_s` report from places this walk doesn't read for parties
+// (a rootless place's rule-A targets, a target pointer's own targets, a `<-` target's), so where one can run, the group's paths' own walks run (sus 1,
+// which `hop_resus` never clears), as every path's walk ran before the filter. Over-marking costs time, never a report.
+func:hop_mark_run = NIL(HopW->:w, List<int32>->:sus, int64:g) never fails {
+    w.gm[g] = 1i32;
+    for (int64:m in w.gs[g]...(w.gs[g] + w.gn[g])) { (<-sus)[w.mp[m]] = 1i32; }
+    pass NIL;
+};
+// Road (ii) of DEF-348 row b: where `check_pointer_targets` can say anything of a target place: the place is a pointer (a wrapped one too, `ptr_write_base`'s and
+// `ptr_place_written_whole`'s roads) or is reached through one (`ptr_last_base`); everywhere else it passes false.
+func:hop_tq_ptr = bool(Alias->:x, ExprId:tq) never fails {
+    int32:t = raw exprtypes_get(x.etypes, tq);
+    if ((t != 0i32) && ((raw type_kind(x.types, raw type_unwrapped(x.types, t))) == (raw TY_POINTER()))) { pass true; }
+    pass (!(raw expr_is_none(raw ptr_last_base(x, tq))));
+};
+
+// SP (DEF-716): ONCE `check_pointer_view_parties` HAS MADE A FULL RUN AT THIS WRITE (since `n0`, at `at`), its pointer parties' targets are read again
+// (`hop_pv_roots`, nothing new pushed), and a pair a pointer party alone marked keeps its paths (sus 2) only where its root is one of them or of `pr`.
+// A skipped path's own walk meets only other roots: `check_view_parties_at` reads none of `pr`'s there, and `check_pointer_view_parties` asks again
+// what it asked in the run, pushing nothing, and finds no target rooted there. Where the targets can't be read whole, every such path runs (4).
+func:hop_resus = NIL(Alias->:x, HopW->:w, List<int32>->:sus, int64:n0, Span:at) never fails {
+    if ((w.pst != 2i32) || (x.pv_n <= n0) || (x.pv_at.file != at.file) || (x.pv_at.offset != at.offset) || (x.pv_at.len != at.len)) { pass NIL; }
+    w.pst = 4i32;
+    if (!(raw hop_pv_roots(x, at, @w.pr))) { pass NIL; }
+    w.pst = 3i32;
+    for (int64:k in 0i64...sus.count) { if ((<-sus)[k] == 2i32) { (<-sus)[k] = 0i32; } }
+    for (int64:q in 0i64...(w.gp.count / 2i64)) {
+        bool:hit = false;
+        for (int64:i in 0i64...w.pr.count) { if ((w.pr[i] => int64) == w.gp[(2i64 * q) + 1i64]) { hit = true; } }
+        if (!hit) { continue; }
+        int64:g = w.gp[2i64 * q];
+        for (int64:m in w.gs[g]...(w.gs[g] + w.gn[g])) { if ((<-sus)[w.mp[m]] == 0i32) { (<-sus)[w.mp[m]] = 2i32; } }
+    }
+    pass NIL;
+};
+// SP: THE ROOTS `check_pointer_view_parties` CAN REPORT AT for a write, its parties read by its own reader at the full run's root: what that run asked.
+// False where they can't be read whole: a party read through its own place and held by that root, which the run didn't ask, and is asked at others.
+func:hop_pv_roots = bool(Alias->:x, Span:at, List<int32>->:out) never fails {
+    List<Step>:pp = raw list_init::<Step>(8i64);
+    List<Step>:pre = raw list_init::<Step>(8i64);
+    for (int64:i in 0i64...x.live.count) {
+        Party:p = x.live[i];
+        ExprId:pe = raw pv_party_ptr(x, p, x.pv_root, raw ACC_WRITE(), 0i32, @pp, @pre);
+        if (raw expr_is_none(pe)) {
+            // unread at the run's root, as its holder, and read at any other: not asked in the run
+            if ((p.holder == x.pv_root) && (!(raw expr_is_none(raw pv_party_ptr(x, p, is (p.holder == 0i32) : 1i32 : 0i32, raw ACC_WRITE(), 0i32, @pp, @pre))))) { pass false; }
+            continue;
+        }
+        List<ViewRef>:tg = raw list_init::<ViewRef>(4i64);
+        drop pointer_targets_of(x, at, pe, 8i32, @tg);
+        for (int64:j in 0i64...tg.count) { drop list_push(out, tg[j].root); }
+    }
+    pass true;
 };
 
 // THE VIEW PARTIES AGAINST WHAT A CALLEE WRITES THROUGH A SLICE ARGUMENT
@@ -3169,6 +3491,8 @@ func:chain_passes_through = bool(Alias->:x, ExprId:place, ExprId:node) never fai
         if (n.kind == ExprKind.ExprIndexExpr) { cur = raw expr_lhs(n); continue; }
         if ((n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr) || (n.kind == ExprKind.ExprDerefExpr)
             || (n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr)) { cur = raw expr_operand(n); continue; }
+        ExprId:uo = raw unwrap_ptr_operand(x, cur, n);
+        if (!(raw expr_is_none(uo))) { cur = uo; continue; }
         pass false;
     }
     pass false;
@@ -3189,6 +3513,8 @@ func:is_place_chain = bool(Alias->:x, ExprId:id) never fails {
         // 11 of landing 167: the root named here, the chain denied there, the write decomposed and
         // judged by nobody -- f9h, f9t, f9j6b2 at 113 again).
         if ((n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr)) { cur = raw expr_operand(n); continue; }
+        ExprId:uo = raw unwrap_ptr_operand(x, cur, n);
+        if (!(raw expr_is_none(uo))) { cur = uo; continue; }
         pass (n.kind == ExprKind.ExprIdentifierExpr);
     }
     pass false;

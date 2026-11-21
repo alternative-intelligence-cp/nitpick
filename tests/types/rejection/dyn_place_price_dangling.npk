@@ -1,0 +1,48 @@
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 31:17
+mod:dyn_place_price_dangling;
+error:E9;
+
+// D-370'S PRICE, CLASS 4, THE PLACE LEFT DANGLING (management_67's `def710dyn/dyn_mut_ctrl`): the method freed the buffer the copy
+// shares, and `main`'s `exit` hid the second free; with the drops run (`_dr`, a function that returns) it is a double free, 95 on main
+// and on T3-710a. Refused now.
+
+trait:Tr = { func:peek = int32(Self:self) never fails; func:op = NIL(Self->:self) never fails; };
+struct:DHold = { buffer:b; };
+impl:DHold:Tr = {
+    func:peek = int32(DHold:self) never fails { pass (self.b[0i64] => int32); };
+    func:op = NIL(DHold->:self) never fails {
+        buffer:nb = buffer_new(16i64);
+        nb[0i64] = 7u8;
+        self.b = move(nb);
+        pass NIL;
+    };
+};
+func:callit = NIL(dyn Tr:d) never fails {
+    drop d.op();
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    buffer:bb = buffer_new(4096i64);
+    bb[0i64] = 42u8;
+    DHold:h = DHold{ b: move(bb) };
+    int32:v = h.b[0i64] => int32;
+    drop callit(h);   // site NITPICK-TYPE-116
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 96i32; },
+        (MachineFault)   { exit 97i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 94i32; },
+        (OutOfBounds)    { exit 93i32; },
+        (E9)             { exit 9i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};

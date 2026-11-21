@@ -1,0 +1,45 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 18:54
+// DEF-528 (landing 177d2e): D-183'S QUESTION, ASKED AT THE INSTANCE, ON THE `dyn` FAMILY ROAD. A family impl's method is instantiated
+// here by NO call: `WB<string>` is coerced to `dyn Go`, and the acceptance (`fits`) records the family instance whose vtable it implies.
+// Its body makes a `shared_arena<WB<T>>`, at `T = string` an owning element, so `get` copied one owner out twice (on main: a double
+// free, 74 at -O0 and -O2 and under the detector, AD528's `ad5_dyn_fam_rd2`). The emitter forms the instance, so `tools/check` has
+// nothing to judge, and `type_subst`'s arena arm refuses it at the coercion that recorded it: `dyn Go:d = move(w);`. Before D528-4
+// that record carried `span_none()`, and the refusal printed `<no span>`. `b_dyn_int_ok` is this file's control: the same impl at
+// `WB<int64>` holds no owner, and its instance is accepted.
+mod:generic_arena_dyn_family;
+error:E5;
+
+struct:WB<T> = { T:s; };
+trait:Go = { func:go = int32(Self->:self); };
+impl:<T>:WB<T>:Go = { func:go = int32(WB<T>->:self) { shared_arena<WB<T>>:a = shared_arena_make(4i64); pass 1i32; }; };
+
+func:a_dyn_string = int32() {
+    WB<string>:w = WB{ s: string_concat("a", "b") }; dyn Go:d = move(w); int32:r = d.go() ?! E5; pass r;
+};
+func:b_dyn_int_ok = int32() {
+    WB<int64>:w = WB{ s: 1i64 }; dyn Go:d = move(w); int32:r = d.go() ?! E5; pass r;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    exit 0i32;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)       { exit 74i32; },
+        (IntOverflow)       { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (HeapBadRequest)    { exit 93i32; },
+        (WildLeak)          { exit 94i32; },
+        (LimitViolated)     { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (StackExhausted)    { exit 96i32; },
+        (MachineFault)      { exit 97i32; },
+        (OutOfBounds)       { exit 98i32; },
+        (StaleHandle)       { exit 77i32; },
+        (E5)                { exit 80i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

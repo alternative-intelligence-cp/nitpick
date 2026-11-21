@@ -1,0 +1,91 @@
+// expect-exit: 42
+mod:dyn_place_roads_ok;
+error:E9;
+
+// D-370'S ROADS RUN (seat T3R, 2026-11-20): with an owning place refused at a `dyn` parameter that isn't `move` (`NITPICK-TYPE-116`),
+// each road the rule names does what it says, the drops run (`work` returns). A pointer through a bound (`<T: Tr>` with `T->`, `@h`)
+// and a concrete pointer land `op`'s write in `h`; a `dyn` held from the start is lent its own cell, and the write lands there; `move(h)`
+// hands it over; a spread of a slice of `dyn` reaches the element's cell; a copyable place is copied, the write staying in the copy; a
+// `dyn` returned from a local is the implicit move. Each road adds its share of 42 only when it behaved so.
+trait:Tr = { func:peek = int32(Self:self) never fails; func:op = NIL(Self->:self) never fails; };
+struct:DHold = { buffer:b; };
+impl:DHold:Tr = {
+    func:peek = int32(DHold:self) never fails { pass (self.b[0i64] => int32); };
+    func:op = NIL(DHold->:self) never fails {
+        buffer:nb = buffer_new(16i64);
+        nb[0i64] = 7u8;
+        self.b = move(nb);
+        pass NIL;
+    };
+};
+func:callit = NIL(dyn Tr:d) never fails {
+    drop d.op();
+    pass NIL;
+};
+func:mkh = DHold() never fails {
+    buffer:bb = buffer_new(4096i64);
+    bb[0i64] = 5u8;
+    pass DHold{ b: move(bb) };
+};
+struct:CP = { int32:v; };
+impl:CP:Tr = {
+    func:peek = int32(CP:self) never fails { pass self.v; };
+    func:op = NIL(CP->:self) never fails { self.v = 7i32; pass NIL; };
+};
+func:gptr<T: Tr> = NIL(T->:p) never fails { drop Tr.op(p); pass NIL; };
+func:cptr = NIL(DHold->:p) never fails { drop p.op(); pass NIL; };
+func:callv = NIL(..*(dyn Tr)[]:ds) never fails { drop ds[0i64].op(); pass NIL; };
+func:ret_local = dyn Tr() never fails { DHold:h = raw mkh(); pass h; };
+func:is7 = int32(int32:v, int32:share) never fails {
+    if (v == 7i32) { pass share; }
+    pass 0i32;
+};
+func:work = int32() {
+    int32:t = 0i32;
+    DHold:h1 = raw mkh();
+    drop gptr(@h1);
+    t = t + raw is7(h1.b[0i64] => int32, 6i32);
+    DHold:h2 = raw mkh();
+    drop cptr(@h2);
+    t = t + raw is7(h2.b[0i64] => int32, 6i32);
+    DHold:h3 = raw mkh();
+    dyn Tr:d3 = move(h3);
+    drop callit(d3);
+    t = t + raw is7(raw d3.peek(), 6i32);
+    DHold:h4 = raw mkh();
+    drop callit(move(h4));
+    t = t + 6i32;
+    DHold:h5 = raw mkh();
+    dyn Tr:d5 = move(h5);
+    (dyn Tr)[1]:da = [move(d5)];
+    drop callv(..^(da[0i64...1i64]));
+    t = t + raw is7(raw da[0i64].peek(), 6i32);
+    CP:c = CP{ v: 5i32 };
+    drop callit(c);
+    if (c.v == 5i32) { t = t + 6i32; }
+    dyn Tr:d7 = raw ret_local();
+    drop callit(d7);
+    t = t + raw is7(raw d7.peek(), 6i32);
+    pass t;
+};
+func:main = int32(cstring[]:_~argv) {
+    int32:v = work() ?! E9;
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 96i32; },
+        (MachineFault)   { exit 97i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 94i32; },
+        (OutOfBounds)    { exit 93i32; },
+        (IntOverflow)    { exit 90i32; },
+        (DeadlineExceeded) { exit 89i32; },
+        (E9)             { exit 9i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};

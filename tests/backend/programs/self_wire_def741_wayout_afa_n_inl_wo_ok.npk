@@ -1,0 +1,37 @@
+// expect-exit: 67
+// 2026-11-21 (landing 177d2e, row 8: DEF-730, form P730c = P730b's delta with N730; rulings l.22291, l.23320, l.23532, l.23643). DEF-290'S
+// SELF-WIRING EXEMPTION ADMITTED BY THE HOLDER'S ROOT, NOT BY THE STORAGE WRITTEN: a store whose target reaches the holder through a pointer
+// (`(<-(h.a)).p = ...`, `h.a.p = ...`) is self-wiring now only when the address stored is taken through that same pointer place (`@((<-(h.a)).k)`),
+// or the pointer value stored is read through it, a slice on either path standing as the base before any pointer; anything else falls to the
+// BORROW-002 refusal, as its by-name spelling does. WAY OUT of DEF-741 (the range dropped): exit 67 on every road 0-8 at -O0 and exit 67 on every
+// road 0-8 at -O2, 67 under the detector on main (226ebb99) and here. DEF-741 (LOW, fails closed, made by this row; l.23643 ruled item 2): N730
+// takes a slice base before any pointer as the self-wiring store's base. So when the store's target crosses a range through a pointer local or a
+// holder field, a right store is refused (BORROW-002), while its by-name spelling is accepted. Way out: drop the range, or spell the store by name;
+// BORROW-002's text names neither.  From AFA's cells, `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/n8/afa_n_inl_wo.npk`.
+mod:self_wire_def741_wayout_afa_n_inl_wo_ok;
+error:E5;
+struct:S = { int64:k; int64->:p; };
+struct:W = { S[2]:a; int64:z; };
+func:clob = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:f = W(move W:w, int64:n) never fails { pass w; };
+func:g = int64(int64:n) never fails { int64:z = 2i64; W:w = W{ a: [S{ k: 2i64, p: @z }, S{ k: 3i64, p: @z }], z: 0i64 }; S[2]->:ap = @(w.a); (<-ap)[0i64].p = @((<-ap)[1i64].k); pass (<-(w.a[0i64].p)) + 4i64; };
+func:main = int32(cstring[]:argv) { exit (((raw g(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

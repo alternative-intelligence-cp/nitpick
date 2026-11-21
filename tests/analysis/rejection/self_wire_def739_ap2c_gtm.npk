@@ -1,0 +1,39 @@
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 17:138
+// 2026-11-21 (landing 177d2e, row 7: DEF-718, form P2-1d = P2-1c with N718; rulings l.22510, l.23320, l.23532). DEF-290'S SELF-WIRING EXEMPTION
+// MARKED THE POINTER, NOT THE STORAGE: a self-wiring store through a pointer (`(<-sp).p = @((<-sp).k)`) now marks each address target of that
+// pointer as its store by name would be (`s.p = @s.k`), walked on through its own pointer base and through a slice view on the path, a view taken
+// through a pointer too; where the walk can't name the storage (its fuel of 8 spent, a pointer read out of a call's result, no address target), the
+// store is refused (BORROW-009). PRICE OFF PARITY, DEF-739 (LOW, fails closed, made by this row; l.23532 item 4): the fail-closed arm (BORROW-009)
+// refuses a right self-wiring store through a call's or method's result, or past 8 pointer hops. Way out: the by-name spelling. On main (226ebb99)
+// it exits 67 on every road 0-8 at -O0 and -O2 and under the detector; refused here (BORROW-009). Its way out:
+// `self_wire_def739_wayout_ap2c_gtq_bn_ok.npk` (the by-name spelling of a call's result). From seat AP2C's cells,
+// `.internal/atk-177d2e-ap2c-2026-11-20/cells/c9/ap2c_gtm_ok.npk`.
+mod:self_wire_def739_ap2c_gtm;
+error:E5;
+struct:S = { int64:k; int64->:p; };
+struct:SH = { S->:q; int64:z; };
+impl:SH = { func:gm = S->(SH->:self) never fails { pass self.q; }; };
+func:f = int64(int64:n) never fails { int64:z = 2i64; S:s = S{ k: 2i64, p: @z }; SH:h = SH{ q: @s, z: 0i64 }; S->:sp = raw h.gm(); (<-sp).p = @((<-sp).k); pass (<-(s.p)); };
+func:g = int64(int64:n) never fails { int64:v = raw f(n); int64:junk = raw clob(n); pass v + junk - 9i64; };
+func:clob = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:main = int32(cstring[]:argv) { int64:v = raw g(argv.len - 1i64); exit ((v + 65i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

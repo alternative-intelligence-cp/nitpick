@@ -1,0 +1,124 @@
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 64:17
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 68:17
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 83:17
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 84:18
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 85:20
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 86:19
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 87:22
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 88:16
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 89:24
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 90:20
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 91:26
+mod:dyn_place_transfer;
+error:E9;
+
+// A COERCION TO `dyn` IS A TRANSFER (D-370, `NITPICK-TYPE-116`, ruled 2026-11-20). An argument to a `dyn` parameter that isn't `move`
+// may not be a place -- a name, a field, an element or a dereference, under any cast -- whose type owns memory (D-183); a bare `T`
+// counts unless bounded by `Copy`. On main the coercion copied the place into the `dyn`'s cell, sharing what it owns: the cell's drop
+// freed it under the place (DEF-710) and a `Self->` method freed or replaced what the place still names (DEF-715). Every call road
+// comes through `check_args`: a direct call, a method's argument, a qualified call, a function value, a variadic element, an identity
+// cast, a generic `T`, a trait with no `Self->` method. The roads at the end compile: `move(h)`, a `dyn` held from the start, a
+// copyable place (copied), a pointer through a bound, a concrete pointer. The other coercion sites: `dyn_place_sites.npk`.
+trait:Tr = { func:peek = int32(Self:self) never fails; func:op = NIL(Self->:self) never fails; };
+struct:DHold = { buffer:b; };
+impl:DHold:Tr = {
+    func:peek = int32(DHold:self) never fails { pass (self.b[0i64] => int32); };
+    func:op = NIL(DHold->:self) never fails {
+        buffer:nb = buffer_new(16i64);
+        nb[0i64] = 7u8;
+        self.b = move(nb);
+        pass NIL;
+    };
+};
+func:callit = NIL(dyn Tr:d) never fails {
+    drop d.op();
+    pass NIL;
+};
+func:mkh = DHold() never fails {
+    buffer:bb = buffer_new(4096i64);
+    bb[0i64] = 5u8;
+    pass DHold{ b: move(bb) };
+};
+trait:Pk = { func:look = int32(Self:self) never fails; };
+impl:DHold:Pk = { func:look = int32(DHold:self) never fails { pass (self.b[0i64] => int32); }; };
+func:lookit = int32(dyn Pk:d) never fails { pass raw d.look(); };
+struct:W = { DHold:h; };
+struct:K = { int32:z; };
+trait:Runner = { func:run = NIL(Self:self, dyn Tr:d) never fails; };
+impl:K:Runner = { func:run = NIL(K:self, dyn Tr:d) never fails { drop d.op(); pass NIL; }; };
+func:calli = int32(dyn Tr:d) never fails { drop d.op(); pass 1i32; };
+struct:Ops = { func int32(dyn Tr):op; };
+func:callv = NIL(int32:n, ..*(dyn Tr)[]:ds) never fails { drop ds[0i64].op(); pass NIL; };
+func:through = NIL(DHold->:p) never fails {
+    drop callit(<-p);   // site NITPICK-TYPE-116
+    pass NIL;
+};
+func:gen<T: Tr> = NIL(T:t) never fails {
+    drop callit(t);   // site NITPICK-TYPE-116
+    pass NIL;
+};
+func:gptr<T: Tr> = NIL(T->:p) never fails { drop Tr.op(p); pass NIL; };
+struct:CP = { int32:v; };
+impl:CP:Tr = {
+    func:peek = int32(CP:self) never fails { pass self.v; };
+    func:op = NIL(CP->:self) never fails { self.v = 7i32; pass NIL; };
+};
+func:work = int32() {
+    DHold:h = raw mkh();
+    W:w = W{ h: raw mkh() };
+    DHold[1]:arr = [raw mkh()];
+    K:k = K{ z: 1i32 };
+    Ops:o = Ops{ op: calli };
+    drop callit(h);   // site NITPICK-TYPE-116
+    drop callit(w.h);   // site NITPICK-TYPE-116
+    drop callit(arr[0i64]);   // site NITPICK-TYPE-116
+    drop callit(h => DHold);   // site NITPICK-TYPE-116
+    drop callv(1i32, h);   // site NITPICK-TYPE-116
+    drop k.run(h);   // site NITPICK-TYPE-116
+    drop Runner.run(k, h);   // site NITPICK-TYPE-116
+    int32:z = o.op(h) ?| 0i32;   // site NITPICK-TYPE-116
+    int32:y = raw lookit(h);   // site NITPICK-TYPE-116
+    drop through(@h);
+    drop gen(raw mkh());
+    DHold:h2 = raw mkh();
+    drop callit(move(h2));
+    DHold:h3 = raw mkh();
+    dyn Tr:d = move(h3);
+    drop callit(d);
+    CP:c = CP{ v: 5i32 };
+    drop callit(c);
+    drop gptr(@h);
+    pass (z + y + c.v);
+};
+func:main = int32(cstring[]:_~argv) {
+    int32:v = work() ?! E9;
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 96i32; },
+        (MachineFault)   { exit 97i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 94i32; },
+        (OutOfBounds)    { exit 93i32; },
+        (IntOverflow)    { exit 90i32; },
+        (DeadlineExceeded) { exit 89i32; },
+        (E9)             { exit 9i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};

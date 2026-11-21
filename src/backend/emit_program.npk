@@ -546,7 +546,7 @@ func:emit_family_instance = NIL(ExprEmitter->:x, DiagList->:diags,
     IrVal:r = raw emit_fn_instance(x, DeclId{ index: inst.decl },
                   inst.args_start, inst.args_count,
                   inst.params_start, inst.params_count,
-                  raw impl_method_sym(x, x.tr.self_type, fam_trait_ty, im));
+                  raw impl_method_sym(x, x.tr.self_type, fam_trait_ty, im), inst.at);
 
     x.cur_trait = fam_saved_trait;
     x.cur_impl = fam_saved_impl;
@@ -1371,7 +1371,7 @@ pub func:emit_all = bool(IrWriter->:w, ModuleGraph->:g, TypeTable->:types,
         IrVal:ir = raw emit_fn_instance(@xi, DeclId{ index: inst.decl },
                                           inst.args_start, inst.args_count,
                                           inst.params_start, inst.params_count,
-                                          raw fninst_symbol(@g.ast, @c, inst));
+                                          raw fninst_symbol(@g.ast, @c, inst), inst.at);
         if (pfi) { drop irw_item_end(w); }
         if (!(raw iv_is_ok(ir))) { drop refuse(diags, ir); }
         fi = fi + 1i32;

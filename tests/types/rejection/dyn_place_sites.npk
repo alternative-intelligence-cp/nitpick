@@ -1,0 +1,85 @@
+// expect-error: NITPICK-TYPE-047
+// expect-error-at: 46:48
+// expect-error: NITPICK-TYPE-047
+// expect-error-at: 47:46
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 51:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 54:5
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 55:11
+// expect-error: NITPICK-TYPE-046
+// expect-error-at: 56:19
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 58:16
+mod:dyn_place_sites;
+error:E9;
+
+// D-370 PINS THE OTHER COERCION SITES BESIDE THE PARAMETER ROAD (`dyn_place_transfer.npk`): a coercion to `dyn` is a transfer at
+// every site, and from an owning place each needs `move` -- a local, an assignment and a cast (`NITPICK-TYPE-046`), a struct
+// literal's `dyn` field (`NITPICK-TYPE-046`), a return of a lent parameter or of a field through a pointer (`NITPICK-TYPE-047`). A
+// return of a local is the implicit move at `pass` (D-183), a transfer, and compiles. A spread `..^` of a slice of a concrete type into
+// a `..*(dyn Tr)[]` tail is a type mismatch (`NITPICK-TYPE-007`); a spread of a slice of `dyn` compiles.
+trait:Tr = { func:peek = int32(Self:self) never fails; func:op = NIL(Self->:self) never fails; };
+struct:DHold = { buffer:b; };
+impl:DHold:Tr = {
+    func:peek = int32(DHold:self) never fails { pass (self.b[0i64] => int32); };
+    func:op = NIL(DHold->:self) never fails {
+        buffer:nb = buffer_new(16i64);
+        nb[0i64] = 7u8;
+        self.b = move(nb);
+        pass NIL;
+    };
+};
+func:callit = NIL(dyn Tr:d) never fails {
+    drop d.op();
+    pass NIL;
+};
+func:mkh = DHold() never fails {
+    buffer:bb = buffer_new(4096i64);
+    bb[0i64] = 5u8;
+    pass DHold{ b: move(bb) };
+};
+struct:S = { dyn Tr:d; };
+struct:W = { DHold:h; };
+func:callv = NIL(..*(dyn Tr)[]:ds) never fails { drop ds[0i64].op(); pass NIL; };
+func:ret_param = dyn Tr(DHold:h) never fails { pass h; };   // site NITPICK-TYPE-047
+func:ret_field = dyn Tr(W->:w) never fails { pass w.h; };   // site NITPICK-TYPE-047
+func:ret_local = dyn Tr() never fails { DHold:h = raw mkh(); pass h; };
+func:work = int32() {
+    DHold:h = raw mkh();
+    dyn Tr:d1 = h;   // site NITPICK-TYPE-046
+    DHold:h2 = raw mkh();
+    dyn Tr:d2 = move(h2);
+    d2 = h;   // site NITPICK-TYPE-046
+    S:s = S{ d: h };   // site NITPICK-TYPE-046
+    drop callit(h => dyn Tr);   // site NITPICK-TYPE-046
+    DHold[1]:arr = [raw mkh()];
+    drop callv(..^(arr[0i64...1i64]));   // site NITPICK-TYPE-007
+    dyn Tr:d3 = raw ret_local();
+    dyn Tr:d4 = move(d3);
+    (dyn Tr)[1]:da = [move(d4)];
+    drop callv(..^(da[0i64...1i64]));
+    pass 0i32;
+};
+func:main = int32(cstring[]:_~argv) {
+    int32:v = work() ?! E9;
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 96i32; },
+        (MachineFault)   { exit 97i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 94i32; },
+        (OutOfBounds)    { exit 93i32; },
+        (IntOverflow)    { exit 90i32; },
+        (DeadlineExceeded) { exit 89i32; },
+        (E9)             { exit 9i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};

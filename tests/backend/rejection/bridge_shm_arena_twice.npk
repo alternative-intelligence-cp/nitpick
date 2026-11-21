@@ -1,0 +1,61 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 27:10
+// 2026-11-21 (landing 177d2e, row 12: DEF-719, form LBSG, `lib/nbridge.npk` alone; rulings l.23291, l.23619). `Shm`'s descriptor is hidden, `Shm`
+// is move-only by its marker, `shm_unmap` takes `move Shm` and closes the descriptor after the unmap, and `shm_seal_holds` is the public seal query
+// (D-149's note). The cell by its bytes, its `use` re-pointed from the attack's tree to this one. ROW 5 MEETS ROW 12, AN ORDER (l.23619 ruled item
+// 3): a generic `shared_arena<T>` handing one `Shm` out twice. With this row's library alone it is accepted and writes the unmapped region through
+// DEF-528's generic road (77 on every road, main's compiler and row 1's); row 5 refuses it (TYPE-007, at the generic instance: emission's suite, as
+// row 5's DEF-528 cells, since `tools/check` doesn't reach it). So row 12 lands after row 5, as the row list orders, and no commit exposes it. On
+// main's library the cell is TYPE-007 too, since main's `shm_unmap` takes `@s`; there the double unmap is DEF-719's own face. From seat AFB's cell
+// `Team/TMP/atk-177d2e-afb-2026-11-21/cells/lbsg/afb_l_arena.npk`.
+mod:bridge_shm_arena_twice;
+use "../../../lib/nbridge.npk".*;
+error:E9;
+func:sdup2<T> = NIL(move T:v, T->:o1, T->:o2) {
+    shared_arena<T>:a = shared_arena_make(4i64);
+    Handle<T>:h = a.alloc(move(v));
+    T:c1 = a.get(h) ?! E9;
+    T:c2 = a.get(h) ?! E9;
+    <-o1 = move(c1);
+    <-o2 = move(c2);
+    pass NIL;
+};
+func:main = int32(cstring[]:argv) {
+    Shm:s = shm_create_sealed(4096i64) ?! E9;
+    Shm:x = shm_create_sealed(4096i64) ?! E9;
+    Shm:y = shm_create_sealed(4096i64) ?! E9;
+    sdup2(move(s), @x, @y) ?! E9;
+    shm_unmap(move(x)) ?! E9;
+    <-(#ptr_add<int8>(y.base, 8i64)) = 1i8;
+    exit 67i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (E9)               { exit 91i32; },
+        (BadPath)          { exit 92i32; },
+        (EDriverSpawn)     { exit 93i32; },
+        (EDriverFault)     { exit 94i32; },
+        (EDriverProtocol)  { exit 95i32; },
+        (EDriverDeadline)  { exit 96i32; },
+        (EDriverError)     { exit 84i32; },
+        (ERingFull)        { exit 85i32; },
+        (EBridgePoisoned)  { exit 83i32; },
+        (EShmCreate)       { exit 97i32; },
+        (EShmSeal)         { exit 97i32; },
+        (EShmMap)          { exit 97i32; },
+        (DeadlineExceeded) { exit 98i32; },
+        (DriverLeak)       { exit 89i32; },
+        (IntOverflow)      { exit 75i32; },
+        (OutOfBounds)      { exit 76i32; },
+        (MachineFault)     { exit 77i32; },
+        (WildLeak)         { exit 88i32; },
+        (Unreachable)      { exit 87i32; },
+        (HeapOom)          { exit 87i32; },
+        (HeapBadRequest)   { exit 87i32; },
+        (StackExhausted)   { exit 78i32; },
+        (DecreasesViolated) { exit 79i32; },
+        (StaleHandle)      { exit 86i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 90i32;
+};

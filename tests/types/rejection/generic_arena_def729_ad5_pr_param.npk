@@ -1,0 +1,38 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 16:95
+// 2026-11-21 (landing 177d2e, row 5: DEF-528, form D528-4; rulings l.22208, l.22666). D-183'S QUESTION AT THE INSTANCE: a generic `arena<T>` or
+// `shared_arena<T>` whose substituted element owns heap storage (a `string`, a `dyn Tr`, a guard holder) is refused NITPICK-TYPE-007 at the
+// instance (`type_subst`'s arena arms ask `type_drops`), as the same arena spelled at the concrete type is on main. PRICE OFF PARITY, DEF-729 (LOW,
+// fails closed, made by this row; l.22208 item 3): a generic arena named at an owning element in a struct field or a parameter, with no arena made,
+// is refused at the instance while the same program spelled at the concrete type is accepted. Way out: spell the instance, or keep the arena out of
+// the generic signature or field. Its lift, a narrower text that asks D-183's question where an arena is made, is sized at DEF-528's next row. A
+// generic function naming `shared_arena<T>->?` in its parameters (`func:cnt<T> = int64(shared_arena<T>->?:o, T->:x)`), called with `NIL` at
+// `string` by inference: exit 67 on main (226ebb99) on every road 0-8, -O0 and -O2, and under the detector; refused here at the instance. Its way
+// out runs: `generic_arena_def729_param_tw_ok.npk`. From seat AD528's cells, `Team/TMP/atk-177d2e-ad528-2026-11-20/cells/p6/ad5_pr_param.npk`.
+mod:generic_arena_def729_ad5_pr_param;
+error:E5;
+error:E9;
+func:cnt<T> = int64(shared_arena<T>->?:o, T->:x) { if (o == NIL) { pass 67i64; } pass 1i64; };
+async func:main = int32(cstring[]:_~argv) { string:s = string_concat("ab","cd"); int64:r = cnt(NIL, @s) ?! E5; if (r == 67i64) { exit 67i32; } exit 83i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 80i32; },
+        (E9)               { exit 75i32; },
+        (TbbErr)           { exit 79i32; },
+        (DeadlineExceeded) { exit 78i32; },
+        (StaleHandle)      { exit 77i32; },
+        (ChannelClosed)    { exit 76i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

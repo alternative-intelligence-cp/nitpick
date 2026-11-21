@@ -1,0 +1,355 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 57:107
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 73:133
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 89:131
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 104:120
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 120:128
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 136:122
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 152:107
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 152:139
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 168:111
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 184:110
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 200:109
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 216:122
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 232:105
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 250:109
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 269:124
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 289:113
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 309:114
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 329:105
+// 2026-11-21 (landing 177d2e, row 10: DEF-720 with DEF-644's rest, DEF-691 and DEF-694's lift, form RRs; rulings l.23411, l.23500, l.23643). AN
+// UNWRAP OF A POINTER IS READ TWO WAYS, BOTH KEPT: the alias pass walks a function as main does, an unwrap no step and the place under it its root
+// whole, and when that walk met an unwrap of a pointer it walks the function again with every unwrap a step to its operand (the longer path, which
+// re-roots through the pointer), one report per site; escape roots a view through a local's or a field's unwrap too, and an unwrap whose value is
+// itself a wrapped pointer steps as well. THE BAR (l.23411 items 1, 6 and 8): the 17 releases of the longer path's walk alone (P3-1), each a freed
+// read on that build and refused on main. This row refuses each at main's code and site, since its first walk is main's own reading. `ap3_rs_pwm`,
+// `ap3_rs_pwg` and `m73_ssw3` are row 9's bar files too.
+mod:unwrap_reading_bar;
+error:E5;
+// THE BAR (l.23411 items 1 and 8): one of the 17 releases of the longer path alone (P3-1), a freed read on that build; main refuses it, BORROW-015
+// at 11:87, and this row at the same code and site, since its first walk is main's reading. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_m74/ap3_ssu_p.npk`.
+func:mk_ap3_ssu_p = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_ssu_p = { List<int64>:l; int64:z; };
+func:idl_ap3_ssu_p = L_ap3_ssu_p->(L_ap3_ssu_p->:p) never fails { pass p; };
+func:ido_ap3_ssu_p = L_ap3_ssu_p->?(L_ap3_ssu_p->?:p) never fails { pass p; };
+func:growl_ap3_ssu_p = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3_ssu_p = { SS_ap3_ssu_p->?:p; List<int64>:own; int64:z; };
+func:link_ap3_ssu_p = int64(SS_ap3_ssu_p->:x) never fails { (<-x).p = x; pass 7i64; };
+func:wss_ap3_ssu_p = int64(SS_ap3_ssu_p->:x) never fails { (<-x).own = raw mk_ap3_ssu_p(); pass 7i64; };
+func:g2_ap3_ssu_p = int64(SS_ap3_ssu_p->:s) never fails { int64->:e = @((<-(s.p ??! E5)).own[0i64]); (<-s).own = raw mk_ap3_ssu_p(); pass (<-e) + 6i64; };
+func:f_ap3_ssu_p = int64(int64:n) never fails {
+    SS_ap3_ssu_p:so = SS_ap3_ssu_p{ p: NIL, own: raw mk_ap3_ssu_p(), z: 1i64 }; discard(raw link_ap3_ssu_p(@so)); pass raw g2_ap3_ssu_p(@so);
+};
+func:cell_main_ap3_ssu_p = int32() never fails { pass (((raw f_ap3_ssu_p(1i64)) + 60i64) =>! int32); };
+// THE BAR (l.23411 items 1 and 8): one of the 17 releases of the longer path alone (P3-1), a freed read on that build; main refuses it, BORROW-015
+// at 11:100, and this row at the same code and site, since its first walk is main's reading. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_m74/ap3_ssu_pg.npk`.
+func:mk_ap3_ssu_pg = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_ssu_pg = { List<int64>:l; int64:z; };
+func:idl_ap3_ssu_pg = L_ap3_ssu_pg->(L_ap3_ssu_pg->:p) never fails { pass p; };
+func:ido_ap3_ssu_pg = L_ap3_ssu_pg->?(L_ap3_ssu_pg->?:p) never fails { pass p; };
+func:growl_ap3_ssu_pg = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3_ssu_pg = { SS_ap3_ssu_pg->?:p; List<int64>:own; int64:z; };
+func:link_ap3_ssu_pg = int64(SS_ap3_ssu_pg->:x) never fails { (<-x).p = x; pass 7i64; };
+func:wss_ap3_ssu_pg = int64(SS_ap3_ssu_pg->:x) never fails { (<-x).own = raw mk_ap3_ssu_pg(); pass 7i64; };
+func:g2_ap3_ssu_pg = int64(SS_ap3_ssu_pg->:s) never fails { int64->:e = @((<-(s.p ??! E5)).own[0i64]); discard(raw growl_ap3_ssu_pg(@((<-s).own))); pass (<-e) + 6i64; };
+func:f_ap3_ssu_pg = int64(int64:n) never fails {
+    SS_ap3_ssu_pg:so = SS_ap3_ssu_pg{ p: NIL, own: raw mk_ap3_ssu_pg(), z: 1i64 }; discard(raw link_ap3_ssu_pg(@so)); pass raw g2_ap3_ssu_pg(@so);
+};
+func:cell_main_ap3_ssu_pg = int32() never fails { pass (((raw f_ap3_ssu_pg(1i64)) + 60i64) =>! int32); };
+// THE BAR (l.23411 items 1 and 8): one of the 17 releases of the longer path alone (P3-1), a freed read on that build; main refuses it, BORROW-015
+// at 11:98, and this row at the same code and site, since its first walk is main's reading. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_m74/ap3_ssu_pw.npk`.
+func:mk_ap3_ssu_pw = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_ssu_pw = { List<int64>:l; int64:z; };
+func:idl_ap3_ssu_pw = L_ap3_ssu_pw->(L_ap3_ssu_pw->:p) never fails { pass p; };
+func:ido_ap3_ssu_pw = L_ap3_ssu_pw->?(L_ap3_ssu_pw->?:p) never fails { pass p; };
+func:growl_ap3_ssu_pw = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3_ssu_pw = { SS_ap3_ssu_pw->?:p; List<int64>:own; int64:z; };
+func:link_ap3_ssu_pw = int64(SS_ap3_ssu_pw->:x) never fails { (<-x).p = x; pass 7i64; };
+func:wss_ap3_ssu_pw = int64(SS_ap3_ssu_pw->:x) never fails { (<-x).own = raw mk_ap3_ssu_pw(); pass 7i64; };
+func:g2_ap3_ssu_pw = int64(SS_ap3_ssu_pw->:s) never fails { int64->:e = @((<-(s.p ??! E5)).own[0i64]); discard(raw wss_ap3_ssu_pw(s)); pass (<-e) + 6i64; };
+func:f_ap3_ssu_pw = int64(int64:n) never fails {
+    SS_ap3_ssu_pw:so = SS_ap3_ssu_pw{ p: NIL, own: raw mk_ap3_ssu_pw(), z: 1i64 }; discard(raw link_ap3_ssu_pw(@so)); pass raw g2_ap3_ssu_pw(@so);
+};
+func:cell_main_ap3_ssu_pw = int32() never fails { pass (((raw f_ap3_ssu_pw(1i64)) + 60i64) =>! int32); };
+// THE BAR (l.23411 items 1 and 8): one of the 17 releases of the longer path alone (P3-1), a freed read on that build; main refuses it, BORROW-015
+// at 10:102, and this row at the same code and site, since its first walk is main's reading. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_m74/ap3_mu_p.npk`.
+func:mk_ap3_mu_p = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_mu_p = { List<int64>:l; int64:z; };
+func:idl_ap3_mu_p = L_ap3_mu_p->(L_ap3_mu_p->:p) never fails { pass p; };
+func:ido_ap3_mu_p = L_ap3_mu_p->?(L_ap3_mu_p->?:p) never fails { pass p; };
+func:growl_ap3_mu_p = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:MB_ap3_mu_p = { MA_ap3_mu_p->?:a; int64:z; };
+struct:MA_ap3_mu_p = { MB_ap3_mu_p->?:b; List<int64>:own; int64:z; };
+func:g2_ap3_mu_p = int64(MA_ap3_mu_p->:s) never fails { int64->:e = @((<-((<-(s.b ??! E5)).a ??! E5)).own[0i64]); (<-s).own = raw mk_ap3_mu_p(); pass (<-e) + 6i64; };
+func:f_ap3_mu_p = int64(int64:n) never fails {
+    MA_ap3_mu_p:ma = MA_ap3_mu_p{ b: NIL, own: raw mk_ap3_mu_p(), z: 1i64 }; MB_ap3_mu_p:mb = MB_ap3_mu_p{ a: NIL, z: 1i64 }; ma.b = @mb; mb.a = @ma; pass raw g2_ap3_mu_p(@ma);
+};
+func:cell_main_ap3_mu_p = int32() never fails { pass (((raw f_ap3_mu_p(1i64)) + 60i64) =>! int32); };
+// THE BAR (l.23411 items 1 and 8): one of the 17 releases of the longer path alone (P3-1), a freed read on that build; main refuses it, BORROW-015
+// at 11:108, and this row at the same code and site, since its first walk is main's reading. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_g2/ap3_rs_pm.npk`.
+func:mk_ap3_rs_pm = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rs_pm = { List<int64>:l; int64:z; };
+func:idl_ap3_rs_pm = L_ap3_rs_pm->(L_ap3_rs_pm->:p) never fails { pass p; };
+func:ido_ap3_rs_pm = L_ap3_rs_pm->?(L_ap3_rs_pm->?:p) never fails { pass p; };
+func:growl_ap3_rs_pm = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3_rs_pm = { SS_ap3_rs_pm->?:p; List<int64>:own; int64:z; };
+func:link_ap3_rs_pm = int64(SS_ap3_rs_pm->:x) never fails { (<-x).p = x; pass 7i64; };
+func:wss_ap3_rs_pm = int64(SS_ap3_rs_pm->:x) never fails { (<-x).own = raw mk_ap3_rs_pm(); pass 7i64; };
+impl:SS_ap3_rs_pm = { func:gm = int64(SS_ap3_rs_pm->:self) never fails { int64->:e = @((<-(self.p ??! E5)).own[0i64]); (<-self).own = raw mk_ap3_rs_pm(); pass (<-e) + 6i64; }; };
+func:f_ap3_rs_pm = int64(int64:n) never fails {
+    SS_ap3_rs_pm:so = SS_ap3_rs_pm{ p: NIL, own: raw mk_ap3_rs_pm(), z: 1i64 }; discard(raw link_ap3_rs_pm(@so)); SS_ap3_rs_pm->:sp = @so; pass raw sp.gm();
+};
+func:cell_main_ap3_rs_pm = int32() never fails { pass (((raw f_ap3_rs_pm(1i64)) + 60i64) =>! int32); };
+// THE BAR (l.23411 items 1 and 8): one of the 17 releases of the longer path alone (P3-1), a freed read on that build; main refuses it, BORROW-015
+// at 11:102, and this row at the same code and site, since its first walk is main's reading. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_g2/ap3_rs_pp.npk`.
+func:mk_ap3_rs_pp = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rs_pp = { List<int64>:l; int64:z; };
+func:idl_ap3_rs_pp = L_ap3_rs_pp->(L_ap3_rs_pp->:p) never fails { pass p; };
+func:ido_ap3_rs_pp = L_ap3_rs_pp->?(L_ap3_rs_pp->?:p) never fails { pass p; };
+func:growl_ap3_rs_pp = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3_rs_pp = { SS_ap3_rs_pp->?:p; List<int64>:own; int64:z; };
+func:link_ap3_rs_pp = int64(SS_ap3_rs_pp->:x) never fails { (<-x).p = x; pass 7i64; };
+func:wss_ap3_rs_pp = int64(SS_ap3_rs_pp->:x) never fails { (<-x).own = raw mk_ap3_rs_pp(); pass 7i64; };
+func:g2_ap3_rs_pp = int64(SS_ap3_rs_pp->:s) never fails { int64->:e = @((<-((<-(s.p ??! E5)).p ??! E5)).own[0i64]); (<-s).own = raw mk_ap3_rs_pp(); pass (<-e) + 6i64; };
+func:f_ap3_rs_pp = int64(int64:n) never fails {
+    SS_ap3_rs_pp:so = SS_ap3_rs_pp{ p: NIL, own: raw mk_ap3_rs_pp(), z: 1i64 }; discard(raw link_ap3_rs_pp(@so)); pass raw g2_ap3_rs_pp(@so);
+};
+func:cell_main_ap3_rs_pp = int32() never fails { pass (((raw f_ap3_rs_pp(1i64)) + 60i64) =>! int32); };
+// THE BAR (l.23411 items 1 and 8): one of the 17 releases of the longer path alone (P3-1), a freed read on that build; main refuses it, BORROW-015
+// at 11:87, BORROW-015 at 11:109, and this row at the same code and site, since its first walk is main's reading. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_g2/ap3_rs_pz.npk`.
+func:mk_ap3_rs_pz = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rs_pz = { List<int64>:l; int64:z; };
+func:idl_ap3_rs_pz = L_ap3_rs_pz->(L_ap3_rs_pz->:p) never fails { pass p; };
+func:ido_ap3_rs_pz = L_ap3_rs_pz->?(L_ap3_rs_pz->?:p) never fails { pass p; };
+func:growl_ap3_rs_pz = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3_rs_pz = { SS_ap3_rs_pz->?:p; List<int64>:own; int64:z; };
+func:link_ap3_rs_pz = int64(SS_ap3_rs_pz->:x) never fails { (<-x).p = x; pass 7i64; };
+func:wss_ap3_rs_pz = int64(SS_ap3_rs_pz->:x) never fails { (<-x).own = raw mk_ap3_rs_pz(); pass 7i64; };
+func:g2_ap3_rs_pz = int64(SS_ap3_rs_pz->:s) never fails { int64->:e = @((<-(s.p ??! E5)).own[0i64]); (<-s).own = raw mk_ap3_rs_pz(); (<-s).z = 3i64; pass (<-e) + 6i64; };
+func:f_ap3_rs_pz = int64(int64:n) never fails {
+    SS_ap3_rs_pz:so = SS_ap3_rs_pz{ p: NIL, own: raw mk_ap3_rs_pz(), z: 1i64 }; discard(raw link_ap3_rs_pz(@so)); pass raw g2_ap3_rs_pz(@so);
+};
+func:cell_main_ap3_rs_pz = int32() never fails { pass (((raw f_ap3_rs_pz(1i64)) + 60i64) =>! int32); };
+// THE BAR (l.23411 items 1 and 8): one of the 17 releases of the longer path alone (P3-1), a freed read on that build; main refuses it, BORROW-015
+// at 11:91, and this row at the same code and site, since its first walk is main's reading. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_g2/ap3_rs_si.npk`.
+func:mk_ap3_rs_si = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rs_si = { List<int64>:l; int64:z; };
+func:idl_ap3_rs_si = L_ap3_rs_si->(L_ap3_rs_si->:p) never fails { pass p; };
+func:ido_ap3_rs_si = L_ap3_rs_si->?(L_ap3_rs_si->?:p) never fails { pass p; };
+func:growl_ap3_rs_si = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:IN_ap3_rs_si = { List<int64>:own; int64:z; };
+struct:SI_ap3_rs_si = { IN_ap3_rs_si->?:p; IN_ap3_rs_si:sub; int64:z; };
+func:linki_ap3_rs_si = int64(SI_ap3_rs_si->:x) never fails { (<-x).p = @((<-x).sub); pass 7i64; };
+func:g2_ap3_rs_si = int64(SI_ap3_rs_si->:s) never fails { int64->:e = @((<-(s.p ??! E5)).own[0i64]); (<-s).sub.own = raw mk_ap3_rs_si(); pass (<-e) + 6i64; };
+func:f_ap3_rs_si = int64(int64:n) never fails {
+    SI_ap3_rs_si:so = SI_ap3_rs_si{ p: NIL, sub: IN_ap3_rs_si{ own: raw mk_ap3_rs_si(), z: 1i64 }, z: 1i64 }; discard(raw linki_ap3_rs_si(@so)); pass raw g2_ap3_rs_si(@so);
+};
+func:cell_main_ap3_rs_si = int32() never fails { pass (((raw f_ap3_rs_si(1i64)) + 60i64) =>! int32); };
+// THE BAR (l.23411 items 1 and 8): one of the 17 releases of the longer path alone (P3-1), a freed read on that build; main refuses it, BORROW-015
+// at 11:90, and this row at the same code and site, since its first walk is main's reading. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_g2/ap3_rs_up.npk`.
+func:mk_ap3_rs_up = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rs_up = { List<int64>:l; int64:z; };
+func:idl_ap3_rs_up = L_ap3_rs_up->(L_ap3_rs_up->:p) never fails { pass p; };
+func:ido_ap3_rs_up = L_ap3_rs_up->?(L_ap3_rs_up->?:p) never fails { pass p; };
+func:growl_ap3_rs_up = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:UC_ap3_rs_up = { UP_ap3_rs_up->?:up; int64:z; };
+struct:UP_ap3_rs_up = { List<int64>:own; UC_ap3_rs_up:c; int64:z; };
+func:linku_ap3_rs_up = int64(UP_ap3_rs_up->:x) never fails { (<-x).c.up = x; pass 7i64; };
+func:g2_ap3_rs_up = int64(UP_ap3_rs_up->:s) never fails { int64->:e = @((<-(s.c.up ??! E5)).own[0i64]); (<-s).own = raw mk_ap3_rs_up(); pass (<-e) + 6i64; };
+func:f_ap3_rs_up = int64(int64:n) never fails {
+    UP_ap3_rs_up:so = UP_ap3_rs_up{ own: raw mk_ap3_rs_up(), c: UC_ap3_rs_up{ up: NIL, z: 1i64 }, z: 1i64 }; discard(raw linku_ap3_rs_up(@so)); pass raw g2_ap3_rs_up(@so);
+};
+func:cell_main_ap3_rs_up = int32() never fails { pass (((raw f_ap3_rs_up(1i64)) + 60i64) =>! int32); };
+// THE BAR (l.23411 items 1 and 8): one of the 17 releases of the longer path alone (P3-1), a freed read on that build; main refuses it, BORROW-015
+// at 11:87, and this row at the same code and site, since its first walk is main's reading. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_g2/ap3_rs_pwm.npk`.
+func:mk_ap3_rs_pwm = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rs_pwm = { List<int64>:l; int64:z; };
+func:idl_ap3_rs_pwm = L_ap3_rs_pwm->(L_ap3_rs_pwm->:p) never fails { pass p; };
+func:ido_ap3_rs_pwm = L_ap3_rs_pwm->?(L_ap3_rs_pwm->?:p) never fails { pass p; };
+func:growl_ap3_rs_pwm = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3_rs_pwm = { SS_ap3_rs_pwm->?:p; List<int64>:own; int64:z; };
+func:link_ap3_rs_pwm = int64(SS_ap3_rs_pwm->:x) never fails { (<-x).p = x; pass 7i64; };
+func:wss_ap3_rs_pwm = int64(SS_ap3_rs_pwm->:x) never fails { (<-x).own = raw mk_ap3_rs_pwm(); pass 7i64; };
+func:g2_ap3_rs_pwm = int64(SS_ap3_rs_pwm->:s) never fails { int64->:e = @((<-s).own[0i64]); (<-(s.p ??! E5)).own = raw mk_ap3_rs_pwm(); pass (<-e) + 6i64; };
+func:f_ap3_rs_pwm = int64(int64:n) never fails {
+    SS_ap3_rs_pwm:so = SS_ap3_rs_pwm{ p: NIL, own: raw mk_ap3_rs_pwm(), z: 1i64 }; discard(raw link_ap3_rs_pwm(@so)); pass raw g2_ap3_rs_pwm(@so);
+};
+func:cell_main_ap3_rs_pwm = int32() never fails { pass (((raw f_ap3_rs_pwm(1i64)) + 60i64) =>! int32); };
+// THE BAR (l.23411 items 1 and 8): one of the 17 releases of the longer path alone (P3-1), a freed read on that build; main refuses it, BORROW-015
+// at 11:89, and this row at the same code and site, since its first walk is main's reading. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_g2/ap3_rs_pwg.npk`.
+func:mk_ap3_rs_pwg = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rs_pwg = { List<int64>:l; int64:z; };
+func:idl_ap3_rs_pwg = L_ap3_rs_pwg->(L_ap3_rs_pwg->:p) never fails { pass p; };
+func:ido_ap3_rs_pwg = L_ap3_rs_pwg->?(L_ap3_rs_pwg->?:p) never fails { pass p; };
+func:growl_ap3_rs_pwg = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3_rs_pwg = { SS_ap3_rs_pwg->?:p; List<int64>:own; int64:z; };
+func:link_ap3_rs_pwg = int64(SS_ap3_rs_pwg->:x) never fails { (<-x).p = x; pass 7i64; };
+func:wss_ap3_rs_pwg = int64(SS_ap3_rs_pwg->:x) never fails { (<-x).own = raw mk_ap3_rs_pwg(); pass 7i64; };
+func:g2_ap3_rs_pwg = int64(SS_ap3_rs_pwg->:s) never fails { int64->:e = @((<-s).own[0i64]); discard(raw growl_ap3_rs_pwg(@((<-(s.p ??! E5)).own))); pass (<-e) + 6i64; };
+func:f_ap3_rs_pwg = int64(int64:n) never fails {
+    SS_ap3_rs_pwg:so = SS_ap3_rs_pwg{ p: NIL, own: raw mk_ap3_rs_pwg(), z: 1i64 }; discard(raw link_ap3_rs_pwg(@so)); pass raw g2_ap3_rs_pwg(@so);
+};
+func:cell_main_ap3_rs_pwg = int32() never fails { pass (((raw f_ap3_rs_pwg(1i64)) + 60i64) =>! int32); };
+// THE BAR (l.23411 items 1 and 8): one of the 17 releases of the longer path alone (P3-1), a freed read on that build; main refuses it, BORROW-015
+// at 11:85, and this row at the same code and site, since its first walk is main's reading. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_g2/ap3_rs_pd.npk`.
+func:mk_ap3_rs_pd = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rs_pd = { List<int64>:l; int64:z; };
+func:idl_ap3_rs_pd = L_ap3_rs_pd->(L_ap3_rs_pd->:p) never fails { pass p; };
+func:ido_ap3_rs_pd = L_ap3_rs_pd->?(L_ap3_rs_pd->?:p) never fails { pass p; };
+func:growl_ap3_rs_pd = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3_rs_pd = { SS_ap3_rs_pd->?:p; List<int64>:own; int64:z; };
+func:link_ap3_rs_pd = int64(SS_ap3_rs_pd->:x) never fails { (<-x).p = x; pass 7i64; };
+func:wss_ap3_rs_pd = int64(SS_ap3_rs_pd->:x) never fails { (<-x).own = raw mk_ap3_rs_pd(); pass 7i64; };
+func:g2_ap3_rs_pd = int64(SS_ap3_rs_pd->:s) never fails { int64->:e = @((<-(s.p ?? s)).own[0i64]); (<-s).own = raw mk_ap3_rs_pd(); pass (<-e) + 6i64; };
+func:f_ap3_rs_pd = int64(int64:n) never fails {
+    SS_ap3_rs_pd:so = SS_ap3_rs_pd{ p: NIL, own: raw mk_ap3_rs_pd(), z: 1i64 }; discard(raw link_ap3_rs_pd(@so)); pass raw g2_ap3_rs_pd(@so);
+};
+func:cell_main_ap3_rs_pd = int32() never fails { pass (((raw f_ap3_rs_pd(1i64)) + 60i64) =>! int32); };
+// THE BAR (l.23411 items 1 and 8): one of the 17 releases of the longer path alone (P3-1), a freed read on that build; main refuses it, BORROW-015
+// at 13:87, and this row at the same code and site, since its first walk is main's reading. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/ap3b_ss_bn.npk`.
+struct:HO_ap3b_ss_bn = { List<int64>:own; List<int64>:oth; int64:z; };
+struct:SOP_ap3b_ss_bn = { HO_ap3b_ss_bn->:oq; int64:z; };
+struct:SOQ_ap3b_ss_bn = { HO_ap3b_ss_bn->:oq; HO_ap3b_ss_bn->:oq2; int64:z; };
+struct:SO_ap3b_ss_bn = { HO_ap3b_ss_bn->?:oq; int64:z; };
+func:mk_ap3b_ss_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkho_ap3b_ss_bn = HO_ap3b_ss_bn() never fails { pass HO_ap3b_ss_bn{ own: raw mk_ap3b_ss_bn(), oth: raw mk_ap3b_ss_bn(), z: 1i64 }; };
+func:repo_ap3b_ss_bn = int64(HO_ap3b_ss_bn->:r) never fails { (<-r).own = raw mk_ap3b_ss_bn(); pass 7i64; };
+struct:SS_ap3b_ss_bn = { SS_ap3b_ss_bn->?:p; List<int64>:own; int64:z; };
+func:link_ap3b_ss_bn = int64(SS_ap3b_ss_bn->:x) never fails { (<-x).p = x; pass 7i64; };
+func:wss_ap3b_ss_bn = int64(SS_ap3b_ss_bn->:x) never fails { (<-x).own = raw mk_ap3b_ss_bn(); pass 7i64; };
+func:g2_ap3b_ss_bn = int64(SS_ap3b_ss_bn->:s) never fails { int64->:e = @((<-(s.p ??! E5)).own[0i64]); (<-s).own = raw mk_ap3b_ss_bn(); pass (<-e) + 6i64; };
+func:g_ap3b_ss_bn = int64(int64:n) never fails {
+    SS_ap3b_ss_bn:so = SS_ap3b_ss_bn{ p: NIL, own: raw mk_ap3b_ss_bn(), z: 1i64 }; discard(raw link_ap3b_ss_bn(@so));
+    pass raw g2_ap3b_ss_bn(@so);
+};
+func:f_ap3b_ss_bn = int64(int64:n) never fails { pass raw g_ap3b_ss_bn(n); };
+func:cell_main_ap3b_ss_bn = int32() never fails { pass (((raw f_ap3b_ss_bn(1i64)) + 60i64) =>! int32); };
+// THE BAR (l.23411 items 1 and 8): one of the 17 releases of the longer path alone (P3-1), a freed read on that build; main refuses it, BORROW-015
+// at 12:102, and this row at the same code and site, since its first walk is main's reading. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/ap3b_mu_bn.npk`.
+struct:HO_ap3b_mu_bn = { List<int64>:own; List<int64>:oth; int64:z; };
+struct:SOP_ap3b_mu_bn = { HO_ap3b_mu_bn->:oq; int64:z; };
+struct:SOQ_ap3b_mu_bn = { HO_ap3b_mu_bn->:oq; HO_ap3b_mu_bn->:oq2; int64:z; };
+struct:SO_ap3b_mu_bn = { HO_ap3b_mu_bn->?:oq; int64:z; };
+func:mk_ap3b_mu_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkho_ap3b_mu_bn = HO_ap3b_mu_bn() never fails { pass HO_ap3b_mu_bn{ own: raw mk_ap3b_mu_bn(), oth: raw mk_ap3b_mu_bn(), z: 1i64 }; };
+func:repo_ap3b_mu_bn = int64(HO_ap3b_mu_bn->:r) never fails { (<-r).own = raw mk_ap3b_mu_bn(); pass 7i64; };
+struct:MB_ap3b_mu_bn = { MA_ap3b_mu_bn->?:a; int64:z; };
+struct:MA_ap3b_mu_bn = { MB_ap3b_mu_bn->?:b; List<int64>:own; int64:z; };
+func:g2_ap3b_mu_bn = int64(MA_ap3b_mu_bn->:s) never fails { int64->:e = @((<-((<-(s.b ??! E5)).a ??! E5)).own[0i64]); (<-s).own = raw mk_ap3b_mu_bn(); pass (<-e) + 6i64; };
+func:g_ap3b_mu_bn = int64(int64:n) never fails {
+    MA_ap3b_mu_bn:a0 = MA_ap3b_mu_bn{ b: NIL, own: raw mk_ap3b_mu_bn(), z: 1i64 }; MB_ap3b_mu_bn:b0 = MB_ap3b_mu_bn{ a: @a0, z: 1i64 }; a0.b = @b0;
+    pass raw g2_ap3b_mu_bn(@a0);
+};
+func:f_ap3b_mu_bn = int64(int64:n) never fails { pass raw g_ap3b_mu_bn(n); };
+func:cell_main_ap3b_mu_bn = int32() never fails { pass (((raw f_ap3b_mu_bn(1i64)) + 60i64) =>! int32); };
+// THE BAR (l.23411 items 1 and 8): one of the 17 releases of the longer path alone (P3-1), a freed read on that build; main refuses it, BORROW-015
+// at 13:91, and this row at the same code and site, since its first walk is main's reading. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/ap3b_si_bn.npk`.
+struct:HO_ap3b_si_bn = { List<int64>:own; List<int64>:oth; int64:z; };
+struct:SOP_ap3b_si_bn = { HO_ap3b_si_bn->:oq; int64:z; };
+struct:SOQ_ap3b_si_bn = { HO_ap3b_si_bn->:oq; HO_ap3b_si_bn->:oq2; int64:z; };
+struct:SO_ap3b_si_bn = { HO_ap3b_si_bn->?:oq; int64:z; };
+func:mk_ap3b_si_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkho_ap3b_si_bn = HO_ap3b_si_bn() never fails { pass HO_ap3b_si_bn{ own: raw mk_ap3b_si_bn(), oth: raw mk_ap3b_si_bn(), z: 1i64 }; };
+func:repo_ap3b_si_bn = int64(HO_ap3b_si_bn->:r) never fails { (<-r).own = raw mk_ap3b_si_bn(); pass 7i64; };
+struct:HI2_ap3b_si_bn = { List<int64>:own; int64:z; };
+struct:SI_ap3b_si_bn = { HI2_ap3b_si_bn->?:p; HI2_ap3b_si_bn:in3; int64:z; };
+func:links_ap3b_si_bn = int64(SI_ap3b_si_bn->:x) never fails { (<-x).p = @((<-x).in3); pass 7i64; };
+func:g2_ap3b_si_bn = int64(SI_ap3b_si_bn->:s) never fails { int64->:e = @((<-(s.p ??! E5)).own[0i64]); (<-s).in3.own = raw mk_ap3b_si_bn(); pass (<-e) + 6i64; };
+func:g_ap3b_si_bn = int64(int64:n) never fails {
+    SI_ap3b_si_bn:si = SI_ap3b_si_bn{ p: NIL, in3: HI2_ap3b_si_bn{ own: raw mk_ap3b_si_bn(), z: 1i64 }, z: 1i64 }; discard(raw links_ap3b_si_bn(@si));
+    pass raw g2_ap3b_si_bn(@si);
+};
+func:f_ap3b_si_bn = int64(int64:n) never fails { pass raw g_ap3b_si_bn(n); };
+func:cell_main_ap3b_si_bn = int32() never fails { pass (((raw f_ap3b_si_bn(1i64)) + 60i64) =>! int32); };
+// THE BAR (l.23411 items 1 and 8): one of the 17 releases of the longer path alone (P3-1), a freed read on that build; main refuses it, BORROW-015
+// at 13:92, and this row at the same code and site, since its first walk is main's reading. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/ap3b_up_bn.npk`.
+struct:HO_ap3b_up_bn = { List<int64>:own; List<int64>:oth; int64:z; };
+struct:SOP_ap3b_up_bn = { HO_ap3b_up_bn->:oq; int64:z; };
+struct:SOQ_ap3b_up_bn = { HO_ap3b_up_bn->:oq; HO_ap3b_up_bn->:oq2; int64:z; };
+struct:SO_ap3b_up_bn = { HO_ap3b_up_bn->?:oq; int64:z; };
+func:mk_ap3b_up_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkho_ap3b_up_bn = HO_ap3b_up_bn() never fails { pass HO_ap3b_up_bn{ own: raw mk_ap3b_up_bn(), oth: raw mk_ap3b_up_bn(), z: 1i64 }; };
+func:repo_ap3b_up_bn = int64(HO_ap3b_up_bn->:r) never fails { (<-r).own = raw mk_ap3b_up_bn(); pass 7i64; };
+struct:BIG_ap3b_up_bn = { HI_ap3b_up_bn:in3; int64:z; };
+struct:HI_ap3b_up_bn = { BIG_ap3b_up_bn->?:up; List<int64>:own; int64:z; };
+func:linku_ap3b_up_bn = int64(BIG_ap3b_up_bn->:x) never fails { (<-x).in3.up = x; pass 7i64; };
+func:g2_ap3b_up_bn = int64(HI_ap3b_up_bn->:s) never fails { int64->:e = @((<-(s.up ??! E5)).in3.own[0i64]); (<-s).own = raw mk_ap3b_up_bn(); pass (<-e) + 6i64; };
+func:g_ap3b_up_bn = int64(int64:n) never fails {
+    BIG_ap3b_up_bn:bg = BIG_ap3b_up_bn{ in3: HI_ap3b_up_bn{ up: NIL, own: raw mk_ap3b_up_bn(), z: 1i64 }, z: 1i64 }; discard(raw linku_ap3b_up_bn(@bg));
+    pass raw g2_ap3b_up_bn(@(bg.in3));
+};
+func:f_ap3b_up_bn = int64(int64:n) never fails { pass raw g_ap3b_up_bn(n); };
+func:cell_main_ap3b_up_bn = int32() never fails { pass (((raw f_ap3b_up_bn(1i64)) + 60i64) =>! int32); };
+// THE BAR (l.23411 items 1 and 8): one of the 17 releases of the longer path alone (P3-1), a freed read on that build; main refuses it, BORROW-015
+// at 13:87, and this row at the same code and site, since its first walk is main's reading. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/m73_ssw3.npk`.
+struct:HO_m73_ssw3 = { List<int64>:own; List<int64>:oth; int64:z; };
+struct:SOP_m73_ssw3 = { HO_m73_ssw3->:oq; int64:z; };
+struct:SOQ_m73_ssw3 = { HO_m73_ssw3->:oq; HO_m73_ssw3->:oq2; int64:z; };
+struct:SO_m73_ssw3 = { HO_m73_ssw3->?:oq; int64:z; };
+func:mk_m73_ssw3 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkho_m73_ssw3 = HO_m73_ssw3() never fails { pass HO_m73_ssw3{ own: raw mk_m73_ssw3(), oth: raw mk_m73_ssw3(), z: 1i64 }; };
+func:repo_m73_ssw3 = int64(HO_m73_ssw3->:r) never fails { (<-r).own = raw mk_m73_ssw3(); pass 7i64; };
+struct:SS_m73_ssw3 = { SS_m73_ssw3->?:p; List<int64>:own; int64:z; };
+func:link_m73_ssw3 = int64(SS_m73_ssw3->:x) never fails { (<-x).p = x; pass 7i64; };
+func:wss_m73_ssw3 = int64(SS_m73_ssw3->:x) never fails { (<-x).own = raw mk_m73_ssw3(); pass 7i64; };
+func:g2_m73_ssw3 = int64(SS_m73_ssw3->:s) never fails { int64->:e = @((<-s).own[0i64]); (<-(s.p ??! E5)).own = raw mk_m73_ssw3(); pass (<-e) + 6i64; };
+func:g_m73_ssw3 = int64(int64:n) never fails {
+    SS_m73_ssw3:so = SS_m73_ssw3{ p: NIL, own: raw mk_m73_ssw3(), z: 1i64 }; discard(raw link_m73_ssw3(@so));
+    pass raw g2_m73_ssw3(@so);
+};
+func:f_m73_ssw3 = int64(int64:n) never fails { pass raw g_m73_ssw3(n); };
+func:cell_main_m73_ssw3 = int32() never fails { pass (((raw f_m73_ssw3(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

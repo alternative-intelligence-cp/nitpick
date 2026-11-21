@@ -1191,7 +1191,7 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
                     e.expected = rsaved;
                     if (rvt != 0i32) {
                         if (!(raw type_is_invalid(e.types, rvt))) {
-                            if (!(raw fits(e, rel, rvt))) {
+                            if (!(raw fits(e, rel, rvt, n.span))) {
                                 drop te_assign_mismatch(e, rel, rvt, n.span);
                             }
                             drop require_move_if_owning(e,
@@ -1283,7 +1283,7 @@ pub func:type_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fails {
                     e.expected = msaved;
                     if (mvt != 0i32) {
                         if (!(raw type_is_invalid(e.types, mvt))) {
-                            if (!(raw fits(e, mel, mvt))) {
+                            if (!(raw fits(e, mel, mvt, n.span))) {
                                 drop te_assign_mismatch(e, mel, mvt, n.span);
                             }
                             // D-183: the mutex OWNS its element from birth.
@@ -1590,7 +1590,7 @@ func:check_ctor_args = int32(ExprTyper->:e, ExprNode:n, int32:enum_ty,
                 // cast you mean" is for two operands meeting at an operator; a
                 // payload, an arena element or a handle has a FIXED type, and
                 // for `string` into `int32` the cast it advised does not exist.
-                if (!(raw fits(e, pt, at))) {
+                if (!(raw fits(e, pt, at, n.span))) {
                     drop te_mismatch_at(e, pt, at, n.span);
                 }
                 // D-183: the enum takes ownership of its payload.
@@ -2815,8 +2815,12 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
             // A VIEW HAS NO ADDRESS EITHER, AND A FROZEN SELECTOR LENDS ITS
             // (D-266, 1.5.2h): the same implicit address, the same question.
             // A LENT OWNING PARAMETER IS READ-ONLY (DEF-102, TYPE-085) -- except
-            // that a method call through a `dyn` receiver passes the caller's
-            // OBJECT, not the address of the callee's copy, and stays.
+            // a `dyn` receiver: a method call through it writes the `dyn`'s cell,
+            // which a lent `dyn` parameter shares with a `dyn` the caller holds
+            // (DEF-115), and stays. An owning concrete place never reaches a `dyn`
+            // parameter, as an argument or a receiver, nor does a temporary's part
+            // (D-370, TYPE-116), so no caller's concrete value is behind it; a
+            // copyable one is copied, and its writes stay in the copy.
             bool:dyn_recv = false;
             if (rxt != 0i32) {
                 if ((raw type_kind(e.types, rxt)) == (raw TY_DYN())) { dyn_recv = true; }
@@ -2852,13 +2856,19 @@ pub func:type_method_call = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fa
     // THE RECEIVER IS OTHERWISE A SLOT LIKE ANY OTHER (1.0.8): `p.f()` and
     // `f(p)` are one call (D-006), so it asks `fits`, as every other slot does.
     if (!ptr_recv) {
-        if (!(raw fits(e, p0, recv))) {
+        if (!(raw fits(e, p0, recv, n.span))) {
             drop te_mismatch_at(e, p0, recv, n.span);
         } else {
             // AND A `move` RECEIVER IS A TRANSFER (DEF-366, landing 170): `check_args` below skips its slot.
             if (raw param_is_move(e, raw exprtypes_callee(e.expr_types, id), 0i32)) {
                 drop require_move_receiver(e, raw expr_operand(n), recv,
                                            raw arg_span(e, raw expr_operand(n), n.span));
+            } else {
+                // A RECEIVER IS A `dyn` PARAMETER'S ARGUMENT TOO (D-370; rulings l.21045, l.21153 item 3): `h.f()` and `f(h)`
+                // are one call (D-006), whether the method was found by scope or in the type's own `impl`, and `check_args`
+                // below skips this slot.
+                discard(raw refuse_dyn_place_transfer(e, p0, raw expr_operand(n), recv, raw exprtypes_callee(e.expr_types, id), 0i32,
+                                                      raw arg_span(e, raw expr_operand(n), n.span)));
             }
         }
     }
@@ -2979,6 +2989,211 @@ pub func:refuse_move_fn_value = NIL(ExprTyper->:e, int32:did, int32:ft, Span:at)
     pass NIL;
 };
 
+// A PLACE'S SPELLING FOR D-370's MESSAGE: a name, its fields and elements, or what a pointer points at, a cast stepped through;
+// a root that is no place (a temporary, a `move`) reads `(...)`. The walk's fuel is the parser's own depth bound (PARSE-012), so a
+// chain of any depth the parser accepts is spelled to its root and the advice can be pasted (rulings l.21440 item 8, `d4_msg_20`).
+func:dyn_place_text = string(ExprTyper->:e, ExprId:id) never fails {
+    string:tail = "";
+    ExprId:c = id;
+    int32:f = raw AST_DEPTH_MAX();
+    while (f > 0i32) decreases f {
+        f = f - 1i32;
+        ExprNode:n = raw ast_expr(e.ast, c);
+        if (n.kind == ExprKind.ExprMemberAccessExpr) {
+            tail = string_concat(string_concat(".", raw intern_get(e.interns, n.payload =>! int32)), tail);
+            c = raw expr_operand(n);
+            continue;
+        }
+        if (n.kind == ExprKind.ExprIndexExpr) {
+            tail = string_concat("[...]", tail);
+            c = raw expr_lhs(n);
+            continue;
+        }
+        if ((n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr)) {
+            c = raw expr_operand(n);
+            continue;
+        }
+        if (n.kind == ExprKind.ExprIdentifierExpr) { pass string_concat(raw intern_get(e.interns, n.payload =>! int32), tail); }
+        if (n.kind == ExprKind.ExprDerefExpr) {
+            ExprNode:pn = raw ast_expr(e.ast, raw expr_operand(n));
+            if (pn.kind == ExprKind.ExprIdentifierExpr) { pass string_concat(string_concat(string_concat("(<-", raw intern_get(e.interns, pn.payload =>! int32)), ")"), tail); }
+            pass string_concat("(<-...)", tail);
+        }
+        break;
+    }
+    pass string_concat("(...)", tail);
+};
+
+// A PLACE REACHED THROUGH A POINTER, for D-370's advice (rulings l.21783 item 3, l.21833 item 1 (a)): a dereference, a member or element
+// whose base is a pointer or a handle, or an element of a slice, at any depth of the chain, a cast stepped through -- `move_path_verdict`'s
+// steps, so every place TYPE-104 refuses is one (a `wild` road from outside, which it allows, is one too: the advice offers it no `move`).
+// A root that is no name, and the end of the fuel, answer yes: closed.
+func:dyn_place_thru_ptr = bool(ExprTyper->:e, ExprId:id) never fails {
+    ExprId:c = id;
+    int32:f = raw AST_DEPTH_MAX();
+    while (f > 0i32) decreases f {
+        f = f - 1i32;
+        ExprNode:n = raw ast_expr(e.ast, c);
+        if (n.kind == ExprKind.ExprIdentifierExpr) { pass false; }
+        bool:idx = n.kind == ExprKind.ExprIndexExpr;
+        bool:part = (n.kind == ExprKind.ExprMemberAccessExpr) || idx || (n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr);
+        if (!part) { pass true; }
+        ExprId:b = is (idx) : (raw expr_lhs(n)) : (raw expr_operand(n));
+        int32:bk = raw type_kind(e.types, raw exprtypes_get(e.expr_types, b));
+        if ((bk == (raw TY_POINTER())) || (bk == (raw TY_HANDLE())) || (idx && (bk == (raw TY_SLICE())))) { pass true; }
+        c = b;
+    }
+    pass true;
+};
+
+// THE `.clone()` D-370's ADVICE MAY OFFER (rulings l.21833 item 2), asked as the method call asks (`find_method`, with this body's trait):
+// 0 none -- the type has no `clone`, or one that doesn't come through the prelude's `Clone` (`buffer`, a struct with no impl); every call
+// gives a `Result` (D-069), so 1 `raw x.clone()`, a `never fails` clone, which licenses `raw` (D-163); 2 `x.clone() ?! HeapOom`, a clone
+// that may fail (`string`'s, a `T: Clone`'s), trapped as the allocation failure it is.
+func:dyn_clone_road = int32(ExprTyper->:e, int32:got) never fails {
+    int32:clid = raw prelude_trait_named(e.tab, e.interns, e.types, e.ast, "Clone");
+    if (clid == 0i32) { pass 0i32; }
+    MethodFind:f = raw find_method(e.impls, e.bounds, e.types, e.ast, e.interns, got, raw intern_add(e.interns, "clone"), e.self_trait);
+    if ((!f.found) || f.ambiguous || (f.owner != clid)) { pass 0i32; }
+    pass (is (raw fn_declares_never_fails(e.ast, raw ast_decl(e.ast, DeclId{ index: f.decl }))) : 1i32 : 2i32);
+};
+
+// WHERE A `dyn` ARGUMENT'S VALUE COMES FROM (D-370; rulings l.21111, l.21131): 1 a PLACE's -- a name, field, element or
+// dereference, a cast at any depth of the chain (`(w => W).h`) --, 3 a PART or element of a value no binding holds (a
+// temporary's, a `move`'s, what a call's pointer points at), which drops whole at the statement's end with the part in it;
+// 0 a whole value no binding holds (a call's or a literal's result, a `move`: a transfer, one owner), or a value whose root
+// has its own report (D-240): an operator handing back a place's value says TYPE-046 at its span (DEF-419), a part of a
+// literal or a `pick` TYPE-105. `move_slot_source`'s walk without its own-type gate (`type_may_drop` decides at the caller,
+// so a `Bx<T>` in a generic body is asked too), with a cast stepped at every level; past the fuel, 1: closed.
+func:dyn_arg_source = int32(ExprTyper->:e, ExprId:id, int32:fuel) decreases fuel never fails {
+    if (fuel <= 0i32) { pass 1i32; }
+    ExprId:c = id;
+    bool:part = false;
+    int32:f = fuel;
+    while (f > 0i32) decreases f {
+        f = f - 1i32;
+        ExprNode:n = raw ast_expr(e.ast, c);
+        if (n.kind == ExprKind.ExprIndexExpr) { part = true; c = raw expr_lhs(n); continue; }
+        bool:step = (n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr);
+        if (step || (n.kind == ExprKind.ExprCastExpr) || (n.kind == ExprKind.ExprUncheckedCastExpr)) {
+            part = part || step;
+            c = raw expr_operand(n);
+            continue;
+        }
+        if ((n.kind == ExprKind.ExprIdentifierExpr) || (n.kind == ExprKind.ExprDerefExpr)) { pass 1i32; }
+        bool:lit = (n.kind == ExprKind.ExprStructLiteralExpr) || (n.kind == ExprKind.ExprArrayLiteralExpr) || (n.kind == ExprKind.ExprResultLiteralExpr) || (n.kind == ExprKind.ExprPickExpr);
+        if (lit && part) { pass 0i32; }
+        bool:two = (n.kind == ExprKind.ExprNullCoalesceExpr) || (n.kind == ExprKind.ExprSafeUnwrapExpr);
+        bool:one = (n.kind == ExprKind.ExprEmphaticUnwrapExpr) || (n.kind == ExprKind.ExprEmphaticCoalesceExpr);
+        if ((n.kind == ExprKind.ExprTernaryExpr) || two || one || (n.kind == ExprKind.ExprRelayExpr)) {
+            if ((raw move_slot_source(e, c, fuel)) != 0i32) { pass 0i32; }
+            int32:arm = 0i32;
+            if (n.kind == ExprKind.ExprTernaryExpr) { arm = (raw dyn_arg_source(e, raw expr_rhs(n), fuel - 1i32)) + (raw dyn_arg_source(e, raw expr_third(n), fuel - 1i32)); }
+            if (two) { arm = (raw dyn_arg_source(e, raw expr_lhs(n), fuel - 1i32)) + (raw dyn_arg_source(e, raw expr_rhs(n), fuel - 1i32)); }
+            if (one) { arm = raw dyn_arg_source(e, raw expr_lhs(n), fuel - 1i32); }
+            if (n.kind == ExprKind.ExprRelayExpr) { arm = raw dyn_arg_source(e, raw expr_operand(n), fuel - 1i32); }
+            if (arm != 0i32) { pass 1i32; }
+        }
+        if (part) { pass 3i32; }
+        pass 0i32;
+    }
+    pass 1i32;
+};
+
+// A COERCION TO `dyn` IS A TRANSFER (D-370, route (R), any trait; management_70's ruling of 2026-11-20 05:17, rulings l.20925).
+// The coercion moves the value into the `dyn`'s heap cell (D-183, 1.2.4), so from a PLACE that owns memory it left two owners:
+// a lent `dyn` parameter's cell was a copy sharing what the place owns, its drop freed it under the place (DEF-710, 95/97 on
+// main), and a `Self->` method freed or replaced what the place still names (DEF-715). An argument to a `dyn` parameter that
+// isn't `move` may not be a place -- a name, field, element or dereference, with a cast at any depth of its chain (an identity
+// cast keeps the copy) -- nor a part or element of a value no binding holds (a temporary's, a `move`'s, what a call's pointer
+// points at, read-only or not: the temporary drops whole with the part in it), whose type owns memory in D-183's sense; a bare
+// `T` counts unless bounded by `Copy` (`type_owns_for_move`); a variadic element is a parameter too, and so is a method call's
+// RECEIVER when the method's first parameter is such a `dyn` (D-006: `h.f()` is `f(h)`), the method found by scope or in the
+// type's own `impl`, a receiver reached through a pointer handing on its pointee. `dyn_arg_source` reads where the value comes
+// from. A whole temporary or a `move` is a transfer and passes. A `dyn` argument is the caller's own cell, lent (DEF-115), and a
+// copyable place is copied, its method's writes staying in the copy. ONE check, before any analysis, asked at the two places a
+// call's slots are checked: `check_args`, which every argument passes through (a direct, method, qualified, indirect, field or
+// awaited call, the variadic tail), and `type_method_call`'s receiver slot, which `check_args` skips (rulings l.21045, l.21153
+// item 3). The local, literal, assignment, cast and return sites were refused already (TYPE-046, TYPE-047). The over-refusal (a
+// struct that holds only `T->` at a `T`, or a `Copy`-bounded `Bx<T>`, answered by `type_may_drop`'s type arguments) is DEF-717's row.
+func:refuse_dyn_place_transfer = bool(ExprTyper->:e, int32:pt, ExprId:a, int32:got, int32:cdecl, int32:idx, Span:sp) never fails {
+    if ((pt == 0i32) || (got == 0i32)) { pass false; }
+    if ((raw type_kind(e.types, pt)) != (raw TY_DYN())) { pass false; }
+    int32:gk = raw type_kind(e.types, got);
+    if ((gk == (raw TY_DYN())) || (gk == (raw TY_POINTER()))) { pass false; }
+    ExprId:c = a;
+    int32:src = raw dyn_arg_source(e, a, raw BORROW_FUEL());
+    int32:axt = raw exprtypes_get(e.expr_types, a);
+    bool:thru = false;
+    if (axt != 0i32) { thru = (raw type_kind(e.types, axt)) == (raw TY_POINTER()); }
+    if (thru) { src = 1i32; }   // a receiver reached through a pointer hands on its pointee (D-098), a place
+    if (src == 0i32) { pass false; }
+    bool:own = raw type_owns_for_move(e, got);
+    if ((!own) && (gk != (raw TY_PARAM()))) {
+        TypeResolver:mr = raw etyper_resolver(e);
+        own = raw type_may_drop(@mr, got, e.scope, 64i32);
+    }
+    if (!own) { pass false; }
+    string:pl = raw dyn_place_text(e, c);
+    if (thru) { pl = string_concat(string_concat("(<-", pl), ")"); }
+    string:pn = "this call's parameter";
+    if (cdecl != 0i32) {
+        DeclNode:d = raw ast_decl(e.ast, DeclId{ index: cdecl });
+        if (d.kind == DeclKind.DeclFunctionDecl) {
+            DeclId:pdx = raw fn_variadic(e.ast, d);
+            if ((idx >= 0i32) && (idx < (raw fn_param_count(e.ast, d)))) { pdx = raw fn_param(e.ast, d, idx); }
+            if (!(raw decl_is_none(pdx))) {
+                pn = string_concat(string_concat(string_concat(string_concat("`", raw intern_get(e.interns, raw decl_name(d))), "`'s parameter `"), raw intern_get(e.interns, raw decl_name(raw ast_decl(e.ast, pdx)))), "`");
+            }
+        }
+    }
+    string:m = string_concat(string_concat(string_concat("`", pl), "` is a `"), raw type_display(e.types, e.interns, got));
+    m = string_concat(string_concat(string_concat(m, "`, which owns memory (or is a type parameter that may, D-264), and "), pn), " is a `");
+    m = string_concat(string_concat(m, raw type_display(e.types, e.interns, pt)), "` that doesn't take it (it isn't `move`): a coercion to `dyn` is a transfer, so this would copy `");
+    m = string_concat(string_concat(m, pl), "` into the `dyn`'s cell, two owners of what it owns (D-370, D-183). ");
+    // EVERY ROAD THE ADVICE OFFERS COMPILES WHEN PASTED, AS ITS CONDITION SAYS (rulings l.21833, l.21912). `.clone()` only as `dyn_clone_road`
+    // spells it. Neither `move` nor `@` where the type check refuses both, a type fact asked by its own predicates: a lent parameter
+    // (TYPE-047, TYPE-085), a lending `pick`'s view (TYPE-047, TYPE-066), a `fixed` binding (TYPE-084, TYPE-071). No `move` through a pointer
+    // (TYPE-104). Elsewhere `move` states its condition: a later use is the moves analysis's (MOVE-001), not known here.
+    int32:cr = raw dyn_clone_road(e, got);
+    string:cs = string_concat(pl, ".clone() ?! HeapOom");
+    if (cr == 1i32) { cs = string_concat(string_concat("raw ", pl), ".clone()"); }
+    string:tn = raw type_display(e.types, e.interns, got);
+    string:ptail = string_concat(string_concat(string_concat(string_concat("` in place, take a pointer (`", tn), "->`, or `<T: Tr>` with `T->`) and pass `@"), pl), "`");
+    bool:lend = false;
+    string:why = "";
+    if (!thru) {
+        if (raw place_is_view(e, c)) { lend = true; why = "it's a lending `pick`'s view of its payload (D-266; TYPE-047, TYPE-066)"; }
+        if (raw place_fixed(e, c, 64i32)) { lend = true; why = "it's `fixed` (D-287; TYPE-084, TYPE-071)"; }
+        if (raw place_lent_owning(e, c)) { lend = true; why = "it's lent to this function (D-004; TYPE-047, TYPE-085)"; }
+    }
+    bool:vp = thru || (raw dyn_place_thru_ptr(e, c));
+    if (lend) {
+        m = string_concat(string_concat(string_concat(string_concat(m, "Neither `move` nor `@` can take `"), pl), "`: "), why);
+        if (cr != 0i32) { m = string_concat(string_concat(string_concat(m, ". Write `"), cs), "` to hand a copy"); }
+        if (cr == 0i32) { m = string_concat(string_concat(string_concat(m, ", and `"), tn), "` has no `clone` through `Clone`, so nothing at this call can hand it on"); }
+    }
+    if ((!lend) && vp) {
+        m = string_concat(string_concat(string_concat(m, "`move` can't take `"), pl), "`: it's reached through a pointer (TYPE-104). ");
+        if (cr != 0i32) { m = string_concat(string_concat(string_concat(m, "Write `"), cs), "` to hand a copy; to change `"); }
+        if (cr == 0i32) { m = string_concat(string_concat(string_concat(m, "`"), tn), "` has no `clone` through `Clone`, so to hand it on, or to change `"); }
+        m = string_concat(string_concat(m, pl), ptail);
+    }
+    if ((!lend) && (!vp)) {
+        m = string_concat(string_concat(string_concat(string_concat(string_concat(m, "If `"), pl), "` isn't used after this call, write `move("), pl), ")` to hand it over, or hold it as a `dyn` from the start (`dyn Tr:d = move(x);`, then pass `d`, a loan of your own cell). ");
+        if (cr != 0i32) { m = string_concat(string_concat(string_concat(m, "Write `"), cs), "` to hand a copy. "); }
+        m = string_concat(string_concat(string_concat(m, "To change `"), pl), ptail);
+    }
+    if (src == 3i32) {
+        m = string_concat(string_concat(string_concat(string_concat(string_concat(string_concat("`", pl), "` is a `"), raw type_display(e.types, e.interns, got)), "`, which owns memory (or is a type parameter that may, D-264), and "), pn), " is a `");
+        m = string_concat(string_concat(m, raw type_display(e.types, e.interns, pt)), "` that doesn't take it (it isn't `move`): a coercion to `dyn` is a transfer, and this reads the value out of one no binding holds -- a temporary's or a `move`'s field or element, or what a call's pointer points at --, which drops whole at the statement's end with the part in it, so the copy in the `dyn`'s cell would be a second owner of what it owns (D-370, D-183, DEF-368). Bind the value first and move the part out of the binding (`T:t = f(...);`, then pass `move(t.part)`)");
+        if (cr == 1i32) { m = string_concat(m, ", or hand on `raw t.part.clone()`"); }
+        if (cr == 2i32) { m = string_concat(m, ", or hand on `t.part.clone() ?! HeapOom`"); }
+    }
+    discard(raw te_error(e, raw TYPE_DYN_PLACE_TRANSFER(), move(m), sp));
+    pass true;
+};
+
 func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
                         int32:skip, Span:at, int32:cdecl) never fails {
     bool:variadic = raw type_is_variadic(e.types, ft);
@@ -3072,7 +3287,8 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
                     // code, span and message twice, so identical-diagnostic
                     // deduplication folded the second away and the reader was told
                     // about one of two mistakes.
-                    if (!(raw fits(e, pt, got))) {
+                    bool:fit = raw fits(e, pt, got, raw arg_span(e, a, at));
+                    if (!fit) {
                         drop te_mismatch_at(e, pt, got, raw arg_span(e, a, at));
                     }
                     // ONLY A `move` PARAMETER TAKES OWNERSHIP (D-183). An
@@ -3083,6 +3299,9 @@ func:check_args = int32(ExprTyper->:e, int32:ft, int32:start, int32:count,
                     if (raw param_is_move(e, cdecl, skip + i)) {
                         drop require_move_if_owning(e, a, got,
                             raw arg_span(e, a, at));
+                    } else {
+                        // A COERCION TO `dyn` IS A TRANSFER (D-370): an owning place is no argument here.
+                        if (fit) { discard(raw refuse_dyn_place_transfer(e, pt, a, got, cdecl, skip + i, raw arg_span(e, a, at))); }
                     }
                 }
             }
@@ -3222,13 +3441,13 @@ func:builtin_text_type = int32(ExprTyper->:e, string:t) never fails {
 // not its business. The prelude's `read(self.src.value, dest.ptr, dest.len)`
 // hands it a `uint8->` and nbridge's hands it an `int8->`, both correctly.
 // Everywhere else the ordinary `fits` rule applies, unchanged.
-func:builtin_arg_fits = bool(ExprTyper->:e, int32:want, int32:got) never fails {
+func:builtin_arg_fits = bool(ExprTyper->:e, int32:want, int32:got, Span:at) never fails {
     if ((raw type_kind(e.types, want)) == (raw TY_POINTER())) {
         if ((raw type_elem(e.types, want)) == (e.types.t_any)) {
             pass ((raw type_kind(e.types, got)) == (raw TY_POINTER()));
         }
     }
-    pass (raw fits(e, want, got));
+    pass (raw fits(e, want, got, at));
 };
 
 // ARITY, PER-ARGUMENT FIT, `move` WHERE THE SIGNATURE CONSUMES, SPREAD REFUSED
@@ -3329,7 +3548,7 @@ func:type_builtin_regular = int32(ExprTyper->:e, ExprId:id, ExprNode:n,
                     // THE ARGUMENT'S SPAN, NOT THE CALL'S — it points at the
                     // thing that is wrong, and it keeps two bad arguments two
                     // diagnostics rather than one deduplicated away.
-                    if (!(raw builtin_arg_fits(e, pt, got))) {
+                    if (!(raw builtin_arg_fits(e, pt, got, raw arg_span(e, a, n.span)))) {
                         drop te_mismatch_at(e, pt, got, raw arg_span(e, a, n.span));
                     }
                     if (raw builtin_sig_param_move(name, i)) {
@@ -3473,7 +3692,7 @@ func:impl_own_member_idx = int32(Ast->:ast, DeclNode:d, int32:name) never fails 
 };
 
 func:record_family_impl_methods = NIL(ExprTyper->:e, int32:impl_decl,
-                                      int32:got, int32:tr_id) never fails {
+                                      int32:got, int32:tr_id, Span:at) never fails {
     int32:tdecl = raw type_decl_of(e.types, tr_id);
     if (tdecl == 0i32) { pass NIL; }
     DeclNode:bd = raw ast_decl(e.ast, DeclId{ index: impl_decl });
@@ -3499,15 +3718,17 @@ func:record_family_impl_methods = NIL(ExprTyper->:e, int32:impl_decl,
             drop fninst_record(e.fninsts, e.ast, mdecl,
                                g.args_start, g.args_count,
                                g.params_start, g.params_count,
-                               impl_decl, ft, raw span_none());
+                               impl_decl, ft, at);
         }
         k = k + 1i32;
     }
     pass NIL;
 };
 
+// `at` is the coercion that commits to the instance (`fits`'s caller's span):
+// the instance's place, where a refusal at its substitution reports (DEF-528).
 pub func:record_dyn_family_methods = NIL(ExprTyper->:e, int32:want_dyn,
-                                         int32:got) never fails {
+                                         int32:got, Span:at) never fails {
     if ((raw type_kind(e.types, got)) == (raw TY_DYN()))   { pass NIL; }
     if ((raw type_kind(e.types, got)) == (raw TY_PARAM())) { pass NIL; }
     int32:tn = raw type_dyn_count(e.types, want_dyn);
@@ -3516,7 +3737,7 @@ pub func:record_dyn_family_methods = NIL(ExprTyper->:e, int32:want_dyn,
         int32:tr_id = raw ast_id_at(e.ast, ts, i);
         int32:impl_decl = raw find_family_impl_for(e, got, tr_id);
         if (impl_decl != 0i32) {
-            drop record_family_impl_methods(e, impl_decl, got, tr_id);
+            drop record_family_impl_methods(e, impl_decl, got, tr_id, at);
         }
     }
     pass NIL;
@@ -3786,7 +4007,7 @@ func:type_channel_method = int32(ExprTyper->:e, ExprNode:n, ExprId:n_id, int32:r
         e.expected = saved;
         if (vt != 0i32) {
             if (!(raw type_is_invalid(e.types, vt))) {
-                if (!(raw fits(e, elem, vt))) {
+                if (!(raw fits(e, elem, vt, n.span))) {
                     drop te_assign_mismatch(e, elem, vt, n.span);
                 }
                 // D-072 WRITES `move` IN ITS OWN SIGNATURE, and D-183's
@@ -4253,7 +4474,7 @@ func:type_arena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
         e.expected = saved;
         if (got != 0i32) {
             if (!(raw type_is_invalid(e.types, got))) {
-                if (!(raw fits(e, elem, got))) {
+                if (!(raw fits(e, elem, got, n.span))) {
                     drop te_mismatch_at(e, elem, got, n.span);
                 }
             }
@@ -4302,7 +4523,7 @@ func:want_handle_of = NIL(ExprTyper->:e, int32:elem, ExprId:arg) never fails {
     e.expected = saved;
     if (got == 0i32) { pass NIL; }
     if (raw type_is_invalid(e.types, got)) { pass NIL; }
-    if (!(raw fits(e, want, got))) {
+    if (!(raw fits(e, want, got, (raw ast_expr(e.ast, arg)).span))) {
         ExprNode:an = raw ast_expr(e.ast, arg);
         drop te_mismatch_at(e, want, got, an.span);
     }
@@ -4393,7 +4614,7 @@ func:type_sarena_method = int32(ExprTyper->:e, ExprNode:n, int32:recv,
         e.expected = saved;
         if (got != 0i32) {
             if (!(raw type_is_invalid(e.types, got))) {
-                if (!(raw fits(e, elem, got))) {
+                if (!(raw fits(e, elem, got, n.span))) {
                     drop te_mismatch_at(e, elem, got, n.span);
                 }
             }

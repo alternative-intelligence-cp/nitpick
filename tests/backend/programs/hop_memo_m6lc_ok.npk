@@ -1,0 +1,54 @@
+// expect-exit: 67
+// 2026-11-21 (landing 177d2e, row 4: DEF-716's `sp` and `cd` shapes, form F3u; rulings l.22543, l.22814). THE HOP WALK'S MEMOS ANSWER WHAT THE WALK
+// WOULD: alias.npk's `sp` memo (the four cheap filters `check_pointer_view_parties` asks before it makes its lists) and escape.npk's `cd` memo (a
+// member's type held while what it reads is fixed) save a walk and never change its answer. RIGHT PROGRAM, a memo pin: exit 67 on main (226ebb99)
+// and here on every road 0-8, -O0 and -O2, and under the detector, one `.ll`; with every memo hit flipped (seat SPCD's plant PLANTu,
+// `ed0764129c53cafe`) it is refused. From seat SPCD's gate, `.internal/spcd-2026-11-20/cells/d716/c887/a1_a8b2/m6lc_ok.npk`.
+mod:hop_memo_m6lc_ok;
+error:E5;
+struct:K = { int64:k; };
+struct:H = { List<int64>:l; int64:k; K:kk; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:growl = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:idh = H->(H->:q) never fails { pass q; };
+func:getl = List<int64>->(H->:w) never fails { pass @w.l; };
+struct:HPO = { H->:lp; List<int64>:own; };
+struct:SQ = { HPO->:q; int64:z; };
+struct:SR = { SQ->:sq; int64:z; };
+struct:SP2 = { HPO->->:pp; int64:z; };
+func:setq = NIL(SQ->:d, H->:q) never fails { (<-((<-d).q)).lp = q; pass NIL; };
+
+func:g = int64(H->:h0p, H->:hq, H->:hz, int64:n) never fails {
+    int64->:e = raw fp(hz);
+    HPO:m = HPO{ lp: h0p, own: raw mk() }; SQ:s = SQ{ q: @m, z: 1i64 }; SQ->:sp = @s;
+    drop setq(sp, hq);
+    e = raw fp(m.lp);
+    pass (<-e) + 6i64;
+};
+func:f = int64(int64:n) never fails {
+    H:hz = raw mkh(); H:h0 = raw mkh(); H:h2 = raw mkh();
+    pass raw g(@h0, @h2, @hz, n);
+};
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -2557,7 +2557,7 @@ func:type_safe_unwrap = int32(ExprTyper->:e, ExprNode:n) never fails {
 
     if (d == 0i32) { pass inner; }
     if (raw type_is_invalid(e.types, d)) { pass inner; }
-    if (!(raw fits(e, inner, d))) {
+    if (!(raw fits(e, inner, d, n.span))) {
         discard(raw te_mismatch(e, n.span, inner, d));
     }
     pass inner;
@@ -2606,7 +2606,7 @@ func:type_null_coalesce = int32(ExprTyper->:e, ExprNode:n) never fails {
     e.expected = saved;
     if (d == 0i32) { pass inner; }
     if (raw type_is_invalid(e.types, d)) { pass inner; }
-    if (!(raw fits(e, inner, d))) { discard(raw te_mismatch(e, n.span, inner, d)); }
+    if (!(raw fits(e, inner, d, n.span))) { discard(raw te_mismatch(e, n.span, inner, d)); }
     pass inner;
 };
 
@@ -2867,7 +2867,7 @@ func:type_result_literal = int32(ExprTyper->:e, ExprId:id, ExprNode:n) never fai
                             raw type_align(e.types, vt)));
     }
     // The pass road asked `fits` (`te_assign_mismatch`, as `pass` reports it).
-    if ((!road) && (!(raw fits(e, want, vt)))) {
+    if ((!road) && (!(raw fits(e, want, vt, n.span)))) {
         if (!(raw type_is_invalid(e.types, vt))) {
             discard(raw te_mismatch(e, n.span, want, vt));
         }
@@ -3455,7 +3455,10 @@ pub func:expected_value = int32(ExprTyper->:e) never fails {
 // no pointer decay. And the wrap is ONE LEVEL, like D-098's dereference: an
 // `Optional<Optional<U>>` cannot be written down (see `resolve_type`), so there
 // is no second level for this to reach through.
-pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) never fails {
+// `at` is the caller's place for this coercion (the span its own mismatch report
+// names). The answer never reads it: it is where a `dyn` acceptance below records
+// the family instance it commits to (DEF-528), which `span_none()` was.
+pub func:fits = bool(ExprTyper->:e, int32:want, int32:got, Span:at) never fails {
     if (want == got) { pass true; }
     // D-163: a `never fails` function SATISFIES a may-fail expectation (it just
     // never uses the error), but a may-fail function CANNOT fill a never-fails
@@ -3492,10 +3495,15 @@ pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) never fails {
         if ((raw type_elem(e.types, want)) == got) { pass true; }
     }
     // A `dyn` SLOT TAKES ANY TYPE THAT IMPLEMENTS ITS TRAITS (5.2), and another
-    // `dyn` that carries at least them (5.3). This is not a coercion in the sense
-    // the paragraph above rules out — nothing about the value changes, it is a
-    // fat pointer either way — it is a question about what was implemented, and
-    // the impl table is the only thing that can answer it.
+    // `dyn` that carries at least them (5.3). What `fits` asks is what was
+    // implemented, and the impl table is the only thing that can answer it. The
+    // VALUE does change: the coercion moves it into the `dyn`'s heap cell (D-183,
+    // 1.2.4), so from an owning place it is a transfer, and `move` is written --
+    // D-183's move rule at a local, a literal, an assignment, a cast and a return
+    // (TYPE-046, TYPE-047), D-370's at a `dyn` parameter that isn't `move`, an
+    // argument's or a receiver's, where a temporary's part counts as a place
+    // (`refuse_dyn_place_transfer`, TYPE-116). A `dyn` to a `dyn` rebuilds the fat
+    // pointer and shares the cell.
     if ((raw type_kind(e.types, want)) == (raw TY_DYN())) {
         // D-215: AN ENDPOINT MAY NOT BE ERASED. This is the last point at
         // which the concrete type is known, and every rule about a channel's
@@ -3506,7 +3514,7 @@ pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) never fails {
         // completed at the boundary where it stops being checkable.
         //
         // `fits` stays a PREDICATE: it answers no, and the mismatch reporters
-        // — which have the span this does not — say why, the way they already
+        // — which own the words — say why, the way they already
         // specialise the never-fails-into-may-fail answer.
         TypeResolver:fr = raw etyper_resolver(e);
         if (raw type_contains_channel(@fr, got, e.scope, 64i32)) { pass false; }
@@ -3517,7 +3525,7 @@ pub func:fits = bool(ExprTyper->:e, int32:want, int32:got) never fails {
         // value, and the vtable that acceptance implies is emitted from a
         // recorded instantiation, which a call would have recorded and a bare
         // coercion would not. Guarded to a family instance inside the recorder.
-        if (ok) { drop record_dyn_family_methods(e, want, got); }
+        if (ok) { drop record_dyn_family_methods(e, want, got, at); }
         pass ok;
     }
     pass false;
@@ -4045,7 +4053,7 @@ func:type_vector_ctor = int32(ExprTyper->:e, ExprNode:n) never fails {
         e.expected = saved;
         if (at2 != 0i32) {
             if (!(raw type_is_invalid(e.types, at2))) {
-                if (!(raw fits(e, velem, at2))) {
+                if (!(raw fits(e, velem, at2, (raw ast_expr(e.ast, aid)).span))) {
                     ExprNode:an = raw ast_expr(e.ast, aid);
                     discard(raw te_mismatch(e, an.span, velem, at2));
                 }
@@ -4173,7 +4181,7 @@ pub func:type_give_operand = NIL(ExprTyper->:e, StmtNode:s) never fails {
         if (got != 0i32) {
             if (cur == 0i32) { e.givex_cur[top] = got; }
             else {
-                if (!(raw fits(e, cur, got))) {
+                if (!(raw fits(e, cur, got, s.span))) {
                     drop te_assign_mismatch(e, cur, got, s.span);
                 }
             }
@@ -4242,7 +4250,7 @@ func:type_array_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
                     // rule, and D-092 says there is not one.
                     elem = got;
                 } else {
-                    if (!(raw fits(e, elem, got))) {
+                    if (!(raw fits(e, elem, got, n.span))) {
                         drop te_assign_mismatch(e, elem, got, n.span);
                     }
                 }
@@ -4292,7 +4300,7 @@ func:type_pipe = int32(ExprTyper->:e, ExprNode:n) never fails {
     int32:want = raw type_param_at_of(e.ast, e.types, rt, 0i32);
     if (!(raw type_is_invalid(e.types, lt))) {
         if (lt != 0i32) {
-            if (!(raw fits(e, want, lt))) {
+            if (!(raw fits(e, want, lt, n.span))) {
                 drop te_assign_mismatch(e, want, lt, n.span);
             }
         }
@@ -4512,7 +4520,7 @@ func:type_struct_literal = int32(ExprTyper->:e, ExprNode:n) never fails {
             e.expected = saved;
             if (!(raw type_is_invalid(e.types, got))) {
                 if (got != 0i32) {
-                    if (!(raw fits(e, f.type_id, got))) {
+                    if (!(raw fits(e, f.type_id, got, n.span))) {
                         drop te_assign_mismatch(e, f.type_id, got, n.span);
                     }
                     // D-183 §4: the struct takes ownership of the field.

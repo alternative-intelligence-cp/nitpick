@@ -1,0 +1,302 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 44:160
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 57:175
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 70:156
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 91:30
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 113:30
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 135:31
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 159:30
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 183:30
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 207:31
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 231:30
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 255:30
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 279:30
+// 2026-11-21 (landing 177d2e, row 10: DEF-720 with DEF-644's rest, DEF-691 and DEF-694's lift, form RRs; rulings l.23411, l.23500, l.23643). AN
+// UNWRAP OF A POINTER IS READ TWO WAYS, BOTH KEPT: the alias pass walks a function as main does, an unwrap no step and the place under it its root
+// whole, and when that walk met an unwrap of a pointer it walks the function again with every unwrap a step to its operand (the longer path, which
+// re-roots through the pointer), one report per site; escape roots a view through a local's or a field's unwrap too, and an unwrap whose value is
+// itself a wrapped pointer steps as well. AFA'S TWO INTERACTIONS (l.23643 items 2 and 3, ruled item 3): 12 freed reads on main and on row 10 alone
+// (a10) and on T9 that are refused only on the composition, with rows 1-9 below this row. If this row fell out they would reopen; the rows land as
+// one squashed commit, so no state of main shows them open.
+mod:unwrap_reading_interaction_faces;
+error:E5;
+// INTERACTION 1, ROWS 9 x 10 (l.23643 item 2, ruled item 3): it closes only with rows 1-9 below this row: on main (226ebb99) it is accepted and
+// reads freed storage, exit 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:120. From the cell
+// `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/i/afa_pv4w4.npk`.
+func:mk_afa_pv4w4 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:growl_afa_pv4w4 = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_afa_pv4w4 = { SS_afa_pv4w4->?:p; List<int64>:own; int64:z; };
+func:link_afa_pv4w4 = int64(SS_afa_pv4w4->:x) never fails { (<-x).p = x; pass 7i64; };
+func:wss_afa_pv4w4 = int64(SS_afa_pv4w4->:x) never fails { (<-x).own = raw mk_afa_pv4w4(); pass 7i64; };
+func:wss2_afa_pv4w4 = int64(SS_afa_pv4w4->:x) never fails { (<-((<-x).p ??! E5)).own = raw mk_afa_pv4w4(); pass 7i64; };
+func:wssp_afa_pv4w4 = int64(SS_afa_pv4w4->:x) never fails { (<-x).own = raw mk_afa_pv4w4(); pass 7i64; };
+func:g2_afa_pv4w4 = int64(SS_afa_pv4w4->:s, SS_afa_pv4w4->:s2) never fails { SS_afa_pv4w4->?:q = s.p; int64->:e = @((<-(q ??! E5)).own[0i64]); (<-(s.p ??! E5)).own = raw mk_afa_pv4w4(); pass (<-e) + 6i64; };
+func:f_afa_pv4w4 = int64(int64:n) never fails { SS_afa_pv4w4:so = SS_afa_pv4w4{ p: NIL, own: raw mk_afa_pv4w4(), z: 1i64 }; SS_afa_pv4w4:so2 = SS_afa_pv4w4{ p: NIL, own: raw mk_afa_pv4w4(), z: 2i64 }; discard(raw link_afa_pv4w4(@so)); discard(raw link_afa_pv4w4(@so2)); pass raw g2_afa_pv4w4(@so, @so2); };
+func:cell_main_afa_pv4w4 = int32() never fails { pass (((raw f_afa_pv4w4(1i64)) + 60i64) =>! int32); };
+// INTERACTION 1, ROWS 9 x 10 (l.23643 item 2, ruled item 3): it closes only with rows 1-9 below this row: on main (226ebb99) it is accepted and
+// reads freed storage, exit 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:125. From the cell
+// `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/i/afa_pv4w6.npk`.
+func:mk_afa_pv4w6 = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:growl_afa_pv4w6 = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_afa_pv4w6 = { SS_afa_pv4w6->?:p; List<int64>:own; int64:z; };
+func:link_afa_pv4w6 = int64(SS_afa_pv4w6->:x) never fails { (<-x).p = x; pass 7i64; };
+func:wss_afa_pv4w6 = int64(SS_afa_pv4w6->:x) never fails { (<-x).own = raw mk_afa_pv4w6(); pass 7i64; };
+func:wss2_afa_pv4w6 = int64(SS_afa_pv4w6->:x) never fails { (<-((<-x).p ??! E5)).own = raw mk_afa_pv4w6(); pass 7i64; };
+func:wssp_afa_pv4w6 = int64(SS_afa_pv4w6->:x) never fails { (<-x).own = raw mk_afa_pv4w6(); pass 7i64; };
+func:g2_afa_pv4w6 = int64(SS_afa_pv4w6->:s, SS_afa_pv4w6->:s2) never fails { SS_afa_pv4w6->?:q = s.p; int64->:e = @((<-(q ??! E5)).own[0i64]); discard(raw wssp_afa_pv4w6(s.p ??! E5)); pass (<-e) + 6i64; };
+func:f_afa_pv4w6 = int64(int64:n) never fails { SS_afa_pv4w6:so = SS_afa_pv4w6{ p: NIL, own: raw mk_afa_pv4w6(), z: 1i64 }; SS_afa_pv4w6:so2 = SS_afa_pv4w6{ p: NIL, own: raw mk_afa_pv4w6(), z: 2i64 }; discard(raw link_afa_pv4w6(@so)); discard(raw link_afa_pv4w6(@so2)); pass raw g2_afa_pv4w6(@so, @so2); };
+func:cell_main_afa_pv4w6 = int32() never fails { pass (((raw f_afa_pv4w6(1i64)) + 60i64) =>! int32); };
+// INTERACTION 1, ROWS 9 x 10 (l.23643 item 2, ruled item 3): it closes only with rows 1-9 below this row: on main (226ebb99) it is accepted and
+// reads freed storage, exit 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:120. From the cell
+// `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/i/afa_q_hp.npk`.
+func:mk_afa_q_hp = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_afa_q_hp = { List<int64>:l; int64:z; };
+func:idl_afa_q_hp = L_afa_q_hp->(L_afa_q_hp->:p) never fails { pass p; };
+func:ido_afa_q_hp = L_afa_q_hp->?(L_afa_q_hp->?:p) never fails { pass p; };
+func:growl_afa_q_hp = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:HO_afa_q_hp = { List<int64>:own; int64:z; };
+struct:SH_afa_q_hp = { HO_afa_q_hp->?:h; int64:z; };
+func:g2_afa_q_hp = int64(SH_afa_q_hp->:s, HO_afa_q_hp->:o2) never fails { HO_afa_q_hp->?:q = s.h; int64->:e = @((<-(q ??! E5)).own[0i64]); (<-(s.h ??! E5)).own = raw mk_afa_q_hp(); pass (<-e) + 6i64; };
+func:f_afa_q_hp = int64(int64:n) never fails { HO_afa_q_hp:o = HO_afa_q_hp{ own: raw mk_afa_q_hp(), z: 1i64 }; HO_afa_q_hp:o2 = HO_afa_q_hp{ own: raw mk_afa_q_hp(), z: 2i64 }; SH_afa_q_hp:sh = SH_afa_q_hp{ h: @o, z: 1i64 }; pass raw g2_afa_q_hp(@sh, @o2); };
+func:cell_main_afa_q_hp = int32() never fails { pass (((raw f_afa_q_hp(1i64)) + 60i64) =>! int32); };
+// INTERACTION 2, ROW 10 WITH ROWS 1-9 ON ROW 6'S THREE ROADS SPELLED THROUGH AN UNWRAP OR `?
+// ` (l.23643 item 3, ruled item 3): it closes only with rows 1-9 below this row: on main (226ebb99) it is accepted and reads freed storage, exit
+// 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 17:20. From the cell
+// `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/r6/afa_r6a_u.npk`.
+func:mk_afa_r6a_u = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_afa_r6a_u = { List<int64>:own; int64:z; };
+struct:MM_afa_r6a_u = { LF_afa_r6a_u->:r; LF_afa_r6a_u:lf; int64:z; };
+struct:B_afa_r6a_u = { MM_afa_r6a_u->:r; int64:z; };
+struct:A_afa_r6a_u = { B_afa_r6a_u->:q; MM_afa_r6a_u:inner; int64:z; };
+func:gb_afa_r6a_u = int64(A_afa_r6a_u->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:f_afa_r6a_u = int64(int64:n) never fails {
+    LF_afa_r6a_u:fz = LF_afa_r6a_u{ own: raw mk_afa_r6a_u(), z: 1i64 };
+    MM_afa_r6a_u:mm = MM_afa_r6a_u{ r: @fz, lf: LF_afa_r6a_u{ own: raw mk_afa_r6a_u(), z: 1i64 }, z: 1i64 };
+    B_afa_r6a_u:b = B_afa_r6a_u{ r: @mm, z: 1i64 };
+    A_afa_r6a_u:a = A_afa_r6a_u{ q: @b, inner: MM_afa_r6a_u{ r: @fz, lf: LF_afa_r6a_u{ own: raw mk_afa_r6a_u(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    A_afa_r6a_u->?:oa = @a; b.r = @((<-(oa ??! E5)).inner);
+    LF_afa_r6a_u:m3 = LF_afa_r6a_u{ own: raw mk_afa_r6a_u(), z: 1i64 };
+    int64->:e = @(a.inner.lf.own[0i64]);
+    discard(raw gb_afa_r6a_u(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_afa_r6a_u = int32() never fails { pass (((raw f_afa_r6a_u(1i64)) + 60i64) =>! int32); };
+// INTERACTION 2, ROW 10 WITH ROWS 1-9 ON ROW 6'S THREE ROADS SPELLED THROUGH AN UNWRAP OR `?
+// ` (l.23643 item 3, ruled item 3): it closes only with rows 1-9 below this row: on main (226ebb99) it is accepted and reads freed storage, exit
+// 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 17:20. From the cell
+// `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/r6/afa_r6a_v.npk`.
+func:mk_afa_r6a_v = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_afa_r6a_v = { List<int64>:own; int64:z; };
+struct:MM_afa_r6a_v = { LF_afa_r6a_v->:r; LF_afa_r6a_v:lf; int64:z; };
+struct:B_afa_r6a_v = { MM_afa_r6a_v->:r; int64:z; };
+struct:A_afa_r6a_v = { B_afa_r6a_v->:q; MM_afa_r6a_v:inner; int64:z; };
+func:gb_afa_r6a_v = int64(A_afa_r6a_v->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:f_afa_r6a_v = int64(int64:n) never fails {
+    LF_afa_r6a_v:fz = LF_afa_r6a_v{ own: raw mk_afa_r6a_v(), z: 1i64 };
+    MM_afa_r6a_v:mm = MM_afa_r6a_v{ r: @fz, lf: LF_afa_r6a_v{ own: raw mk_afa_r6a_v(), z: 1i64 }, z: 1i64 };
+    B_afa_r6a_v:b = B_afa_r6a_v{ r: @mm, z: 1i64 };
+    A_afa_r6a_v:a = A_afa_r6a_v{ q: @b, inner: MM_afa_r6a_v{ r: @fz, lf: LF_afa_r6a_v{ own: raw mk_afa_r6a_v(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    A_afa_r6a_v->:ap = @a; b.r = @((<-ap).inner);
+    LF_afa_r6a_v:m3 = LF_afa_r6a_v{ own: raw mk_afa_r6a_v(), z: 1i64 };
+    LF_afa_r6a_v->?:ol = @(a.inner.lf); int64->:e = @((<-(ol ??! E5)).own[0i64]);
+    discard(raw gb_afa_r6a_v(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_afa_r6a_v = int32() never fails { pass (((raw f_afa_r6a_v(1i64)) + 60i64) =>! int32); };
+// INTERACTION 2, ROW 10 WITH ROWS 1-9 ON ROW 6'S THREE ROADS SPELLED THROUGH AN UNWRAP OR `?
+// ` (l.23643 item 3, ruled item 3): it closes only with rows 1-9 below this row: on main (226ebb99) it is accepted and reads freed storage, exit
+// 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 17:20. From the cell
+// `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/r6/afa_r6a_uv.npk`.
+func:mk_afa_r6a_uv = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_afa_r6a_uv = { List<int64>:own; int64:z; };
+struct:MM_afa_r6a_uv = { LF_afa_r6a_uv->:r; LF_afa_r6a_uv:lf; int64:z; };
+struct:B_afa_r6a_uv = { MM_afa_r6a_uv->:r; int64:z; };
+struct:A_afa_r6a_uv = { B_afa_r6a_uv->:q; MM_afa_r6a_uv:inner; int64:z; };
+func:gb_afa_r6a_uv = int64(A_afa_r6a_uv->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:f_afa_r6a_uv = int64(int64:n) never fails {
+    LF_afa_r6a_uv:fz = LF_afa_r6a_uv{ own: raw mk_afa_r6a_uv(), z: 1i64 };
+    MM_afa_r6a_uv:mm = MM_afa_r6a_uv{ r: @fz, lf: LF_afa_r6a_uv{ own: raw mk_afa_r6a_uv(), z: 1i64 }, z: 1i64 };
+    B_afa_r6a_uv:b = B_afa_r6a_uv{ r: @mm, z: 1i64 };
+    A_afa_r6a_uv:a = A_afa_r6a_uv{ q: @b, inner: MM_afa_r6a_uv{ r: @fz, lf: LF_afa_r6a_uv{ own: raw mk_afa_r6a_uv(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    A_afa_r6a_uv->?:oa = @a; b.r = @((<-(oa ??! E5)).inner);
+    LF_afa_r6a_uv:m3 = LF_afa_r6a_uv{ own: raw mk_afa_r6a_uv(), z: 1i64 };
+    LF_afa_r6a_uv->?:ol = @(a.inner.lf); int64->:e = @((<-(ol ??! E5)).own[0i64]);
+    discard(raw gb_afa_r6a_uv(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_afa_r6a_uv = int32() never fails { pass (((raw f_afa_r6a_uv(1i64)) + 60i64) =>! int32); };
+// INTERACTION 2, ROW 10 WITH ROWS 1-9 ON ROW 6'S THREE ROADS SPELLED THROUGH AN UNWRAP OR `?
+// ` (l.23643 item 3, ruled item 3): it closes only with rows 1-9 below this row: on main (226ebb99) it is accepted and reads freed storage, exit
+// 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 19:20. From the cell
+// `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/r6/afa_r6b_u.npk`.
+func:mk_afa_r6b_u = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_afa_r6b_u = { List<int64>:own; int64:z; };
+struct:L3_afa_r6b_u = { LF_afa_r6b_u->:p; int64:z; };
+struct:L2_afa_r6b_u = { L3_afa_r6b_u->:p; int64:z; };
+struct:L1_afa_r6b_u = { L2_afa_r6b_u->:p; int64:z; };
+func:gw_afa_r6b_u = int64(L1_afa_r6b_u->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+func:f_afa_r6b_u = int64(int64:n) never fails {
+    LF_afa_r6b_u:fA = LF_afa_r6b_u{ own: raw mk_afa_r6b_u(), z: 1i64 };
+    LF_afa_r6b_u:fB = LF_afa_r6b_u{ own: raw mk_afa_r6b_u(), z: 1i64 };
+    L3_afa_r6b_u:v3a = L3_afa_r6b_u{ p: @fA, z: 1i64 };
+    L3_afa_r6b_u:v3b = L3_afa_r6b_u{ p: @fB, z: 1i64 };
+    L2_afa_r6b_u:v2 = L2_afa_r6b_u{ p: @v3b, z: 1i64 };
+    L2_afa_r6b_u->?:pv = @v2;
+    L1_afa_r6b_u:v1 = L1_afa_r6b_u{ p: @(<-(pv ??! E5)), z: 1i64 };
+    LF_afa_r6b_u:m3 = LF_afa_r6b_u{ own: raw mk_afa_r6b_u(), z: 1i64 };
+    int64->:e = @(fB.own[0i64]);
+    discard(raw gw_afa_r6b_u(@v1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_afa_r6b_u = int32() never fails { pass (((raw f_afa_r6b_u(1i64)) + 60i64) =>! int32); };
+// INTERACTION 2, ROW 10 WITH ROWS 1-9 ON ROW 6'S THREE ROADS SPELLED THROUGH AN UNWRAP OR `?
+// ` (l.23643 item 3, ruled item 3): it closes only with rows 1-9 below this row: on main (226ebb99) it is accepted and reads freed storage, exit
+// 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 19:20. From the cell
+// `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/r6/afa_r6b_v.npk`.
+func:mk_afa_r6b_v = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_afa_r6b_v = { List<int64>:own; int64:z; };
+struct:L3_afa_r6b_v = { LF_afa_r6b_v->:p; int64:z; };
+struct:L2_afa_r6b_v = { L3_afa_r6b_v->:p; int64:z; };
+struct:L1_afa_r6b_v = { L2_afa_r6b_v->:p; int64:z; };
+func:gw_afa_r6b_v = int64(L1_afa_r6b_v->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+func:f_afa_r6b_v = int64(int64:n) never fails {
+    LF_afa_r6b_v:fA = LF_afa_r6b_v{ own: raw mk_afa_r6b_v(), z: 1i64 };
+    LF_afa_r6b_v:fB = LF_afa_r6b_v{ own: raw mk_afa_r6b_v(), z: 1i64 };
+    L3_afa_r6b_v:v3a = L3_afa_r6b_v{ p: @fA, z: 1i64 };
+    L3_afa_r6b_v:v3b = L3_afa_r6b_v{ p: @fB, z: 1i64 };
+    L2_afa_r6b_v:v2 = L2_afa_r6b_v{ p: @v3b, z: 1i64 };
+    L2_afa_r6b_v->:pv = @v2;
+    L1_afa_r6b_v:v1 = L1_afa_r6b_v{ p: @(<-pv), z: 1i64 };
+    LF_afa_r6b_v:m3 = LF_afa_r6b_v{ own: raw mk_afa_r6b_v(), z: 1i64 };
+    LF_afa_r6b_v->?:ob = @fB; int64->:e = @((<-(ob ??! E5)).own[0i64]);
+    discard(raw gw_afa_r6b_v(@v1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_afa_r6b_v = int32() never fails { pass (((raw f_afa_r6b_v(1i64)) + 60i64) =>! int32); };
+// INTERACTION 2, ROW 10 WITH ROWS 1-9 ON ROW 6'S THREE ROADS SPELLED THROUGH AN UNWRAP OR `?
+// ` (l.23643 item 3, ruled item 3): it closes only with rows 1-9 below this row: on main (226ebb99) it is accepted and reads freed storage, exit
+// 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 19:20. From the cell
+// `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/r6/afa_r6b_uv.npk`.
+func:mk_afa_r6b_uv = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_afa_r6b_uv = { List<int64>:own; int64:z; };
+struct:L3_afa_r6b_uv = { LF_afa_r6b_uv->:p; int64:z; };
+struct:L2_afa_r6b_uv = { L3_afa_r6b_uv->:p; int64:z; };
+struct:L1_afa_r6b_uv = { L2_afa_r6b_uv->:p; int64:z; };
+func:gw_afa_r6b_uv = int64(L1_afa_r6b_uv->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+func:f_afa_r6b_uv = int64(int64:n) never fails {
+    LF_afa_r6b_uv:fA = LF_afa_r6b_uv{ own: raw mk_afa_r6b_uv(), z: 1i64 };
+    LF_afa_r6b_uv:fB = LF_afa_r6b_uv{ own: raw mk_afa_r6b_uv(), z: 1i64 };
+    L3_afa_r6b_uv:v3a = L3_afa_r6b_uv{ p: @fA, z: 1i64 };
+    L3_afa_r6b_uv:v3b = L3_afa_r6b_uv{ p: @fB, z: 1i64 };
+    L2_afa_r6b_uv:v2 = L2_afa_r6b_uv{ p: @v3b, z: 1i64 };
+    L2_afa_r6b_uv->?:pv = @v2;
+    L1_afa_r6b_uv:v1 = L1_afa_r6b_uv{ p: @(<-(pv ??! E5)), z: 1i64 };
+    LF_afa_r6b_uv:m3 = LF_afa_r6b_uv{ own: raw mk_afa_r6b_uv(), z: 1i64 };
+    LF_afa_r6b_uv->?:ob = @fB; int64->:e = @((<-(ob ??! E5)).own[0i64]);
+    discard(raw gw_afa_r6b_uv(@v1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_afa_r6b_uv = int32() never fails { pass (((raw f_afa_r6b_uv(1i64)) + 60i64) =>! int32); };
+// INTERACTION 2, ROW 10 WITH ROWS 1-9 ON ROW 6'S THREE ROADS SPELLED THROUGH AN UNWRAP OR `?
+// ` (l.23643 item 3, ruled item 3): it closes only with rows 1-9 below this row: on main (226ebb99) it is accepted and reads freed storage, exit
+// 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 19:20. From the cell
+// `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/r6/afa_r6b_q.npk`.
+func:mk_afa_r6b_q = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_afa_r6b_q = { List<int64>:own; int64:z; };
+struct:L3_afa_r6b_q = { LF_afa_r6b_q->:p; int64:z; };
+struct:L2_afa_r6b_q = { L3_afa_r6b_q->:p; int64:z; };
+struct:L1_afa_r6b_q = { L2_afa_r6b_q->:p; int64:z; };
+func:gw_afa_r6b_q = int64(L1_afa_r6b_q->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+func:f_afa_r6b_q = int64(int64:n) never fails {
+    LF_afa_r6b_q:fA = LF_afa_r6b_q{ own: raw mk_afa_r6b_q(), z: 1i64 };
+    LF_afa_r6b_q:fB = LF_afa_r6b_q{ own: raw mk_afa_r6b_q(), z: 1i64 };
+    L3_afa_r6b_q:v3a = L3_afa_r6b_q{ p: @fA, z: 1i64 };
+    L3_afa_r6b_q:v3b = L3_afa_r6b_q{ p: @fB, z: 1i64 };
+    L2_afa_r6b_q:v2 = L2_afa_r6b_q{ p: @v3b, z: 1i64 };
+    L2_afa_r6b_q->:pv = @v2;
+    L1_afa_r6b_q:v1 = L1_afa_r6b_q{ p: @(<-pv), z: 1i64 };
+    LF_afa_r6b_q:m3 = LF_afa_r6b_q{ own: raw mk_afa_r6b_q(), z: 1i64 };
+    Result<LF_afa_r6b_q->?>:rq = Result{ value: @fB }; LF_afa_r6b_q->?:od = @fA; int64->:e = @((<-((rq ?| od) ??! E5)).own[0i64]);
+    discard(raw gw_afa_r6b_q(@v1));
+    pass (<-e) + 6i64;
+};
+func:cell_main_afa_r6b_q = int32() never fails { pass (((raw f_afa_r6b_q(1i64)) + 60i64) =>! int32); };
+// INTERACTION 2, ROW 10 WITH ROWS 1-9 ON ROW 6'S THREE ROADS SPELLED THROUGH AN UNWRAP OR `?
+// ` (l.23643 item 3, ruled item 3): it closes only with rows 1-9 below this row: on main (226ebb99) it is accepted and reads freed storage, exit
+// 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 19:20. From the cell
+// `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/r6/afa_r6c_v.npk`.
+func:mk_afa_r6c_v = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_afa_r6c_v = { List<int64>:own; int64:z; };
+struct:L3_afa_r6c_v = { LF_afa_r6c_v->:p; int64:z; };
+struct:L2_afa_r6c_v = { L3_afa_r6c_v->:p; int64:z; };
+struct:L1_afa_r6c_v = { L2_afa_r6c_v->:p; int64:z; };
+func:gw_afa_r6c_v = int64(L1_afa_r6c_v->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+func:idl_afa_r6c_v = L1_afa_r6c_v->(L1_afa_r6c_v->:q) never fails { pass q; };
+func:f_afa_r6c_v = int64(int64:n) never fails {
+    LF_afa_r6c_v:fA = LF_afa_r6c_v{ own: raw mk_afa_r6c_v(), z: 1i64 };
+    LF_afa_r6c_v:fB = LF_afa_r6c_v{ own: raw mk_afa_r6c_v(), z: 1i64 };
+    L3_afa_r6c_v:v3 = L3_afa_r6c_v{ p: @fA, z: 1i64 };
+    L3_afa_r6c_v:v3b = L3_afa_r6c_v{ p: @fB, z: 1i64 };
+    L2_afa_r6c_v:v2 = L2_afa_r6c_v{ p: @v3, z: 1i64 };
+    v2.p = @v3b;
+    L1_afa_r6c_v:v1 = L1_afa_r6c_v{ p: @v2, z: 1i64 };
+    LF_afa_r6c_v->?:ob = @fB; int64->:e = @((<-(ob ??! E5)).own[0i64]);
+    discard(raw gw_afa_r6c_v(@(<-(raw idl_afa_r6c_v(@v1)))));
+    pass (<-e) + 6i64;
+};
+func:cell_main_afa_r6c_v = int32() never fails { pass (((raw f_afa_r6c_v(1i64)) + 60i64) =>! int32); };
+// INTERACTION 2, ROW 10 WITH ROWS 1-9 ON ROW 6'S THREE ROADS SPELLED THROUGH AN UNWRAP OR `?
+// ` (l.23643 item 3, ruled item 3): it closes only with rows 1-9 below this row: on main (226ebb99) it is accepted and reads freed storage, exit
+// 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 19:20. From the cell
+// `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/r6/afa_r6c_q.npk`.
+func:mk_afa_r6c_q = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_afa_r6c_q = { List<int64>:own; int64:z; };
+struct:L3_afa_r6c_q = { LF_afa_r6c_q->:p; int64:z; };
+struct:L2_afa_r6c_q = { L3_afa_r6c_q->:p; int64:z; };
+struct:L1_afa_r6c_q = { L2_afa_r6c_q->:p; int64:z; };
+func:gw_afa_r6c_q = int64(L1_afa_r6c_q->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-((<-o).p)).p)).p)).own), 1i64); } pass 7i64; };
+func:idl_afa_r6c_q = L1_afa_r6c_q->(L1_afa_r6c_q->:q) never fails { pass q; };
+func:f_afa_r6c_q = int64(int64:n) never fails {
+    LF_afa_r6c_q:fA = LF_afa_r6c_q{ own: raw mk_afa_r6c_q(), z: 1i64 };
+    LF_afa_r6c_q:fB = LF_afa_r6c_q{ own: raw mk_afa_r6c_q(), z: 1i64 };
+    L3_afa_r6c_q:v3 = L3_afa_r6c_q{ p: @fA, z: 1i64 };
+    L3_afa_r6c_q:v3b = L3_afa_r6c_q{ p: @fB, z: 1i64 };
+    L2_afa_r6c_q:v2 = L2_afa_r6c_q{ p: @v3, z: 1i64 };
+    v2.p = @v3b;
+    L1_afa_r6c_q:v1 = L1_afa_r6c_q{ p: @v2, z: 1i64 };
+    Result<LF_afa_r6c_q->?>:rq = Result{ value: @fB }; LF_afa_r6c_q->?:od = @fA; int64->:e = @((<-((rq ?| od) ??! E5)).own[0i64]);
+    discard(raw gw_afa_r6c_q(@(<-(raw idl_afa_r6c_q(@v1)))));
+    pass (<-e) + 6i64;
+};
+func:cell_main_afa_r6c_q = int32() never fails { pass (((raw f_afa_r6c_q(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

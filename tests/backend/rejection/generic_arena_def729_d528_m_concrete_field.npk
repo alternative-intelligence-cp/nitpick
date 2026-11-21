@@ -1,0 +1,40 @@
+// expect-error: NITPICK-TYPE-007
+// expect-error-at: 16:18
+// 2026-11-21 (landing 177d2e, row 5: DEF-528, form D528-4; rulings l.22208, l.22666). D-183'S QUESTION AT THE INSTANCE: a generic `arena<T>` or
+// `shared_arena<T>` whose substituted element owns heap storage (a `string`, a `dyn Tr`, a guard holder) is refused NITPICK-TYPE-007 at the
+// instance (`type_subst`'s arena arms ask `type_drops`), as the same arena spelled at the concrete type is on main. PRICE OFF PARITY, DEF-729 (LOW,
+// fails closed, made by this row; l.22208 item 3): a generic arena named at an owning element in a struct field or a parameter, with no arena made,
+// is refused at the instance while the same program spelled at the concrete type is accepted. Way out: spell the instance, or keep the arena out of
+// the generic signature or field. Its lift, a narrower text that asks D-183's question where an arena is made, is sized at DEF-528's next row. A
+// generic struct with an arena field at an owning `T` never filled (`OB<T> = { shared_arena<T>?:a; ... }` at `string`, NIL): exit 67 on main
+// (226ebb99) on every road 0-8, -O0 and -O2, and under the detector; refused here by emission (the field's layout runs through `type_subst`). Its
+// way out runs: `generic_arena_def729_field_tw_ok.npk`. From seat D528's cells,
+// `Team/TMP/plan-177d2e-d528-2026-11-20/cells/d528/d528_m_concrete_field.npk`.
+mod:generic_arena_def729_d528_m_concrete_field;
+error:E5;
+error:E9;
+struct:OB<T> = { shared_arena<T>?:a; int32:k; };
+func:g<T> = int32() never fails { pass 7i32; };
+async func:main = int32(cstring[]:_~argv) { OB<string>:b = OB{ a: NIL, k: 7i32 }; exit b.k + 60i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 80i32; },
+        (E9)               { exit 75i32; },
+        (TbbErr)           { exit 79i32; },
+        (DeadlineExceeded) { exit 78i32; },
+        (StaleHandle)      { exit 77i32; },
+        (ChannelClosed)    { exit 76i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

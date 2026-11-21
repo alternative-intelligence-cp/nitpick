@@ -1,0 +1,249 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 56:46
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 87:30
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 118:46
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 149:30
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 164:295
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 177:311
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 190:310
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 203:273
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 215:295
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 227:288
+// 2026-11-21 (landing 177d2e, row 10: DEF-720 with DEF-644's rest, DEF-691 and DEF-694's lift, form RRs; rulings l.23411, l.23500, l.23643). AN
+// UNWRAP OF A POINTER IS READ TWO WAYS, BOTH KEPT: the alias pass walks a function as main does, an unwrap no step and the place under it its root
+// whole, and when that walk met an unwrap of a pointer it walks the function again with every unwrap a step to its operand (the longer path, which
+// re-roots through the pointer), one report per site; escape roots a view through a local's or a field's unwrap too, and an unwrap whose value is
+// itself a wrapped pointer steps as well. THE 8 FACES AND DEF-720'S NESTED SPELLINGS (l.23411 items 2, 4 and 6): ten freed reads on main, each
+// closed here; the 8 are the faces U3's reading alone reopened.
+mod:unwrap_reading_faces;
+error:E5;
+// ONE OF THE 8 FACES (l.23411 item 2): closed by the longer path's walk alone, reopened by U3, and closed here: on main (226ebb99) it is accepted
+// and reads freed storage, exit 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 27:46. From the
+// cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/es_p1_wr_bn.npk`.
+func:mk_es_p1_wr_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_es_p1_wr_bn = { List<int64>:l; int64:z; };
+struct:S_es_p1_wr_bn = { L_es_p1_wr_bn->?:oq; Result<L_es_p1_wr_bn->>:rq; L_es_p1_wr_bn->:rp; Result<Result<L_es_p1_wr_bn->>>:rr; int64:z; };
+func:idp_es_p1_wr_bn = S_es_p1_wr_bn->(S_es_p1_wr_bn->:w) never fails { pass w; };
+func:idr_es_p1_wr_bn = Result<L_es_p1_wr_bn->>->(Result<L_es_p1_wr_bn->>->:w) never fails { pass w; };
+func:idl_es_p1_wr_bn = L_es_p1_wr_bn->->(L_es_p1_wr_bn->->:w) never fails { pass w; };
+func:wrr_es_p1_wr_bn = int64(Result<L_es_p1_wr_bn->>->:q) never fails {
+    Result<L_es_p1_wr_bn->>:rv = <-q;
+    if (rv.is_error) { pass 7i64; }
+    L_es_p1_wr_bn->:lp = rv.value;
+    loop(0i64, 64i64, 1i64) { drop list_push(@((<-lp).l), 1i64); }
+    pass 7i64;
+};
+func:wro_es_p1_wr_bn = int64(L_es_p1_wr_bn->?->:q) never fails {
+    loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-q) ??! E5)).l), 1i64); }
+    pass 7i64;
+};
+func:idq_es_p1_wr_bn = L_es_p1_wr_bn->?->(L_es_p1_wr_bn->?->:w) never fails { pass w; };
+func:f_es_p1_wr_bn = int64(int64:n) never fails {
+    L_es_p1_wr_bn:lo = L_es_p1_wr_bn{ l: raw mk_es_p1_wr_bn(), z: 1i64 };
+    L_es_p1_wr_bn:lo2 = L_es_p1_wr_bn{ l: raw mk_es_p1_wr_bn(), z: 2i64 };
+    S_es_p1_wr_bn:s = S_es_p1_wr_bn{ oq: @lo, rq: Result{ value: @lo }, rp: @lo, rr: Result{ value: Result{ value: @lo } }, z: 1i64 };
+    Result<L_es_p1_wr_bn->>:r1 = Result{ value: @lo };
+    int64->:e = @((<-(s.rq ?! E5)).l[0i64]);
+    loop(0i64, 64i64, 1i64) { drop list_push(@((<-(s.rq ?! E5)).l), 1i64); }
+    pass (<-e) + 6i64;
+};
+func:cell_main_es_p1_wr_bn = int32() never fails { pass (((raw f_es_p1_wr_bn(1i64)) + 60i64) =>! int32); };
+// ONE OF THE 8 FACES (l.23411 item 2): closed by the longer path's walk alone, reopened by U3, and closed here: on main (226ebb99) it is accepted
+// and reads freed storage, exit 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 27:21. From the
+// cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/es_p4_wo.npk`.
+func:mk_es_p4_wo = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_es_p4_wo = { List<int64>:l; int64:z; };
+struct:S_es_p4_wo = { L_es_p4_wo->?:oq; Result<L_es_p4_wo->>:rq; L_es_p4_wo->:rp; Result<Result<L_es_p4_wo->>>:rr; int64:z; };
+func:idp_es_p4_wo = S_es_p4_wo->(S_es_p4_wo->:w) never fails { pass w; };
+func:idr_es_p4_wo = Result<L_es_p4_wo->>->(Result<L_es_p4_wo->>->:w) never fails { pass w; };
+func:idl_es_p4_wo = L_es_p4_wo->->(L_es_p4_wo->->:w) never fails { pass w; };
+func:wrr_es_p4_wo = int64(Result<L_es_p4_wo->>->:q) never fails {
+    Result<L_es_p4_wo->>:rv = <-q;
+    if (rv.is_error) { pass 7i64; }
+    L_es_p4_wo->:lp = rv.value;
+    loop(0i64, 64i64, 1i64) { drop list_push(@((<-lp).l), 1i64); }
+    pass 7i64;
+};
+func:wro_es_p4_wo = int64(L_es_p4_wo->?->:q) never fails {
+    loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-q) ??! E5)).l), 1i64); }
+    pass 7i64;
+};
+func:idq_es_p4_wo = L_es_p4_wo->?->(L_es_p4_wo->?->:w) never fails { pass w; };
+func:f_es_p4_wo = int64(int64:n) never fails {
+    L_es_p4_wo:lo = L_es_p4_wo{ l: raw mk_es_p4_wo(), z: 1i64 };
+    L_es_p4_wo:lo2 = L_es_p4_wo{ l: raw mk_es_p4_wo(), z: 2i64 };
+    S_es_p4_wo:s = S_es_p4_wo{ oq: @lo, rq: Result{ value: @lo }, rp: @lo, rr: Result{ value: Result{ value: @lo } }, z: 1i64 };
+    Result<L_es_p4_wo->>:r1 = Result{ value: @lo };
+    int64->:e = @((<-(s.oq ??! E5)).l[0i64]);
+    discard(raw wro_es_p4_wo(@((<-(raw idp_es_p4_wo(@s))).oq)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_es_p4_wo = int32() never fails { pass (((raw f_es_p4_wo(1i64)) + 60i64) =>! int32); };
+// ONE OF THE 8 FACES (l.23411 item 2): closed by the longer path's walk alone, reopened by U3, and closed here: on main (226ebb99) it is accepted
+// and reads freed storage, exit 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 27:46. From the
+// cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/es_p4_wo_bn.npk`.
+func:mk_es_p4_wo_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_es_p4_wo_bn = { List<int64>:l; int64:z; };
+struct:S_es_p4_wo_bn = { L_es_p4_wo_bn->?:oq; Result<L_es_p4_wo_bn->>:rq; L_es_p4_wo_bn->:rp; Result<Result<L_es_p4_wo_bn->>>:rr; int64:z; };
+func:idp_es_p4_wo_bn = S_es_p4_wo_bn->(S_es_p4_wo_bn->:w) never fails { pass w; };
+func:idr_es_p4_wo_bn = Result<L_es_p4_wo_bn->>->(Result<L_es_p4_wo_bn->>->:w) never fails { pass w; };
+func:idl_es_p4_wo_bn = L_es_p4_wo_bn->->(L_es_p4_wo_bn->->:w) never fails { pass w; };
+func:wrr_es_p4_wo_bn = int64(Result<L_es_p4_wo_bn->>->:q) never fails {
+    Result<L_es_p4_wo_bn->>:rv = <-q;
+    if (rv.is_error) { pass 7i64; }
+    L_es_p4_wo_bn->:lp = rv.value;
+    loop(0i64, 64i64, 1i64) { drop list_push(@((<-lp).l), 1i64); }
+    pass 7i64;
+};
+func:wro_es_p4_wo_bn = int64(L_es_p4_wo_bn->?->:q) never fails {
+    loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-q) ??! E5)).l), 1i64); }
+    pass 7i64;
+};
+func:idq_es_p4_wo_bn = L_es_p4_wo_bn->?->(L_es_p4_wo_bn->?->:w) never fails { pass w; };
+func:f_es_p4_wo_bn = int64(int64:n) never fails {
+    L_es_p4_wo_bn:lo = L_es_p4_wo_bn{ l: raw mk_es_p4_wo_bn(), z: 1i64 };
+    L_es_p4_wo_bn:lo2 = L_es_p4_wo_bn{ l: raw mk_es_p4_wo_bn(), z: 2i64 };
+    S_es_p4_wo_bn:s = S_es_p4_wo_bn{ oq: @lo, rq: Result{ value: @lo }, rp: @lo, rr: Result{ value: Result{ value: @lo } }, z: 1i64 };
+    Result<L_es_p4_wo_bn->>:r1 = Result{ value: @lo };
+    int64->:e = @((<-(s.oq ??! E5)).l[0i64]);
+    loop(0i64, 64i64, 1i64) { drop list_push(@((<-(s.oq ??! E5)).l), 1i64); }
+    pass (<-e) + 6i64;
+};
+func:cell_main_es_p4_wo_bn = int32() never fails { pass (((raw f_es_p4_wo_bn(1i64)) + 60i64) =>! int32); };
+// ONE OF THE 8 FACES (l.23411 item 2): closed by the longer path's walk alone, reopened by U3, and closed here: on main (226ebb99) it is accepted
+// and reads freed storage, exit 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 27:21. From the
+// cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/es_p5_wo.npk`.
+func:mk_es_p5_wo = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_es_p5_wo = { List<int64>:l; int64:z; };
+struct:S_es_p5_wo = { L_es_p5_wo->?:oq; Result<L_es_p5_wo->>:rq; L_es_p5_wo->:rp; Result<Result<L_es_p5_wo->>>:rr; int64:z; };
+func:idp_es_p5_wo = S_es_p5_wo->(S_es_p5_wo->:w) never fails { pass w; };
+func:idr_es_p5_wo = Result<L_es_p5_wo->>->(Result<L_es_p5_wo->>->:w) never fails { pass w; };
+func:idl_es_p5_wo = L_es_p5_wo->->(L_es_p5_wo->->:w) never fails { pass w; };
+func:wrr_es_p5_wo = int64(Result<L_es_p5_wo->>->:q) never fails {
+    Result<L_es_p5_wo->>:rv = <-q;
+    if (rv.is_error) { pass 7i64; }
+    L_es_p5_wo->:lp = rv.value;
+    loop(0i64, 64i64, 1i64) { drop list_push(@((<-lp).l), 1i64); }
+    pass 7i64;
+};
+func:wro_es_p5_wo = int64(L_es_p5_wo->?->:q) never fails {
+    loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-q) ??! E5)).l), 1i64); }
+    pass 7i64;
+};
+func:idq_es_p5_wo = L_es_p5_wo->?->(L_es_p5_wo->?->:w) never fails { pass w; };
+func:f_es_p5_wo = int64(int64:n) never fails {
+    L_es_p5_wo:lo = L_es_p5_wo{ l: raw mk_es_p5_wo(), z: 1i64 };
+    L_es_p5_wo:lo2 = L_es_p5_wo{ l: raw mk_es_p5_wo(), z: 2i64 };
+    S_es_p5_wo:s = S_es_p5_wo{ oq: @lo, rq: Result{ value: @lo }, rp: @lo, rr: Result{ value: Result{ value: @lo } }, z: 1i64 };
+    Result<L_es_p5_wo->>:r1 = Result{ value: @lo };
+    int64->:e = @((<-(s.oq ?? @lo2)).l[0i64]);
+    discard(raw wro_es_p5_wo(@((<-(raw idp_es_p5_wo(@s))).oq)));
+    pass (<-e) + 6i64;
+};
+func:cell_main_es_p5_wo = int32() never fails { pass (((raw f_es_p5_wo(1i64)) + 60i64) =>! int32); };
+// ONE OF THE 8 FACES (l.23411 item 2): closed by the longer path's walk alone, reopened by U3, and closed here: on main (226ebb99) it is accepted
+// and reads freed storage, exit 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 11:205. From the
+// cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/ap3_gt_s.npk`.
+func:mk_ap3_gt_s = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_gt_s = { List<int64>:l; int64:z; };
+func:idl_ap3_gt_s = L_ap3_gt_s->(L_ap3_gt_s->:p) never fails { pass p; };
+func:ido_ap3_gt_s = L_ap3_gt_s->?(L_ap3_gt_s->?:p) never fails { pass p; };
+func:growl_ap3_gt_s = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:GO_ap3_gt_s<T> = { T?:v; int64:z; };
+func:un_ap3_gt_s<T> = T(T?:o) never fails { pass o ??! E5; };
+func:f_ap3_gt_s = int64(int64:n) never fails {
+    L_ap3_gt_s:lo = L_ap3_gt_s{ l: raw mk_ap3_gt_s(), z: 1i64 }; L_ap3_gt_s:lo2 = L_ap3_gt_s{ l: raw mk_ap3_gt_s(), z: 2i64 }; L_ap3_gt_s->?:oq = @lo; GO_ap3_gt_s<L_ap3_gt_s->>:w = GO_ap3_gt_s{ v: oq, z: 1i64 }; int64->:e = @((<-(w.v ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_gt_s = int32() never fails { pass (((raw f_ap3_gt_s(1i64)) + 60i64) =>! int32); };
+// ONE OF THE 8 FACES (l.23411 item 2): closed by the longer path's walk alone, reopened by U3, and closed here: on main (226ebb99) it is accepted
+// and reads freed storage, exit 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:221. From the
+// cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/ap3_nu_ow.npk`.
+func:mk_ap3_nu_ow = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_nu_ow = { List<int64>:l; int64:z; };
+func:idl_ap3_nu_ow = L_ap3_nu_ow->(L_ap3_nu_ow->:p) never fails { pass p; };
+func:ido_ap3_nu_ow = L_ap3_nu_ow->?(L_ap3_nu_ow->?:p) never fails { pass p; };
+func:growl_ap3_nu_ow = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:W_ap3_nu_ow = { L_ap3_nu_ow->?:q; L_ap3_nu_ow->:q2; int64:z; };
+func:f_ap3_nu_ow = int64(int64:n) never fails {
+    L_ap3_nu_ow:lo = L_ap3_nu_ow{ l: raw mk_ap3_nu_ow(), z: 1i64 }; L_ap3_nu_ow:lo2 = L_ap3_nu_ow{ l: raw mk_ap3_nu_ow(), z: 2i64 }; W_ap3_nu_ow:w = W_ap3_nu_ow{ q: @lo, q2: @lo, z: 1i64 }; W_ap3_nu_ow->?:ow = @w; int64->:e = @((<-((<-(ow ??! E5)).q ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_nu_ow = int32() never fails { pass (((raw f_ap3_nu_ow(1i64)) + 60i64) =>! int32); };
+// ONE OF THE 8 FACES (l.23411 item 2): closed by the longer path's walk alone, reopened by U3, and closed here: on main (226ebb99) it is accepted
+// and reads freed storage, exit 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:211. From the
+// cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/ap3_nu_wpq.npk`.
+func:mk_ap3_nu_wpq = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_nu_wpq = { List<int64>:l; int64:z; };
+func:idl_ap3_nu_wpq = L_ap3_nu_wpq->(L_ap3_nu_wpq->:p) never fails { pass p; };
+func:ido_ap3_nu_wpq = L_ap3_nu_wpq->?(L_ap3_nu_wpq->?:p) never fails { pass p; };
+func:growl_ap3_nu_wpq = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:W_ap3_nu_wpq = { L_ap3_nu_wpq->?:q; L_ap3_nu_wpq->:q2; int64:z; };
+func:f_ap3_nu_wpq = int64(int64:n) never fails {
+    L_ap3_nu_wpq:lo = L_ap3_nu_wpq{ l: raw mk_ap3_nu_wpq(), z: 1i64 }; L_ap3_nu_wpq:lo2 = L_ap3_nu_wpq{ l: raw mk_ap3_nu_wpq(), z: 2i64 }; W_ap3_nu_wpq:w = W_ap3_nu_wpq{ q: @lo, q2: @lo, z: 1i64 }; W_ap3_nu_wpq->:wp = @w; int64->:e = @((<-((<-wp).q ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_nu_wpq = int32() never fails { pass (((raw f_ap3_nu_wpq(1i64)) + 60i64) =>! int32); };
+// ONE OF THE 8 FACES (l.23411 item 2): closed by the longer path's walk alone, reopened by U3, and closed here: on main (226ebb99) it is accepted
+// and reads freed storage, exit 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 10:193. From the
+// cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/ap3_nu_wq.npk`.
+func:mk_ap3_nu_wq = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_nu_wq = { List<int64>:l; int64:z; };
+func:idl_ap3_nu_wq = L_ap3_nu_wq->(L_ap3_nu_wq->:p) never fails { pass p; };
+func:ido_ap3_nu_wq = L_ap3_nu_wq->?(L_ap3_nu_wq->?:p) never fails { pass p; };
+func:growl_ap3_nu_wq = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:W_ap3_nu_wq = { L_ap3_nu_wq->?:q; L_ap3_nu_wq->:q2; int64:z; };
+func:f_ap3_nu_wq = int64(int64:n) never fails {
+    L_ap3_nu_wq:lo = L_ap3_nu_wq{ l: raw mk_ap3_nu_wq(), z: 1i64 }; L_ap3_nu_wq:lo2 = L_ap3_nu_wq{ l: raw mk_ap3_nu_wq(), z: 2i64 }; W_ap3_nu_wq:w = W_ap3_nu_wq{ q: @lo, q2: @lo, z: 1i64 }; int64->:e = @((<-(w.q ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_nu_wq = int32() never fails { pass (((raw f_ap3_nu_wq(1i64)) + 60i64) =>! int32); };
+// DEF-720'S NESTED FACE (l.23113 item 2, l.23411 item 4): an unwrap whose value is itself a wrapped pointer: on main (226ebb99) it is accepted and
+// reads freed storage, exit 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:215. From the cell
+// `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/ap3_nu_rr.npk`.
+func:mk_ap3_nu_rr = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_nu_rr = { List<int64>:l; int64:z; };
+func:idl_ap3_nu_rr = L_ap3_nu_rr->(L_ap3_nu_rr->:p) never fails { pass p; };
+func:ido_ap3_nu_rr = L_ap3_nu_rr->?(L_ap3_nu_rr->?:p) never fails { pass p; };
+func:growl_ap3_nu_rr = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_nu_rr = int64(int64:n) never fails {
+    L_ap3_nu_rr:lo = L_ap3_nu_rr{ l: raw mk_ap3_nu_rr(), z: 1i64 }; L_ap3_nu_rr:lo2 = L_ap3_nu_rr{ l: raw mk_ap3_nu_rr(), z: 2i64 }; L_ap3_nu_rr->?:oq = @lo; Result<L_ap3_nu_rr->?>:r = Result{ value: oq }; int64->:e = @((<-((r ?! E5) ??! E5)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_ap3_nu_rr = int32() never fails { pass (((raw f_ap3_nu_rr(1i64)) + 60i64) =>! int32); };
+// DEF-720 WIDENED (l.23411 item 4): `ap3_nu_rr` with the outer unwrap a `??` with a default, a new spelling on main: on main (226ebb99) it is
+// accepted and reads freed storage, exit 236 on every road 0-8 at -O0 and 236 at -O2, 97 under the detector; refused here, BORROW-015 at 9:216.
+// From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_p3u/p3u_rr_q.npk`.
+func:mk_p3u_rr_q = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_p3u_rr_q = { List<int64>:l; int64:z; };
+func:idl_p3u_rr_q = L_p3u_rr_q->(L_p3u_rr_q->:p) never fails { pass p; };
+func:ido_p3u_rr_q = L_p3u_rr_q->?(L_p3u_rr_q->?:p) never fails { pass p; };
+func:growl_p3u_rr_q = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_p3u_rr_q = int64(int64:n) never fails {
+    L_p3u_rr_q:lo = L_p3u_rr_q{ l: raw mk_p3u_rr_q(), z: 1i64 }; L_p3u_rr_q:lo2 = L_p3u_rr_q{ l: raw mk_p3u_rr_q(), z: 2i64 }; L_p3u_rr_q->?:oq = @lo; Result<L_p3u_rr_q->?>:r = Result{ value: oq }; int64->:e = @((<-((r ?! E5) ?? @lo2)).l[0i64]); loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass (<-e) + 6i64;
+};
+func:cell_main_p3u_rr_q = int32() never fails { pass (((raw f_p3u_rr_q(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

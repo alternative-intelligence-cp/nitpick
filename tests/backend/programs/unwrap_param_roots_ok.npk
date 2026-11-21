@@ -6,6 +6,10 @@ mod:unwrap_param_roots_ok;
 // rootless arms read the wrapped pointee (root 4, with R4-15's one line in `check_pointer_targets`' rootless block). THE RIGHT PROGRAMS (61): the
 // controls of the faces of seats R4, AA, A4, R4C and AFS (unwrap_param_roots_faces.npk), each 67 on main and here; main() exits k at the k-th that
 // isn't.
+// 2026-11-21 (landing 177d2e, row 9: DEF-714, form P2-3cs): `a9_selfd_ok`, a view held into one field of a pointer member's pointee across a
+// callee's store through the same member, left this file. DEF-714's row judges the read through the member it was read from as well as at the
+// parameter, as its by-name spelling already was, so the case is refused now: a price at parity, in
+// tests/analysis/rejection/pass_read_member_prices.npk beside that twin (rulings l.22099 item 2, l.23320 item 5). THE RIGHT PROGRAMS are 60 now.
 error:E5;
 // RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat A4's attack on R4-13 (l.19501),
 // `Team/TMP/plan-177d2d-r4c-2026-11-19/cells/a4/b3/a4_rv_ok2.npk`.
@@ -2411,22 +2415,6 @@ func:g_a9_self_ok = int64(int64:n) never fails {
 func:f_a9_self_ok = int64(int64:n) never fails { pass raw g_a9_self_ok(n); };
 func:cell_main_a9_self_ok = int32() never fails { pass (((raw f_a9_self_ok(1i64)) + 60i64) =>! int32); };
 // RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AA's attack on R4-2 (l.19154),
-// `Team/TMP/plan-177d2d-r4c-2026-11-19/cells/r4/aa/r4e/a9_selfd_ok.npk`.
-struct:HO_a9_selfd_ok = { List<int64>:own; List<int64>:oth; int64:z; };
-struct:SO_a9_selfd_ok = { HO_a9_selfd_ok->?:oq; int64:z; };
-struct:SOP_a9_selfd_ok = { HO_a9_selfd_ok->:oq; int64:z; };
-func:mk_a9_selfd_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
-func:mkho_a9_selfd_ok = HO_a9_selfd_ok() never fails { pass HO_a9_selfd_ok{ own: raw mk_a9_selfd_ok(), oth: raw mk_a9_selfd_ok(), z: 1i64 }; };
-func:growl_a9_selfd_ok = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
-func:repo_a9_selfd_ok = int64(HO_a9_selfd_ok->?:r) never fails { (<-(r ??! E5)).own = raw mk_a9_selfd_ok(); pass 7i64; };
-func:g2_a9_selfd_ok = int64(SO_a9_selfd_ok->:s) never fails { HO_a9_selfd_ok->:hp = s.oq ??! E5; int64->:e = @((<-hp).oth[0i64]); discard(raw repo_a9_selfd_ok(s.oq)); pass (<-e) + 6i64; };
-func:g_a9_selfd_ok = int64(int64:n) never fails {
-    HO_a9_selfd_ok:m = raw mkho_a9_selfd_ok(); SO_a9_selfd_ok:so = SO_a9_selfd_ok{ oq: @m, z: 1i64 };
-    pass raw g2_a9_selfd_ok(@so);
-};
-func:f_a9_selfd_ok = int64(int64:n) never fails { pass raw g_a9_selfd_ok(n); };
-func:cell_main_a9_selfd_ok = int32() never fails { pass (((raw f_a9_selfd_ok(1i64)) + 60i64) =>! int32); };
-// RIGHT PROGRAM (177d2d row 1): 67 on main (aefae6e) and on R4-15 on every road 0-8. From seat AA's attack on R4-2 (l.19154),
 // `Team/TMP/plan-177d2d-r4c-2026-11-19/cells/r4/aa/r4e/a9_selfd_ok_pl.npk`.
 struct:HO_a9_selfd_ok_pl = { List<int64>:own; List<int64>:oth; int64:z; };
 struct:SO_a9_selfd_ok_pl = { HO_a9_selfd_ok_pl->?:oq; int64:z; };
@@ -2642,7 +2630,6 @@ func:main = int32(cstring[]:argv) {
     if ((raw cell_main_a5_uwc_ok()) != 67i32) { exit 50i32; }
     if ((raw cell_main_a9_loc_ok()) != 67i32) { exit 51i32; }
     if ((raw cell_main_a9_self_ok()) != 67i32) { exit 52i32; }
-    if ((raw cell_main_a9_selfd_ok()) != 67i32) { exit 53i32; }
     if ((raw cell_main_a9_selfd_ok_pl()) != 67i32) { exit 54i32; }
     if ((raw cell_main_a10_adl_ok()) != 67i32) { exit 55i32; }
     if ((raw cell_main_a10_adr_ok()) != 67i32) { exit 56i32; }

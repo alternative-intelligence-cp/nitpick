@@ -1,0 +1,183 @@
+// expect-exit: 0
+// 2026-11-21 (landing 177d2e, row 10: DEF-720 with DEF-644's rest, DEF-691 and DEF-694's lift, form RRs; rulings l.23411, l.23500, l.23643). AN
+// UNWRAP OF A POINTER IS READ TWO WAYS, BOTH KEPT: the alias pass walks a function as main does, an unwrap no step and the place under it its root
+// whole, and when that walk met an unwrap of a pointer it walks the function again with every unwrap a step to its operand (the longer path, which
+// re-roots through the pointer), one report per site; escape roots a view through a local's or a field's unwrap too, and an unwrap whose value is
+// itself a wrapped pointer steps as well. THE WAYS OUT (l.23500 item 5, l.23798 item 4, l.23643 ruled item 3): DEF-738's six pointer twins and its
+// three ways out (unwrap into a pointer local first), `ap3_rp_u`'s way out and interaction 2's control. Each case runs 67 on main and here on every
+// road 0-8 at -O0 and -O2 and under the detector; `main` exits with the first case that doesn't.
+mod:unwrap_reading_wayout_ok;
+error:E5;
+// DEF-738'S WAY OUT, ITS POINTER TWIN (off parity, l.23500 item 5): exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main
+// (226ebb99) and here. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_oqp_bn.npk`.
+func:mk_ap3u_oqp_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqp_bn = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqp_bn = L_ap3u_oqp_bn->(L_ap3u_oqp_bn->:p) never fails { pass p; };
+func:ido_ap3u_oqp_bn = L_ap3u_oqp_bn->?(L_ap3u_oqp_bn->?:p) never fails { pass p; };
+func:growl_ap3u_oqp_bn = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:g_ap3u_oqp_bn = int64(L_ap3u_oqp_bn->:o, L_ap3u_oqp_bn->:o2) never fails { L_ap3u_oqp_bn->:q = o; int64->:e = @((<-q).l[0i64]); q = o2; pass (<-e) + 6i64; };
+func:f_ap3u_oqp_bn = int64(int64:n) never fails {
+    L_ap3u_oqp_bn:lo = L_ap3u_oqp_bn{ l: raw mk_ap3u_oqp_bn(), z: 1i64 }; L_ap3u_oqp_bn:lo2 = L_ap3u_oqp_bn{ l: raw mk_ap3u_oqp_bn(), z: 2i64 }; L_ap3u_oqp_bn->?:oq = @lo; L_ap3u_oqp_bn->?:oq2 = @lo2; pass raw g_ap3u_oqp_bn(@lo, @lo2);
+};
+func:cell_main_ap3u_oqp_bn = int32() never fails { pass (((raw f_ap3u_oqp_bn(1i64)) + 60i64) =>! int32); };
+// DEF-738'S WAY OUT, ITS POINTER TWIN (off parity, l.23500 item 5): exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main
+// (226ebb99) and here. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g3/ap3u_oqp_rrbn.npk`.
+func:mk_ap3u_oqp_rrbn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqp_rrbn = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqp_rrbn = L_ap3u_oqp_rrbn->(L_ap3u_oqp_rrbn->:p) never fails { pass p; };
+func:ido_ap3u_oqp_rrbn = L_ap3u_oqp_rrbn->?(L_ap3u_oqp_rrbn->?:p) never fails { pass p; };
+func:growl_ap3u_oqp_rrbn = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:g_ap3u_oqp_rrbn = int64(L_ap3u_oqp_rrbn->:o, L_ap3u_oqp_rrbn->:o2) never fails { L_ap3u_oqp_rrbn->:q = o; int64->:e = @((<-q).l[0i64]); q = o2; pass (<-e) + 6i64; };
+func:f_ap3u_oqp_rrbn = int64(int64:n) never fails {
+    L_ap3u_oqp_rrbn:lo = L_ap3u_oqp_rrbn{ l: raw mk_ap3u_oqp_rrbn(), z: 1i64 }; L_ap3u_oqp_rrbn:lo2 = L_ap3u_oqp_rrbn{ l: raw mk_ap3u_oqp_rrbn(), z: 2i64 }; L_ap3u_oqp_rrbn->?:oq = @lo; L_ap3u_oqp_rrbn->?:oq2 = @lo2; pass raw g_ap3u_oqp_rrbn(@lo, @lo2);
+};
+func:cell_main_ap3u_oqp_rrbn = int32() never fails { pass (((raw f_ap3u_oqp_rrbn(1i64)) + 60i64) =>! int32); };
+// DEF-738'S WAY OUT, ITS POINTER TWIN (off parity, l.23500 item 5): exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main
+// (226ebb99) and here. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g4/ap3u_oqpc_bn.npk`.
+func:mk_ap3u_oqpc_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqpc_bn = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqpc_bn = L_ap3u_oqpc_bn->(L_ap3u_oqpc_bn->:p) never fails { pass p; };
+func:ido_ap3u_oqpc_bn = L_ap3u_oqpc_bn->?(L_ap3u_oqpc_bn->?:p) never fails { pass p; };
+func:growl_ap3u_oqpc_bn = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:g_ap3u_oqpc_bn = int64(L_ap3u_oqpc_bn->:o, L_ap3u_oqpc_bn->:o2) never fails { L_ap3u_oqpc_bn->:q = raw idl_ap3u_oqpc_bn(o); int64->:e = @((<-q).l[0i64]); q = o2; pass (<-e) + 6i64; };
+func:f_ap3u_oqpc_bn = int64(int64:n) never fails {
+    L_ap3u_oqpc_bn:lo = L_ap3u_oqpc_bn{ l: raw mk_ap3u_oqpc_bn(), z: 1i64 }; L_ap3u_oqpc_bn:lo2 = L_ap3u_oqpc_bn{ l: raw mk_ap3u_oqpc_bn(), z: 2i64 }; L_ap3u_oqpc_bn->?:oq = @lo; L_ap3u_oqpc_bn->?:oq2 = @lo2; pass raw g_ap3u_oqpc_bn(@lo, @lo2);
+};
+func:cell_main_ap3u_oqpc_bn = int32() never fails { pass (((raw f_ap3u_oqpc_bn(1i64)) + 60i64) =>! int32); };
+// DEF-738'S WAY OUT, ITS POINTER TWIN (off parity, l.23500 item 5): exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main
+// (226ebb99) and here. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g4/ap3u_oqpf_bn.npk`.
+func:mk_ap3u_oqpf_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqpf_bn = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqpf_bn = L_ap3u_oqpf_bn->(L_ap3u_oqpf_bn->:p) never fails { pass p; };
+func:ido_ap3u_oqpf_bn = L_ap3u_oqpf_bn->?(L_ap3u_oqpf_bn->?:p) never fails { pass p; };
+func:growl_ap3u_oqpf_bn = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:WO_ap3u_oqpf_bn = { L_ap3u_oqpf_bn->?:q; L_ap3u_oqpf_bn->:p; int64:z; };
+func:g_ap3u_oqpf_bn = int64(WO_ap3u_oqpf_bn->:w, L_ap3u_oqpf_bn->:o2) never fails { L_ap3u_oqpf_bn->:q = (<-w).p; int64->:e = @((<-q).l[0i64]); q = o2; pass (<-e) + 6i64; };
+func:f_ap3u_oqpf_bn = int64(int64:n) never fails {
+    L_ap3u_oqpf_bn:lo = L_ap3u_oqpf_bn{ l: raw mk_ap3u_oqpf_bn(), z: 1i64 }; L_ap3u_oqpf_bn:lo2 = L_ap3u_oqpf_bn{ l: raw mk_ap3u_oqpf_bn(), z: 2i64 }; L_ap3u_oqpf_bn->?:oq = @lo; L_ap3u_oqpf_bn->?:oq2 = @lo2; WO_ap3u_oqpf_bn:w = WO_ap3u_oqpf_bn{ q: oq, p: @lo, z: 1i64 }; pass raw g_ap3u_oqpf_bn(@w, @lo2);
+};
+func:cell_main_ap3u_oqpf_bn = int32() never fails { pass (((raw f_ap3u_oqpf_bn(1i64)) + 60i64) =>! int32); };
+// DEF-738'S WAY OUT, ITS POINTER TWIN (off parity, l.23500 item 5): exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main
+// (226ebb99) and here. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g4/ap3u_oqpi_bn.npk`.
+func:mk_ap3u_oqpi_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqpi_bn = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqpi_bn = L_ap3u_oqpi_bn->(L_ap3u_oqpi_bn->:p) never fails { pass p; };
+func:ido_ap3u_oqpi_bn = L_ap3u_oqpi_bn->?(L_ap3u_oqpi_bn->?:p) never fails { pass p; };
+func:growl_ap3u_oqpi_bn = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:g_ap3u_oqpi_bn = int64(L_ap3u_oqpi_bn->:o, L_ap3u_oqpi_bn->:o2, int64:n) never fails { L_ap3u_oqpi_bn->:q = o; int64->:e = @((<-q).l[0i64]); if (n > 3i64) { q = o2; } pass (<-e) + 6i64; };
+func:f_ap3u_oqpi_bn = int64(int64:n) never fails {
+    L_ap3u_oqpi_bn:lo = L_ap3u_oqpi_bn{ l: raw mk_ap3u_oqpi_bn(), z: 1i64 }; L_ap3u_oqpi_bn:lo2 = L_ap3u_oqpi_bn{ l: raw mk_ap3u_oqpi_bn(), z: 2i64 }; L_ap3u_oqpi_bn->?:oq = @lo; L_ap3u_oqpi_bn->?:oq2 = @lo2; pass raw g_ap3u_oqpi_bn(@lo, @lo2, n);
+};
+func:cell_main_ap3u_oqpi_bn = int32() never fails { pass (((raw f_ap3u_oqpi_bn(1i64)) + 60i64) =>! int32); };
+// DEF-738'S WAY OUT, ITS POINTER TWIN (off parity, l.23500 item 5): exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main
+// (226ebb99) and here. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g4/ap3u_oqps_bn.npk`.
+func:mk_ap3u_oqps_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqps_bn = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqps_bn = L_ap3u_oqps_bn->(L_ap3u_oqps_bn->:p) never fails { pass p; };
+func:ido_ap3u_oqps_bn = L_ap3u_oqps_bn->?(L_ap3u_oqps_bn->?:p) never fails { pass p; };
+func:growl_ap3u_oqps_bn = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+struct:SS_ap3u_oqps_bn = { SS_ap3u_oqps_bn->?:p; List<int64>:own; int64:z; };
+func:link_ap3u_oqps_bn = int64(SS_ap3u_oqps_bn->:x) never fails { (<-x).p = x; pass 7i64; };
+func:g_ap3u_oqps_bn = int64(SS_ap3u_oqps_bn->:s, SS_ap3u_oqps_bn->:o2) never fails { SS_ap3u_oqps_bn->:q = s.p ??! E5; int64->:e = @((<-q).own[0i64]); q = o2; pass (<-e) + 6i64; };
+func:f_ap3u_oqps_bn = int64(int64:n) never fails {
+    SS_ap3u_oqps_bn:so = SS_ap3u_oqps_bn{ p: NIL, own: raw mk_ap3u_oqps_bn(), z: 1i64 }; SS_ap3u_oqps_bn:s2 = SS_ap3u_oqps_bn{ p: NIL, own: raw mk_ap3u_oqps_bn(), z: 2i64 }; discard(raw link_ap3u_oqps_bn(@so)); pass raw g_ap3u_oqps_bn(@so, @s2);
+};
+func:cell_main_ap3u_oqps_bn = int32() never fails { pass (((raw f_ap3u_oqps_bn(1i64)) + 60i64) =>! int32); };
+// DEF-738'S WAY OUT: unwrap into a pointer local first (l.23500 item 5): exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99) and here. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g3/ap3u_oqp_wo.npk`.
+func:mk_ap3u_oqp_wo = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqp_wo = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqp_wo = L_ap3u_oqp_wo->(L_ap3u_oqp_wo->:p) never fails { pass p; };
+func:ido_ap3u_oqp_wo = L_ap3u_oqp_wo->?(L_ap3u_oqp_wo->?:p) never fails { pass p; };
+func:growl_ap3u_oqp_wo = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:g_ap3u_oqp_wo = int64(L_ap3u_oqp_wo->?:o, L_ap3u_oqp_wo->?:o2) never fails { L_ap3u_oqp_wo->?:q = o; L_ap3u_oqp_wo->:lp = q ??! E5; int64->:e = @((<-lp).l[0i64]); q = o2; pass (<-e) + 6i64; };
+func:f_ap3u_oqp_wo = int64(int64:n) never fails {
+    L_ap3u_oqp_wo:lo = L_ap3u_oqp_wo{ l: raw mk_ap3u_oqp_wo(), z: 1i64 }; L_ap3u_oqp_wo:lo2 = L_ap3u_oqp_wo{ l: raw mk_ap3u_oqp_wo(), z: 2i64 }; L_ap3u_oqp_wo->?:oq = @lo; L_ap3u_oqp_wo->?:oq2 = @lo2; pass raw g_ap3u_oqp_wo(oq, oq2);
+};
+func:cell_main_ap3u_oqp_wo = int32() never fails { pass (((raw f_ap3u_oqp_wo(1i64)) + 60i64) =>! int32); };
+// DEF-738'S WAY OUT: unwrap into a pointer local first (l.23500 item 5): exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99) and here. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_oqo_wo.npk`.
+func:mk_ap3u_oqo_wo = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_oqo_wo = { List<int64>:l; int64:z; };
+func:idl_ap3u_oqo_wo = L_ap3u_oqo_wo->(L_ap3u_oqo_wo->:p) never fails { pass p; };
+func:ido_ap3u_oqo_wo = L_ap3u_oqo_wo->?(L_ap3u_oqo_wo->?:p) never fails { pass p; };
+func:growl_ap3u_oqo_wo = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_oqo_wo = int64(int64:n) never fails {
+    L_ap3u_oqo_wo:lo = L_ap3u_oqo_wo{ l: raw mk_ap3u_oqo_wo(), z: 1i64 }; L_ap3u_oqo_wo:lo2 = L_ap3u_oqo_wo{ l: raw mk_ap3u_oqo_wo(), z: 2i64 }; L_ap3u_oqo_wo->?:oq = @lo; L_ap3u_oqo_wo->?:oq2 = @lo2; L_ap3u_oqo_wo->:lp = oq ??! E5; int64->:e = @((<-lp).l[0i64]); oq = oq2; pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_oqo_wo = int32() never fails { pass (((raw f_ap3u_oqo_wo(1i64)) + 60i64) =>! int32); };
+// DEF-738'S WAY OUT: unwrap into a pointer local first (l.23500 item 5): exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on
+// main (226ebb99) and here. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/cells/g2/ap3u_rro_wo.npk`.
+func:mk_ap3u_rro_wo = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3u_rro_wo = { List<int64>:l; int64:z; };
+func:idl_ap3u_rro_wo = L_ap3u_rro_wo->(L_ap3u_rro_wo->:p) never fails { pass p; };
+func:ido_ap3u_rro_wo = L_ap3u_rro_wo->?(L_ap3u_rro_wo->?:p) never fails { pass p; };
+func:growl_ap3u_rro_wo = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3u_rro_wo = int64(int64:n) never fails {
+    L_ap3u_rro_wo:lo = L_ap3u_rro_wo{ l: raw mk_ap3u_rro_wo(), z: 1i64 }; L_ap3u_rro_wo:lo2 = L_ap3u_rro_wo{ l: raw mk_ap3u_rro_wo(), z: 2i64 }; L_ap3u_rro_wo->?:oq = @lo; L_ap3u_rro_wo->?:oq2 = @lo2; Result<L_ap3u_rro_wo->?>:r = Result{ value: oq }; L_ap3u_rro_wo->:lp = (r ?! E5) ??! E5; int64->:e = @((<-lp).l[0i64]); r = Result{ value: oq2 }; pass (<-e) + 6i64;
+};
+func:cell_main_ap3u_rro_wo = int32() never fails { pass (((raw f_ap3u_rro_wo(1i64)) + 60i64) =>! int32); };
+// `ap3_rp_u`'S WAY OUT, in an inner block (l.23128 item 5, l.23798 item 4): exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector
+// on main (226ebb99) and here. From the cell `Team/TMP/atk-177d2e-ap3u-2026-11-20/ctl/c_fin/ap3_rp_u_wo.npk`.
+func:mk_ap3_rp_u_wo = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:L_ap3_rp_u_wo = { List<int64>:l; int64:z; };
+func:idl_ap3_rp_u_wo = L_ap3_rp_u_wo->(L_ap3_rp_u_wo->:p) never fails { pass p; };
+func:ido_ap3_rp_u_wo = L_ap3_rp_u_wo->?(L_ap3_rp_u_wo->?:p) never fails { pass p; };
+func:growl_ap3_rp_u_wo = int64(List<int64>->:l) never fails { loop(0i64, 64i64, 1i64) { drop list_push(l, 1i64); } pass 7i64; };
+func:f_ap3_rp_u_wo = int64(int64:n) never fails {
+    L_ap3_rp_u_wo:lo = L_ap3_rp_u_wo{ l: raw mk_ap3_rp_u_wo(), z: 1i64 }; L_ap3_rp_u_wo:lo2 = L_ap3_rp_u_wo{ l: raw mk_ap3_rp_u_wo(), z: 2i64 }; L_ap3_rp_u_wo->?:oq = @lo; int64:acc = 0i64; if (n > 0i64) { int64->:e = @((<-(oq ??! E5)).l[0i64]); acc = <-e; } loop(0i64, 64i64, 1i64) { drop list_push(@lo.l, 1i64); } pass acc + 6i64;
+};
+func:cell_main_ap3_rp_u_wo = int32() never fails { pass (((raw f_ap3_rp_u_wo(1i64)) + 60i64) =>! int32); };
+// INTERACTION 2'S CONTROL (l.23643 ruled item 3): exit 67 on every road 0-8 at -O0 and 67 at -O2, 67 under the detector on main (226ebb99) and
+// here. From the cell `MANAGEMENT/probes/177d2e-plan/afa/m76-final/cells/r6/afa_r6a_uok.npk`.
+func:mk_afa_r6a_uok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+struct:LF_afa_r6a_uok = { List<int64>:own; int64:z; };
+struct:MM_afa_r6a_uok = { LF_afa_r6a_uok->:r; LF_afa_r6a_uok:lf; int64:z; };
+struct:B_afa_r6a_uok = { MM_afa_r6a_uok->:r; int64:z; };
+struct:A_afa_r6a_uok = { B_afa_r6a_uok->:q; MM_afa_r6a_uok:inner; int64:z; };
+func:gb_afa_r6a_uok = int64(A_afa_r6a_uok->:o) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@((<-((<-((<-o).q)).r)).lf.own), 1i64); } pass 7i64; };
+func:f_afa_r6a_uok = int64(int64:n) never fails {
+    LF_afa_r6a_uok:fz = LF_afa_r6a_uok{ own: raw mk_afa_r6a_uok(), z: 1i64 };
+    MM_afa_r6a_uok:mm = MM_afa_r6a_uok{ r: @fz, lf: LF_afa_r6a_uok{ own: raw mk_afa_r6a_uok(), z: 1i64 }, z: 1i64 };
+    B_afa_r6a_uok:b = B_afa_r6a_uok{ r: @mm, z: 1i64 };
+    A_afa_r6a_uok:a = A_afa_r6a_uok{ q: @b, inner: MM_afa_r6a_uok{ r: @fz, lf: LF_afa_r6a_uok{ own: raw mk_afa_r6a_uok(), z: 1i64 }, z: 1i64 }, z: 1i64 };
+    A_afa_r6a_uok->?:oa = @a; b.r = @((<-(oa ??! E5)).inner);
+    LF_afa_r6a_uok:m3 = LF_afa_r6a_uok{ own: raw mk_afa_r6a_uok(), z: 1i64 };
+    int64->:e = @(m3.own[0i64]);
+    discard(raw gb_afa_r6a_uok(@a));
+    pass (<-e) + 6i64;
+};
+func:cell_main_afa_r6a_uok = int32() never fails { pass (((raw f_afa_r6a_uok(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) {
+    if ((raw cell_main_ap3u_oqp_bn()) != 67i32) { exit 11i32; }
+    if ((raw cell_main_ap3u_oqp_rrbn()) != 67i32) { exit 12i32; }
+    if ((raw cell_main_ap3u_oqpc_bn()) != 67i32) { exit 13i32; }
+    if ((raw cell_main_ap3u_oqpf_bn()) != 67i32) { exit 14i32; }
+    if ((raw cell_main_ap3u_oqpi_bn()) != 67i32) { exit 15i32; }
+    if ((raw cell_main_ap3u_oqps_bn()) != 67i32) { exit 16i32; }
+    if ((raw cell_main_ap3u_oqp_wo()) != 67i32) { exit 17i32; }
+    if ((raw cell_main_ap3u_oqo_wo()) != 67i32) { exit 18i32; }
+    if ((raw cell_main_ap3u_rro_wo()) != 67i32) { exit 19i32; }
+    if ((raw cell_main_ap3_rp_u_wo()) != 67i32) { exit 20i32; }
+    if ((raw cell_main_afa_r6a_uok()) != 67i32) { exit 21i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

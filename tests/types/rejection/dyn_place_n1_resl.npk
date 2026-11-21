@@ -1,0 +1,47 @@
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 28:20
+mod:dyn_place_n1_resl;
+error:E9;
+
+// D-370 AND A REFINED `Result` (seat T3R's N1, `bindings.npk`'s `note_recv_taken`, DEF-402): `callr(r)` after `r.is_error` was tested.
+// Lent in place (route (L)) `spoil` rewrote `r` behind the refinement and `r.value` read a vacant payload (93); its receiver twin
+// `r.spoil()` is `NITPICK-TAINT-001`. Refused now at the coercion.
+
+trait:Rs = { func:spoil = NIL(Self->:self) never fails; };
+impl:Result<buffer>:Rs = {
+    func:spoil = NIL(Result<buffer>->:self) never fails {
+        <-self = Result{ err: E9 };
+        pass NIL;
+    };
+};
+func:callr = NIL(dyn Rs:d) never fails {
+    drop d.spoil();
+    pass NIL;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    buffer:bb = buffer_new(16i64);
+    bb[0i64] = 42u8;
+    Result<buffer>:r = Result{ value: move(bb) };
+    int32:v = 1i32;
+    if (!(r.is_error)) {
+        drop callr(r);   // site NITPICK-TYPE-116
+        v = r.value[0i64] => int32;
+    }
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 96i32; },
+        (MachineFault)   { exit 97i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 94i32; },
+        (OutOfBounds)    { exit 93i32; },
+        (E9)             { exit 9i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};

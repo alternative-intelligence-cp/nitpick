@@ -1,0 +1,109 @@
+// expect-exit: 42
+// 2026-11-21 (landing 177d2e, row 2: D-370's advice compiles when pasted; rulings l.21783 item 3, l.21938). EVERY ROAD THE ADVICE OFFERS COMPILES
+// WHEN PASTED: where an owning place is refused at a lent `dyn` parameter (NITPICK-TYPE-116, row 1), the message offers `move` only where it
+// compiles (never through a pointer, TYPE-104; never from a lent parameter, a lending `pick`'s view or a `fixed` binding), `.clone()` only where
+// the type's `clone` comes through the prelude's `Clone`, and the pointer road. RIGHT PROGRAM: the advice for a place chain twenty fields deep
+// (seat AF4's `d4_msg_20`), `move(s.n.n.n.n.n.n.n.n.n.n.n.n.n.n.n.n.n.n.n.h)` spelled to its root at the parser's own depth bound, pasted: exit 42
+// on main (226ebb99) and here on every road 0-8, -O0 and -O2, and under the detector. From seat F4M,
+// `.internal/f4m-2026-11-20/cells_msg/msg20_pasted.npk`.
+mod:dyn_advice_deep_pasted_ok;
+error:E9;
+
+trait:Tr = { func:peek = int32(Self:self) never fails; func:op = NIL(Self->:self) never fails; };
+struct:DHold = { buffer:b; };
+impl:DHold:Tr = {
+    func:peek = int32(DHold:self) never fails { pass (self.b[0i64] => int32); };
+    func:op = NIL(DHold->:self) never fails {
+        buffer:nb = buffer_new(16i64);
+        nb[0i64] = 7u8;
+        self.b = move(nb);
+        pass NIL;
+    };
+};
+func:callit = NIL(dyn Tr:d) never fails {
+    drop d.op();
+    pass NIL;
+};
+func:peekit = int32(dyn Tr:d) never fails {
+    pass (raw d.peek());
+};
+func:yes = bool() never fails { pass true; };
+func:mkh = DHold() never fails {
+    buffer:bb = buffer_new(4096i64);
+    bb[0i64] = 42u8;
+    pass DHold{ b: move(bb) };
+};
+struct:W = { DHold:h; int32:k; };
+func:mkw = W() never fails {
+    pass W{ h: raw mkh(), k: 1i32 };
+};
+struct:S1 = { S2:n; int32:k; };
+struct:S2 = { S3:n; int32:k; };
+struct:S3 = { S4:n; int32:k; };
+struct:S4 = { S5:n; int32:k; };
+struct:S5 = { S6:n; int32:k; };
+struct:S6 = { S7:n; int32:k; };
+struct:S7 = { S8:n; int32:k; };
+struct:S8 = { S9:n; int32:k; };
+struct:S9 = { S10:n; int32:k; };
+struct:S10 = { S11:n; int32:k; };
+struct:S11 = { S12:n; int32:k; };
+struct:S12 = { S13:n; int32:k; };
+struct:S13 = { S14:n; int32:k; };
+struct:S14 = { S15:n; int32:k; };
+struct:S15 = { S16:n; int32:k; };
+struct:S16 = { S17:n; int32:k; };
+struct:S17 = { S18:n; int32:k; };
+struct:S18 = { S19:n; int32:k; };
+struct:S19 = { S20:n; int32:k; };
+struct:S20 = { DHold:h; int32:k; };
+func:mks = S1() never fails {
+    S20:s20 = S20{ h: raw mkh(), k: 1i32 };
+    S19:s19 = S19{ n: move(s20), k: 1i32 };
+    S18:s18 = S18{ n: move(s19), k: 1i32 };
+    S17:s17 = S17{ n: move(s18), k: 1i32 };
+    S16:s16 = S16{ n: move(s17), k: 1i32 };
+    S15:s15 = S15{ n: move(s16), k: 1i32 };
+    S14:s14 = S14{ n: move(s15), k: 1i32 };
+    S13:s13 = S13{ n: move(s14), k: 1i32 };
+    S12:s12 = S12{ n: move(s13), k: 1i32 };
+    S11:s11 = S11{ n: move(s12), k: 1i32 };
+    S10:s10 = S10{ n: move(s11), k: 1i32 };
+    S9:s9 = S9{ n: move(s10), k: 1i32 };
+    S8:s8 = S8{ n: move(s9), k: 1i32 };
+    S7:s7 = S7{ n: move(s8), k: 1i32 };
+    S6:s6 = S6{ n: move(s7), k: 1i32 };
+    S5:s5 = S5{ n: move(s6), k: 1i32 };
+    S4:s4 = S4{ n: move(s5), k: 1i32 };
+    S3:s3 = S3{ n: move(s4), k: 1i32 };
+    S2:s2 = S2{ n: move(s3), k: 1i32 };
+    S1:s1 = S1{ n: move(s2), k: 1i32 };
+    pass move(s1);
+};
+func:work = int32() {
+    S1:s = raw mks();
+    drop callit(move(s.n.n.n.n.n.n.n.n.n.n.n.n.n.n.n.n.n.n.n.h));
+    pass 42i32;
+};
+func:main = int32(cstring[]:_~argv) {
+    int32:r = work() ?! E9;
+    exit r;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 96i32; },
+        (MachineFault)   { exit 97i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 94i32; },
+        (OutOfBounds)    { exit 93i32; },
+        (E9)             { exit 9i32; },
+        (LimitViolated)  { exit 87i32; },
+        (DecreasesViolated) { exit 86i32; },
+        (IntOverflow)    { exit 89i32; },
+        (DeadlineExceeded) { exit 88i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};

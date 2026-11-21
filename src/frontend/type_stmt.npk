@@ -2764,7 +2764,7 @@ func:check_var_decl = NIL(ExprTyper->:e, StmtId:sid, StmtNode:s) never fails {
     // `fits` rather than equality, so that `int32?:b = 42i32;` builds the
     // `Optional` holding a value (D-099). That wrap is the only thing `fits`
     // permits beyond equality.
-    if (!(raw fits(e, want, got))) {
+    if (!(raw fits(e, want, got, s.span))) {
         drop te_assign_mismatch(e, want, got, s.span);
         // ONE MISTAKE, ONE REPORT (D-240): a mismatched initialiser is refused
         // here, and the move rule is not asked of a value that will never be
@@ -2968,7 +2968,7 @@ func:check_assign = NIL(ExprTyper->:e, StmtNode:s) never fails {
         pass NIL;
     }
 
-    if (!(raw fits(e, want, got))) {
+    if (!(raw fits(e, want, got, s.span))) {
         drop te_assign_mismatch(e, want, got, s.span);
         pass NIL;   // one mistake, one report (D-240): a mismatched value is never stored
     }
@@ -3150,7 +3150,7 @@ pub func:check_leaving_value = int32(ExprTyper->:e, ExprId:v, int32:want, Span:a
     drop refuse_move_out_of_fixed(e, v, got, at);
     // AND OUT OF AN OWNING `sealed` FIELD FROM OUTSIDE ITS MODULE (D-313).
     drop refuse_move_out_of_sealed(e, v, got, at);
-    if (!(raw fits(e, want, got))) {
+    if (!(raw fits(e, want, got, at))) {
         drop te_assign_mismatch(e, want, got, at);
     }
     pass got;

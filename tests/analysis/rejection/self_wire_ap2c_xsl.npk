@@ -1,0 +1,39 @@
+// expect-error: NITPICK-BORROW-002
+// expect-error-at: 17:136
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 17:136
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 17:152
+// 2026-11-21 (landing 177d2e, row 8: DEF-730, form P730c = P730b's delta with N730; rulings l.22291, l.23320, l.23532, l.23643). DEF-290'S
+// SELF-WIRING EXEMPTION ADMITTED BY THE HOLDER'S ROOT, NOT BY THE STORAGE WRITTEN: a store whose target reaches the holder through a pointer
+// (`(<-(h.a)).p = ...`, `h.a.p = ...`) is self-wiring now only when the address stored is taken through that same pointer place (`@((<-(h.a)).k)`),
+// or the pointer value stored is read through it, a slice on either path standing as the base before any pointer; anything else falls to the
+// BORROW-002 refusal, as its by-name spelling does. A SITE GAINED (AP2C's, l.23532 item 2): main refuses it already (BORROW-015, two sites); N730
+// adds BORROW-002 at the store. From seat AP2C's cells, `.internal/atk-177d2e-ap2c-2026-11-20/cells/c1/ap2c_xsl.npk`.
+mod:self_wire_ap2c_xsl;
+error:E5;
+struct:S = { int64:k; int64->:p; };
+struct:HS = { S[]:a; S[]:b; };
+func:f = NIL(S[]:out, int64:n) never fails { S[1]:t = [S{ k: 2i64, p: out[0i64].p }]; HS:h = HS{ a: out, b: t[0i64...1i64] }; h.a[0i64].p = @(h.b[0i64].k); pass NIL; };
+func:g = int64(int64:n) never fails { int64:z = 2i64; S[1]:r = [S{ k: 2i64, p: @z }]; drop f(r[0i64...1i64], n); int64:junk = raw clob(n); pass (<-(r[0i64].p)) + junk - 9i64; };
+func:clob = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:main = int32(cstring[]:argv) { int64:v = raw g(argv.len - 1i64); exit ((v + 65i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

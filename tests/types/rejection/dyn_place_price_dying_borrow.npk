@@ -1,0 +1,53 @@
+// expect-error: NITPICK-TYPE-116
+// expect-error-at: 24:16
+mod:dyn_place_price_dying_borrow;
+error:E9;
+
+// D-370'S PRICE, CLASS 3, A STORED DYING BORROW (A715's `sr_dir`): `fill2(<-hp, @tb)` handed a borrow of `setup`'s local `tb` to a
+// method that stores it into `self.p`. Through the copy main lost the store; lent in place it would outlive `tb` (root A), and its
+// pointer twin `fill2p(hp, @tb)` is `NITPICK-BORROW-002`. Refused now at the coercion.
+
+struct:DP = { buffer:b; buffer->:p; };
+trait:Sink = { func:put = NIL(Self->:self, buffer->:q) never fails; };
+impl:DP:Sink = { func:put = NIL(DP->:self, buffer->:q) never fails { self.p = q; pass NIL; }; };
+func:fill2 = NIL(dyn Sink:dp, buffer->:q) never fails { drop dp.put(q); pass NIL; };
+func:filli = int32(dyn Sink:dp, buffer->:q) never fails { drop dp.put(q); pass 1i32; };
+func:fill2p = NIL(DP->:dp, buffer->:q) never fails { dp.p = q; pass NIL; };
+struct:K = { int32:z; };
+trait:Runner = { func:run = NIL(Self:self, dyn Sink:d, buffer->:q) never fails; };
+impl:K:Runner = { func:run = NIL(K:self, dyn Sink:d, buffer->:q) never fails { drop d.put(q); pass NIL; }; };
+struct:Ops = { func int32(dyn Sink, buffer->):op; };
+func:idp = DP->(DP->:p) never fails { pass p; };
+func:setup = NIL(DP->:hp) never fails {
+    buffer:tb = buffer_new(64i64);
+    tb[0i64] = 9u8;
+    drop fill2(<-hp, @tb);   // site NITPICK-TYPE-116
+    pass NIL;
+};
+func:main = int32(cstring[]:_~argv) {
+    buffer:g = buffer_new(64i64);
+    g[0i64] = 42u8;
+    DP:h = DP{ b: buffer_new(16i64), p: @g };
+    drop setup(@h);
+    int32:v = (<-(h.p))[0i64] => int32;
+    exit v;
+};
+
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (StackExhausted) { exit 96i32; },
+        (MachineFault)   { exit 97i32; },
+        (Unreachable)    { exit 95i32; },
+        (HeapOom)        { exit 92i32; },
+        (HeapBadRequest) { exit 91i32; },
+        (WildLeak)       { exit 94i32; },
+        (OutOfBounds)    { exit 93i32; },
+        (E9)             { exit 9i32; },
+        (LimitViolated)  { exit 87i32; },
+        (DecreasesViolated) { exit 86i32; },
+        (IntOverflow)    { exit 89i32; },
+        (DeadlineExceeded) { exit 88i32; },
+        (*)              { exit 99i32; }
+    }
+    exit 99i32;
+};
