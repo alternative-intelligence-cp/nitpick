@@ -1,0 +1,42 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 20:7
+// 2026-11-26 (landing 177d2f, item 7, row 2: row B, form RAB5F; rulings l.24454). A HELD POINTER BACK INTO THE PLACE'S OWN ROOT (A TWO-NODE CYCLE)
+// IS ROW B'S CLASS, DEF-681: `aa.bs` holds `@bb` and `bb.a` holds `@aa`, a two-node cycle; `getv(@aa)` returns a view of `aa.s` through `bs[0].a`,
+// then `aa.s` is reassigned and the freed view is read. CLOSED FACE: on main (3a45b7c4) it is accepted, and it exits 140 on every road 0-8 at -O0
+// and -O2, and 97 under the detector; the same on row A's build; refused from row B on. From
+// `nitpick/.internal/ag2f-2026-11-21/cells/c4/ag2f_c4_two.npk`.
+mod:rowb_self_cycle_c4_two;
+error:E5;
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks = string() never fails { pass string_concat("a", "b"); };
+struct:B = { A->:a; int64:z; };
+struct:A = { List<B->>:bs; string:s; int64:z; };
+func:getv = fixed uint8[](A->:o) never fails { pass string_bytes((<-((<-((<-o).bs[0i64])).a)).s); };
+func:f = int64(int64:n) never fails {
+    A:aa = A{ bs: raw list_init::<B->>(1i64), s: raw mks(), z: 1i64 };
+    B:bb = B{ a: @aa, z: 0i64 };
+    drop list_push(@aa.bs, @bb);
+    fixed uint8[]:vw = raw getv(@aa);
+    aa.s = string_concat("q", "r");
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

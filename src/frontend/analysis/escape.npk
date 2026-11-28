@@ -1363,13 +1363,143 @@ func:arg_place_chain = ExprId(Escape->:x, ExprId:a) never fails {
     pass (raw expr_none());
 };
 
+// DEF-681's view road: the steps of `path` past the first step entered at a POINTER, laid on a place of type `t0` (the place's own pointer, step 0's, isn't
+// one), or 0 where no step past the first enters one. An `Optional` or a `Result` holds its value inline, so one around a pointer is a pointer. A step
+// past the first whose type is open (`escape_type_open`, DEF-600's rule), or that follows a step the reader couldn't lay, may be one: the hop is taken
+// there (the closed direction) -- except past the buffer a string, a `cstring`, a `List` or a `buffer` owns, which is that owner's own storage (a view of its bytes
+// is a view of it, D-325), never a held pointer's.
+func:view_hop_suffix = int32(Escape->:x, int32:t0, int32:path) never fails {
+    if (path == 0i32) { pass 0i32; }
+    string:txt = raw path_text(x, path);
+    int64:n = txt.len;
+    int64:cut = 0i64 - 1i64;
+    int32:t = t0;
+    int32:prev = 0i32;   // the type the last step was laid on
+    int64:steps = 0i64;
+    int64:i = 0i64;
+    while (i < n) decreases n - i {
+        int64:j = i;
+        while (j < n) decreases n - j {
+            if (txt.ptr[j] == 47u8) { break; }   // '/'
+            j = j + 1i64;
+        }
+        int32:u = t;
+        for (int32:pk in 0i32...2i32) { if ((u != 0i32) && (((raw type_kind(x.types, u)) == (raw TY_OPTIONAL())) || ((raw type_kind(x.types, u)) == (raw TY_RESULT())))) { u = raw type_elem(x.types, u); } }
+        bool:hop = (raw type_kind(x.types, u)) == (raw TY_POINTER());
+        bool:open = (u != 0i32) && (raw escape_type_open(x, u));
+        bool:owned = (prev != 0i32) && (((raw type_kind(x.types, prev)) == (raw TY_STRING())) || ((raw type_kind(x.types, prev)) == (raw TY_CSTRING())) || ((raw type_kind(x.types, prev)) == (raw TY_BUFFER())) || (raw type_is_list(x.tr, prev)));
+        if ((steps > 0i64) && (t == 0i32) && owned) { break; }   // inside the owner's buffer: its own storage to the end, no hop
+        if ((steps > 0i64) && (hop || open || (t == 0i32))) { cut = i; break; }
+        if (hop) { t = raw type_elem(x.types, u); }
+        prev = t;
+        // the type past this one step, as `escape_path_end_type` reads it
+        t = raw escape_path_end_type(x, t, raw path_intern(x, string_slice(txt, i, j) ?! ProvenSlice));
+        steps = steps + 1i64;
+        i = j + 1i64;
+    }
+    if (cut < 0i64) { pass 0i32; }
+    pass (raw path_intern(x, string_slice(txt, cut, n) ?! ProvenSlice));
+};
+
+// DEF-681: a FIELD the place's own closed type doesn't have at the FIRST step (the place's own pointer, an `Optional` or a `Result` peeled first) is a path the
+// callee cut above an unwrap (DEF-671's rest): `((o?.p) ??! E5).sv()` records `0:f161` over a `W4?` argument (`asp_d1qo_v`)
+func:view_first_unlaid = bool(Escape->:x, int32:t0, int32:path) never fails {
+    if ((path == 0i32) || (t0 == 0i32)) { pass false; }
+    string:txt = raw path_text(x, path);
+    if ((txt.len == 0i64) || (txt.ptr[0i64] != 102u8)) { pass false; }   // 'f'
+    int64:j = 0i64;
+    while (j < txt.len) decreases txt.len - j { if (txt.ptr[j] == 47u8) { break; } j = j + 1i64; }
+    int32:t = t0;
+    for (int32:pk in 0i32...2i32) { if ((t != 0i32) && (((raw type_kind(x.types, t)) == (raw TY_OPTIONAL())) || ((raw type_kind(x.types, t)) == (raw TY_RESULT())))) { t = raw type_elem(x.types, t); } }
+    if ((raw type_kind(x.types, t)) == (raw TY_POINTER())) { t = raw type_elem(x.types, t); } else { t = t0; }
+    if ((t == 0i32) || (raw escape_type_open(x, t))) { pass false; }
+    pass ((raw escape_path_end_type(x, t, raw path_intern(x, string_slice(txt, 0i64, j) ?! ProvenSlice))) == 0i32);
+};
+
+// DEF-681's view road: the refs a binding's chain holds, a sourced binding's sources too (`push_source_refs`).
+func:view_held_refs = NIL(Escape->:x, int32:sym, List<ViewRef>->:out) never fails {
+    drop push_binding_refs(x, sym, out);
+    if (raw sym_is_sourced(x, sym)) { Symbol:hs = raw symtab_get(x.tab, sym); drop push_source_refs(x, hs.link, raw ESCAPE_DEPTH(), out); }
+    pass NIL;
+};
+
+// DEF-681's view road: THE POINTERS BETWEEN A PLACE'S ROOT BINDING AND THE STORAGE A PATH IS LAID ON -- each dereference on the place's chain (a member or
+// an index of a pointer is one) and the place's own pointer, whose pointee the path starts on. A chain that can't be read to its end answers the fuel.
+func:view_place_levels = int32(Escape->:x, ExprId:place) never fails {
+    int32:lv = is ((raw type_kind(x.types, raw type_unwrapped(x.types, raw exprtypes_get(x.etypes, place)))) == (raw TY_POINTER())) : 1i32 : 0i32;
+    ExprId:cur = place;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass lv; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if (n.kind == ExprKind.ExprIdentifierExpr) { pass lv; }
+        ExprId:op = raw expr_operand(n);
+        if (n.kind == ExprKind.ExprIndexExpr) { op = raw expr_lhs(n); }
+        if (((n.kind == ExprKind.ExprDerefExpr) || (n.kind == ExprKind.ExprMemberAccessExpr) || (n.kind == ExprKind.ExprSafeNavExpr) || (n.kind == ExprKind.ExprIndexExpr))
+            && ((raw type_kind(x.types, raw type_unwrapped(x.types, raw exprtypes_get(x.etypes, op)))) == (raw TY_POINTER()))) { lv = lv + 1i32; }
+        cur = op;
+    }
+    pass (raw BORROW_FUEL());
+};
+
+// DEF-681's view road: what a pointer the place HOLDS points at is viewed below the hop -- each ref of the place's root binding (a sourced binding's sources
+// too), the suffix joined below it, and so on at each further hop. At the fuel's end every storage reachable from there on through held pointers is viewed WHOLE,
+// except that a ref back into the place's own root is skipped, within the fuel and at its end (`h.root == r`), so the self-cycle isn't viewed (l.24464 item 1: `ag2f_c4_self`, open).
+func:view_through_hop = NIL(Escape->:x, ExprId:place, int32:path, int32:fuel, List<ViewRef>->:out) never fails {   // in collect_view_refs' recursive group (by push_source_refs), which states no measure: `fuel` bounds it
+    if ((path == 0i32) || (raw expr_is_none(place))) { pass NIL; }
+    int32:suf = raw view_hop_suffix(x, raw exprtypes_get(x.etypes, place), path);
+    int32:suf0 = 0i32;   // DEF-681: the whole path below each held ref too, BESIDE the hop's suffix (the closed direction)
+    if (raw view_first_unlaid(x, raw exprtypes_get(x.etypes, place), path)) { suf0 = path; }
+    if ((suf == 0i32) && (suf0 == 0i32)) { pass NIL; }
+    int32:r = raw root_symbol(x, place);
+    if (r == 0i32) { pass NIL; }
+    List<ViewRef>:held = raw list_init::<ViewRef>(4i64);
+    drop view_held_refs(x, r, @held);
+    // A PLACE BEHIND ITS ROOT'S POINTER (a pointer local handed on, `<-pw`, `pw.gv()`): the pointers its storage holds are the targets' own, level by level (`ag2e_pl`)
+    int64:lo = 0i64;
+    for (int32:lv in 0i32...(raw view_place_levels(x, place))) {
+        int64:hi = held.count;
+        for (int64:j in lo...hi) { ViewRef:tg = held[j]; if ((tg.root != 0i32) && (tg.root != r)) { drop view_held_refs(x, tg.root, @held); } }
+        lo = hi;
+    }
+    if (fuel <= 0i32) {
+        // THE FUEL'S END FAILS CLOSED AT EVERY LEVEL PAST IT, BUT FOR THE OWN ROOT: every storage reachable from here on through held pointers is viewed WHOLE, a binding's
+        // refs read once (`ag2e_f6`, `ag2e_f9`), except a ref back into the place's own root, which is skipped (l.24464 item 1, `ag2f_c4_self`, open); past 4,096 refs the call is refused
+        int64:j = lo;
+        int64:top = lo + 4096i64;
+        while ((j < held.count) && (j < top)) decreases top - j {
+            ViewRef:h = held[j];
+            j = j + 1i64;
+            if ((h.root == 0i32) || (h.root == r)) { continue; }
+            drop list_push(out, ViewRef{ root: h.root, place: h.place, kind: raw VIEW_LAUNDERED(), path: h.path, read: 0i32, xc: h.xc, rm: 0i32 });
+            bool:seen = false;
+            for (int64:k in lo...(j - 1i64)) { if (held[k].root == h.root) { seen = true; break; } }
+            if (!seen) { drop view_held_refs(x, h.root, @held); }
+        }
+        if (j < held.count) { drop escape_err(x, raw BORROW_UNTRACKED(), "a view through this argument reaches more held pointers than the escape analysis will follow (DEF-681), so what it views cannot be read -- bind the nearer storage to a local, and hand that", (raw ast_expr(x.ast, place)).span); }
+        pass NIL;
+    }
+    for (int32:sk in 0i32...2i32) {
+        int32:sx = is (sk == 0i32) : suf : suf0;
+        if ((sx == 0i32) || ((sk == 1i32) && (sx == suf))) { continue; }
+        for (int64:j in lo...held.count) {
+            ViewRef:h = held[j];
+            if ((h.root == 0i32) || (h.root == r)) { continue; }
+            int32:np = raw path_join(x, h.path, sx);
+            drop list_push(out, ViewRef{ root: h.root, place: h.place, kind: raw VIEW_LAUNDERED(), path: np, read: 0i32, xc: h.xc, rm: 0i32 });
+            drop view_through_hop(x, ExprId{ index: h.place }, np, fuel - 1i32, out);
+        }
+    }
+    pass NIL;
+};
+
 func:arg_refs_view = NIL(Escape->:x, ExprId:a, bool:auto_ref, int32:path, int32:depth,
                          List<ViewRef>->:out) never fails {
     if (raw expr_is_none(a)) { pass NIL; }
-    if (auto_ref) { drop push_view_ref_at(x, a, raw VIEW_LAUNDERED(), path, out); pass NIL; }
+    if (auto_ref) { drop push_view_ref_at(x, a, raw VIEW_LAUNDERED(), path, out); if (!x.noload) { drop view_through_hop(x, a, path, 4i32, out); } pass NIL; }   // DEF-681: the view road
     ExprNode:an = raw ast_expr(x.ast, a);
     if ((an.kind == ExprKind.ExprAddressOfExpr) || (an.kind == ExprKind.ExprBorrowExpr)) {
         drop push_view_ref_at(x, raw expr_operand(an), raw VIEW_LAUNDERED(), path, out);
+        if (!x.noload) { drop view_through_hop(x, raw expr_operand(an), path, 4i32, out); }   // DEF-681: the view road; F10: off in the `noload` pass
         pass NIL;
     }
     int32:at = raw exprtypes_get(x.etypes, a);
@@ -1379,6 +1509,7 @@ func:arg_refs_view = NIL(Escape->:x, ExprId:a, bool:auto_ref, int32:path, int32:
     ExprId:place = raw arg_place_chain(x, a);
     if (!(raw expr_is_none(place))) {
         drop push_view_ref_at(x, place, raw VIEW_LAUNDERED(), path, out);
+        if (!x.noload) { drop view_through_hop(x, a, path, 4i32, out); }   // DEF-681: the view road, from the argument as written (F10: off in the `noload` pass): a dereference `arg_place_chain` peels is a level (`ag2e_plpp`)
     } else {
     if ((an.kind == ExprKind.ExprCallExpr) || (an.kind == ExprKind.ExprMethodCallExpr)
         || (an.kind == ExprKind.ExprBuiltinExpr) || (an.kind == ExprKind.ExprStructLiteralExpr)
@@ -1397,6 +1528,16 @@ func:arg_refs_view = NIL(Escape->:x, ExprId:a, bool:auto_ref, int32:path, int32:
         if ((r.kind == (raw REF_PASS())) || (r.kind == (raw REF_ADDR()))) {
             if (!(raw expr_is_none(place))) { continue; }
             drop list_push(out, ViewRef{ root: r.root, place: r.place, kind: raw VIEW_LAUNDERED(), path: raw path_join(x, r.path, path), read: 0i32, xc: 0i32, rm: 0i32 });
+            // DEF-681: A CALL'S RESULT OR A TERNARY AS THE ARGUMENT has no place of its own. A pointer's refs, and a carried parameter, name the storage the path
+            // starts on, so the hop is below each (`ag2e_vrpcall`); an address a BY-VALUE value carries is what a pointer it holds points at, so the path's
+            // steps past the hop are below it (`ag2e_vrcall`, `ag2e_vrtern`)
+            int32:hs = path;
+            if ((!x.noload) && (r.kind == (raw REF_ADDR())) && ((raw type_kind(x.types, raw type_unwrapped(x.types, at))) != (raw TY_POINTER()))) {   // F10: off in the `noload` pass (rulings l.32895 item 3, l.32936 item 1)
+                hs = raw view_hop_suffix(x, at, path);
+                if (hs == 0i32) { continue; }
+                drop list_push(out, ViewRef{ root: r.root, place: r.place, kind: raw VIEW_LAUNDERED(), path: raw path_join(x, r.path, hs), read: 0i32, xc: 0i32, rm: 0i32 });
+            }
+            if (!x.noload) { drop view_through_hop(x, ExprId{ index: r.place }, raw path_join(x, r.path, hs), 4i32, out); }   // F10: off in the `noload` pass (rulings l.32895 item 3, l.32936 item 1)
             continue;
         }
         drop list_push(out, r);

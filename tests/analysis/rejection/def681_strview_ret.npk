@@ -1,0 +1,43 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 23:215
+// 2026-11-26 (landing 177d2f, item 7, row 2: row B, form RAB5F; rulings l.28587 item 1, l.28626 item 1, and management_88's ruling of 2026-11-26
+// that the roads of W32's STRS generator close at row B). A VIEW OF A HOLDER'S ELEMENT, HANDED BACK THROUGH A POINTER MEMBER, CARRIES THE ELEMENT'S
+// BORROW: `lk` makes a `string_from_bytes` view of `x.fe.ls[0]`, read through its pointer parameter's member `fe`, and returns it (road `ret`); `f`
+// binds it as `s`; then `wsv(@e)` writes `e.ls` whole through a callee, and the view is read after. BORROW-015 at `@e` in `wsv(@e)`. CLOSED FACE of
+// DEF-681 (OPEN, HIGH: a pointer a callee reads through its pointer parameter and hands back carries no refs, here through the holder's member
+// `x.fe`) and of DEF-709 (OPEN, HIGH: such a `string` taken as owning its body): on main (3a45b7c4) and on row A's build it is accepted, and it
+// exits 140 on every road 0-8 at -O0 and -O2, and 97 under the detector (a read of freed storage); refused from row B on. A measured closure, not a
+// wider claim on DEF-681 (l.26821). From W32's STRS generator (`tools/gen_w32strs.py` 083537406d4e56e5),
+// `Team/TMP/w32-177d2f-2026-11-25/cells/w32strs/w32strs_ret_g0_cal_aft.npk`.
+mod:def681_strview_ret;
+error:E5;
+func:mks = string() never fails { pass string_concat("a", "b"); };
+struct:FE = { List<string>:ls; string:rule; int64:z; };
+struct:R = { string:rule; int64:z; };
+struct:X = { FE->:fe; R->:r; int64:z; };
+func:mkl = List<string>(move string:s) never fails { List<string>:l = raw list_init::<string>(4i64); drop list_push(@l, move(s)); pass l; };
+func:iget = string(FE->:t, int64:i) never fails { pass (string_from_bytes(t.ls[i].ptr, t.ls[i].len)); };
+func:iget2 = string(FE->:t, int64:i) never fails { pass raw iget(t, i); };
+func:wsv = int64(FE->:t) never fails { (<-t).ls = raw mkl(string_concat("q", "r")); pass 7i64; };
+func:lk = string(X->:x) never fails { pass (string_from_bytes(x.fe.ls[0i64].ptr, x.fe.ls[0i64].len)); };
+func:f = int64(int64:n) never fails { FE:e = FE{ ls: raw mkl(raw mks()), rule: raw mks(), z: 0i64 }; R:rr = R{ rule: raw mks(), z: 0i64 }; X:x = X{ fe: @e, r: @rr, z: 0i64 }; string:s = raw lk(@x); discard(raw wsv(@e)); fixed uint8[]:vw = string_bytes(s); pass (vw[0i64] => int64) - 90i64; };
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};
