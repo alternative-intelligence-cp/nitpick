@@ -75,7 +75,7 @@ pub func:emit_rule_fn = IrVal(ExprEmitter->:x, DeclId:rd) never fails {
     LlType:pl = raw fnem_param(x.fe, dollar, subject, false);
     if (!(raw ll_is_ok(pl))) { pass (raw iv_from_ll_at(x, pl, subject, d.span)); }
     drop fnem_open(x.fe);
-    x.fe.rule_slot = raw fnem_local_slot_at(x.fe, 0i64);
+    x.fe.rule_slot = string_concat(raw fnem_local_slot_at(x.fe, 0i64), "");   // DEF-709: a copy, not a view of `fe.lslots[0]`'s body
     x.fe.rule_ll = string_concat(sl.text, "");
     // THE WALK (P-3), over the clauses under the same binding, before they
     // are lowered: a clause's own guards get their rows and their elision
