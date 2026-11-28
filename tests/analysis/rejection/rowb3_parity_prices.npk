@@ -1,0 +1,262 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 62:35
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 108:34
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 152:37
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 196:34
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 239:37
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 239:37
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 239:37
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 239:37
+// 2026-11-26 (landing 177d2f, item 7, row 5: row B3, form TRY_B3m2fv (SC, over B3v, B3j and B3k); rulings l.24966, l.25027 item 5, l.25963 item 4).
+// PRICES AT PARITY OF ROW B3 (no number): right programs refused from row B3 on (BORROW-015) whose by-name spellings main refuses too. Three of
+// them, two with their twins, one case each, in the form of main's prices files.
+mod:rowb3_parity_prices;
+error:E5;
+// PRICE AT PARITY (row 5; B3n's, l.24966): A right program: a one-load getter (`(<-o).nx ??! E5`) on `@nD` views `nA.s`, and the caller then
+// rewrites `nB.s`, one node further on, through `wsn(@nB)`. It runs 67 on T11 and RABC5B2F, and B3n refuses it at 40:21. Right: on main (3a45b7c4)
+// it exits 67 on every road 0-8 at -O0 and -O2 and under the detector. From `nitpick/.internal/w8-2026-11-22/cells/w8/b3/w8_b3_deep_ok.npk`.
+func:mk_w8_b3_deep_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks_w8_b3_deep_ok = string() never fails { pass string_concat("a", "b"); };
+struct:LF_w8_b3_deep_ok = { List<int64>:own; string:s; int64:z; };
+impl:LF_w8_b3_deep_ok = { func:sv = fixed uint8[](LF_w8_b3_deep_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:nlf_w8_b3_deep_ok = LF_w8_b3_deep_ok() never fails { pass LF_w8_b3_deep_ok{ own: raw mk_w8_b3_deep_ok(), s: raw mks_w8_b3_deep_ok(), z: 1i64 }; };
+func:ws1_w8_b3_deep_ok = int64(LF_w8_b3_deep_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:HL_w8_b3_deep_ok = { LF_w8_b3_deep_ok->:lp; LF_w8_b3_deep_ok->:lq; int64:z; };
+struct:HH_w8_b3_deep_ok = { HL_w8_b3_deep_ok->:hp; int64:z; };
+struct:SS_w8_b3_deep_ok = { SS_w8_b3_deep_ok->?:p; List<int64>:own; string:s; int64:z; };
+impl:SS_w8_b3_deep_ok = { func:sv = fixed uint8[](SS_w8_b3_deep_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:wss_w8_b3_deep_ok = int64(SS_w8_b3_deep_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:ND_w8_b3_deep_ok = { ND_w8_b3_deep_ok->?:nx; string:s; int64:z; };
+func:wsn_w8_b3_deep_ok = int64(ND_w8_b3_deep_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+func:getv_w8_b3_deep_ok = fixed uint8[](ND_w8_b3_deep_ok->:o) never fails { ND_w8_b3_deep_ok->:p = (<-o).nx ??! E5; pass string_bytes((<-p).s); };
+func:f_w8_b3_deep_ok = int64(int64:n) never fails {
+    LF_w8_b3_deep_ok:fA = raw nlf_w8_b3_deep_ok();
+    LF_w8_b3_deep_ok:fB = raw nlf_w8_b3_deep_ok();
+    LF_w8_b3_deep_ok:fC = raw nlf_w8_b3_deep_ok();
+    SS_w8_b3_deep_ok:c = SS_w8_b3_deep_ok{ p: NIL, own: raw mk_w8_b3_deep_ok(), s: raw mks_w8_b3_deep_ok(), z: 1i64 };
+    SS_w8_b3_deep_ok:c2 = SS_w8_b3_deep_ok{ p: NIL, own: raw mk_w8_b3_deep_ok(), s: raw mks_w8_b3_deep_ok(), z: 1i64 };
+    SS_w8_b3_deep_ok:b = SS_w8_b3_deep_ok{ p: @c, own: raw mk_w8_b3_deep_ok(), s: raw mks_w8_b3_deep_ok(), z: 1i64 };
+    SS_w8_b3_deep_ok:a = SS_w8_b3_deep_ok{ p: @b, own: raw mk_w8_b3_deep_ok(), s: raw mks_w8_b3_deep_ok(), z: 1i64 };
+    ND_w8_b3_deep_ok:nB = ND_w8_b3_deep_ok{ nx: NIL, s: raw mks_w8_b3_deep_ok(), z: 1i64 };
+    ND_w8_b3_deep_ok:nC = ND_w8_b3_deep_ok{ nx: NIL, s: raw mks_w8_b3_deep_ok(), z: 1i64 };
+    ND_w8_b3_deep_ok:nA = ND_w8_b3_deep_ok{ nx: @nB, s: raw mks_w8_b3_deep_ok(), z: 1i64 };
+    ND_w8_b3_deep_ok:nD = ND_w8_b3_deep_ok{ nx: @nA, s: raw mks_w8_b3_deep_ok(), z: 1i64 };
+    HL_w8_b3_deep_ok:hl = HL_w8_b3_deep_ok{ lp: @fB, lq: @fA, z: 0i64 };
+    HH_w8_b3_deep_ok:hx = HH_w8_b3_deep_ok{ hp: @hl, z: 0i64 };
+    LF_w8_b3_deep_ok->:q = @fB;
+    LF_w8_b3_deep_ok->->:qq = @q;
+    LF_w8_b3_deep_ok->->->:qqq = @qq;
+    HH_w8_b3_deep_ok->:hxp = @hx;
+    LF_w8_b3_deep_ok->->[1]:qa = [qq];
+    LF_w8_b3_deep_ok->?:oq = @fB;
+    SS_w8_b3_deep_ok->?:ob = @b;
+    SS_w8_b3_deep_ok?:sa = SS_w8_b3_deep_ok{ p: @b, own: raw mk_w8_b3_deep_ok(), s: raw mks_w8_b3_deep_ok(), z: 1i64 };
+    fixed uint8[]:vw = raw getv_w8_b3_deep_ok(@nD);
+    discard(raw wsn_w8_b3_deep_ok(@nB));
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:cell_main_w8_b3_deep_ok = int32() never fails { pass (((raw f_w8_b3_deep_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (row 5; one of AW8's eight `p4`, l.25027 item 5): A right program: the getter takes `p = raw nxt(o)` from a helper that returns
+// `(<-o).nx ??! E5` and views `(<-p).s` (`nA.s`). The caller then rewrites `nB.s` through `wsn(@nB)` and reads the view. T11 accepts it and B3n
+// refuses it. Right: on main (3a45b7c4) it exits 67 on every road 0-8 at -O0 and -O2 and under the detector. From
+// `Team/TMP/atk-177d2f-w8-2026-11-22/cells/aw8/a7/aw8_p4_c1_ok.npk`.
+func:mk_aw8_p4_c1_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks_aw8_p4_c1_ok = string() never fails { pass string_concat("a", "b"); };
+struct:LF_aw8_p4_c1_ok = { List<int64>:own; string:s; int64:z; };
+impl:LF_aw8_p4_c1_ok = { func:sv = fixed uint8[](LF_aw8_p4_c1_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:nlf_aw8_p4_c1_ok = LF_aw8_p4_c1_ok() never fails { pass LF_aw8_p4_c1_ok{ own: raw mk_aw8_p4_c1_ok(), s: raw mks_aw8_p4_c1_ok(), z: 1i64 }; };
+func:ws1_aw8_p4_c1_ok = int64(LF_aw8_p4_c1_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:HL_aw8_p4_c1_ok = { LF_aw8_p4_c1_ok->:lp; LF_aw8_p4_c1_ok->:lq; int64:z; };
+struct:HH_aw8_p4_c1_ok = { HL_aw8_p4_c1_ok->:hp; int64:z; };
+struct:SS_aw8_p4_c1_ok = { SS_aw8_p4_c1_ok->?:p; List<int64>:own; string:s; int64:z; };
+impl:SS_aw8_p4_c1_ok = { func:sv = fixed uint8[](SS_aw8_p4_c1_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:wss_aw8_p4_c1_ok = int64(SS_aw8_p4_c1_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:ND_aw8_p4_c1_ok = { ND_aw8_p4_c1_ok->?:nx; string:s; int64:z; };
+func:wsn_aw8_p4_c1_ok = int64(ND_aw8_p4_c1_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+func:nxt_aw8_p4_c1_ok = ND_aw8_p4_c1_ok->(ND_aw8_p4_c1_ok->:o) never fails { pass (<-o).nx ??! E5; };
+func:getv_aw8_p4_c1_ok = fixed uint8[](ND_aw8_p4_c1_ok->:o) never fails { ND_aw8_p4_c1_ok->:p = raw nxt_aw8_p4_c1_ok(o); pass string_bytes((<-p).s); };
+func:f_aw8_p4_c1_ok = int64(int64:n) never fails {
+    LF_aw8_p4_c1_ok:fA = raw nlf_aw8_p4_c1_ok();
+    LF_aw8_p4_c1_ok:fB = raw nlf_aw8_p4_c1_ok();
+    LF_aw8_p4_c1_ok:fC = raw nlf_aw8_p4_c1_ok();
+    SS_aw8_p4_c1_ok:c = SS_aw8_p4_c1_ok{ p: NIL, own: raw mk_aw8_p4_c1_ok(), s: raw mks_aw8_p4_c1_ok(), z: 1i64 };
+    SS_aw8_p4_c1_ok:c2 = SS_aw8_p4_c1_ok{ p: NIL, own: raw mk_aw8_p4_c1_ok(), s: raw mks_aw8_p4_c1_ok(), z: 1i64 };
+    SS_aw8_p4_c1_ok:b = SS_aw8_p4_c1_ok{ p: @c, own: raw mk_aw8_p4_c1_ok(), s: raw mks_aw8_p4_c1_ok(), z: 1i64 };
+    SS_aw8_p4_c1_ok:a = SS_aw8_p4_c1_ok{ p: @b, own: raw mk_aw8_p4_c1_ok(), s: raw mks_aw8_p4_c1_ok(), z: 1i64 };
+    ND_aw8_p4_c1_ok:nB = ND_aw8_p4_c1_ok{ nx: NIL, s: raw mks_aw8_p4_c1_ok(), z: 1i64 };
+    ND_aw8_p4_c1_ok:nC = ND_aw8_p4_c1_ok{ nx: NIL, s: raw mks_aw8_p4_c1_ok(), z: 1i64 };
+    ND_aw8_p4_c1_ok:nA = ND_aw8_p4_c1_ok{ nx: @nB, s: raw mks_aw8_p4_c1_ok(), z: 1i64 };
+    ND_aw8_p4_c1_ok:nD = ND_aw8_p4_c1_ok{ nx: @nA, s: raw mks_aw8_p4_c1_ok(), z: 1i64 };
+    HL_aw8_p4_c1_ok:hl = HL_aw8_p4_c1_ok{ lp: @fB, lq: @fA, z: 0i64 };
+    HH_aw8_p4_c1_ok:hx = HH_aw8_p4_c1_ok{ hp: @hl, z: 0i64 };
+    LF_aw8_p4_c1_ok->:q = @fB;
+    LF_aw8_p4_c1_ok->->:qq = @q;
+    LF_aw8_p4_c1_ok->->->:qqq = @qq;
+    HH_aw8_p4_c1_ok->:hxp = @hx;
+    LF_aw8_p4_c1_ok->->[1]:qa = [qq];
+    LF_aw8_p4_c1_ok->?:oq = @fB;
+    SS_aw8_p4_c1_ok->?:ob = @b;
+    SS_aw8_p4_c1_ok?:sa = SS_aw8_p4_c1_ok{ p: @b, own: raw mk_aw8_p4_c1_ok(), s: raw mks_aw8_p4_c1_ok(), z: 1i64 };
+    fixed uint8[]:vw = raw getv_aw8_p4_c1_ok(@nD);
+    discard(raw wsn_aw8_p4_c1_ok(@nB));
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:cell_main_aw8_p4_c1_ok = int32() never fails { pass (((raw f_aw8_p4_c1_ok(1i64)) + 60i64) =>! int32); };
+// ITS BY-NAME TWIN `aw8_p4_c1_bn_ok`: main refuses it too (err=c3dba3e709328eb7 BORROW-015@41:21), so the price is at parity. From
+// `Team/TMP/atk-177d2f-w8-2026-11-22/cells/aw8/a7/aw8_p4_c1_bn_ok.npk`.
+func:mk_aw8_p4_c1_bn_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks_aw8_p4_c1_bn_ok = string() never fails { pass string_concat("a", "b"); };
+struct:LF_aw8_p4_c1_bn_ok = { List<int64>:own; string:s; int64:z; };
+impl:LF_aw8_p4_c1_bn_ok = { func:sv = fixed uint8[](LF_aw8_p4_c1_bn_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:nlf_aw8_p4_c1_bn_ok = LF_aw8_p4_c1_bn_ok() never fails { pass LF_aw8_p4_c1_bn_ok{ own: raw mk_aw8_p4_c1_bn_ok(), s: raw mks_aw8_p4_c1_bn_ok(), z: 1i64 }; };
+func:ws1_aw8_p4_c1_bn_ok = int64(LF_aw8_p4_c1_bn_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:HL_aw8_p4_c1_bn_ok = { LF_aw8_p4_c1_bn_ok->:lp; LF_aw8_p4_c1_bn_ok->:lq; int64:z; };
+struct:HH_aw8_p4_c1_bn_ok = { HL_aw8_p4_c1_bn_ok->:hp; int64:z; };
+struct:SS_aw8_p4_c1_bn_ok = { SS_aw8_p4_c1_bn_ok->?:p; List<int64>:own; string:s; int64:z; };
+impl:SS_aw8_p4_c1_bn_ok = { func:sv = fixed uint8[](SS_aw8_p4_c1_bn_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:wss_aw8_p4_c1_bn_ok = int64(SS_aw8_p4_c1_bn_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:ND_aw8_p4_c1_bn_ok = { ND_aw8_p4_c1_bn_ok->?:nx; string:s; int64:z; };
+func:wsn_aw8_p4_c1_bn_ok = int64(ND_aw8_p4_c1_bn_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+func:nxt_aw8_p4_c1_bn_ok = ND_aw8_p4_c1_bn_ok->(ND_aw8_p4_c1_bn_ok->:o) never fails { pass (<-o).nx ??! E5; };
+func:getv_aw8_p4_c1_bn_ok = fixed uint8[](ND_aw8_p4_c1_bn_ok->:o) never fails { ND_aw8_p4_c1_bn_ok->:p = raw nxt_aw8_p4_c1_bn_ok(o); pass string_bytes((<-p).s); };
+func:f_aw8_p4_c1_bn_ok = int64(int64:n) never fails {
+    LF_aw8_p4_c1_bn_ok:fA = raw nlf_aw8_p4_c1_bn_ok();
+    LF_aw8_p4_c1_bn_ok:fB = raw nlf_aw8_p4_c1_bn_ok();
+    LF_aw8_p4_c1_bn_ok:fC = raw nlf_aw8_p4_c1_bn_ok();
+    SS_aw8_p4_c1_bn_ok:c = SS_aw8_p4_c1_bn_ok{ p: NIL, own: raw mk_aw8_p4_c1_bn_ok(), s: raw mks_aw8_p4_c1_bn_ok(), z: 1i64 };
+    SS_aw8_p4_c1_bn_ok:c2 = SS_aw8_p4_c1_bn_ok{ p: NIL, own: raw mk_aw8_p4_c1_bn_ok(), s: raw mks_aw8_p4_c1_bn_ok(), z: 1i64 };
+    SS_aw8_p4_c1_bn_ok:b = SS_aw8_p4_c1_bn_ok{ p: @c, own: raw mk_aw8_p4_c1_bn_ok(), s: raw mks_aw8_p4_c1_bn_ok(), z: 1i64 };
+    SS_aw8_p4_c1_bn_ok:a = SS_aw8_p4_c1_bn_ok{ p: @b, own: raw mk_aw8_p4_c1_bn_ok(), s: raw mks_aw8_p4_c1_bn_ok(), z: 1i64 };
+    ND_aw8_p4_c1_bn_ok:nB = ND_aw8_p4_c1_bn_ok{ nx: NIL, s: raw mks_aw8_p4_c1_bn_ok(), z: 1i64 };
+    ND_aw8_p4_c1_bn_ok:nC = ND_aw8_p4_c1_bn_ok{ nx: NIL, s: raw mks_aw8_p4_c1_bn_ok(), z: 1i64 };
+    ND_aw8_p4_c1_bn_ok:nA = ND_aw8_p4_c1_bn_ok{ nx: @nB, s: raw mks_aw8_p4_c1_bn_ok(), z: 1i64 };
+    ND_aw8_p4_c1_bn_ok:nD = ND_aw8_p4_c1_bn_ok{ nx: @nA, s: raw mks_aw8_p4_c1_bn_ok(), z: 1i64 };
+    HL_aw8_p4_c1_bn_ok:hl = HL_aw8_p4_c1_bn_ok{ lp: @fB, lq: @fA, z: 0i64 };
+    HH_aw8_p4_c1_bn_ok:hx = HH_aw8_p4_c1_bn_ok{ hp: @hl, z: 0i64 };
+    LF_aw8_p4_c1_bn_ok->:q = @fB;
+    LF_aw8_p4_c1_bn_ok->->:qq = @q;
+    LF_aw8_p4_c1_bn_ok->->->:qqq = @qq;
+    HH_aw8_p4_c1_bn_ok->:hxp = @hx;
+    LF_aw8_p4_c1_bn_ok->->[1]:qa = [qq];
+    LF_aw8_p4_c1_bn_ok->?:oq = @fB;
+    SS_aw8_p4_c1_bn_ok->?:ob = @b;
+    SS_aw8_p4_c1_bn_ok?:sa = SS_aw8_p4_c1_bn_ok{ p: @b, own: raw mk_aw8_p4_c1_bn_ok(), s: raw mks_aw8_p4_c1_bn_ok(), z: 1i64 };
+    ND_aw8_p4_c1_bn_ok->:pn = raw nxt_aw8_p4_c1_bn_ok(@nD); fixed uint8[]:vw = string_bytes((<-pn).s);
+    discard(raw wsn_aw8_p4_c1_bn_ok(@nB));
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:cell_main_aw8_p4_c1_bn_ok = int32() never fails { pass (((raw f_aw8_p4_c1_bn_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY (row 5; l.25963 item 4): A right program: a fan-out-4, 8-level graph and a getter seven loads deep (`f0` each time, `??! E5`)
+// that views `n7_0.s`. The caller then writes `n6_0.s`, a member no view holds. T11 accepts it and it runs 67. Right: on main (3a45b7c4) it exits
+// 67 on every road 0-8 at -O0 and -O2 and under the detector. From `Team/TMP/aw10-177d2f-2026-11-22/cells/aw10/cap/cap_k4l8d7_p.npk`.
+func:mk_cap_k4l8d7_p = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks_cap_k4l8d7_p = string() never fails { pass string_concat("a", "b"); };
+struct:FN_cap_k4l8d7_p = { FN_cap_k4l8d7_p->?:f0; FN_cap_k4l8d7_p->?:f1; FN_cap_k4l8d7_p->?:f2; FN_cap_k4l8d7_p->?:f3; string:s; int64:z; };
+func:wsf_cap_k4l8d7_p = int64(FN_cap_k4l8d7_p->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+func:getv_cap_k4l8d7_p = fixed uint8[](FN_cap_k4l8d7_p->:o) never fails { FN_cap_k4l8d7_p->:p1 = (<-o).f0 ??! E5; FN_cap_k4l8d7_p->:p2 = (<-p1).f0 ??! E5; FN_cap_k4l8d7_p->:p3 = (<-p2).f0 ??! E5; FN_cap_k4l8d7_p->:p4 = (<-p3).f0 ??! E5; FN_cap_k4l8d7_p->:p5 = (<-p4).f0 ??! E5; FN_cap_k4l8d7_p->:p6 = (<-p5).f0 ??! E5; FN_cap_k4l8d7_p->:p7 = (<-p6).f0 ??! E5; pass string_bytes((<-p7).s); };
+func:f_cap_k4l8d7_p = int64(int64:n) never fails {
+    FN_cap_k4l8d7_p:nx = FN_cap_k4l8d7_p{ f0: NIL, f1: NIL, f2: NIL, f3: NIL, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n7_0 = FN_cap_k4l8d7_p{ f0: NIL, f1: NIL, f2: NIL, f3: NIL, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n7_1 = FN_cap_k4l8d7_p{ f0: NIL, f1: NIL, f2: NIL, f3: NIL, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n7_2 = FN_cap_k4l8d7_p{ f0: NIL, f1: NIL, f2: NIL, f3: NIL, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n7_3 = FN_cap_k4l8d7_p{ f0: NIL, f1: NIL, f2: NIL, f3: NIL, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n6_0 = FN_cap_k4l8d7_p{ f0: @n7_0, f1: @n7_1, f2: @n7_2, f3: @n7_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n6_1 = FN_cap_k4l8d7_p{ f0: @n7_0, f1: @n7_1, f2: @n7_2, f3: @n7_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n6_2 = FN_cap_k4l8d7_p{ f0: @n7_0, f1: @n7_1, f2: @n7_2, f3: @n7_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n6_3 = FN_cap_k4l8d7_p{ f0: @n7_0, f1: @n7_1, f2: @n7_2, f3: @n7_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n5_0 = FN_cap_k4l8d7_p{ f0: @n6_0, f1: @n6_1, f2: @n6_2, f3: @n6_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n5_1 = FN_cap_k4l8d7_p{ f0: @n6_0, f1: @n6_1, f2: @n6_2, f3: @n6_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n5_2 = FN_cap_k4l8d7_p{ f0: @n6_0, f1: @n6_1, f2: @n6_2, f3: @n6_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n5_3 = FN_cap_k4l8d7_p{ f0: @n6_0, f1: @n6_1, f2: @n6_2, f3: @n6_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n4_0 = FN_cap_k4l8d7_p{ f0: @n5_0, f1: @n5_1, f2: @n5_2, f3: @n5_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n4_1 = FN_cap_k4l8d7_p{ f0: @n5_0, f1: @n5_1, f2: @n5_2, f3: @n5_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n4_2 = FN_cap_k4l8d7_p{ f0: @n5_0, f1: @n5_1, f2: @n5_2, f3: @n5_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n4_3 = FN_cap_k4l8d7_p{ f0: @n5_0, f1: @n5_1, f2: @n5_2, f3: @n5_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n3_0 = FN_cap_k4l8d7_p{ f0: @n4_0, f1: @n4_1, f2: @n4_2, f3: @n4_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n3_1 = FN_cap_k4l8d7_p{ f0: @n4_0, f1: @n4_1, f2: @n4_2, f3: @n4_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n3_2 = FN_cap_k4l8d7_p{ f0: @n4_0, f1: @n4_1, f2: @n4_2, f3: @n4_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n3_3 = FN_cap_k4l8d7_p{ f0: @n4_0, f1: @n4_1, f2: @n4_2, f3: @n4_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n2_0 = FN_cap_k4l8d7_p{ f0: @n3_0, f1: @n3_1, f2: @n3_2, f3: @n3_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n2_1 = FN_cap_k4l8d7_p{ f0: @n3_0, f1: @n3_1, f2: @n3_2, f3: @n3_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n2_2 = FN_cap_k4l8d7_p{ f0: @n3_0, f1: @n3_1, f2: @n3_2, f3: @n3_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n2_3 = FN_cap_k4l8d7_p{ f0: @n3_0, f1: @n3_1, f2: @n3_2, f3: @n3_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n1_0 = FN_cap_k4l8d7_p{ f0: @n2_0, f1: @n2_1, f2: @n2_2, f3: @n2_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n1_1 = FN_cap_k4l8d7_p{ f0: @n2_0, f1: @n2_1, f2: @n2_2, f3: @n2_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n1_2 = FN_cap_k4l8d7_p{ f0: @n2_0, f1: @n2_1, f2: @n2_2, f3: @n2_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n1_3 = FN_cap_k4l8d7_p{ f0: @n2_0, f1: @n2_1, f2: @n2_2, f3: @n2_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    FN_cap_k4l8d7_p:n0_0 = FN_cap_k4l8d7_p{ f0: @n1_0, f1: @n1_1, f2: @n1_2, f3: @n1_3, s: raw mks_cap_k4l8d7_p(), z: 1i64 };
+    fixed uint8[]:vw0 = raw getv_cap_k4l8d7_p(@n0_0);
+    discard(raw wsf_cap_k4l8d7_p(@n6_0));
+    pass ((vw0[0i64] => int64)) - 90i64;
+};
+func:cell_main_cap_k4l8d7_p = int32() never fails { pass (((raw f_cap_k4l8d7_p(1i64)) + 60i64) =>! int32); };
+// ITS BY-NAME TWIN `cap_k4l8d7_p_bn`: main refuses it too (err=ec51b1374285124d BORROW-015@40:21 BORROW-015@40:21 BORROW-015@40:21
+// BORROW-015@40:21), so the price is at parity. From `Team/TMP/aw14-177d2f-2026-11-22/cells/aw14/p/cap_k4l8d7_p_bn.npk`.
+func:mk_cap_k4l8d7_p_bn = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks_cap_k4l8d7_p_bn = string() never fails { pass string_concat("a", "b"); };
+struct:FN_cap_k4l8d7_p_bn = { FN_cap_k4l8d7_p_bn->?:f0; FN_cap_k4l8d7_p_bn->?:f1; FN_cap_k4l8d7_p_bn->?:f2; FN_cap_k4l8d7_p_bn->?:f3; string:s; int64:z; };
+func:wsf_cap_k4l8d7_p_bn = int64(FN_cap_k4l8d7_p_bn->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+func:getv_cap_k4l8d7_p_bn = fixed uint8[](FN_cap_k4l8d7_p_bn->:o) never fails { FN_cap_k4l8d7_p_bn->:p1 = (<-o).f0 ??! E5; FN_cap_k4l8d7_p_bn->:p2 = (<-p1).f0 ??! E5; FN_cap_k4l8d7_p_bn->:p3 = (<-p2).f0 ??! E5; FN_cap_k4l8d7_p_bn->:p4 = (<-p3).f0 ??! E5; FN_cap_k4l8d7_p_bn->:p5 = (<-p4).f0 ??! E5; FN_cap_k4l8d7_p_bn->:p6 = (<-p5).f0 ??! E5; FN_cap_k4l8d7_p_bn->:p7 = (<-p6).f0 ??! E5; pass string_bytes((<-p7).s); };
+func:f_cap_k4l8d7_p_bn = int64(int64:n) never fails {
+    FN_cap_k4l8d7_p_bn:nx = FN_cap_k4l8d7_p_bn{ f0: NIL, f1: NIL, f2: NIL, f3: NIL, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n7_0 = FN_cap_k4l8d7_p_bn{ f0: NIL, f1: NIL, f2: NIL, f3: NIL, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n7_1 = FN_cap_k4l8d7_p_bn{ f0: NIL, f1: NIL, f2: NIL, f3: NIL, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n7_2 = FN_cap_k4l8d7_p_bn{ f0: NIL, f1: NIL, f2: NIL, f3: NIL, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n7_3 = FN_cap_k4l8d7_p_bn{ f0: NIL, f1: NIL, f2: NIL, f3: NIL, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n6_0 = FN_cap_k4l8d7_p_bn{ f0: @n7_0, f1: @n7_1, f2: @n7_2, f3: @n7_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n6_1 = FN_cap_k4l8d7_p_bn{ f0: @n7_0, f1: @n7_1, f2: @n7_2, f3: @n7_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n6_2 = FN_cap_k4l8d7_p_bn{ f0: @n7_0, f1: @n7_1, f2: @n7_2, f3: @n7_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n6_3 = FN_cap_k4l8d7_p_bn{ f0: @n7_0, f1: @n7_1, f2: @n7_2, f3: @n7_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n5_0 = FN_cap_k4l8d7_p_bn{ f0: @n6_0, f1: @n6_1, f2: @n6_2, f3: @n6_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n5_1 = FN_cap_k4l8d7_p_bn{ f0: @n6_0, f1: @n6_1, f2: @n6_2, f3: @n6_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n5_2 = FN_cap_k4l8d7_p_bn{ f0: @n6_0, f1: @n6_1, f2: @n6_2, f3: @n6_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n5_3 = FN_cap_k4l8d7_p_bn{ f0: @n6_0, f1: @n6_1, f2: @n6_2, f3: @n6_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n4_0 = FN_cap_k4l8d7_p_bn{ f0: @n5_0, f1: @n5_1, f2: @n5_2, f3: @n5_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n4_1 = FN_cap_k4l8d7_p_bn{ f0: @n5_0, f1: @n5_1, f2: @n5_2, f3: @n5_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n4_2 = FN_cap_k4l8d7_p_bn{ f0: @n5_0, f1: @n5_1, f2: @n5_2, f3: @n5_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n4_3 = FN_cap_k4l8d7_p_bn{ f0: @n5_0, f1: @n5_1, f2: @n5_2, f3: @n5_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n3_0 = FN_cap_k4l8d7_p_bn{ f0: @n4_0, f1: @n4_1, f2: @n4_2, f3: @n4_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n3_1 = FN_cap_k4l8d7_p_bn{ f0: @n4_0, f1: @n4_1, f2: @n4_2, f3: @n4_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n3_2 = FN_cap_k4l8d7_p_bn{ f0: @n4_0, f1: @n4_1, f2: @n4_2, f3: @n4_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n3_3 = FN_cap_k4l8d7_p_bn{ f0: @n4_0, f1: @n4_1, f2: @n4_2, f3: @n4_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n2_0 = FN_cap_k4l8d7_p_bn{ f0: @n3_0, f1: @n3_1, f2: @n3_2, f3: @n3_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n2_1 = FN_cap_k4l8d7_p_bn{ f0: @n3_0, f1: @n3_1, f2: @n3_2, f3: @n3_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n2_2 = FN_cap_k4l8d7_p_bn{ f0: @n3_0, f1: @n3_1, f2: @n3_2, f3: @n3_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n2_3 = FN_cap_k4l8d7_p_bn{ f0: @n3_0, f1: @n3_1, f2: @n3_2, f3: @n3_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n1_0 = FN_cap_k4l8d7_p_bn{ f0: @n2_0, f1: @n2_1, f2: @n2_2, f3: @n2_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n1_1 = FN_cap_k4l8d7_p_bn{ f0: @n2_0, f1: @n2_1, f2: @n2_2, f3: @n2_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n1_2 = FN_cap_k4l8d7_p_bn{ f0: @n2_0, f1: @n2_1, f2: @n2_2, f3: @n2_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n1_3 = FN_cap_k4l8d7_p_bn{ f0: @n2_0, f1: @n2_1, f2: @n2_2, f3: @n2_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn:n0_0 = FN_cap_k4l8d7_p_bn{ f0: @n1_0, f1: @n1_1, f2: @n1_2, f3: @n1_3, s: raw mks_cap_k4l8d7_p_bn(), z: 1i64 };
+    FN_cap_k4l8d7_p_bn->:w0_1 = n0_0.f0 ??! E5; FN_cap_k4l8d7_p_bn->:w0_2 = (<-w0_1).f0 ??! E5; FN_cap_k4l8d7_p_bn->:w0_3 = (<-w0_2).f0 ??! E5; FN_cap_k4l8d7_p_bn->:w0_4 = (<-w0_3).f0 ??! E5; FN_cap_k4l8d7_p_bn->:w0_5 = (<-w0_4).f0 ??! E5; FN_cap_k4l8d7_p_bn->:w0_6 = (<-w0_5).f0 ??! E5; FN_cap_k4l8d7_p_bn->:w0_7 = (<-w0_6).f0 ??! E5; fixed uint8[]:vw0 = string_bytes((<-w0_7).s);
+    discard(raw wsf_cap_k4l8d7_p_bn(@n6_0));
+    pass ((vw0[0i64] => int64)) - 90i64;
+};
+func:cell_main_cap_k4l8d7_p_bn = int32() never fails { pass (((raw f_cap_k4l8d7_p_bn(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

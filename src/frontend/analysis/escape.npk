@@ -152,6 +152,7 @@ pub struct:Escape = {
     List<int32>:vr_kind;
     List<int32>:vr_read;
     List<int32>:vr_rm;
+    List<int32>:vr_sf;   // DEF-681: the flow mark, beside `vr_rm`
     List<int32>:vr_xc;         // DEF-585: each entry's cast mark (`ViewRef.xc`)
     List<int32>:vr_path;       // the interned path (see `path_rel`) from the place to the viewed bytes; 0 = the place itself
     List<int32>:vr_next;
@@ -196,11 +197,14 @@ pub struct:Escape = {
     List<int32>:sv_param;
     List<int32>:sv_path;
     List<int32>:sv_next;
+    int32:vhs_t; int32:vhs_p; int32:vhs_s;   // DEF-681's own-root walk, its cost: `view_hop_suffix`'s last question and its answer
     wild int32->:sum_pass;
     int32:pe_t; int32:pe_p; int32:pe_r;   // DEF-681's function-value road, its cost: `escape_path_end_type`'s last question and its answer
     wild int32->:fv_type;   // DEF-681's function-value road: the function type a name hands this declaration on as a value at (0: never; -1: more than one type)
     int32:fv_skip;   // DEF-681's function-value road: the callee name of a resolved call, which is no value
     List<int32>:fv_list;   // DEF-681's function-value road: the declarations `fv_type` records, in the order they were first named as values
+    wild int32->:sum_rform;   // DEF-681: the return road's bit per parameter k: the result may be an address formed from k's own storage (`rform_set`)
+    wild int32->:sum_form;   // DEF-681: the flow mark's bar, a bit per parameter j: the body stores into j's pointee a value carrying j it didn't read out of j, or a holder of j's own pointer, or hands j in an argument the callee carries into its own pointee to a callee whose bit is set or that is unknown (`form_set`)
     wild int32->:sum_load;   // DEF-681: the result may carry a value READ through parameter k's pointee (a getter's `pass (<-w).q`, `pass <-pp`)
     // THE STORE MATRIX (D-325): per declaration and per pointer parameter j
     // (32 slots, the 32nd for the rest), the parameters k whose views (a
@@ -311,7 +315,12 @@ pub func:REF_ADDR = int32() never fails       { pass 4i32; };   // an address ca
 // `read` (DEF-584): the TYPE this PASS ref's value was read as, where it came up through a read: `hp.l[0i64]` an `int64`, `(<-hp).k`, `hp.lp` an `H->`. The value is
 // something read out of the parameter and isn't the parameter's own. Set by `collect_view_refs`' member, index and dereference arms alone (`mark_read_as`) and judged by
 // alias.npk's `passed_pointee` alone; the two chains' identity compares it, `--dump-refs` prints it, and every other reader takes a PASS ref as it always did. 0 IS THE PARAMETER'S OWN VALUE, judged by the parameter's own type, so an arm that forgets to mark errs BOTH ways: it refuses a value that holds no address (`hp.l[0i64]`, the prelude's `T:out = move(l.items[i]);`) and ACCEPTS a pointer read out of a parameter whose own pointee holds no `List` (`hp.lp` under an `HP->`).
-pub struct:ViewRef = { int32:root; int32:place; int32:kind; int32:path; int32:read; int32:xc; int32:rm; };
+pub struct:ViewRef = { int32:root; int32:place; int32:kind; int32:path; int32:read; int32:xc; int32:rm; int32:sf; };
+// DEF-681, THE FLOW MARK (`sf`): 1 on an address a call's flow carried from an argument into that SAME argument's pointee (`fill(@p)` whose callee stores
+// into `<-pp` a value carrying `pp`: the summary's pass bit from j into j), where the callee forms nothing from j. The summary can't say whether the callee stored the
+// parameter's own address or something it read out of the pointee (`<-pp = <-pp`'s note); taken for a pointer back into the root, a callee that fills a view through its own pointee was refused at its own call (`w17_pr_fill_ok`, `ag2f_vo_spd_ok`).
+// 2, THE RETURN ROAD'S TAG: argument k's refs at a call whose result may be an address formed from k (the callee's `sum_rform` bit, or an unknown callee by `form_val_view`). SET: 1 by `record_dest_refs`, 2 by `collect_call_refs`.
+// READ: `view_hop_walk` (an own-root ref marked 1 is skipped), `record_summary` (2 is the return road's origin), `sum_through_holder`, `fold_flow_into_param` and `record_matrix_at` (1 sets no form bit; 2 does). Kept by the chains' identity (`rr_enqueue`, `vr_twin_before`, both lists of `escape_add_view_ref`; a real pointer with the same root and place stands beside it, `w17m_late`) and read back by `escape_view_ref` and `dump_ref`; every other `ViewRef` is built with 0.
 // A CAST BETWEEN POINTER TYPES ON THE REF'S ROAD (DEF-585, `xc`): 0, none; T > 0, an address crossed by `=>! wild`/`wildx` to a pointer whose pointee T it kept
 // (`(raw fp(@h)) =>! wild int64->`, DEF-423's `tr =>! wild TypeResolver->`), so the type reach stays the true one and only the `wild` slot that can take a pointer to T
 // is read as holding it (alias.npk's `type_holds_elem_pointer`); -1, crossed with the slot's type not known (two crossings to different types met, a slice
@@ -336,6 +345,8 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
     wild int8->:svmem = alloc(dsize * #size_of<int32>());
     wild int8->:spmem = alloc(dsize * #size_of<int32>());
     wild int8->:slmem = alloc(dsize * #size_of<int32>());
+    wild int8->:sfmem = alloc(dsize * #size_of<int32>());
+    wild int8->:srmem = alloc(dsize * #size_of<int32>());
     wild int8->:ftmem = alloc(dsize * #size_of<int32>());
     wild int8->:fvmem = alloc(dsize * 32i64 * #size_of<int32>());
     wild int8->:fpmem = alloc(dsize * 32i64 * #size_of<int32>());
@@ -363,7 +374,7 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                        vr_root: raw list_init::<int32>(64i64),
                        vr_place: raw list_init::<int32>(64i64),
                        vr_kind: raw list_init::<int32>(64i64),
-                       vr_read: raw list_init::<int32>(64i64), vr_rm: raw list_init::<int32>(64i64),
+                       vr_read: raw list_init::<int32>(64i64), vr_rm: raw list_init::<int32>(64i64), vr_sf: raw list_init::<int32>(64i64),
                        vr_xc: raw list_init::<int32>(64i64),
                        vr_path: raw list_init::<int32>(64i64),
                        vr_next: raw list_init::<int32>(64i64),
@@ -375,8 +386,8 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                        sv_head: svmem =>! wild int32->,
                        sv_param: raw list_init::<int32>(64i64),
                        sv_path: raw list_init::<int32>(64i64),
-                       sv_next: raw list_init::<int32>(64i64),
-                       sum_pass: spmem =>! wild int32->, pe_t: 0i32, pe_p: 0i32, pe_r: 0i32, sum_load: slmem =>! wild int32->, fv_type: ftmem =>! wild int32->, fv_skip: 0i32 - 1i32, fv_list: raw list_init::<int32>(8i64),
+                       sv_next: raw list_init::<int32>(64i64), vhs_t: 0i32, vhs_p: 0i32, vhs_s: 0i32,
+                       sum_pass: spmem =>! wild int32->, pe_t: 0i32, pe_p: 0i32, pe_r: 0i32, sum_load: slmem =>! wild int32->, sum_form: sfmem =>! wild int32->, sum_rform: srmem =>! wild int32->, fv_type: ftmem =>! wild int32->, fv_skip: 0i32 - 1i32, fv_list: raw list_init::<int32>(8i64),
                        fv_head: fvmem =>! wild int32->,
                        fv_param: raw list_init::<int32>(64i64),
                        fv_path: raw list_init::<int32>(64i64),
@@ -406,6 +417,8 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
         x.sv_head[j] = 0i32 - 1i32;
         x.sum_pass[j] = 0i32;
         x.sum_load[j] = 0i32;
+        x.sum_form[j] = 0i32;
+        x.sum_rform[j] = 0i32;
         x.fv_type[j] = 0i32;
         x.vp_head[j] = 0i32 - 1i32;
         x.override_of[j] = 0i32;
@@ -911,6 +924,10 @@ func:merge_summary = NIL(Escape->:x, int32:from, int32:into) never fails {
     if (from == into) { pass NIL; }
     int32:lw = x.sum_load[from => int64];
     if ((x.sum_load[into => int64] | lw) != x.sum_load[into => int64]) { x.sum_load[into => int64] = x.sum_load[into => int64] | lw; x.changed = true; }
+    int32:fw = x.sum_form[from => int64];   // DEF-681: the form bits, as the load bits
+    if ((x.sum_form[into => int64] | fw) != x.sum_form[into => int64]) { x.sum_form[into => int64] = x.sum_form[into => int64] | fw; x.changed = true; }
+    int32:rw = x.sum_rform[from => int64];
+    if ((x.sum_rform[into => int64] | rw) != x.sum_rform[into => int64]) { x.sum_rform[into => int64] = x.sum_rform[into => int64] | rw; x.changed = true; }
     int32:pw = x.sum_pass[from => int64];
     if ((x.sum_pass[into => int64] | pw) != x.sum_pass[into => int64]) {
         x.sum_pass[into => int64] = x.sum_pass[into => int64] | pw;
@@ -1134,11 +1151,27 @@ func:ref_full_path = int32(Escape->:x, ViewRef:r) never fails {
     pass (raw path_join(x, raw path_rel(x, ExprId{ index: r.place }), rp));
 };
 
+// DEF-681's view road, the cut mark: A SUMMARY PATH CUT AT A LOAD THE CALLEE CAN'T NAME. A view of storage below a value the
+// callee LOADED out of a parameter's pointee -- through a local that holds it (`p2 = (<-p1).nx ??! E5`, a loop's `p = (<-p).nx ??! E5`, a copy, a `pick`), or
+// through a call's result (`(raw getp(o)).sv()`) -- lies some hops below the argument, and the entry's path names none of them. Such an entry is written a
+// second time with the step `U` in front (`0:U/f161` beside `0:f161`): the caller lays the rest below every pointer the argument's storage holds, level by
+// level, and past the fuel views everything reachable whole (`view_through_hop`'s `cut`). The mark rides on a VIEW ref as `read` -2, which no reader of a
+// PASS ref's `read` takes (each asks `> 0`), so a wrapper that hands the view on writes the mark again.
+func:path_cut = int32(Escape->:x, int32:p) never fails { pass (raw path_join(x, raw path_intern(x, "U"), p)); };
+// The path below the mark, or the path itself where it carries none.
+func:path_uncut = int32(Escape->:x, int32:p) never fails {
+    string:txt = raw path_text(x, p);
+    if ((txt.len == 0i64) || (txt.ptr[0i64] != 85u8)) { pass p; }   // 'U'
+    if (txt.len < 3i64) { pass 0i32; }
+    pass (raw path_intern(x, string_slice(txt, 2i64, txt.len) ?! ProvenSlice));
+};
+
 // DEF-681 (`usp`, `unf`, `uu`): THE PATH ABOVE AN UNWRAP. A place below an unwrap (`((<-o).p ??! E5).s`) is rooted at the unwrapped parameter
 // (`escape_unwrap_root`) with its path cut at the unwrap (`path_rel_compute` ends there), so the summary said `s` of the parameter's own pointee, and the
 // caller viewed the wrong storage. This is the same ref's path with every unwrap's operand laid above it (`p/s`), which the caller's hop walk lays on the
 // argument's type and takes below the pointer it meets. It is written BESIDE the cut entry. A ref rooted elsewhere (a `??` default's side) keeps its path.
 func:sum_uncut_path = int32(Escape->:x, ViewRef:r) never fails {
+    if (r.read == (0i32 - 2i32)) { pass (raw path_cut(x, raw ref_full_path(x, r))); }   // DEF-681: a view below a loaded value is a CUT entry
     int32:p = raw ref_full_path(x, r);
     ExprId:cur = ExprId{ index: r.place };
     for (int32:hop in 0i32...(raw BORROW_FUEL())) {
@@ -1184,6 +1217,7 @@ func:record_summary = NIL(Escape->:x, ExprId:v) never fails {
         } else {
             drop pass_set(x, k, r.xc);
             if ((r.kind == (raw REF_PASS())) && (r.read != 0i32) && (!(raw load_reads_own(x, v)))) { drop load_set(x, k); }   // DEF-681; DEF-736: not an own member's read
+            if ((raw form_val_view(x, v)) && (((r.kind == (raw REF_ADDR())) && (r.read == 0i32)) || (r.sf == 2i32))) { drop rform_set(x, k); }   // DEF-681: the return road's origin: an address formed from k's own storage handed back (`adrb`), or a callee's handed on (`adrb2`); through any number of pointers (`aw19r_g2`)
         }
     }
     pass NIL;
@@ -1223,6 +1257,11 @@ func:sum_through_holder = NIL(Escape->:x, ViewRef:r, int32:k, int32:sj) never fa
         // `@self`), read back through the binding, is that place's own value, so the view lies at the ref's path below the addressed place (a path names no dereference)
         if ((c.kind == (raw REF_ADDR())) && rview && ((raw param_index_of(x, c.root)) >= 0i32)) { if (sj < 0i32) { drop sv_add(x, raw param_index_of(x, c.root), raw path_join(x, raw ref_full_path(x, c), rp)); } else { drop fv_add(x, sj, raw param_index_of(x, c.root), raw path_join(x, raw ref_full_path(x, c), rp)); } }
         if (c.kind != (raw REF_PASS())) { continue; }
+        // DEF-681: THE CUT ENTRY. A view through a held value LOADED out of a parameter's pointee (a pointer read out of it, or a call's load reading,
+        // `rm` -1), or a view that is itself cut (a callee's cut entry handed on through a local), is at the ref's path some hops below that parameter
+        if (rview && ((raw param_index_of(x, c.root)) >= 0i32) && ((r.read == (0i32 - 2i32)) || ((c.read != 0i32) && ((c.rm < 0i32) || ((raw type_kind(x.types, raw type_unwrapped(x.types, c.read))) == (raw TY_POINTER())))))) {
+            if (sj < 0i32) { drop sv_add(x, raw param_index_of(x, c.root), raw path_cut(x, rp)); } else { drop fv_add(x, sj, raw param_index_of(x, c.root), raw path_cut(x, rp)); }
+        }
         // DEF-728: a VIEW through a value LOADED out of the parameter's pointee (`p = <-oo`, `read` nonzero) is a view of that pointee at the ref's
         // path, as the direct spelling `(<-(<-oo)).s` records it (`ag1_ldpp`); a carried value or an address through one stays DEF-681's
         if ((c.read != 0i32) && ((!rview) || ((raw type_kind(x.types, raw type_unwrapped(x.types, c.read))) != (raw TY_POINTER())))) { continue; }   // DEF-728: only a POINTER loaded out of the pointee (`p = <-oo`); `xs_ok`'s `<-p` reads an `SS`
@@ -1238,6 +1277,7 @@ func:sum_through_holder = NIL(Escape->:x, ViewRef:r, int32:k, int32:sj) never fa
             if (sj < 0i32) { drop sv_add(x, kc, is (c.xc != 0i32) : 0i32 : rp); } else { drop fv_add(x, sj, kc, is (c.xc != 0i32) : 0i32 : rp); }
         } else {
             if (sj < 0i32) { drop pass_set(x, kc, raw escape_xc_join(r.xc, c.xc)); } else { drop flow_pass_set(x, sj, kc, raw escape_xc_join(r.xc, c.xc)); }
+            if ((!rview) && (kc == sj) && (c.sf != 1i32)) { drop form_set(x, kc); }   // DEF-681: a holder of j's own pointer, stored back into j's pointee
         }
     }
     pass NIL;
@@ -1260,6 +1300,45 @@ func:load_reads_own = bool(Escape->:x, ExprId:v) never fails {
         cur = op;
     }
     pass false;
+};
+
+// DEF-681: can a value be an address into what was handed in: an unknown callee's result (`collect_call_refs`), or this function's own returned value (`record_summary`,
+// the return road's origin)? No type or an open one answers yes; DEF-709: a `string` can be (`string_from_bytes` hands back a view of argument 1, builtins.npk l.156), so it answers by `type_holds_pointer` like any other type
+func:form_val_view = bool(Escape->:x, ExprId:v) never fails {
+    int32:vt = raw exprtypes_get(x.etypes, v);
+    if (vt == 0i32) { pass true; }
+    if (raw escape_type_open(x, vt)) { pass true; }
+    pass (raw type_holds_pointer(x.types, vt, 8i32));
+};
+
+// DEF-681: the return road's bit: the result may be an address formed from parameter k's own storage, or one a callee formed and this one hands on
+func:rform_set = NIL(Escape->:x, int32:k) never fails {
+    if (x.noload) { pass NIL; }   // F10: no form bit in the `noload` pass, as `load_set` sets no load bit
+    if ((x.cur_fn < 0i32) || (x.cur_fn >= x.decl_count)) { pass NIL; }
+    int32:bit = raw param_bit(k);
+    if (bit == 0i32) { pass NIL; }
+    int64:at = x.cur_fn => int64;
+    if ((x.sum_rform[at] & bit) != 0i32) { pass NIL; }
+    x.sum_rform[at] = x.sum_rform[at] | bit;
+    x.changed = true;
+    pass NIL;
+};
+
+// DEF-681, THE FLOW MARK'S BAR: parameter k's bit is set by four callers, and forming an address alone sets nothing. In `fold_flow_into_param` and `record_matrix_at`, a store
+// into k's pointee of a value carrying k that the body didn't read out of k (`read` 0: an address formed from storage k reaches, through any number of pointers; or `sf` 2: one a callee formed and handed back); in `sum_through_holder`, a holder of k's own pointer stored back into k's pointee (not marked `sf` 1);
+// in `record_dest_refs`, a call whose flow carries argument j into j's own pointee where the callee's bit for j is set or the callee is unknown, for each parameter the argument's refs are rooted at. `merge_summary` carries the bits up. The bare mark (`sf`) stood on every j->j flow, so a callee that laid a REAL
+// pointer from a sub-place of its own argument into that argument's pointee (`(<-r).a.nx = @((<-r).b)`) was skipped by the own-root walk;
+// a per-store mark leaves `sro2`, `sro3`, `srog` open (the formed store cleared after its read-out copy), so the bit is the whole call's.
+func:form_set = NIL(Escape->:x, int32:k) never fails {
+    if (x.noload) { pass NIL; }   // F10: no form bit in the `noload` pass, as `load_set` sets no load bit
+    if ((x.cur_fn < 0i32) || (x.cur_fn >= x.decl_count)) { pass NIL; }
+    int32:bit = raw param_bit(k);
+    if (bit == 0i32) { pass NIL; }
+    int64:at = x.cur_fn => int64;
+    if ((x.sum_form[at] & bit) != 0i32) { pass NIL; }
+    x.sum_form[at] = x.sum_form[at] | bit;
+    x.changed = true;
+    pass NIL;
 };
 
 // DEF-681: the result may carry a value read through parameter k's pointee: the caller reads it as `<-arg` by name (`collect_call_refs`).
@@ -1534,39 +1613,73 @@ func:view_place_levels = int32(Escape->:x, ExprId:place) never fails {
 
 // DEF-681's view road: what a pointer the place HOLDS points at is viewed below the hop -- each ref of the place's root binding (a sourced binding's sources
 // too), the suffix joined below it, and so on at each further hop. At the fuel's end every storage reachable from there on through held pointers is viewed WHOLE,
-// except that a ref back into the place's own root is skipped, within the fuel and at its end (`h.root == r`), so the self-cycle isn't viewed (l.24464 item 1: `ag2f_c4_self`, open).
-func:view_through_hop = NIL(Escape->:x, ExprId:place, int32:path, int32:fuel, List<ViewRef>->:out) never fails {   // in collect_view_refs' recursive group (by push_source_refs), which states no measure: `fuel` bounds it
-    if ((path == 0i32) || (raw expr_is_none(place))) { pass NIL; }
-    int32:suf = raw view_hop_suffix(x, raw exprtypes_get(x.etypes, place), path);
+// except a ref back into the place's own root that is a view or carries the flow mark (`sf` 1), skipped within the fuel and at its end; the self-cycle stays open (l.24464 item 1, `ag2f_c4_self`).
+// DEF-681's own-root walk, its cost: ONE EXPANSION PER (root, type, path, fuel + 8 * levels) OF A WALK, and at the fuel's end one per root. A cut path is laid below every held pointer at every
+// level, so the walk met a place once per ROUTE to it: the fan-out to the fourth power, each with its own walk of everything past the fuel
+// (`aw8_cost_k16l5`). A place met again with the same key gives the refs it gave, so it is expanded once.
+// DEF-681: THE MARK IS WHAT THE WALK READS OF A PLACE -- its root, its type, its pointer levels -- with the path and the fuel (`seen`: root, type, path,
+// fuel + 8 * levels). A ref back into the place's own root is viewed and walked on as any other (`ia_d1_arg`, `iar_e0_s`), so a ring or a pool held
+// in one binding met each of its K refs as a place of its own, K ways a level (`w17c_x_pool_k64l8`); they are one expansion now. A CLOSURE THAT MET
+// THE CAP stopped short, and what it gives then depends on the roots read before it: such a key (root, type, path, -1 - that) is expanded at each
+// place once, as before the key (place, -1, path, that), so the cap's cells keep their reports and their time (`cap_k16l22d5_v`).
+// DEF-681: A ROOT A FUEL'S END READ IS MARKED WITH THE CLOSURE'S OWN ROOT (root, own root, -1). While a closure skipped every ref into its own root, what a
+// root's expansion gave depended on whose closure read it (`aw9_rto1`: marked once for the whole walk, route B's closure never read the edge route A's
+// had skipped as its own). Now a closure views a ref into its own root whole, as any other (`ia_d4_late`, `iar_e0_s`), and reads the own root's
+// refs once (they are its first level where the place isn't behind a pointer). The mark keeps the own root: two closures of one own root agree.
+func:view_through_hop = NIL(Escape->:x, ExprId:place, int32:path, int32:fuel, List<ViewRef>->:out, bool:cut) never fails {
+    List<int32>:seen = raw list_init::<int32>(8i64);
+    List<int32>:rseen = raw list_init::<int32>(8i64);   // DEF-681: the root marks (root, own root, -1), apart from the place marks
+    drop view_hop_walk(x, place, path, fuel, out, cut, @seen, @rseen);
+    pass NIL;
+};
+func:view_hop_seen = bool(List<int32>->:seen, int32:a, int32:b, int32:c, int32:d, bool:add) never fails {
+    for (int64:si in 0i64...(seen.count / 4i64)) { if (((<-seen)[si * 4i64] == a) && ((<-seen)[(si * 4i64) + 1i64] == b) && ((<-seen)[(si * 4i64) + 2i64] == c) && ((<-seen)[(si * 4i64) + 3i64] == d)) { pass true; } }
+    if (add) { drop list_push(seen, a); drop list_push(seen, b); drop list_push(seen, c); drop list_push(seen, d); }
+    pass false;
+};
+func:view_hop_walk = NIL(Escape->:x, ExprId:place, int32:path, int32:fuel, List<ViewRef>->:out, bool:cut, List<int32>->:seen, List<int32>->:rseen) never fails {   // in collect_view_refs' recursive group (by push_source_refs), which states no measure: `fuel` bounds it
+    if (((path == 0i32) && (!cut)) || (raw expr_is_none(place))) { pass NIL; }
+    int32:pt = raw exprtypes_get(x.etypes, place);
+    if ((pt == 0i32) || (x.vhs_t != pt) || (x.vhs_p != path)) { x.vhs_s = raw view_hop_suffix(x, pt, path); x.vhs_t = pt; x.vhs_p = path; }   // DEF-681's own-root walk, its cost: a type's answer for a path doesn't change
+    int32:suf = x.vhs_s;
     int32:suf0 = 0i32;   // DEF-681: the whole path below each held ref too, BESIDE the hop's suffix (the closed direction)
-    if (raw view_first_unlaid(x, raw exprtypes_get(x.etypes, place), path)) { suf0 = path; }
-    if ((suf == 0i32) && (suf0 == 0i32)) { pass NIL; }
+    if (cut || (raw view_first_unlaid(x, raw exprtypes_get(x.etypes, place), path))) { suf0 = path; }   // DEF-681: a cut entry's path lies below a hop the path doesn't name
+    if ((suf == 0i32) && (suf0 == 0i32) && (!cut)) { pass NIL; }
     int32:r = raw root_symbol(x, place);
     if (r == 0i32) { pass NIL; }
+    int32:lvs = raw view_place_levels(x, place);
+    int32:kf = fuel + (8i32 * lvs);
+    if (raw view_hop_seen(seen, r, pt, path, kf, true)) {   // DEF-681: one expansion per (root, type, levels, path, fuel)
+        if (!(raw view_hop_seen(seen, r, pt, path, (0i32 - 1i32) - kf, false))) { pass NIL; }
+        if (raw view_hop_seen(seen, place.index, 0i32 - 1i32, path, kf, true)) { pass NIL; }   // a key whose closure met the cap: each PLACE once, as before the key
+    }
     List<ViewRef>:held = raw list_init::<ViewRef>(4i64);
     drop view_held_refs(x, r, @held);
     // A PLACE BEHIND ITS ROOT'S POINTER (a pointer local handed on, `<-pw`, `pw.gv()`): the pointers its storage holds are the targets' own, level by level (`ag2e_pl`)
     int64:lo = 0i64;
-    for (int32:lv in 0i32...(raw view_place_levels(x, place))) {
+    for (int32:lv in 0i32...lvs) {
         int64:hi = held.count;
         for (int64:j in lo...hi) { ViewRef:tg = held[j]; if ((tg.root != 0i32) && (tg.root != r)) { drop view_held_refs(x, tg.root, @held); } }
         lo = hi;
     }
-    if (fuel <= 0i32) {
+    if ((fuel <= 0i32) || (cut && (path == 0i32))) {   // DEF-681: a cut entry of the WHOLE pointee views everything reachable whole
         // THE FUEL'S END FAILS CLOSED AT EVERY LEVEL PAST IT, BUT FOR THE OWN ROOT: every storage reachable from here on through held pointers is viewed WHOLE, a binding's
-        // refs read once (`ag2e_f6`, `ag2e_f9`), except a ref back into the place's own root, which is skipped (l.24464 item 1, `ag2f_c4_self`, open); past 4,096 refs the call is refused
+        // refs read once (`ag2e_f6`, `ag2e_f9`), except a ref back into the place's own root that is a view or carries `sf` 1 (l.24464 item 1, `ag2f_c4_self`, open); past 4,096 refs the call is refused
         int64:j = lo;
         int64:top = lo + 4096i64;
         while ((j < held.count) && (j < top)) decreases top - j {
             ViewRef:h = held[j];
             j = j + 1i64;
-            if ((h.root == 0i32) || (h.root == r)) { continue; }
-            drop list_push(out, ViewRef{ root: h.root, place: h.place, kind: raw VIEW_LAUNDERED(), path: h.path, read: 0i32, xc: h.xc, rm: 0i32 });
-            bool:seen = false;
-            for (int64:k in lo...(j - 1i64)) { if (held[k].root == h.root) { seen = true; break; } }
-            if (!seen) { drop view_held_refs(x, h.root, @held); }
+            if ((h.root == 0i32) || ((h.root == r) && ((h.sf == 1i32) || (h.kind == (raw VIEW_DIRECT())) || (h.kind == (raw VIEW_LAUNDERED()))))) { continue; }   // DEF-681: a POINTER the root holds back into itself is viewed whole too (`ia_d4_late`, `iar_e0_s`)
+            drop list_push(out, ViewRef{ root: h.root, place: h.place, kind: raw VIEW_LAUNDERED(), path: h.path, read: 0i32, xc: h.xc, rm: 0i32, sf: 0i32 });
+            bool:met = (h.root == r) && (lo == 0i64);   // DEF-681: the own root's refs are this list's first level already
+            for (int64:k in lo...(j - 1i64)) { if (held[k].root == h.root) { met = true; break; } }
+            if ((!met) && (!(raw view_hop_seen(rseen, h.root, r, 0i32 - 1i32, 0i32, true)))) { drop view_held_refs(x, h.root, @held); }
         }
-        if (j < held.count) { drop escape_err(x, raw BORROW_UNTRACKED(), "a view through this argument reaches more held pointers than the escape analysis will follow (DEF-681), so what it views cannot be read -- bind the nearer storage to a local, and hand that", (raw ast_expr(x.ast, place)).span); }
+        if (j < held.count) {
+            discard(raw view_hop_seen(seen, r, pt, path, (0i32 - 1i32) - kf, true)); discard(raw view_hop_seen(seen, place.index, 0i32 - 1i32, path, kf, true));   // DEF-681: the key met the cap
+            drop escape_err(x, raw BORROW_UNTRACKED(), "a view through this argument reaches more held pointers than the escape analysis will follow (DEF-681), so what it views cannot be read -- bind the nearer storage to a local, and hand that", (raw ast_expr(x.ast, place)).span);
+        }
         pass NIL;
     }
     for (int32:sk in 0i32...2i32) {
@@ -1574,10 +1687,10 @@ func:view_through_hop = NIL(Escape->:x, ExprId:place, int32:path, int32:fuel, Li
         if ((sx == 0i32) || ((sk == 1i32) && (sx == suf))) { continue; }
         for (int64:j in lo...held.count) {
             ViewRef:h = held[j];
-            if ((h.root == 0i32) || (h.root == r)) { continue; }
+            if ((h.root == 0i32) || ((h.root == r) && ((h.sf == 1i32) || (h.kind == (raw VIEW_DIRECT())) || (h.kind == (raw VIEW_LAUNDERED()))))) { continue; }   // DEF-681: a POINTER the root holds back into itself is viewed at its suffix too (`ia_d1_arg`, `ag2f_c4_self`)
             int32:np = raw path_join(x, h.path, sx);
-            drop list_push(out, ViewRef{ root: h.root, place: h.place, kind: raw VIEW_LAUNDERED(), path: np, read: 0i32, xc: h.xc, rm: 0i32 });
-            drop view_through_hop(x, ExprId{ index: h.place }, np, fuel - 1i32, out);
+            drop list_push(out, ViewRef{ root: h.root, place: h.place, kind: raw VIEW_LAUNDERED(), path: np, read: 0i32, xc: h.xc, rm: 0i32, sf: 0i32 });
+            drop view_hop_walk(x, ExprId{ index: h.place }, np, fuel - 1i32, out, cut, seen, rseen);
         }
     }
     pass NIL;
@@ -1585,12 +1698,21 @@ func:view_through_hop = NIL(Escape->:x, ExprId:place, int32:path, int32:fuel, Li
 
 func:arg_refs_view = NIL(Escape->:x, ExprId:a, bool:auto_ref, int32:path, int32:depth,
                          List<ViewRef>->:out) never fails {
+    // DEF-681: A CUT ENTRY (`path_cut`) is read at the path below its mark, laid below every held pointer (`cut`), and each view it gives is cut in turn
+    int32:up = raw path_uncut(x, path);
+    int64:o0 = out.count;
+    drop arg_refs_view_at(x, a, auto_ref, up, up != path, depth, out);
+    if ((up != path) && (!x.noload)) { for (int64:i in o0...out.count) { if ((((<-out)[i].kind == (raw VIEW_DIRECT())) || ((<-out)[i].kind == (raw VIEW_LAUNDERED()))) && ((<-out)[i].read == 0i32)) { (<-out)[i].read = 0i32 - 2i32; } } }
+    pass NIL;
+};
+func:arg_refs_view_at = NIL(Escape->:x, ExprId:a, bool:auto_ref, int32:path, bool:cut, int32:depth,
+                         List<ViewRef>->:out) never fails {
     if (raw expr_is_none(a)) { pass NIL; }
-    if (auto_ref) { drop push_view_ref_at(x, a, raw VIEW_LAUNDERED(), path, out); if (!x.noload) { drop view_through_hop(x, a, path, 4i32, out); } pass NIL; }   // DEF-681: the view road
+    if (auto_ref) { drop push_view_ref_at(x, a, raw VIEW_LAUNDERED(), path, out); if (!x.noload) { drop view_through_hop(x, a, path, 4i32, out, cut); } pass NIL; }   // DEF-681: the view road
     ExprNode:an = raw ast_expr(x.ast, a);
     if ((an.kind == ExprKind.ExprAddressOfExpr) || (an.kind == ExprKind.ExprBorrowExpr)) {
         drop push_view_ref_at(x, raw expr_operand(an), raw VIEW_LAUNDERED(), path, out);
-        if (!x.noload) { drop view_through_hop(x, raw expr_operand(an), path, 4i32, out); }   // DEF-681: the view road; F10: off in the `noload` pass
+        if (!x.noload) { drop view_through_hop(x, raw expr_operand(an), path, 4i32, out, cut); }   // DEF-681: the view road; F10: off in the `noload` pass
         pass NIL;
     }
     int32:at = raw exprtypes_get(x.etypes, a);
@@ -1600,7 +1722,7 @@ func:arg_refs_view = NIL(Escape->:x, ExprId:a, bool:auto_ref, int32:path, int32:
     ExprId:place = raw arg_place_chain(x, a);
     if (!(raw expr_is_none(place))) {
         drop push_view_ref_at(x, place, raw VIEW_LAUNDERED(), path, out);
-        if (!x.noload) { drop view_through_hop(x, a, path, 4i32, out); }   // DEF-681: the view road, from the argument as written (F10: off in the `noload` pass): a dereference `arg_place_chain` peels is a level (`ag2e_plpp`)
+        if (!x.noload) { drop view_through_hop(x, a, path, 4i32, out, cut); }   // DEF-681: the view road, from the argument as written (F10: off in the `noload` pass): a dereference `arg_place_chain` peels is a level (`ag2e_plpp`)
     } else {
     if ((an.kind == ExprKind.ExprCallExpr) || (an.kind == ExprKind.ExprMethodCallExpr)
         || (an.kind == ExprKind.ExprBuiltinExpr) || (an.kind == ExprKind.ExprStructLiteralExpr)
@@ -1618,11 +1740,14 @@ func:arg_refs_view = NIL(Escape->:x, ExprId:a, bool:auto_ref, int32:path, int32:
         ViewRef:r = tmp[i];
         if ((r.kind == (raw REF_PASS())) || (r.kind == (raw REF_ADDR()))) {
             if (!(raw expr_is_none(place))) { continue; }
-            drop list_push(out, ViewRef{ root: r.root, place: r.place, kind: raw VIEW_LAUNDERED(), path: raw path_join(x, r.path, path), read: 0i32, xc: 0i32, rm: 0i32 });
+            // DEF-681: THROUGH A VALUE READ OUT OF THE PARAMETER THE VIEW IS CUT (`(raw getp(o)).sv()`, `read` -2), unless the argument is an unwrap whose
+            // operand the summary can name above it (`sum_uncut_path` gives another path than the cut one: `((<-o).p ??! E5).sv()`)
+            ViewRef:uv = ViewRef{ root: r.root, place: a.index, kind: raw VIEW_LAUNDERED(), path: raw path_join(x, r.path, path), read: 0i32, xc: 0i32, rm: 0i32, sf: 0i32 };
+            bool:unw = (r.kind == (raw REF_PASS())) && ((an.kind == ExprKind.ExprEmphaticCoalesceExpr) || (an.kind == ExprKind.ExprEmphaticUnwrapExpr) || (an.kind == ExprKind.ExprNullCoalesceExpr) || (an.kind == ExprKind.ExprSafeUnwrapExpr));
+            bool:cutv = (!x.noload) && (r.kind == (raw REF_PASS())) && (r.read != 0i32) && (!(unw && ((raw sum_uncut_path(x, uv)) != (raw ref_full_path(x, uv)))));
+            drop list_push(out, ViewRef{ root: r.root, place: r.place, kind: raw VIEW_LAUNDERED(), path: raw path_join(x, r.path, path), read: is (cutv) : (0i32 - 2i32) : 0i32, xc: 0i32, rm: 0i32, sf: 0i32 });
             // DEF-681: THE SAME VIEW AT THE UNWRAP THE ARGUMENT IS (`((<-o).p ??! E5).sv()`), so the summary can name the path above it (`sum_uncut_path`)
-            if ((!x.noload) && (r.kind == (raw REF_PASS())) && ((an.kind == ExprKind.ExprEmphaticCoalesceExpr) || (an.kind == ExprKind.ExprEmphaticUnwrapExpr) || (an.kind == ExprKind.ExprNullCoalesceExpr) || (an.kind == ExprKind.ExprSafeUnwrapExpr))) {
-                drop list_push(out, ViewRef{ root: r.root, place: a.index, kind: raw VIEW_LAUNDERED(), path: raw path_join(x, r.path, path), read: 0i32, xc: 0i32, rm: 0i32 });
-            }
+            if (unw && (!x.noload)) { drop list_push(out, uv); }   // F10: off in the `noload` pass (rulings l.32895 item 3, l.32936 item 1)
             // DEF-681: A CALL'S RESULT OR A TERNARY AS THE ARGUMENT has no place of its own. A pointer's refs, and a carried parameter, name the storage the path
             // starts on, so the hop is below each (`ag2e_vrpcall`); an address a BY-VALUE value carries is what a pointer it holds points at, so the path's
             // steps past the hop are below it (`ag2e_vrcall`, `ag2e_vrtern`)
@@ -1630,9 +1755,9 @@ func:arg_refs_view = NIL(Escape->:x, ExprId:a, bool:auto_ref, int32:path, int32:
             if ((!x.noload) && (r.kind == (raw REF_ADDR())) && ((raw type_kind(x.types, raw type_unwrapped(x.types, at))) != (raw TY_POINTER()))) {   // F10: off in the `noload` pass (rulings l.32895 item 3, l.32936 item 1)
                 hs = raw view_hop_suffix(x, at, path);
                 if (hs == 0i32) { continue; }
-                drop list_push(out, ViewRef{ root: r.root, place: r.place, kind: raw VIEW_LAUNDERED(), path: raw path_join(x, r.path, hs), read: 0i32, xc: 0i32, rm: 0i32 });
+                drop list_push(out, ViewRef{ root: r.root, place: r.place, kind: raw VIEW_LAUNDERED(), path: raw path_join(x, r.path, hs), read: 0i32, xc: 0i32, rm: 0i32, sf: 0i32 });
             }
-            if (!x.noload) { drop view_through_hop(x, ExprId{ index: r.place }, raw path_join(x, r.path, hs), 4i32, out); }   // F10: off in the `noload` pass (rulings l.32895 item 3, l.32936 item 1)
+            if (!x.noload) { drop view_through_hop(x, ExprId{ index: r.place }, raw path_join(x, r.path, hs), 4i32, out, cut); }   // F10: off in the `noload` pass (rulings l.32895 item 3, l.32936 item 1)
             continue;
         }
         drop list_push(out, r);
@@ -1759,7 +1884,12 @@ func:record_dest_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, bool:auto_ref,
                     e = x.fv_next[e => int64];
                 }
             }
-            if (raw sum_has(fp, k)) { drop arg_refs_pass(x, ak, ak_auto, ak_thru, depth, @got); drop refuse_rootless_store(x, ak, ak_auto); }
+            if (raw sum_has(fp, k)) {
+                int64:p0 = got.count;
+                drop arg_refs_pass(x, ak, ak_auto, ak_thru, depth, @got); drop refuse_rootless_store(x, ak, ak_auto);
+                if ((!x.noload) && (k == j) && (callee > 0i32) && (!(raw sum_has(x.sum_form[callee => int64], j)))) { for (int64:gi in p0...got.count) { got[gi].sf = 1i32; } }   // DEF-681: the flow mark, only where the callee forms nothing from j (`form_set`)
+                if ((k == j) && ((callee <= 0i32) || (raw sum_has(x.sum_form[callee => int64], j)))) { for (int64:gi in p0...got.count) { drop form_set(x, raw param_index_of(x, got[gi].root)); } }   // DEF-681: so does this function, from each parameter the argument carries
+            }
             // DEF-681's out-parameter road: where the callee may store into j's pointee a value it READ through k's pointee (`putx`'s `<-out = (<-p).q`),
             // the destination holds what the caller reads by name through the argument, as a getter's result does (`collect_call_refs`)
             if ((callee > 0i32) && (k != j) && (raw sum_has(fp, k)) && (raw sum_has(x.sum_load[callee => int64], k))) {
@@ -2108,6 +2238,7 @@ func:fold_flow_into_param = NIL(Escape->:x, ExprId:dest, List<ViewRef>->:refs, b
             if (!x.noload) { drop fv_add(x, j, k, raw sum_uncut_path(x, r)); }   // DEF-681, the path above an unwrap: the store road; F10: off in the `noload` pass
         } else {
             drop flow_pass_set(x, j, k, r.xc);
+            if ((k == j) && (r.sf != 1i32) && ((r.sf == 2i32) || (r.read == 0i32))) { drop form_set(x, k); }   // DEF-681: not read out of j (an address formed from storage j reaches, or one a callee formed and handed back); through any number of pointers (`aw19t_set_k1`)
             if ((r.read != 0i32) && (k != j)) { drop load_set(x, k); }   // DEF-681's out-parameter road (`<-out = (<-p).q`): what the callee read through k's pointee, the caller reads through the argument; a store back into the same parameter (`<-pp = <-pp`) is there already
         }
     }
@@ -2706,7 +2837,7 @@ func:rr_enqueue = NIL(Escape->:x, ViewRef:r, List<ViewRef>->:q, List<int64>->:nx
             int64:at = s % 4294967296i64;
             for (int64:st in 0i64...q.count) {
                 ViewRef:f = (<-q)[at];
-                if ((f.root == r.root) && (f.kind == r.kind) && (f.path == r.path) && (f.read == r.read) && (f.xc == r.xc)) { pass NIL; }
+                if ((f.root == r.root) && (f.kind == r.kind) && (f.path == r.path) && (f.read == r.read) && (f.xc == r.xc) && (f.sf == r.sf)) { pass NIL; }
                 if ((<-nx)[at] == 0i64) { break; }
                 at = (<-nx)[at];
             }
@@ -2786,6 +2917,7 @@ func:record_matrix_at = NIL(Escape->:x, int32:j, ViewRef:pr, List<ViewRef>->:ref
             if (!x.noload) { drop fv_add(x, j, k, raw sum_uncut_path(x, r)); }   // DEF-681, the path above an unwrap: the store road; F10: off in the `noload` pass
         } else {
             drop flow_pass_set(x, j, k, r.xc);
+            if ((k == j) && (r.sf != 1i32) && ((r.sf == 2i32) || (r.read == 0i32))) { drop form_set(x, k); }   // DEF-681: not read out of j (an address formed from storage j reaches, or one a callee formed and handed back); through any number of pointers (`aw19t_set_k1`)
             if ((r.read != 0i32) && (k != j)) { drop load_set(x, k); }   // DEF-681's out-parameter road (`<-out = (<-p).q`): what the callee read through k's pointee, the caller reads through the argument; a store back into the same parameter (`<-pp = <-pp`) is there already
         }
     }
@@ -3177,7 +3309,7 @@ func:vr_twin_before = int64(List<ViewRef>->:l, int64:i) never fails {
     if (r.rm <= 0i32) { pass (0i64 - 1i64); }
     for (int64:j in 0i64...i) {
         ViewRef:t = (<-l)[j];
-        if ((t.rm == 0i32) && (t.root == r.root) && (t.place == r.place) && (t.kind == r.kind) && (t.path == r.path) && (t.read == r.read) && (t.xc == r.xc)) { pass j; }
+        if ((t.rm == 0i32) && (t.root == r.root) && (t.place == r.place) && (t.kind == r.kind) && (t.path == r.path) && (t.read == r.read) && (t.xc == r.xc) && (t.sf == r.sf)) { pass j; }
     }
     pass (0i64 - 1i64);
 };
@@ -4298,14 +4430,14 @@ func:escape_add_view_ref = NIL(Escape->:x, int32:stmt, ViewRef:r) never fails {
         int32:pi = x.vp_head[pd => int64];
         while (pi >= 0i32) decreases pi + 1i32 {
             if ((x.vr_root[pi => int64] == r.root) && (x.vr_place[pi => int64] == r.place)
-                && (x.vr_kind[pi => int64] == r.kind) && (x.vr_path[pi => int64] == r.path) && (x.vr_read[pi => int64] == r.read) && (x.vr_rm[pi => int64] == r.rm) && (x.vr_xc[pi => int64] == r.xc)) { pass NIL; }
+                && (x.vr_kind[pi => int64] == r.kind) && (x.vr_path[pi => int64] == r.path) && (x.vr_read[pi => int64] == r.read) && (x.vr_rm[pi => int64] == r.rm) && (x.vr_sf[pi => int64] == r.sf) && (x.vr_xc[pi => int64] == r.xc)) { pass NIL; }
             pi = x.vr_next[pi => int64];
         }
         int32:pat = x.vr_root.count =>! int32;
         drop list_push(@x.vr_root, r.root);
         drop list_push(@x.vr_place, r.place);
         drop list_push(@x.vr_kind, r.kind);
-        drop list_push(@x.vr_read, r.read); drop list_push(@x.vr_xc, r.xc); drop list_push(@x.vr_rm, r.rm);
+        drop list_push(@x.vr_read, r.read); drop list_push(@x.vr_xc, r.xc); drop list_push(@x.vr_rm, r.rm); drop list_push(@x.vr_sf, r.sf);
         drop list_push(@x.vr_path, r.path);
         drop list_push(@x.vr_next, x.vp_head[pd => int64]);
         x.vp_head[pd => int64] = pat;
@@ -4318,14 +4450,14 @@ func:escape_add_view_ref = NIL(Escape->:x, int32:stmt, ViewRef:r) never fails {
     int32:i = x.vr_head[stmt => int64];
     while (i >= 0i32) decreases i + 1i32 {
         if ((x.vr_root[i => int64] == r.root) && (x.vr_place[i => int64] == r.place)
-            && (x.vr_kind[i => int64] == r.kind) && (x.vr_path[i => int64] == r.path) && (x.vr_read[i => int64] == r.read) && (x.vr_rm[i => int64] == r.rm) && (x.vr_xc[i => int64] == r.xc)) { pass NIL; }
+            && (x.vr_kind[i => int64] == r.kind) && (x.vr_path[i => int64] == r.path) && (x.vr_read[i => int64] == r.read) && (x.vr_rm[i => int64] == r.rm) && (x.vr_sf[i => int64] == r.sf) && (x.vr_xc[i => int64] == r.xc)) { pass NIL; }
         i = x.vr_next[i => int64];
     }
     int32:at = x.vr_root.count =>! int32;
     drop list_push(@x.vr_root, r.root);
     drop list_push(@x.vr_place, r.place);
     drop list_push(@x.vr_kind, r.kind);
-    drop list_push(@x.vr_read, r.read); drop list_push(@x.vr_xc, r.xc); drop list_push(@x.vr_rm, r.rm);
+    drop list_push(@x.vr_read, r.read); drop list_push(@x.vr_xc, r.xc); drop list_push(@x.vr_rm, r.rm); drop list_push(@x.vr_sf, r.sf);
     drop list_push(@x.vr_path, r.path);
     drop list_push(@x.vr_next, x.vr_head[stmt => int64]);
     x.vr_head[stmt => int64] = at;
@@ -4356,9 +4488,9 @@ pub func:escape_view_ref_next = int32(Escape->:x, int32:i) never fails {
 };
 
 pub func:escape_view_ref = ViewRef(Escape->:x, int32:i) never fails {
-    if (i < 0i32) { pass ViewRef{ root: 0i32, place: 0i32, kind: 0i32, path: 0i32, read: 0i32, xc: 0i32, rm: 0i32 }; }
-    if ((i => int64) >= x.vr_root.count) { pass ViewRef{ root: 0i32, place: 0i32, kind: 0i32, path: 0i32, read: 0i32, xc: 0i32, rm: 0i32 }; }
-    pass ViewRef{ root: x.vr_root[i => int64], place: x.vr_place[i => int64], kind: x.vr_kind[i => int64], path: x.vr_path[i => int64], read: x.vr_read[i => int64], xc: x.vr_xc[i => int64], rm: x.vr_rm[i => int64] };
+    if (i < 0i32) { pass ViewRef{ root: 0i32, place: 0i32, kind: 0i32, path: 0i32, read: 0i32, xc: 0i32, rm: 0i32, sf: 0i32 }; }
+    if ((i => int64) >= x.vr_root.count) { pass ViewRef{ root: 0i32, place: 0i32, kind: 0i32, path: 0i32, read: 0i32, xc: 0i32, rm: 0i32, sf: 0i32 }; }
+    pass ViewRef{ root: x.vr_root[i => int64], place: x.vr_place[i => int64], kind: x.vr_kind[i => int64], path: x.vr_path[i => int64], read: x.vr_read[i => int64], xc: x.vr_xc[i => int64], rm: x.vr_rm[i => int64], sf: x.vr_sf[i => int64] };
 };
 
 pub func:escape_holder_is_pointer = bool(Escape->:x, int32:stmt) never fails {
@@ -4480,7 +4612,7 @@ func:push_view_ref_at = NIL(Escape->:x, ExprId:place, int32:kind, int32:path, Li
             List<ViewRef>:ds = raw list_init::<ViewRef>(4i64);
             drop collect_view_refs(x, dq, raw ESCAPE_DEPTH(), @ds);   // DEF-720: both sides, read whole
             for (int64:j in 0i64...ds.count) {
-                if (ds[j].root != 0i32) { drop list_push(out, ViewRef{ root: ds[j].root, place: place.index, kind: kind, path: path, read: 0i32, xc: 0i32, rm: 0i32 }); }
+                if (ds[j].root != 0i32) { drop list_push(out, ViewRef{ root: ds[j].root, place: place.index, kind: kind, path: path, read: 0i32, xc: 0i32, rm: 0i32, sf: 0i32 }); }
             }
         }
     }
@@ -4495,11 +4627,11 @@ func:push_view_ref_at = NIL(Escape->:x, ExprId:place, int32:kind, int32:path, Li
         List<ViewRef>:vs = raw list_init::<ViewRef>(4i64);
         drop collect_view_refs(x, pr.id, raw ESCAPE_DEPTH(), @vs);
         for (int64:i in 0i64...vs.count) {
-            if (vs[i].root != 0i32) { drop list_push(out, ViewRef{ root: vs[i].root, place: place.index, kind: kind, path: path, read: 0i32, xc: 0i32, rm: 0i32 }); }
+            if (vs[i].root != 0i32) { drop list_push(out, ViewRef{ root: vs[i].root, place: place.index, kind: kind, path: path, read: 0i32, xc: 0i32, rm: 0i32, sf: 0i32 }); }
         }
         pass NIL;
     }
-    drop list_push(out, ViewRef{ root: r, place: place.index, kind: kind, path: path, read: 0i32, xc: 0i32, rm: 0i32 });
+    drop list_push(out, ViewRef{ root: r, place: place.index, kind: kind, path: path, read: 0i32, xc: 0i32, rm: 0i32, sf: 0i32 });
     pass NIL;
 };
 
@@ -4746,7 +4878,7 @@ func:collect_base_refs = NIL(Escape->:x, ExprId:base, bool:through, int32:read, 
             // A VARIADIC TAIL'S OWN ADDRESS too (DEF-670's address road, `int32[]->:pv = @vs; setsv(w2, <-pv)`): the tail is no `DeclParamDecl`, and its name's PASS ref
             // is what `got_carries_frame_view` reads as the tail handed whole
             if ((dr.root != 0i32) && ((raw symbol_is_param(x, raw symtab_get(x.tab, dr.root))) || (raw escape_tail_slot(x, ExprId{ index: dr.place })))) {
-                drop list_push(out, ViewRef{ root: dr.root, place: dr.place, kind: raw REF_PASS(), path: 0i32, read: read, xc: dr.xc, rm: 0i32 });
+                drop list_push(out, ViewRef{ root: dr.root, place: dr.place, kind: raw REF_PASS(), path: 0i32, read: read, xc: dr.xc, rm: 0i32, sf: 0i32 });
             }
             // THE HOP THAT LANDS ON A `for` OR `pick` BINDING asks its source's refs as the binding read by its name does (DEF-618, DEF-619): `<-k` and `k.getp()`
             // over `k = @p` read at a nonzero `read` and nothing marks after them, so a ref that isn't the source's own value is also kept as it stands
@@ -4808,7 +4940,7 @@ func:collect_view_refs = NIL(Escape->:x, ExprId:id, int32:depth, List<ViewRef>->
             // A VARIADIC SLOT IS A PARAMETER TO THE SUMMARY (DEF-517's variadic face): `param_decl_index` answers 31,
             // "any", but no ref of it was ever pushed, so `pass vs[0i64]` handed the caller a view it had no chain for.
             if ((idl.kind == DeclKind.DeclParamDecl) || (idl.kind == DeclKind.DeclVariadicSpec)) {
-                drop list_push(out, ViewRef{ root: n.a, place: id.index, kind: raw REF_PASS(), path: 0i32, read: 0i32, xc: 0i32, rm: 0i32 });
+                drop list_push(out, ViewRef{ root: n.a, place: id.index, kind: raw REF_PASS(), path: 0i32, read: 0i32, xc: 0i32, rm: 0i32, sf: 0i32 });
                 // DEF-587: what the body assigned the parameter, as a local's chain carries it -- the chain's refs rooted ELSEWHERE.
                 // One rooted at the parameter is its own value, the PASS ref above: pushed, `mkeh(H->:q) { pass EH.A(q); }` viewed its
                 // parameter, each call of it was walked as a pass and as a view, and d nested `pick`s over it took 2^d (`d613n_pk_d32`).
@@ -5121,7 +5253,11 @@ func:collect_call_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, int32:start, 
                 e = x.sv_next[e => int64];
             }
         }
+        int64:pk0 = out.count;   // DEF-681: argument k's refs begin here
         if (raw sum_has(spass, k)) { drop arg_refs_pass(x, a, a_auto, a_thru, depth, out); }
+        // DEF-681: THE RETURN ROAD of the bar: a callee that may hand back an address it formed from parameter k (`adrb(R2->:q) { pass @((<-q).b); }`): the
+        // result's refs of argument k are tagged (`sf` 2), and the function forms from j where a tagged value reaches j's pointee (`adrb((<-r).o ??! E5)`, `w25f_gro`)
+        if ((!x.noload) && (raw sum_has(spass, k)) && (((callee <= 0i32) && (raw form_val_view(x, call))) || ((callee > 0i32) && (raw sum_has(x.sum_rform[callee => int64], k))))) { for (int64:gi in pk0...out.count) { if ((<-out)[gi].sf == 0i32) { (<-out)[gi].sf = 2i32; } } }
         int64:l0 = out.count;   // DEF-681: the load readings' refs begin here (`load_mark`)
         // DEF-681: a value the callee read through parameter k's pointee is what the caller reads by name through the argument: `<-a`, or the
         // receiver's own value where the call took its address
@@ -5210,7 +5346,7 @@ func:load_through_held = NIL(Escape->:x, ExprId:a, int32:depth, List<ViewRef>->:
         ViewRef:v = vs[i];
         if ((v.kind != (raw VIEW_DIRECT())) && (v.kind != (raw VIEW_LAUNDERED()))) { continue; }
         if (v.root == 0i32) { continue; }
-        if (raw symbol_is_param(x, raw symtab_get(x.tab, v.root))) { drop list_push(out, ViewRef{ root: v.root, place: v.place, kind: raw REF_PASS(), path: 0i32, read: at, xc: v.xc, rm: 0i32 }); }
+        if (raw symbol_is_param(x, raw symtab_get(x.tab, v.root))) { drop list_push(out, ViewRef{ root: v.root, place: v.place, kind: raw REF_PASS(), path: 0i32, read: at, xc: v.xc, rm: 0i32, sf: 0i32 }); }
         List<ViewRef>:held = raw list_init::<ViewRef>(4i64);
         drop push_binding_refs(x, v.root, @held);
         for (int64:j in 0i64...held.count) {
@@ -5302,7 +5438,7 @@ func:collect_gives_refs = NIL(Escape->:x, StmtId:sid, int32:depth, List<ViewRef>
     StmtNode:s = raw ast_stmt(x.ast, sid);
     if (s.kind == StmtKind.StmtGiveStmt) {
         if (x.gives_ids) {   // `escape_pick_gives`: the operand itself
-            drop list_push(out, ViewRef{ root: 0i32, place: (raw stmt_operand(s)).index, kind: 0i32, path: 0i32, read: 0i32, xc: 0i32, rm: 0i32 });
+            drop list_push(out, ViewRef{ root: 0i32, place: (raw stmt_operand(s)).index, kind: 0i32, path: 0i32, read: 0i32, xc: 0i32, rm: 0i32, sf: 0i32 });
             pass NIL;
         }
         drop collect_view_refs(x, raw stmt_operand(s), depth - 1i32, out);
@@ -9164,7 +9300,7 @@ func:dump_span = string(Span:sp) never fails {
 
 func:dump_ref = NIL(Escape->:x, Sink->:s, int32:i) never fails {
     ViewRef:r = ViewRef{ root: x.vr_root[i => int64], place: x.vr_place[i => int64],
-                         kind: x.vr_kind[i => int64], path: x.vr_path[i => int64], read: x.vr_read[i => int64], xc: x.vr_xc[i => int64], rm: x.vr_rm[i => int64] };
+                         kind: x.vr_kind[i => int64], path: x.vr_path[i => int64], read: x.vr_read[i => int64], xc: x.vr_xc[i => int64], rm: x.vr_rm[i => int64], sf: x.vr_sf[i => int64] };
     Symbol:sy = raw symtab_get(x.tab, r.root);
     ExprNode:pn = raw ast_expr(x.ast, ExprId{ index: r.place });
     drop sink_write(s, "    ");

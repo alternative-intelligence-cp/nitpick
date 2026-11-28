@@ -1,0 +1,44 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 22:210
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 22:231
+// DEF-771 (177d2f's item 7; MEDIUM, fails closed, a price off parity): item 7's laundered-view party at the caller is rooted at the whole argument
+// and live from the holder's declaration, so it refuses a right program of three kinds; this case has the third, HANDING THE HOLDER ON, and the
+// first, THE CREATING CALL'S OWN WRITE. `sf(@x)` stores a `string_from_bytes` view of `x.fe.l[0]` into `x.t`. The two sites are the first `sf(@x)`'s
+// `@x` (22:210, the first kind) and the second's (22:231, the third), each a write of `x.t` against the possible view of `x` the second call raises
+// (22:232); `rx(@x)` has no site. Main (T11) accepts it and it runs right (7, exit 0). Its by-name twins (the callee's body written on `x` by name,
+// `w30h_bn_ok`/`bne_ok`) stay accepted, so it's off parity. The give-back is a party rooted at the stored-from path with a sound liveness (a row after 177d2f).
+// MOVED HERE from `tests/backend/programs/holder_beside_live_view_ok.npk` (its case `c_ks5_self_holder_ok`, the self-holder exemption of landing
+// 177a's N, the shape of `emit_program.npk`'s `@x`): THIS CHANGES LANDING 177a's N FOR A LAUNDERED VIEW. A view a callee laid into the holder and
+// the holder handed on are no longer exempt; our own source keeps a copy in `rule_slot` (its own commit ahead of item 7's).
+mod:ks5_self_holder_def771;
+error:E5;
+struct:FE = { List<string>:l; };
+struct:X = { FE->:fe; string:t; };
+func:sf = int64(X->:x) never fails { x.t = string_from_bytes(x.fe.l[0i64].ptr, x.fe.l[0i64].len); pass 0i64; };
+func:rx = int64(X->:x) never fails { pass (string_bytes(x.t)[0i64] => int64) - 90i64; };
+// ks5_self_holder_ok -- `x` itself holds the possible view of a part of what it reaches, a callee stored it there, and `@x` is handed on; on 176b
+// and on 177d2e's main: accepted and right (the case gives 7); refused from 177d2f's item 7 (DEF-771).
+func:c_ks5_self_holder_ok = int64() never fails { FE:e = FE{ l: raw list_init::<string>(2i64) }; drop list_push(@e.l, string_concat("ab", "cde")); X:x = X{ fe: @e, t: string_concat("q", "r") }; discard(raw sf(@x)); discard(raw sf(@x)); pass raw rx(@x); };
+func:main = int32(cstring[]:_~argv) {
+    if ((raw c_ks5_self_holder_ok()) != 7i64) { exit 8i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (E5)               { exit 55i32; },
+        (DeadlineExceeded) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

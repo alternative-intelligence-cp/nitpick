@@ -1,0 +1,31 @@
+// expect-exit: 67
+// 2026-11-26 (landing 177d2f, item 7, row 5: row B3, form TRY_B3m2fv (SC, over B3v, B3j and B3k); rulings l.28221 items 5 to 7, l.28423 item 2).
+// THE WAY OUT OF DEF-771'S PRICE `w30s_so_d1_l_ok`: its by-name spelling (in `holder_view_def771_prices.npk`). It exits 67 on every road 0-8 at -O0
+// and -O2 and under the detector on main (3a45b7c4) and on every build of the stack from row 5 on (W7X's runs). From
+// `Team/TMP/w32-177d2f-2026-11-25/cells/w32bn/w30s_so_d1_l_ok_bn.npk`.
+mod:holder_view_def771_wayout_w30s_so_d1_l_ok_bn_ok;
+error:E5;
+struct:S0 = { string:s; int64:z; };
+struct:X = { string:s; string:t; int64:z; };
+func:ks = NIL(X->:o) never fails { o.t = string_from_bytes((<-o).s.ptr, (<-o).s.len); pass NIL; };
+func:f = int64() never fails { S0:s0 = S0{ s: string_concat("ab", "cde"), z: 0i64 }; X:x = X{ s: string_concat("ab", "cde"), t: string_concat("q", "r"), z: 0i64 }; for (int64:i in 0i64...2i64) { x.t = string_from_bytes(x.s.ptr, x.s.len); } string:junk = string_concat("qq", "qq"); pass (string_bytes(x.t)[0i64] => int64) - 90i64; };
+func:main = int32(cstring[]:argv) { exit (((raw f()) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

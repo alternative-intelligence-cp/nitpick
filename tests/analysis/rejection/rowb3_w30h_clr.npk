@@ -1,0 +1,39 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 19:198
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 19:220
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 19:242
+// 2026-11-26 (landing 177d2f, item 7, row 5: row B3, form TRY_B3m2fv (SC, over B3v, B3j and B3k); rulings l.28094, l.28221). ROW B3'S WALK, A FACE
+// OF DEF-681: With `x.fe = @e`, `sf(@x)` stores a `string_from_bytes` view of `x.fe.l[0]` into `x.t`. The caller then runs `list_clear(@e.l)` and a
+// push, which frees that body while `x.t` views it, and `rx(@x)` reads `x.t`. CLOSED FACE: on main (3a45b7c4) it is accepted, and it exits 92 on
+// every road 0-8 at -O0 and -O2, and 97 under the detector; the same on row B2's build; refused from row B3 on. From
+// `Team/TMP/w30-177d2f-2026-11-25/cells/w30h/w30h_clr.npk`.
+mod:rowb3_w30h_clr;
+error:E5;
+struct:FE = { List<string>:l; };
+struct:X = { FE->:fe; string:t; };
+func:sf = int64(X->:x) never fails { x.t = string_from_bytes(x.fe.l[0i64].ptr, x.fe.l[0i64].len); pass 0i64; };
+func:sf2 = int64(X->:x) never fails { discard(raw sf(x)); pass 0i64; };
+func:rx = int64(X->:x) never fails { pass (string_bytes(x.t)[0i64] => int64) - 90i64; };
+func:f = int64(int64:n) never fails { FE:e = FE{ l: raw list_init::<string>(2i64) }; drop list_push(@e.l, string_concat("ab", "cde")); X:x = X{ fe: @e, t: string_concat("q", "r") }; discard(raw sf(@x)); drop list_clear(@e.l); drop list_push(@e.l, string_concat("zz", "zz")); pass raw rx(@x); };
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

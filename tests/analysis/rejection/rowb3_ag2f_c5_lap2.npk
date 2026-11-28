@@ -1,0 +1,39 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 17:7
+// 2026-11-26 (landing 177d2f, item 7, row 5: row B3, form TRY_B3m2fv (SC, over B3v, B3j and B3k); rulings l.25591). ROW B3'S WALK, A FACE OF
+// DEF-681: `aa`'s `List<N->>` field `nx` holds `@aa` itself. The getter `getv` loads twice through `nx[0]`, back into `aa`, and views `aa.s`.
+// `aa.s` is then reassigned while the view `vw` is live, so `vw[0]` reads freed bytes: a ref back into the closure's own root. CLOSED FACE: on main
+// (3a45b7c4) it is accepted, and it exits 140 on every road 0-8 at -O0 and -O2, and 97 under the detector; the same on row B2's build; refused from
+// row B3 on. From `nitpick/.internal/ag2f-2026-11-21/cells/c5/ag2f_c5_lap2.npk`.
+mod:rowb3_ag2f_c5_lap2;
+error:E5;
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks = string() never fails { pass string_concat("a", "b"); };
+struct:N = { List<N->>:nx; string:s; int64:z; };
+func:getv = fixed uint8[](N->:o) never fails { pass string_bytes((<-((<-((<-o).nx[0i64])).nx[0i64])).s); };
+func:f = int64(int64:n) never fails {
+    N:aa = N{ nx: raw list_init::<N->>(1i64), s: raw mks(), z: 1i64 }; drop list_push(@aa.nx, @aa);
+    fixed uint8[]:vw = raw getv(@aa);
+    aa.s = string_concat("q", "r");
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

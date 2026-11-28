@@ -1,0 +1,93 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 29:7
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 49:7
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 70:9
+// 2026-11-26 (landing 177d2f, item 7, row 5: row B3, form TRY_B3m2fv (SC, over B3v, B3j and B3k); rulings l.25278 item 5, l.25299). PRICES OFF
+// PARITY, DEF-755 (LOW, fails closed, made by row B3): B3's cut walk lays a path to its fuel of 4 and views the reached node whole past it, so a
+// write to an unviewed member of a node a getter reaches through five or more loads is refused (BORROW-015), while the loads written inline are
+// accepted. Way out: write the loads inline (the `_in` twins below), or read the member through fewer than five loads. AW9's three prices, one case
+// each, in the form of main's prices files.
+mod:deep_loads_def755_prices;
+error:E5;
+// PRICE OFF PARITY, DEF-755 (row 5): `aw9_dp5z`, a write to an unviewed member of a node a getter reaches through five loads. Right: on main
+// (3a45b7c4) it exits 67 on every road 0-8 at -O0 and -O2 and under the detector. Way out: `deep_loads_def755_wayout_aw9_dp5z_in_ok.npk`. From
+// `nitpick/.internal/aw9-2026-11-22/cells/dp/aw9_dp5z.npk`.
+func:mks_aw9_dp5z = string() never fails { pass string_concat("a", "b"); };
+struct:NE_aw9_dp5z = { NE_aw9_dp5z->?:nx; string:s; int64:z; };
+func:getk_aw9_dp5z = fixed uint8[](NE_aw9_dp5z->:o) never fails { NE_aw9_dp5z->:p1 = (<-o).nx ??! E5; NE_aw9_dp5z->:p2 = (<-p1).nx ??! E5; NE_aw9_dp5z->:p3 = (<-p2).nx ??! E5; NE_aw9_dp5z->:p4 = (<-p3).nx ??! E5; NE_aw9_dp5z->:p5 = (<-p4).nx ??! E5; pass string_bytes((<-p5).s); };
+func:f_aw9_dp5z = int64(int64:n) never fails {
+    NE_aw9_dp5z:n0 = NE_aw9_dp5z{ nx: NIL, s: raw mks_aw9_dp5z(), z: 1i64 };
+    NE_aw9_dp5z:n1 = NE_aw9_dp5z{ nx: @n0, s: raw mks_aw9_dp5z(), z: 1i64 };
+    NE_aw9_dp5z:n2 = NE_aw9_dp5z{ nx: @n1, s: raw mks_aw9_dp5z(), z: 1i64 };
+    NE_aw9_dp5z:n3 = NE_aw9_dp5z{ nx: @n2, s: raw mks_aw9_dp5z(), z: 1i64 };
+    NE_aw9_dp5z:n4 = NE_aw9_dp5z{ nx: @n3, s: raw mks_aw9_dp5z(), z: 1i64 };
+    NE_aw9_dp5z:n5 = NE_aw9_dp5z{ nx: @n4, s: raw mks_aw9_dp5z(), z: 1i64 };
+    NE_aw9_dp5z:c = NE_aw9_dp5z{ nx: NIL, s: raw mks_aw9_dp5z(), z: 1i64 };
+    fixed uint8[]:vw = raw getk_aw9_dp5z(@n5);
+    n0.z = 9i64;
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:cell_main_aw9_dp5z = int32() never fails { pass (((raw f_aw9_dp5z(1i64)) + 60i64) =>! int32); };
+// PRICE OFF PARITY, DEF-755 (row 5): `aw9_dp6z`, a write to an unviewed member of a node a getter reaches through six loads. Right: on main
+// (3a45b7c4) it exits 67 on every road 0-8 at -O0 and -O2 and under the detector. Way out: `deep_loads_def755_wayout_aw9_dp6z_in_ok.npk`. From
+// `nitpick/.internal/aw9-2026-11-22/cells/dp/aw9_dp6z.npk`.
+func:mks_aw9_dp6z = string() never fails { pass string_concat("a", "b"); };
+struct:NE_aw9_dp6z = { NE_aw9_dp6z->?:nx; string:s; int64:z; };
+func:getk_aw9_dp6z = fixed uint8[](NE_aw9_dp6z->:o) never fails { NE_aw9_dp6z->:p1 = (<-o).nx ??! E5; NE_aw9_dp6z->:p2 = (<-p1).nx ??! E5; NE_aw9_dp6z->:p3 = (<-p2).nx ??! E5; NE_aw9_dp6z->:p4 = (<-p3).nx ??! E5; NE_aw9_dp6z->:p5 = (<-p4).nx ??! E5; NE_aw9_dp6z->:p6 = (<-p5).nx ??! E5; pass string_bytes((<-p6).s); };
+func:f_aw9_dp6z = int64(int64:n) never fails {
+    NE_aw9_dp6z:n0 = NE_aw9_dp6z{ nx: NIL, s: raw mks_aw9_dp6z(), z: 1i64 };
+    NE_aw9_dp6z:n1 = NE_aw9_dp6z{ nx: @n0, s: raw mks_aw9_dp6z(), z: 1i64 };
+    NE_aw9_dp6z:n2 = NE_aw9_dp6z{ nx: @n1, s: raw mks_aw9_dp6z(), z: 1i64 };
+    NE_aw9_dp6z:n3 = NE_aw9_dp6z{ nx: @n2, s: raw mks_aw9_dp6z(), z: 1i64 };
+    NE_aw9_dp6z:n4 = NE_aw9_dp6z{ nx: @n3, s: raw mks_aw9_dp6z(), z: 1i64 };
+    NE_aw9_dp6z:n5 = NE_aw9_dp6z{ nx: @n4, s: raw mks_aw9_dp6z(), z: 1i64 };
+    NE_aw9_dp6z:n6 = NE_aw9_dp6z{ nx: @n5, s: raw mks_aw9_dp6z(), z: 1i64 };
+    NE_aw9_dp6z:c = NE_aw9_dp6z{ nx: NIL, s: raw mks_aw9_dp6z(), z: 1i64 };
+    fixed uint8[]:vw = raw getk_aw9_dp6z(@n6);
+    n0.z = 9i64;
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:cell_main_aw9_dp6z = int32() never fails { pass (((raw f_aw9_dp6z(1i64)) + 60i64) =>! int32); };
+// PRICE OFF PARITY, DEF-755 (row 5): `aw9_vhf5z`, a write to an unviewed member of a node a getter reaches through five loads. Right: on main
+// (3a45b7c4) it exits 67 on every road 0-8 at -O0 and -O2 and under the detector. Way out: `deep_loads_def755_wayout_aw9_vhf5z_in_ok.npk`. From
+// `nitpick/.internal/aw9-2026-11-22/cells/vhf/aw9_vhf5z.npk`.
+func:mks_aw9_vhf5z = string() never fails { pass string_concat("a", "b"); };
+struct:NE_aw9_vhf5z = { NE_aw9_vhf5z->?:nx; NE_aw9_vhf5z->?:ny; string:s; int64:z; };
+func:wse_aw9_vhf5z = int64(NE_aw9_vhf5z->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+func:getd_aw9_vhf5z = fixed uint8[](NE_aw9_vhf5z->:o) never fails { NE_aw9_vhf5z->:p1 = (<-o).nx ??! E5; NE_aw9_vhf5z->:p2 = (<-p1).nx ??! E5; NE_aw9_vhf5z->:p3 = (<-p2).nx ??! E5; NE_aw9_vhf5z->:p4 = (<-p3).nx ??! E5; NE_aw9_vhf5z->:p5 = (<-p4).nx ??! E5; pass string_bytes((<-p5).s); };
+func:f_aw9_vhf5z = int64(int64:n) never fails {
+    NE_aw9_vhf5z[2]:g = [NE_aw9_vhf5z{ nx: NIL, ny: NIL, s: raw mks_aw9_vhf5z(), z: 1i64 }, NE_aw9_vhf5z{ nx: NIL, ny: NIL, s: raw mks_aw9_vhf5z(), z: 1i64 }];
+    NE_aw9_vhf5z:h = NE_aw9_vhf5z{ nx: @g[1], ny: NIL, s: raw mks_aw9_vhf5z(), z: 1i64 };
+    g[0].nx = @h;
+    NE_aw9_vhf5z:p = NE_aw9_vhf5z{ nx: @g[0], ny: NIL, s: raw mks_aw9_vhf5z(), z: 1i64 };
+    NE_aw9_vhf5z:x = NE_aw9_vhf5z{ nx: @p, ny: NIL, s: raw mks_aw9_vhf5z(), z: 1i64 };
+    NE_aw9_vhf5z:b = NE_aw9_vhf5z{ nx: @x, ny: NIL, s: raw mks_aw9_vhf5z(), z: 1i64 };
+    NE_aw9_vhf5z:c = NE_aw9_vhf5z{ nx: NIL, ny: NIL, s: raw mks_aw9_vhf5z(), z: 1i64 };
+    NE_aw9_vhf5z:a = NE_aw9_vhf5z{ nx: @x, ny: @b, s: raw mks_aw9_vhf5z(), z: 1i64 };
+    fixed uint8[]:vw = raw getd_aw9_vhf5z(@a);
+    g[1].z = 9i64;
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:cell_main_aw9_vhf5z = int32() never fails { pass (((raw f_aw9_vhf5z(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

@@ -1,6 +1,6 @@
 // expect-exit: 0
 // WHAT A HOLDER MAY STILL DO BESIDE A LIVE VIEW (N of landing 177a; the legal twins of `tests/analysis/rejection/holder_beside_live_view.npk`): a holder of ANOTHER owner, a holder used before the view is taken, the two calls in sequence, a read-only `dyn`,
-// a ternary over another owner, an element's value beside an element address, and a view held by the holder itself, handed on (`ks5_self_holder_ok`, the shape of `emit_program.npk`'s `@x`, BORROW-015 without the exemption).
+// a ternary over another owner, and an element's value beside an element address. The view held by the holder itself, handed on (`ks5_self_holder_ok`, the shape of `emit_program.npk`'s `@x`), moved to `tests/analysis/rejection/ks5_self_holder_def771.npk` at 177d2f's item 7 (DEF-771): that changes landing 177a's N for a laundered view.
 mod:holder_beside_live_view_ok;
 error:E5;
 struct:W = { string->:p; };
@@ -14,10 +14,6 @@ func:ws = int64(List<int64>[]:sl, List<int64>:v) never fails { for (int64:i in 0
 func:mk_list = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(2i64); drop list_push(@l, 7i64); drop list_push(@l, 8i64); pass l; };
 func:rdv = int64(List<int64>:v) never fails { pass v.count - 2i64; };
 func:fe = int64(int64->:e, int64:k) never fails { pass (<-e) + k; };
-struct:FE = { List<string>:l; };
-struct:X = { FE->:fe; string:t; };
-func:sf = int64(X->:x) never fails { x.t = string_from_bytes(x.fe.l[0i64].ptr, x.fe.l[0i64].len); pass 0i64; };
-func:rx = int64(X->:x) never fails { pass (string_bytes(x.t)[0i64] => int64) - 90i64; };
 // f_nested_ok; on 176b: exit 67, here: exit 67.
 func:c_f_nested_ok = int64() never fails { string:s = string_concat("ab", "cde"); string:t = string_concat("ab", "cde"); W:w = W{ p: @t }; pass raw fs(s, (raw wh(w))); };
 // f_earlier_ok; on 176b: exit 89, here: exit 89.
@@ -32,8 +28,6 @@ func:c_c_dyn_ok = int64() never fails { string:s = string_concat("ab", "cde"); s
 func:c_u_tern_ok = int64() never fails { List<int64>[2]:arr = [raw list_init::<int64>(1i64), raw list_init::<int64>(1i64)]; drop list_push(@arr[0i64], 97i64); bool:c = true; int32:i = 1i32; List<int64>[2]:brr = [raw list_init::<int64>(1i64), raw list_init::<int64>(1i64)]; pass raw ws(is (c) : brr[0i64...2i64] : brr[0i64...1i64], arr[0i64]); };
 // e2_elem_val; on 176b: exit 67, here: exit 67.
 func:c_e2_elem_val = int64() never fails { List<int64>:l = raw mk_list(); pass raw fe(@l[0i64], (raw rdv(l))); };
-// ks5_self_holder_ok -- the tree's own shape (`@x` in `emit_program.npk`, five sites): `x` itself holds the possible view of a part of what it reaches, a callee stored it there, and handing `@x` on is no conflict with its own holding (the self-holder exemption of N); on 176b: exit 67, here: exit 67.
-func:c_ks5_self_holder_ok = int64() never fails { FE:e = FE{ l: raw list_init::<string>(2i64) }; drop list_push(@e.l, string_concat("ab", "cde")); X:x = X{ fe: @e, t: string_concat("q", "r") }; discard(raw sf(@x)); discard(raw sf(@x)); pass raw rx(@x); };
 func:main = int32(cstring[]:_~argv) {
     if ((raw c_f_nested_ok()) != 7i64) { exit 1i32; }
     if ((raw c_f_earlier_ok()) != 29i64) { exit 2i32; }
@@ -42,7 +36,6 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw c_c_dyn_ok()) != 7i64) { exit 5i32; }
     if ((raw c_u_tern_ok()) != 7i64) { exit 6i32; }
     if ((raw c_e2_elem_val()) != 7i64) { exit 7i32; }
-    if ((raw c_ks5_self_holder_ok()) != 7i64) { exit 8i32; }
     exit 0i32;
 };
 func:failsafe = int32(Error:e) {

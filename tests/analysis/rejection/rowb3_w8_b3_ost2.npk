@@ -1,0 +1,73 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 50:21
+// 2026-11-26 (landing 177d2f, item 7, row 5: row B3, form TRY_B3m2fv (SC, over B3v, B3j and B3k); rulings l.24966). ROW B3'S WALK, A FACE OF
+// DEF-681: An out-parameter getter `pv` loads two pointers down from `nD` (`o.nx`, then `.nx`, each `??! E5`) and stores a view of `nB.s` into the
+// caller's `VH`. The caller rewrites `nB.s` through `wsn(@nB)` and then reads `vh.v`. CLOSED FACE: on main (3a45b7c4) it is accepted, and it exits
+// 140 on every road 0-8 at -O0 and -O2, and 97 under the detector; the same on row B2's build; refused from row B3 on. From
+// `nitpick/.internal/w8-2026-11-22/cells/w8/b3/w8_b3_ost2.npk`.
+mod:rowb3_w8_b3_ost2;
+error:E5;
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks = string() never fails { pass string_concat("a", "b"); };
+struct:LF = { List<int64>:own; string:s; int64:z; };
+impl:LF = { func:sv = fixed uint8[](LF->:self) never fails { pass string_bytes((<-self).s); }; };
+func:nlf = LF() never fails { pass LF{ own: raw mk(), s: raw mks(), z: 1i64 }; };
+func:ws1 = int64(LF->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:HL = { LF->:lp; LF->:lq; int64:z; };
+struct:HH = { HL->:hp; int64:z; };
+struct:SS = { SS->?:p; List<int64>:own; string:s; int64:z; };
+impl:SS = { func:sv = fixed uint8[](SS->:self) never fails { pass string_bytes((<-self).s); }; };
+func:wss = int64(SS->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:ND = { ND->?:nx; string:s; int64:z; };
+func:wsn = int64(ND->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:VH = { fixed uint8[]:v; int64:z; };
+func:pv = int64(ND->:o, VH->:out) never fails { ND->:p1 = (<-o).nx ??! E5; ND->:p2 = (<-p1).nx ??! E5; <-out = VH{ v: string_bytes((<-p2).s), z: 0i64 }; pass 0i64; };
+func:f = int64(int64:n) never fails {
+    LF:fA = raw nlf();
+    LF:fB = raw nlf();
+    LF:fC = raw nlf();
+    SS:c = SS{ p: NIL, own: raw mk(), s: raw mks(), z: 1i64 };
+    SS:c2 = SS{ p: NIL, own: raw mk(), s: raw mks(), z: 1i64 };
+    SS:b = SS{ p: @c, own: raw mk(), s: raw mks(), z: 1i64 };
+    SS:a = SS{ p: @b, own: raw mk(), s: raw mks(), z: 1i64 };
+    ND:nB = ND{ nx: NIL, s: raw mks(), z: 1i64 };
+    ND:nC = ND{ nx: NIL, s: raw mks(), z: 1i64 };
+    ND:nA = ND{ nx: @nB, s: raw mks(), z: 1i64 };
+    ND:nD = ND{ nx: @nA, s: raw mks(), z: 1i64 };
+    HL:hl = HL{ lp: @fB, lq: @fA, z: 0i64 };
+    HH:hx = HH{ hp: @hl, z: 0i64 };
+    LF->:q = @fB;
+    LF->->:qq = @q;
+    LF->->->:qqq = @qq;
+    HH->:hxp = @hx;
+    LF->->[1]:qa = [qq];
+    LF->?:oq = @fB;
+    SS->?:ob = @b;
+    SS?:sa = SS{ p: @b, own: raw mk(), s: raw mks(), z: 1i64 };
+    VH:vh = VH{ v: string_bytes(fA.s), z: 0i64 };
+    LF->->[1]:ppa = [qq];
+    discard(raw pv(@nD, @vh));
+    discard(raw wsn(@nB));
+    fixed uint8[]:vw = vh.v;
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

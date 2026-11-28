@@ -1,0 +1,41 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 21:581
+// 2026-11-26 (landing 177d2f, item 7, row 5: row B3, form TRY_B3m2fv (SC, over B3v, B3j and B3k); rulings l.27742). ROW B3'S WALK, A FACE OF
+// DEF-681: `lk(V->:r)` calls the two-parameter setter `setnx(@((<-r).a), @((<-(<-(<-r).o).o).b))`, storing into `r.a.nx` an address of `r2.b`
+// formed through two pointers. The caller takes a view through `r.a.nx`, `wse(@r2.b)` replaces `r2.b.s`, and the view is read. CLOSED FACE: on main
+// (3a45b7c4) it is accepted, and it exits 140 on every road 0-8 at -O0 and -O2, and 97 under the detector; the same on row B2's build; refused from
+// row B3 on. From `Team/TMP/aw19-177d2f-2026-11-25/cells/aw19/g/aw19t_set_k1.npk`.
+mod:rowb3_aw19t_set_k1;
+error:E5;
+func:mks = string() never fails { pass string_concat("a", "b"); };
+struct:NE = { NE->?:nx; NE->?:ny; string:s; int64:z; };
+struct:N = { NE:b; int64:z; };
+struct:R2X = { NE:a; NE:b; NE[2]:c; N:n; int64:z; };
+struct:T1 = { R2X->:o; R2X->?:p; int64:z; };
+struct:W = { NE:a; NE:b; T1->?:w; int64:z; };
+struct:V = { NE:a; NE:b; T1->:o; int64:z; };
+func:wse = int64(NE->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+func:getx = fixed uint8[](NE->:o) never fails { NE->:p1 = (<-o).nx ??! E5; pass string_bytes((<-p1).s); };
+func:setnx = int64(NE->:o, NE->:t) never fails { (<-o).nx = t; pass 0i64; };
+func:lk = int64(V->:r) never fails { discard(raw setnx(@((<-r).a), @((<-(<-(<-r).o).o).b))); pass 0i64; };
+func:f = int64(int64:n) never fails { R2X:r2 = R2X{ a: NE{ nx: NIL, ny: NIL, s: raw mks(), z: 1i64 }, b: NE{ nx: NIL, ny: NIL, s: raw mks(), z: 1i64 }, c: [NE{ nx: NIL, ny: NIL, s: raw mks(), z: 1i64 }, NE{ nx: NIL, ny: NIL, s: raw mks(), z: 1i64 }], n: N{ b: NE{ nx: NIL, ny: NIL, s: raw mks(), z: 1i64 }, z: 0i64 }, z: 0i64 }; T1:t1 = T1{ o: @r2, p: NIL, z: 0i64 }; t1.p = @r2; V:r = V{ a: NE{ nx: NIL, ny: NIL, s: raw mks(), z: 1i64 }, b: NE{ nx: NIL, ny: NIL, s: raw mks(), z: 1i64 }, o: @t1, z: 0i64 }; discard(raw lk(@r)); fixed uint8[]:vw = raw getx(@r.a); discard(raw wse(@r2.b)); pass (vw[0i64] => int64) - 90i64; };
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

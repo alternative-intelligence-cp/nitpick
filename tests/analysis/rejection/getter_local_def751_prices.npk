@@ -1,0 +1,174 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 57:32
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 103:32
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 151:32
+// 2026-11-26 (landing 177d2f, item 7, row 5: row B3, form TRY_B3m2fv (SC, over B3v, B3j and B3k); rulings l.25027 item 4, l.25060). PRICES OFF
+// PARITY, DEF-751 (LOW, fails closed, made by row B3): B3's cut entry falls on a plain pointer a getter loads into a local, so a right program that
+// unwraps and views through it is refused (BORROW-015) while its by-name spelling is accepted. Way out: write the read by name, as
+// `getter_local_def751_wayout_aw8_nq0_ok_bn_ok.npk`, which runs 67 on main and on row B3's build. AW8's three prices, one case each, in the form of
+// main's prices files.
+mod:getter_local_def751_prices;
+error:E5;
+// PRICE OFF PARITY, DEF-751 (row 5): A right program: the getter loads a plain pointer `T2->:t = (<-o).q` into a local, unwraps `(<-t).p ??! E5`
+// and returns `.sv()`, a view of `b.s`. The caller writes `c` through `wss(@c)`, which no view holds, and reads the view. It runs 67 on T11. Right:
+// on main (3a45b7c4) it exits 67 on every road 0-8 at -O0 and -O2 and under the detector. From
+// `Team/TMP/atk-177d2f-w8-2026-11-22/cells/aw8/a10/aw8_nql_ok.npk`.
+func:mk_aw8_nql_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks_aw8_nql_ok = string() never fails { pass string_concat("a", "b"); };
+struct:LF_aw8_nql_ok = { List<int64>:own; string:s; int64:z; };
+impl:LF_aw8_nql_ok = { func:sv = fixed uint8[](LF_aw8_nql_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:nlf_aw8_nql_ok = LF_aw8_nql_ok() never fails { pass LF_aw8_nql_ok{ own: raw mk_aw8_nql_ok(), s: raw mks_aw8_nql_ok(), z: 1i64 }; };
+func:ws1_aw8_nql_ok = int64(LF_aw8_nql_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:HL_aw8_nql_ok = { LF_aw8_nql_ok->:lp; LF_aw8_nql_ok->:lq; int64:z; };
+struct:HH_aw8_nql_ok = { HL_aw8_nql_ok->:hp; int64:z; };
+struct:SS_aw8_nql_ok = { SS_aw8_nql_ok->?:p; List<int64>:own; string:s; int64:z; };
+impl:SS_aw8_nql_ok = { func:sv = fixed uint8[](SS_aw8_nql_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:wss_aw8_nql_ok = int64(SS_aw8_nql_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:ND_aw8_nql_ok = { ND_aw8_nql_ok->?:nx; string:s; int64:z; };
+func:wsn_aw8_nql_ok = int64(ND_aw8_nql_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:T2_aw8_nql_ok = { SS_aw8_nql_ok->?:p; int64:z; };
+struct:T1_aw8_nql_ok = { T2_aw8_nql_ok->:q; int64:z; };
+func:getv_aw8_nql_ok = fixed uint8[](T1_aw8_nql_ok->:o) never fails { T2_aw8_nql_ok->:t = (<-o).q; pass raw ((<-t).p ??! E5).sv(); };
+func:f_aw8_nql_ok = int64(int64:n) never fails {
+    LF_aw8_nql_ok:fA = raw nlf_aw8_nql_ok();
+    LF_aw8_nql_ok:fB = raw nlf_aw8_nql_ok();
+    LF_aw8_nql_ok:fC = raw nlf_aw8_nql_ok();
+    SS_aw8_nql_ok:c = SS_aw8_nql_ok{ p: NIL, own: raw mk_aw8_nql_ok(), s: raw mks_aw8_nql_ok(), z: 1i64 };
+    SS_aw8_nql_ok:c2 = SS_aw8_nql_ok{ p: NIL, own: raw mk_aw8_nql_ok(), s: raw mks_aw8_nql_ok(), z: 1i64 };
+    SS_aw8_nql_ok:b = SS_aw8_nql_ok{ p: @c, own: raw mk_aw8_nql_ok(), s: raw mks_aw8_nql_ok(), z: 1i64 };
+    SS_aw8_nql_ok:a = SS_aw8_nql_ok{ p: @b, own: raw mk_aw8_nql_ok(), s: raw mks_aw8_nql_ok(), z: 1i64 };
+    ND_aw8_nql_ok:nB = ND_aw8_nql_ok{ nx: NIL, s: raw mks_aw8_nql_ok(), z: 1i64 };
+    ND_aw8_nql_ok:nC = ND_aw8_nql_ok{ nx: NIL, s: raw mks_aw8_nql_ok(), z: 1i64 };
+    ND_aw8_nql_ok:nA = ND_aw8_nql_ok{ nx: @nB, s: raw mks_aw8_nql_ok(), z: 1i64 };
+    ND_aw8_nql_ok:nD = ND_aw8_nql_ok{ nx: @nA, s: raw mks_aw8_nql_ok(), z: 1i64 };
+    HL_aw8_nql_ok:hl = HL_aw8_nql_ok{ lp: @fB, lq: @fA, z: 0i64 };
+    HH_aw8_nql_ok:hx = HH_aw8_nql_ok{ hp: @hl, z: 0i64 };
+    LF_aw8_nql_ok->:q = @fB;
+    LF_aw8_nql_ok->->:qq = @q;
+    LF_aw8_nql_ok->->->:qqq = @qq;
+    HH_aw8_nql_ok->:hxp = @hx;
+    LF_aw8_nql_ok->->[1]:qa = [qq];
+    LF_aw8_nql_ok->?:oq = @fB;
+    SS_aw8_nql_ok->?:ob = @b;
+    SS_aw8_nql_ok?:sa = SS_aw8_nql_ok{ p: @b, own: raw mk_aw8_nql_ok(), s: raw mks_aw8_nql_ok(), z: 1i64 };
+    T2_aw8_nql_ok:t2 = T2_aw8_nql_ok{ p: @b, z: 0i64 }; T1_aw8_nql_ok:t1 = T1_aw8_nql_ok{ q: @t2, z: 0i64 }; fixed uint8[]:vw = raw getv_aw8_nql_ok(@t1);
+    discard(raw wss_aw8_nql_ok(@c));
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:cell_main_aw8_nql_ok = int32() never fails { pass (((raw f_aw8_nql_ok(1i64)) + 60i64) =>! int32); };
+// PRICE OFF PARITY, DEF-751 (row 5): AW8's `aw8_nqc_ok`, the same read through a copy of the local (l.25027 item 4). Right: on main (3a45b7c4) it
+// exits 67 on every road 0-8 at -O0 and -O2 and under the detector. From `Team/TMP/atk-177d2f-w8-2026-11-22/cells/aw8/a11/aw8_nqc_ok.npk`.
+func:mk_aw8_nqc_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks_aw8_nqc_ok = string() never fails { pass string_concat("a", "b"); };
+struct:LF_aw8_nqc_ok = { List<int64>:own; string:s; int64:z; };
+impl:LF_aw8_nqc_ok = { func:sv = fixed uint8[](LF_aw8_nqc_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:nlf_aw8_nqc_ok = LF_aw8_nqc_ok() never fails { pass LF_aw8_nqc_ok{ own: raw mk_aw8_nqc_ok(), s: raw mks_aw8_nqc_ok(), z: 1i64 }; };
+func:ws1_aw8_nqc_ok = int64(LF_aw8_nqc_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:HL_aw8_nqc_ok = { LF_aw8_nqc_ok->:lp; LF_aw8_nqc_ok->:lq; int64:z; };
+struct:HH_aw8_nqc_ok = { HL_aw8_nqc_ok->:hp; int64:z; };
+struct:SS_aw8_nqc_ok = { SS_aw8_nqc_ok->?:p; List<int64>:own; string:s; int64:z; };
+impl:SS_aw8_nqc_ok = { func:sv = fixed uint8[](SS_aw8_nqc_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:wss_aw8_nqc_ok = int64(SS_aw8_nqc_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:ND_aw8_nqc_ok = { ND_aw8_nqc_ok->?:nx; string:s; int64:z; };
+func:wsn_aw8_nqc_ok = int64(ND_aw8_nqc_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:T2_aw8_nqc_ok = { SS_aw8_nqc_ok->?:p; int64:z; };
+struct:T1_aw8_nqc_ok = { T2_aw8_nqc_ok->:q; int64:z; };
+struct:T0_aw8_nqc_ok = { T1_aw8_nqc_ok->:r; int64:z; };
+func:getv_aw8_nqc_ok = fixed uint8[](T1_aw8_nqc_ok->:o) never fails { T2_aw8_nqc_ok->:t = (<-o).q; T2_aw8_nqc_ok->:u = t; pass raw ((<-u).p ??! E5).sv(); };
+func:f_aw8_nqc_ok = int64(int64:n) never fails {
+    LF_aw8_nqc_ok:fA = raw nlf_aw8_nqc_ok();
+    LF_aw8_nqc_ok:fB = raw nlf_aw8_nqc_ok();
+    LF_aw8_nqc_ok:fC = raw nlf_aw8_nqc_ok();
+    SS_aw8_nqc_ok:c = SS_aw8_nqc_ok{ p: NIL, own: raw mk_aw8_nqc_ok(), s: raw mks_aw8_nqc_ok(), z: 1i64 };
+    SS_aw8_nqc_ok:c2 = SS_aw8_nqc_ok{ p: NIL, own: raw mk_aw8_nqc_ok(), s: raw mks_aw8_nqc_ok(), z: 1i64 };
+    SS_aw8_nqc_ok:b = SS_aw8_nqc_ok{ p: @c, own: raw mk_aw8_nqc_ok(), s: raw mks_aw8_nqc_ok(), z: 1i64 };
+    SS_aw8_nqc_ok:a = SS_aw8_nqc_ok{ p: @b, own: raw mk_aw8_nqc_ok(), s: raw mks_aw8_nqc_ok(), z: 1i64 };
+    ND_aw8_nqc_ok:nB = ND_aw8_nqc_ok{ nx: NIL, s: raw mks_aw8_nqc_ok(), z: 1i64 };
+    ND_aw8_nqc_ok:nC = ND_aw8_nqc_ok{ nx: NIL, s: raw mks_aw8_nqc_ok(), z: 1i64 };
+    ND_aw8_nqc_ok:nA = ND_aw8_nqc_ok{ nx: @nB, s: raw mks_aw8_nqc_ok(), z: 1i64 };
+    ND_aw8_nqc_ok:nD = ND_aw8_nqc_ok{ nx: @nA, s: raw mks_aw8_nqc_ok(), z: 1i64 };
+    HL_aw8_nqc_ok:hl = HL_aw8_nqc_ok{ lp: @fB, lq: @fA, z: 0i64 };
+    HH_aw8_nqc_ok:hx = HH_aw8_nqc_ok{ hp: @hl, z: 0i64 };
+    LF_aw8_nqc_ok->:q = @fB;
+    LF_aw8_nqc_ok->->:qq = @q;
+    LF_aw8_nqc_ok->->->:qqq = @qq;
+    HH_aw8_nqc_ok->:hxp = @hx;
+    LF_aw8_nqc_ok->->[1]:qa = [qq];
+    LF_aw8_nqc_ok->?:oq = @fB;
+    SS_aw8_nqc_ok->?:ob = @b;
+    SS_aw8_nqc_ok?:sa = SS_aw8_nqc_ok{ p: @b, own: raw mk_aw8_nqc_ok(), s: raw mks_aw8_nqc_ok(), z: 1i64 };
+    T2_aw8_nqc_ok:t2 = T2_aw8_nqc_ok{ p: @b, z: 0i64 }; T1_aw8_nqc_ok:t1 = T1_aw8_nqc_ok{ q: @t2, z: 0i64 }; T0_aw8_nqc_ok:t0 = T0_aw8_nqc_ok{ r: @t1, z: 0i64 }; fixed uint8[]:vw = raw getv_aw8_nqc_ok(@t1);
+    discard(raw wss_aw8_nqc_ok(@c));
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:cell_main_aw8_nqc_ok = int32() never fails { pass (((raw f_aw8_nqc_ok(1i64)) + 60i64) =>! int32); };
+// PRICE OFF PARITY, DEF-751 (row 5): A right program: the getter loads `T1->:a = (<-o).r` and then `T2->:t = (<-a).q` into locals (one level deeper
+// first), unwraps `(<-t).p ??! E5` and returns `.sv()`, a view of `b.s`. The caller writes `c` through `wss(@c)` and reads the view. It runs 67 on
+// T11. Right: on main (3a45b7c4) it exits 67 on every road 0-8 at -O0 and -O2 and under the detector. Way out:
+// `getter_local_def751_wayout_aw8_nq0_ok_bn_ok.npk`. From `Team/TMP/atk-177d2f-w8-2026-11-22/cells/aw8/a11/aw8_nq0_ok.npk`.
+func:mk_aw8_nq0_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks_aw8_nq0_ok = string() never fails { pass string_concat("a", "b"); };
+struct:LF_aw8_nq0_ok = { List<int64>:own; string:s; int64:z; };
+impl:LF_aw8_nq0_ok = { func:sv = fixed uint8[](LF_aw8_nq0_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:nlf_aw8_nq0_ok = LF_aw8_nq0_ok() never fails { pass LF_aw8_nq0_ok{ own: raw mk_aw8_nq0_ok(), s: raw mks_aw8_nq0_ok(), z: 1i64 }; };
+func:ws1_aw8_nq0_ok = int64(LF_aw8_nq0_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:HL_aw8_nq0_ok = { LF_aw8_nq0_ok->:lp; LF_aw8_nq0_ok->:lq; int64:z; };
+struct:HH_aw8_nq0_ok = { HL_aw8_nq0_ok->:hp; int64:z; };
+struct:SS_aw8_nq0_ok = { SS_aw8_nq0_ok->?:p; List<int64>:own; string:s; int64:z; };
+impl:SS_aw8_nq0_ok = { func:sv = fixed uint8[](SS_aw8_nq0_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:wss_aw8_nq0_ok = int64(SS_aw8_nq0_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:ND_aw8_nq0_ok = { ND_aw8_nq0_ok->?:nx; string:s; int64:z; };
+func:wsn_aw8_nq0_ok = int64(ND_aw8_nq0_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:T2_aw8_nq0_ok = { SS_aw8_nq0_ok->?:p; int64:z; };
+struct:T1_aw8_nq0_ok = { T2_aw8_nq0_ok->:q; int64:z; };
+struct:T0_aw8_nq0_ok = { T1_aw8_nq0_ok->:r; int64:z; };
+func:getv_aw8_nq0_ok = fixed uint8[](T0_aw8_nq0_ok->:o) never fails { T1_aw8_nq0_ok->:a = (<-o).r; T2_aw8_nq0_ok->:t = (<-a).q; pass raw ((<-t).p ??! E5).sv(); };
+func:f_aw8_nq0_ok = int64(int64:n) never fails {
+    LF_aw8_nq0_ok:fA = raw nlf_aw8_nq0_ok();
+    LF_aw8_nq0_ok:fB = raw nlf_aw8_nq0_ok();
+    LF_aw8_nq0_ok:fC = raw nlf_aw8_nq0_ok();
+    SS_aw8_nq0_ok:c = SS_aw8_nq0_ok{ p: NIL, own: raw mk_aw8_nq0_ok(), s: raw mks_aw8_nq0_ok(), z: 1i64 };
+    SS_aw8_nq0_ok:c2 = SS_aw8_nq0_ok{ p: NIL, own: raw mk_aw8_nq0_ok(), s: raw mks_aw8_nq0_ok(), z: 1i64 };
+    SS_aw8_nq0_ok:b = SS_aw8_nq0_ok{ p: @c, own: raw mk_aw8_nq0_ok(), s: raw mks_aw8_nq0_ok(), z: 1i64 };
+    SS_aw8_nq0_ok:a = SS_aw8_nq0_ok{ p: @b, own: raw mk_aw8_nq0_ok(), s: raw mks_aw8_nq0_ok(), z: 1i64 };
+    ND_aw8_nq0_ok:nB = ND_aw8_nq0_ok{ nx: NIL, s: raw mks_aw8_nq0_ok(), z: 1i64 };
+    ND_aw8_nq0_ok:nC = ND_aw8_nq0_ok{ nx: NIL, s: raw mks_aw8_nq0_ok(), z: 1i64 };
+    ND_aw8_nq0_ok:nA = ND_aw8_nq0_ok{ nx: @nB, s: raw mks_aw8_nq0_ok(), z: 1i64 };
+    ND_aw8_nq0_ok:nD = ND_aw8_nq0_ok{ nx: @nA, s: raw mks_aw8_nq0_ok(), z: 1i64 };
+    HL_aw8_nq0_ok:hl = HL_aw8_nq0_ok{ lp: @fB, lq: @fA, z: 0i64 };
+    HH_aw8_nq0_ok:hx = HH_aw8_nq0_ok{ hp: @hl, z: 0i64 };
+    LF_aw8_nq0_ok->:q = @fB;
+    LF_aw8_nq0_ok->->:qq = @q;
+    LF_aw8_nq0_ok->->->:qqq = @qq;
+    HH_aw8_nq0_ok->:hxp = @hx;
+    LF_aw8_nq0_ok->->[1]:qa = [qq];
+    LF_aw8_nq0_ok->?:oq = @fB;
+    SS_aw8_nq0_ok->?:ob = @b;
+    SS_aw8_nq0_ok?:sa = SS_aw8_nq0_ok{ p: @b, own: raw mk_aw8_nq0_ok(), s: raw mks_aw8_nq0_ok(), z: 1i64 };
+    T2_aw8_nq0_ok:t2 = T2_aw8_nq0_ok{ p: @b, z: 0i64 }; T1_aw8_nq0_ok:t1 = T1_aw8_nq0_ok{ q: @t2, z: 0i64 }; T0_aw8_nq0_ok:t0 = T0_aw8_nq0_ok{ r: @t1, z: 0i64 }; fixed uint8[]:vw = raw getv_aw8_nq0_ok(@t0);
+    discard(raw wss_aw8_nq0_ok(@c));
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:cell_main_aw8_nq0_ok = int32() never fails { pass (((raw f_aw8_nq0_ok(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

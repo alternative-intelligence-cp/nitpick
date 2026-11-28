@@ -1,0 +1,46 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 26:506
+// 2026-11-26 (landing 177d2f, item 7, row 5: row B3, form TRY_B3m2fv (SC, over B3v, B3j and B3k); rulings l.27701). ROW B3'S WALK, A FACE OF
+// DEF-681: AW19's find 1 (l.27701): (A)'s family through the return road, an address formed through a callee and handed back, which the near bound
+// let through on B3k and B3kfv. CLOSED FACE: on main (3a45b7c4) it is accepted, and it exits 140 on every road 0-8 at -O0 and -O2, and 97 under the
+// detector; the same on row B2's build; refused from row B3 on. From `Team/TMP/aw19-177d2f-2026-11-25/cells/aw19/r/aw19r_g2.npk`.
+mod:rowb3_aw19r_g2;
+error:E5;
+func:mks = string() never fails { pass string_concat("a", "b"); };
+struct:NE = { NE->?:nx; NE->?:ny; string:s; int64:z; };
+struct:R2 = { NE:a; NE:b; int64:z; };
+struct:R3 = { NE:a; NE:b; R3->?:me; R2->?:o; int64:z; };
+struct:R4 = { NE:a; NE:b; R2->:o; int64:z; };
+struct:R5 = { NE:a; NE:b; R5->?:back; int64:z; };
+struct:R8 = { NE:a; NE:b; NE->:bp; int64:z; };
+struct:R9 = { NE:a; NE:b; R9H->?:h; int64:z; };
+struct:R9H = { R9->?:p; int64:z; };
+struct:R6 = { NE:a; NE:b; R4->?:w; int64:z; };
+struct:RW = { NE:a; NE:b; RW->?:w; R2->:o; int64:z; };
+struct:PP = { NE:a; NE:b; PQ->?:w; int64:z; };
+struct:PQ = { PP->:o; int64:z; };
+func:wse = int64(NE->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+func:getx = fixed uint8[](NE->:o) never fails { NE->:p1 = (<-o).nx ??! E5; pass string_bytes((<-p1).s); };
+func:adr = NE->(R4->:q) never fails { pass @((<-(<-q).o).b); };
+func:lk = int64(R6->:r) never fails { (<-r).a.nx = raw adr((<-r).w ??! E5); pass 0i64; };
+func:f = int64(int64:n) never fails { R2:r2 = R2{ a: NE{ nx: NIL, ny: NIL, s: raw mks(), z: 1i64 }, b: NE{ nx: NIL, ny: NIL, s: raw mks(), z: 1i64 }, z: 0i64 }; R4:r4 = R4{ a: NE{ nx: NIL, ny: NIL, s: raw mks(), z: 1i64 }, b: NE{ nx: NIL, ny: NIL, s: raw mks(), z: 1i64 }, o: @r2, z: 0i64 }; R6:r = R6{ a: NE{ nx: NIL, ny: NIL, s: raw mks(), z: 1i64 }, b: NE{ nx: NIL, ny: NIL, s: raw mks(), z: 1i64 }, w: NIL, z: 0i64 }; r.w = @r4; discard(raw lk(@r)); fixed uint8[]:vw = raw getx(@r.a); discard(raw wse(@r2.b)); pass (vw[0i64] => int64) - 90i64; };
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

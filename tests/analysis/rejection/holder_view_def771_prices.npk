@@ -1,0 +1,102 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 37:158
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 46:157
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 55:300
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 67:259
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 67:281
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 67:343
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 81:274
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 81:296
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 81:361
+// 2026-11-26 (landing 177d2f, item 7, row 5: row B3, form TRY_B3m2fv (SC, over B3v, B3j and B3k); rulings l.27936 items 2 and 3, l.28221 items 5 to
+// 7, l.28256, l.28423 item 2). PRICES, DEF-771 (MEDIUM, fails closed, off parity, made by item 7): item 7's laundered-view party at the caller is
+// rooted at the whole argument and live from the holder's declaration, so a right program whose holder is written or handed on while a view through
+// it is live is refused (BORROW-015). It is off parity on 29 cells (l.28423 item 2: kinds K1, the creating call's own write, and K3, the holder
+// handed on; each one's by-name twin is accepted on main and on every build), and at parity on its K2 cells (a write before the view is laid),
+// whose twins main refuses too. One cell per class below (m85k, w30k and w30s off parity; w30h and w30l at parity); main's own K3 case is
+// `ks5_self_holder_def771.npk`. Ways out: `holder_view_def771_wayout_*_ok.npk`, each 67 on main and on row B3's build. This changes landing 177a's
+// N for a laundered view (l.28266). In the form of main's prices files.
+mod:holder_view_def771_prices;
+error:E5;
+// PRICE OFF PARITY, DEF-771 (row 5; class m85k, kind K1): `keep(O->:o)` stores `string_from_bytes(o.s.ptr, o.s.len)` into `o.t` of the same
+// pointee. `f` runs `drop keep(@o)` on a local, then reads `o.t` by name. It's right (67), but T5 refuses it at the call (BORROW-015@7:110): the
+// party of the whole `o` meets the same call's write of `o.t`. Right: on main (3a45b7c4) it exits 67 on every road 0-8 at -O0 and -O2 and under the
+// detector. Way out: `holder_view_def771_wayout_m85k_bn_ok.npk`. From `MANAGEMENT/probes/item7-bar/m85k/m85k_dir_ok.npk`.
+struct:O_m85k_dir_ok = { string:s; string:t; };
+func:keep_m85k_dir_ok = NIL(O_m85k_dir_ok->:o) never fails { o.t = string_from_bytes(o.s.ptr, o.s.len); pass NIL; };
+func:rd_m85k_dir_ok = int64(O_m85k_dir_ok->:o) never fails { pass (string_bytes(o.t)[0i64] => int64) - 90i64; };
+func:wr_m85k_dir_ok = int64(O_m85k_dir_ok->:o) never fails { o.s = string_concat("wx", "yz"); string:junk = string_concat("qq", "qq"); pass (string_bytes(o.t)[0i64] => int64) - 90i64; };
+func:f_m85k_dir_ok = int64() never fails { O_m85k_dir_ok:o = O_m85k_dir_ok{ s: string_concat("ab", "cde"), t: string_concat("", "") }; drop keep_m85k_dir_ok(@o); pass (string_bytes(o.t)[0i64] => int64) - 90i64; };
+func:cell_main_m85k_dir_ok = int32() never fails { pass (((raw f_m85k_dir_ok()) + 60i64) =>! int32); };
+// PRICE OFF PARITY, DEF-771 (row 5; class w30k, kind K1): `kh(O->:o)` hands its pointer on to `keep(o)`, which stores a `string_from_bytes` view of
+// `o.s` into `o.t`. `f` runs `drop kh(@o)` on a local and reads `o.t`. It's right, but T5 refuses it at the call (BORROW-015@6:113) as the creating
+// call's own write. Right: on main (3a45b7c4) it exits 67 on every road 0-8 at -O0 and -O2 and under the detector. Way out:
+// `holder_view_def771_wayout_w30k_kh_ok_bn_ok.npk`. From `Team/TMP/w30-177d2f-2026-11-25/cells/w30k/w30k_kh_ok.npk`.
+struct:O_w30k_kh_ok = { string:s; string:t; };
+func:keep_w30k_kh_ok = NIL(O_w30k_kh_ok->:o) never fails { o.t = string_from_bytes(o.s.ptr, o.s.len); pass NIL; };
+func:kh_w30k_kh_ok = NIL(O_w30k_kh_ok->:o) never fails { drop keep_w30k_kh_ok(o); pass NIL; };
+func:f_w30k_kh_ok = int64() never fails { O_w30k_kh_ok:o = O_w30k_kh_ok{ s: string_concat("ab", "cde"), t: string_concat("ab", "cde") }; drop kh_w30k_kh_ok(@o); pass (string_bytes(o.t)[0i64] => int64) - 90i64; };
+func:cell_main_w30k_kh_ok = int32() never fails { pass (((raw f_w30k_kh_ok()) + 60i64) =>! int32); };
+// PRICE OFF PARITY, DEF-771 (row 5; class w30s, kind K1): `ks(X->:o)` stores `string_from_bytes((<-o).s.ptr, (<-o).s.len)` into `o.t`. `f` runs
+// `drop ks(@x)` twice in a `for` loop, then reads `x.t`. It's right, but T5 refuses it at the call (BORROW-015@6:204) as the creating call's own
+// write. Right: on main (3a45b7c4) it exits 67 on every road 0-8 at -O0 and -O2 and under the detector. Way out:
+// `holder_view_def771_wayout_w30s_so_d1_l_ok_bn_ok.npk`. From `Team/TMP/w30-177d2f-2026-11-25/cells/w30s/w30s_so_d1_l_ok.npk`.
+struct:S0_w30s_so_d1_l_ok = { string:s; int64:z; };
+struct:X_w30s_so_d1_l_ok = { string:s; string:t; int64:z; };
+func:ks_w30s_so_d1_l_ok = NIL(X_w30s_so_d1_l_ok->:o) never fails { o.t = string_from_bytes((<-o).s.ptr, (<-o).s.len); pass NIL; };
+func:f_w30s_so_d1_l_ok = int64() never fails { S0_w30s_so_d1_l_ok:s0 = S0_w30s_so_d1_l_ok{ s: string_concat("ab", "cde"), z: 0i64 }; X_w30s_so_d1_l_ok:x = X_w30s_so_d1_l_ok{ s: string_concat("ab", "cde"), t: string_concat("q", "r"), z: 0i64 }; for (int64:i in 0i64...2i64) { drop ks_w30s_so_d1_l_ok(@x); } string:junk = string_concat("qq", "qq"); pass (string_bytes(x.t)[0i64] => int64) - 90i64; };
+func:cell_main_w30s_so_d1_l_ok = int32() never fails { pass (((raw f_w30s_so_d1_l_ok()) + 60i64) =>! int32); };
+// PRICE AT PARITY, DEF-771's K2 (row 5; class w30h, a write before the view is laid): `X:x = X{ fe: @e, … }` is declared, then `list_clear(@e.l)`
+// and a push run, and only then `sf(@x)` stores a `string_from_bytes` view of `x.fe.l[0]` into `x.t` and `rx(@x)` reads it. It's right (67), but
+// it's refused because the party is live from `x`'s declaration. Right: on main (3a45b7c4) it exits 67 on every road 0-8 at -O0 and -O2 and under
+// the detector. Its by-name twin `tm/w32-177d2f-2026-11-25/cells/w32bn/w30h_clr_ok_bn.npk` main refuses too, so it is at parity. From
+// `Team/TMP/w30-177d2f-2026-11-25/cells/w30h/w30h_clr_ok.npk`.
+struct:FE_w30h_clr_ok = { List<string>:l; };
+struct:X_w30h_clr_ok = { FE_w30h_clr_ok->:fe; string:t; };
+func:sf_w30h_clr_ok = int64(X_w30h_clr_ok->:x) never fails { x.t = string_from_bytes(x.fe.l[0i64].ptr, x.fe.l[0i64].len); pass 0i64; };
+func:sf2_w30h_clr_ok = int64(X_w30h_clr_ok->:x) never fails { discard(raw sf_w30h_clr_ok(x)); pass 0i64; };
+func:rx_w30h_clr_ok = int64(X_w30h_clr_ok->:x) never fails { pass (string_bytes(x.t)[0i64] => int64) - 90i64; };
+func:f_w30h_clr_ok = int64(int64:n) never fails { FE_w30h_clr_ok:e = FE_w30h_clr_ok{ l: raw list_init::<string>(2i64) }; drop list_push(@e.l, string_concat("ab", "cde")); X_w30h_clr_ok:x = X_w30h_clr_ok{ fe: @e, t: string_concat("q", "r") }; drop list_clear(@e.l); drop list_push(@e.l, string_concat("ab", "cde")); discard(raw sf_w30h_clr_ok(@x)); pass raw rx_w30h_clr_ok(@x); };
+func:cell_main_w30h_clr_ok = int32() never fails { pass (((raw f_w30h_clr_ok(1i64)) + 60i64) =>! int32); };
+// PRICE AT PARITY, DEF-771's K2 (row 5; class w30l): W30's `w30l` generator's `clr` cell at depth 1: the holder is written before the view is laid.
+// Right: on main (3a45b7c4) it exits 67 on every road 0-8 at -O0 and -O2 and under the detector. Its by-name twin
+// `tm/w32-177d2f-2026-11-25/cells/w32bn/w30l_clr_d1_ok_bn.npk` main refuses too, so it is at parity. From
+// `Team/TMP/w30-177d2f-2026-11-25/cells/w30l/w30l_clr_d1_ok.npk`.
+struct:FE_w30l_clr_d1_ok = { List<string>:l; };
+struct:X_w30l_clr_d1_ok = { FE_w30l_clr_d1_ok->:fe; string:t; };
+func:sf_w30l_clr_d1_ok = int64(X_w30l_clr_d1_ok->:x) never fails { x.t = string_from_bytes(x.fe.l[0i64].ptr, x.fe.l[0i64].len); pass 0i64; };
+func:rx_w30l_clr_d1_ok = int64(X_w30l_clr_d1_ok->:x) never fails { pass (string_bytes(x.t)[0i64] => int64) - 90i64; };
+func:clr1_w30l_clr_d1_ok = int64(FE_w30l_clr_d1_ok->:p) never fails { drop list_clear(@p.l); drop list_push(@p.l, string_concat("zz", "zz")); pass 0i64; };
+func:clr1ok_w30l_clr_d1_ok = int64(FE_w30l_clr_d1_ok->:p) never fails { drop list_clear(@p.l); drop list_push(@p.l, string_concat("ab", "cde")); pass 0i64; };
+func:rd3_w30l_clr_d1_ok = int64(int64:a, int64:b) never fails { pass a + b; };
+func:sfl_w30l_clr_d1_ok = List<string>(X_w30l_clr_d1_ok->:x) never fails { discard(raw sf_w30l_clr_d1_ok(x)); List<string>:l = raw list_init::<string>(2i64); drop list_push(@l, string_concat("zz", "zz")); pass l; };
+func:f_w30l_clr_d1_ok = int64(int64:n) never fails { FE_w30l_clr_d1_ok:e = FE_w30l_clr_d1_ok{ l: raw list_init::<string>(2i64) }; drop list_push(@e.l, string_concat("ab", "cde")); X_w30l_clr_d1_ok:x = X_w30l_clr_d1_ok{ fe: @e, t: string_concat("q", "r") }; drop list_clear(@e.l); drop list_push(@e.l, string_concat("ab", "cde")); discard(raw sf_w30l_clr_d1_ok(@x)); pass raw rx_w30l_clr_d1_ok(@x); };
+func:cell_main_w30l_clr_d1_ok = int32() never fails { pass (((raw f_w30l_clr_d1_ok(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

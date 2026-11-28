@@ -1,5 +1,7 @@
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 23:213
+// expect-error-at: 28:191
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 28:213
 // 2026-11-26 (landing 177d2f, item 7, row 2: row B, form RAB5F; rulings l.28587 item 1, l.28626 item 1, and management_88's ruling of 2026-11-26
 // that the roads of W32's STRS generator close at row B). A VIEW OF A HOLDER'S ELEMENT, HANDED BACK THROUGH A POINTER MEMBER, CARRIES THE ELEMENT'S
 // BORROW: `lk` makes a `string_from_bytes` view of `x.fe.ls[0]`, read through its pointer parameter's member `fe`, and stores it in `x.fe.rule`, in
@@ -10,6 +12,9 @@
 // on. A measured closure, not a wider claim on DEF-681 (l.26821). From W32's STRS generator (`tools/gen_w32strs.py` 083537406d4e56e5),
 // `Team/TMP/w32-177d2f-2026-11-25/cells/w32strs/w32strs_own_g0_cal_aft.npk`.
 mod:def681_strview_own;
+// 2026-11-26 (landing 177d2f, item 7, row 5: row B3, form TRY_B3m2fv (SC); rulings l.31332 item 2, l.28626 item 3). ROW B3 ADDS A SITE: its walk
+// reaches the store's read, so BORROW-015 at `lk(@x)` joins the one at `wsv(@e)`, on the road of W32's 36 right programs (`_ok`), which row B
+// refuses at the write and row B3 at the call as well.
 error:E5;
 func:mks = string() never fails { pass string_concat("a", "b"); };
 struct:FE = { List<string>:ls; string:rule; int64:z; };

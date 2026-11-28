@@ -1,0 +1,42 @@
+// expect-exit: 67
+// 2026-11-26 (landing 177d2f, item 7, row 5: row B3, form TRY_B3m2fv (SC, over B3v, B3j and B3k); rulings l.25278 item 5). THE WAY OUT OF DEF-755'S
+// PRICE `aw9_dp5z`: the loads written inline (in `deep_loads_def755_prices.npk`). It exits 67 on every road 0-8 at -O0 and -O2 and under the
+// detector on main (3a45b7c4) and on every build of the stack from row 5 on (W7X's runs). From
+// `nitpick/.internal/aw9-2026-11-22/cells/dp/aw9_dp5z_in.npk`.
+mod:deep_loads_def755_wayout_aw9_dp5z_in_ok;
+error:E5;
+func:mks = string() never fails { pass string_concat("a", "b"); };
+struct:NE = { NE->?:nx; string:s; int64:z; };
+func:getk = fixed uint8[](NE->:o) never fails { NE->:p1 = (<-o).nx ??! E5; NE->:p2 = (<-p1).nx ??! E5; NE->:p3 = (<-p2).nx ??! E5; NE->:p4 = (<-p3).nx ??! E5; NE->:p5 = (<-p4).nx ??! E5; pass string_bytes((<-p5).s); };
+func:f = int64(int64:n) never fails {
+    NE:n0 = NE{ nx: NIL, s: raw mks(), z: 1i64 };
+    NE:n1 = NE{ nx: @n0, s: raw mks(), z: 1i64 };
+    NE:n2 = NE{ nx: @n1, s: raw mks(), z: 1i64 };
+    NE:n3 = NE{ nx: @n2, s: raw mks(), z: 1i64 };
+    NE:n4 = NE{ nx: @n3, s: raw mks(), z: 1i64 };
+    NE:n5 = NE{ nx: @n4, s: raw mks(), z: 1i64 };
+    NE:c = NE{ nx: NIL, s: raw mks(), z: 1i64 };
+    NE->:q1 = n5.nx ??! E5; NE->:q2 = (<-q1).nx ??! E5; NE->:q3 = (<-q2).nx ??! E5; NE->:q4 = (<-q3).nx ??! E5; NE->:q5 = (<-q4).nx ??! E5; fixed uint8[]:vw = string_bytes((<-q5).s);
+    n0.z = 9i64;
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};
