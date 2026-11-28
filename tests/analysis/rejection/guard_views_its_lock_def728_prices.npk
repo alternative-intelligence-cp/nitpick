@@ -1,0 +1,43 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 21:424
+mod:guard_views_its_lock_def728_prices;
+// 2026-11-26 (landing 177d2f, item 7's row C: DEF-728, a getter's view or pointer returned through a local copy of its pointer parameter). MOVED
+// HERE from `tests/backend/programs/guard_views_its_lock_ok.npk` (its cell `r4c_optional_ptr_lock_first`: a guard taken through `s ?? fb`, a local
+// copy of an `Optional` pointer to the lock, held beside the lock's owner), by rulings l.22384 item 3: every refused `_ok` case moves to a prices
+// file, pinned at its code and site. A right program: main accepts it and it gives 7. Row C refuses it at BORROW-015 in the cell. Row C's price at
+// parity (G728's G1, rulings l.22351): main refuses the by-name twins at the same site.
+error:E9;
+struct:GH = { Guard<int32>:g; };
+struct:MH = { Mutex<int32, 1i32>:m; int32:n; };
+struct:AM = { Mutex<int32, 1i32>[1]:a; };
+async func:hold = Guard<int32>(Mutex<int32, 1i32>->:m) { Guard<int32>:g = relay await m.acquire(raw duration_ms(500i64)); pass g; };
+async func:fwd = Guard<int32>(move Guard<int32>:g) { pass move(g); };
+func:bump = NIL(Guard<int32>->:g) never fails { g.value = g.value + 1i32; pass NIL; };
+func:lvl = int64(Mutex<int32, 1i32>->:m) never fails { pass 7i64; };
+trait:r4c_optional_ptr_lock_first__Tr = { func:m = int32(Self->:self); };
+struct:r4c_optional_ptr_lock_first__GH = { Guard<int32>:g; };
+impl:r4c_optional_ptr_lock_first__GH:r4c_optional_ptr_lock_first__Tr = { func:m = int32(r4c_optional_ptr_lock_first__GH->:self) { pass 7i32; }; };
+async func:r4c_optional_ptr_lock_first__gs = Guard<int32>(Mutex<int32, 2i32>->?:s, Mutex<int32, 2i32>->:fb) { Mutex<int32, 2i32>->:p = s ?? fb; pass await p.acquire(raw duration_ms(500i64)) ?! E9; };
+async func:c_r4c_optional_ptr_lock_first = int32() { Mutex<int32, 2i32>:a = mutex(7i32) ?! E9; Mutex<int32, 2i32>->?:l = @a; Mutex<int32, 1i32>:z = mutex(1i32) ?! E9; Guard<int32>:g0 = await z.acquire(raw duration_ms(500i64)) ?! E9; r4c_optional_ptr_lock_first__GH:o0 = r4c_optional_ptr_lock_first__GH{ g: move(g0) }; dyn r4c_optional_ptr_lock_first__Tr:d = move(o0); Guard<int32>:t = await r4c_optional_ptr_lock_first__gs(l, @a) ?! E9; r4c_optional_ptr_lock_first__GH:o = r4c_optional_ptr_lock_first__GH{ g: move(t) }; dyn r4c_optional_ptr_lock_first__Tr:e = move(o); d = move(e); pass 7i32; };
+async func:main = int32(cstring[]:_~argv) {
+    if ((await c_r4c_optional_ptr_lock_first() ?! E9) != 7i32) { exit 93i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E9)               { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

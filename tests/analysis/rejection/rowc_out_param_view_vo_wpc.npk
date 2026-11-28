@@ -1,0 +1,48 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 25:21
+// 2026-11-26 (landing 177d2f, item 7, row 3: row C, form RABC5F, DEF-728; rulings l.24601 items 1 and 2). AN OUT-PARAMETER VIEW CARRIED THROUGH ROW
+// C'S HOLDERS, DEF-681'S STORE ROAD: `pv(@fB, @vh)` copies its pointer parameter into a local `p` and stores `VH{ v: string_bytes((<-p).s) }`
+// through the out-parameter; the caller then replaces `fB.s` and reads the stored view, which is freed. CLOSED FACE: on main (3a45b7c4) it is
+// accepted, and it exits 140 on every road 0-8 at -O0 and -O2, and 97 under the detector; the same on row B's build; refused from row C on. From
+// `nitpick/.internal/ag2f-2026-11-21/cells/vo/ag2f_vo_wpc.npk`.
+mod:rowc_out_param_view_vo_wpc;
+error:E5;
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks = string() never fails { pass string_concat("a", "b"); };
+struct:LF = { List<int64>:own; string:s; int64:z; };
+func:nlf = LF() never fails { pass LF{ own: raw mk(), s: raw mks(), z: 1i64 }; };
+func:ws1 = int64(LF->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:HL = { LF->:lp; int64:z; };
+struct:VH = { fixed uint8[]:v; int64:z; };
+func:pv = int64(LF->:o, VH->:out) never fails { LF->:p = o; <-out = VH{ v: string_bytes((<-p).s), z: 0i64 }; pass 0i64; };
+func:f = int64(int64:n) never fails {
+    LF:fA = raw nlf();
+    LF:fB = raw nlf();
+    LF:fC = raw nlf();
+    HL:hl = HL{ lp: @fB, z: 0i64 };
+    VH:vh = VH{ v: string_bytes(fA.s), z: 0i64 };
+    discard(raw pv(@fB, @vh));
+    discard(raw ws1(@fB));
+    fixed uint8[]:vw = vh.v;
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

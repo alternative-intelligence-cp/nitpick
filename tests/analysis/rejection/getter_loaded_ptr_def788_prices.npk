@@ -1,0 +1,179 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 56:35
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 104:36
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 152:39
+// 2026-11-26 (landing 177d2f, item 7, row 3: row C, form RABC5F, DEF-728; rulings l.31419 item 2). PRICES OFF PARITY, DEF-788 (LOW, fails closed,
+// made by row C): a getter's view read through a pointer it loads from its parameter's pointee (`ND->:p = (<-o).nx ??! E5;`, then
+// `string_bytes((<-p).s)`) is laid at the argument's own member (`nA.s`), so a write-capable pointer to the argument held beside the view
+// (`ND->[1]:na = [@nA];`) refuses a right program whose direct spelling main accepts. It is DEF-750's face by another road. Three faces, one case
+// each: AW7's `aw7_b_st_rm_ok`, `aw7_b_st_rmf_ok` and `aw7_b_st_rmtern_ok`. Way out: `getter_loaded_ptr_def788_wayout_m89_st_rm_ok_dir_ok.npk` (the
+// read written at the caller), which runs 67 on main and on every build of the stack. In the form of main's prices files.
+mod:getter_loaded_ptr_def788_prices;
+error:E5;
+// PRICE OFF PARITY, DEF-788 (row 3): AW7's `aw7_b_st_rm_ok`: `pv` loads `ND->:p = (<-o).nx ??! E5;` and lays `string_bytes((<-p).s)`, a view of
+// `nB.s`, into `<-out`; the caller holds `ND->[1]:na = [@nA];` beside it, then writes `nC`, which nothing views. Right: on main (3a45b7c4) it exits
+// 67 on every road 0-8 at -O0 and -O2 and under the detector; refused from row C on at BORROW-015 (40:20 in its own file, at `[@nA]`). From
+// `Team/TMP/atk-177d2f-w7-2026-11-22/cells/aw7/s5/aw7_b_st_rm_ok.npk`.
+func:mk_aw7_b_st_rm_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks_aw7_b_st_rm_ok = string() never fails { pass string_concat("a", "b"); };
+struct:LF_aw7_b_st_rm_ok = { List<int64>:own; string:s; int64:z; };
+impl:LF_aw7_b_st_rm_ok = { func:sv = fixed uint8[](LF_aw7_b_st_rm_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:nlf_aw7_b_st_rm_ok = LF_aw7_b_st_rm_ok() never fails { pass LF_aw7_b_st_rm_ok{ own: raw mk_aw7_b_st_rm_ok(), s: raw mks_aw7_b_st_rm_ok(), z: 1i64 }; };
+func:ws1_aw7_b_st_rm_ok = int64(LF_aw7_b_st_rm_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:HL_aw7_b_st_rm_ok = { LF_aw7_b_st_rm_ok->:lp; LF_aw7_b_st_rm_ok->:lq; int64:z; };
+struct:HH_aw7_b_st_rm_ok = { HL_aw7_b_st_rm_ok->:hp; int64:z; };
+struct:SS_aw7_b_st_rm_ok = { SS_aw7_b_st_rm_ok->?:p; List<int64>:own; string:s; int64:z; };
+impl:SS_aw7_b_st_rm_ok = { func:sv = fixed uint8[](SS_aw7_b_st_rm_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:wss_aw7_b_st_rm_ok = int64(SS_aw7_b_st_rm_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:ND_aw7_b_st_rm_ok = { ND_aw7_b_st_rm_ok->?:nx; string:s; int64:z; };
+func:wsn_aw7_b_st_rm_ok = int64(ND_aw7_b_st_rm_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:VH_aw7_b_st_rm_ok = { fixed uint8[]:v; int64:z; };
+func:pv_aw7_b_st_rm_ok = int64(ND_aw7_b_st_rm_ok->:o, VH_aw7_b_st_rm_ok->:out) never fails { ND_aw7_b_st_rm_ok->:p = (<-o).nx ??! E5; <-out = VH_aw7_b_st_rm_ok{ v: string_bytes((<-p).s), z: 0i64 }; pass 0i64; };
+func:f_aw7_b_st_rm_ok = int64(int64:n) never fails {
+    LF_aw7_b_st_rm_ok:fA = raw nlf_aw7_b_st_rm_ok();
+    LF_aw7_b_st_rm_ok:fB = raw nlf_aw7_b_st_rm_ok();
+    LF_aw7_b_st_rm_ok:fC = raw nlf_aw7_b_st_rm_ok();
+    SS_aw7_b_st_rm_ok:c = SS_aw7_b_st_rm_ok{ p: NIL, own: raw mk_aw7_b_st_rm_ok(), s: raw mks_aw7_b_st_rm_ok(), z: 1i64 };
+    SS_aw7_b_st_rm_ok:c2 = SS_aw7_b_st_rm_ok{ p: NIL, own: raw mk_aw7_b_st_rm_ok(), s: raw mks_aw7_b_st_rm_ok(), z: 1i64 };
+    SS_aw7_b_st_rm_ok:b = SS_aw7_b_st_rm_ok{ p: @c, own: raw mk_aw7_b_st_rm_ok(), s: raw mks_aw7_b_st_rm_ok(), z: 1i64 };
+    SS_aw7_b_st_rm_ok:a = SS_aw7_b_st_rm_ok{ p: @b, own: raw mk_aw7_b_st_rm_ok(), s: raw mks_aw7_b_st_rm_ok(), z: 1i64 };
+    ND_aw7_b_st_rm_ok:nB = ND_aw7_b_st_rm_ok{ nx: NIL, s: raw mks_aw7_b_st_rm_ok(), z: 1i64 };
+    ND_aw7_b_st_rm_ok:nC = ND_aw7_b_st_rm_ok{ nx: NIL, s: raw mks_aw7_b_st_rm_ok(), z: 1i64 };
+    ND_aw7_b_st_rm_ok:nA = ND_aw7_b_st_rm_ok{ nx: @nB, s: raw mks_aw7_b_st_rm_ok(), z: 1i64 };
+    HL_aw7_b_st_rm_ok:hl = HL_aw7_b_st_rm_ok{ lp: @fB, lq: @fA, z: 0i64 };
+    HH_aw7_b_st_rm_ok:hx = HH_aw7_b_st_rm_ok{ hp: @hl, z: 0i64 };
+    LF_aw7_b_st_rm_ok->:q = @fB;
+    LF_aw7_b_st_rm_ok->->:qq = @q;
+    LF_aw7_b_st_rm_ok->->->:qqq = @qq;
+    HH_aw7_b_st_rm_ok->:hxp = @hx;
+    LF_aw7_b_st_rm_ok->->[1]:qa = [qq];
+    LF_aw7_b_st_rm_ok->?:oq = @fB;
+    SS_aw7_b_st_rm_ok->?:ob = @b;
+    SS_aw7_b_st_rm_ok?:sa = SS_aw7_b_st_rm_ok{ p: @b, own: raw mk_aw7_b_st_rm_ok(), s: raw mks_aw7_b_st_rm_ok(), z: 1i64 };
+    VH_aw7_b_st_rm_ok:vh = VH_aw7_b_st_rm_ok{ v: string_bytes(fA.s), z: 0i64 };
+    ND_aw7_b_st_rm_ok->[1]:na = [@nA];
+    LF_aw7_b_st_rm_ok->->[1]:ppa = [qq];
+    discard(raw pv_aw7_b_st_rm_ok(@nA, @vh));
+    discard(raw wsn_aw7_b_st_rm_ok(@nC));
+    fixed uint8[]:vw = vh.v;
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:cell_main_aw7_b_st_rm_ok = int32() never fails { pass (((raw f_aw7_b_st_rm_ok(1i64)) + 60i64) =>! int32); };
+// PRICE OFF PARITY, DEF-788 (row 3): AW7's `aw7_b_st_rmf_ok`: the same, with a field of `<-out` written before the view is laid (`(<-out).z =
+// 1i64;`). Right: on main (3a45b7c4) it exits 67 on every road 0-8 at -O0 and -O2 and under the detector; refused from row C on at BORROW-015
+// (40:20 in its own file, at `[@nA]`). From `Team/TMP/atk-177d2f-w7-2026-11-22/cells/aw7/s5/aw7_b_st_rmf_ok.npk`.
+func:mk_aw7_b_st_rmf_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks_aw7_b_st_rmf_ok = string() never fails { pass string_concat("a", "b"); };
+struct:LF_aw7_b_st_rmf_ok = { List<int64>:own; string:s; int64:z; };
+impl:LF_aw7_b_st_rmf_ok = { func:sv = fixed uint8[](LF_aw7_b_st_rmf_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:nlf_aw7_b_st_rmf_ok = LF_aw7_b_st_rmf_ok() never fails { pass LF_aw7_b_st_rmf_ok{ own: raw mk_aw7_b_st_rmf_ok(), s: raw mks_aw7_b_st_rmf_ok(), z: 1i64 }; };
+func:ws1_aw7_b_st_rmf_ok = int64(LF_aw7_b_st_rmf_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:HL_aw7_b_st_rmf_ok = { LF_aw7_b_st_rmf_ok->:lp; LF_aw7_b_st_rmf_ok->:lq; int64:z; };
+struct:HH_aw7_b_st_rmf_ok = { HL_aw7_b_st_rmf_ok->:hp; int64:z; };
+struct:SS_aw7_b_st_rmf_ok = { SS_aw7_b_st_rmf_ok->?:p; List<int64>:own; string:s; int64:z; };
+impl:SS_aw7_b_st_rmf_ok = { func:sv = fixed uint8[](SS_aw7_b_st_rmf_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:wss_aw7_b_st_rmf_ok = int64(SS_aw7_b_st_rmf_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:ND_aw7_b_st_rmf_ok = { ND_aw7_b_st_rmf_ok->?:nx; string:s; int64:z; };
+func:wsn_aw7_b_st_rmf_ok = int64(ND_aw7_b_st_rmf_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:VH_aw7_b_st_rmf_ok = { fixed uint8[]:v; int64:z; };
+func:pv_aw7_b_st_rmf_ok = int64(ND_aw7_b_st_rmf_ok->:o, VH_aw7_b_st_rmf_ok->:out) never fails { ND_aw7_b_st_rmf_ok->:p = (<-o).nx ??! E5; (<-out).z = 1i64; <-out = VH_aw7_b_st_rmf_ok{ v: string_bytes((<-p).s), z: 0i64 }; pass 0i64; };
+func:f_aw7_b_st_rmf_ok = int64(int64:n) never fails {
+    LF_aw7_b_st_rmf_ok:fA = raw nlf_aw7_b_st_rmf_ok();
+    LF_aw7_b_st_rmf_ok:fB = raw nlf_aw7_b_st_rmf_ok();
+    LF_aw7_b_st_rmf_ok:fC = raw nlf_aw7_b_st_rmf_ok();
+    SS_aw7_b_st_rmf_ok:c = SS_aw7_b_st_rmf_ok{ p: NIL, own: raw mk_aw7_b_st_rmf_ok(), s: raw mks_aw7_b_st_rmf_ok(), z: 1i64 };
+    SS_aw7_b_st_rmf_ok:c2 = SS_aw7_b_st_rmf_ok{ p: NIL, own: raw mk_aw7_b_st_rmf_ok(), s: raw mks_aw7_b_st_rmf_ok(), z: 1i64 };
+    SS_aw7_b_st_rmf_ok:b = SS_aw7_b_st_rmf_ok{ p: @c, own: raw mk_aw7_b_st_rmf_ok(), s: raw mks_aw7_b_st_rmf_ok(), z: 1i64 };
+    SS_aw7_b_st_rmf_ok:a = SS_aw7_b_st_rmf_ok{ p: @b, own: raw mk_aw7_b_st_rmf_ok(), s: raw mks_aw7_b_st_rmf_ok(), z: 1i64 };
+    ND_aw7_b_st_rmf_ok:nB = ND_aw7_b_st_rmf_ok{ nx: NIL, s: raw mks_aw7_b_st_rmf_ok(), z: 1i64 };
+    ND_aw7_b_st_rmf_ok:nC = ND_aw7_b_st_rmf_ok{ nx: NIL, s: raw mks_aw7_b_st_rmf_ok(), z: 1i64 };
+    ND_aw7_b_st_rmf_ok:nA = ND_aw7_b_st_rmf_ok{ nx: @nB, s: raw mks_aw7_b_st_rmf_ok(), z: 1i64 };
+    HL_aw7_b_st_rmf_ok:hl = HL_aw7_b_st_rmf_ok{ lp: @fB, lq: @fA, z: 0i64 };
+    HH_aw7_b_st_rmf_ok:hx = HH_aw7_b_st_rmf_ok{ hp: @hl, z: 0i64 };
+    LF_aw7_b_st_rmf_ok->:q = @fB;
+    LF_aw7_b_st_rmf_ok->->:qq = @q;
+    LF_aw7_b_st_rmf_ok->->->:qqq = @qq;
+    HH_aw7_b_st_rmf_ok->:hxp = @hx;
+    LF_aw7_b_st_rmf_ok->->[1]:qa = [qq];
+    LF_aw7_b_st_rmf_ok->?:oq = @fB;
+    SS_aw7_b_st_rmf_ok->?:ob = @b;
+    SS_aw7_b_st_rmf_ok?:sa = SS_aw7_b_st_rmf_ok{ p: @b, own: raw mk_aw7_b_st_rmf_ok(), s: raw mks_aw7_b_st_rmf_ok(), z: 1i64 };
+    VH_aw7_b_st_rmf_ok:vh = VH_aw7_b_st_rmf_ok{ v: string_bytes(fA.s), z: 0i64 };
+    ND_aw7_b_st_rmf_ok->[1]:na = [@nA];
+    LF_aw7_b_st_rmf_ok->->[1]:ppa = [qq];
+    discard(raw pv_aw7_b_st_rmf_ok(@nA, @vh));
+    discard(raw wsn_aw7_b_st_rmf_ok(@nC));
+    fixed uint8[]:vw = vh.v;
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:cell_main_aw7_b_st_rmf_ok = int32() never fails { pass (((raw f_aw7_b_st_rmf_ok(1i64)) + 60i64) =>! int32); };
+// PRICE OFF PARITY, DEF-788 (row 3): AW7's `aw7_b_st_rmtern_ok`: the same, with the pointer loaded through a ternary (`ND->:p = is ((<-o).z >
+// 100i64) : o : ((<-o).nx ??! E5);`). Right: on main (3a45b7c4) it exits 67 on every road 0-8 at -O0 and -O2 and under the detector; refused from
+// row C on at BORROW-015 (40:20 in its own file, at `[@nA]`). From `Team/TMP/atk-177d2f-w7-2026-11-22/cells/aw7/s5/aw7_b_st_rmtern_ok.npk`.
+func:mk_aw7_b_st_rmtern_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks_aw7_b_st_rmtern_ok = string() never fails { pass string_concat("a", "b"); };
+struct:LF_aw7_b_st_rmtern_ok = { List<int64>:own; string:s; int64:z; };
+impl:LF_aw7_b_st_rmtern_ok = { func:sv = fixed uint8[](LF_aw7_b_st_rmtern_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:nlf_aw7_b_st_rmtern_ok = LF_aw7_b_st_rmtern_ok() never fails { pass LF_aw7_b_st_rmtern_ok{ own: raw mk_aw7_b_st_rmtern_ok(), s: raw mks_aw7_b_st_rmtern_ok(), z: 1i64 }; };
+func:ws1_aw7_b_st_rmtern_ok = int64(LF_aw7_b_st_rmtern_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:HL_aw7_b_st_rmtern_ok = { LF_aw7_b_st_rmtern_ok->:lp; LF_aw7_b_st_rmtern_ok->:lq; int64:z; };
+struct:HH_aw7_b_st_rmtern_ok = { HL_aw7_b_st_rmtern_ok->:hp; int64:z; };
+struct:SS_aw7_b_st_rmtern_ok = { SS_aw7_b_st_rmtern_ok->?:p; List<int64>:own; string:s; int64:z; };
+impl:SS_aw7_b_st_rmtern_ok = { func:sv = fixed uint8[](SS_aw7_b_st_rmtern_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:wss_aw7_b_st_rmtern_ok = int64(SS_aw7_b_st_rmtern_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:ND_aw7_b_st_rmtern_ok = { ND_aw7_b_st_rmtern_ok->?:nx; string:s; int64:z; };
+func:wsn_aw7_b_st_rmtern_ok = int64(ND_aw7_b_st_rmtern_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:VH_aw7_b_st_rmtern_ok = { fixed uint8[]:v; int64:z; };
+func:pv_aw7_b_st_rmtern_ok = int64(ND_aw7_b_st_rmtern_ok->:o, VH_aw7_b_st_rmtern_ok->:out) never fails { ND_aw7_b_st_rmtern_ok->:p = is ((<-o).z > 100i64) : o : ((<-o).nx ??! E5); <-out = VH_aw7_b_st_rmtern_ok{ v: string_bytes((<-p).s), z: 0i64 }; pass 0i64; };
+func:f_aw7_b_st_rmtern_ok = int64(int64:n) never fails {
+    LF_aw7_b_st_rmtern_ok:fA = raw nlf_aw7_b_st_rmtern_ok();
+    LF_aw7_b_st_rmtern_ok:fB = raw nlf_aw7_b_st_rmtern_ok();
+    LF_aw7_b_st_rmtern_ok:fC = raw nlf_aw7_b_st_rmtern_ok();
+    SS_aw7_b_st_rmtern_ok:c = SS_aw7_b_st_rmtern_ok{ p: NIL, own: raw mk_aw7_b_st_rmtern_ok(), s: raw mks_aw7_b_st_rmtern_ok(), z: 1i64 };
+    SS_aw7_b_st_rmtern_ok:c2 = SS_aw7_b_st_rmtern_ok{ p: NIL, own: raw mk_aw7_b_st_rmtern_ok(), s: raw mks_aw7_b_st_rmtern_ok(), z: 1i64 };
+    SS_aw7_b_st_rmtern_ok:b = SS_aw7_b_st_rmtern_ok{ p: @c, own: raw mk_aw7_b_st_rmtern_ok(), s: raw mks_aw7_b_st_rmtern_ok(), z: 1i64 };
+    SS_aw7_b_st_rmtern_ok:a = SS_aw7_b_st_rmtern_ok{ p: @b, own: raw mk_aw7_b_st_rmtern_ok(), s: raw mks_aw7_b_st_rmtern_ok(), z: 1i64 };
+    ND_aw7_b_st_rmtern_ok:nB = ND_aw7_b_st_rmtern_ok{ nx: NIL, s: raw mks_aw7_b_st_rmtern_ok(), z: 1i64 };
+    ND_aw7_b_st_rmtern_ok:nC = ND_aw7_b_st_rmtern_ok{ nx: NIL, s: raw mks_aw7_b_st_rmtern_ok(), z: 1i64 };
+    ND_aw7_b_st_rmtern_ok:nA = ND_aw7_b_st_rmtern_ok{ nx: @nB, s: raw mks_aw7_b_st_rmtern_ok(), z: 1i64 };
+    HL_aw7_b_st_rmtern_ok:hl = HL_aw7_b_st_rmtern_ok{ lp: @fB, lq: @fA, z: 0i64 };
+    HH_aw7_b_st_rmtern_ok:hx = HH_aw7_b_st_rmtern_ok{ hp: @hl, z: 0i64 };
+    LF_aw7_b_st_rmtern_ok->:q = @fB;
+    LF_aw7_b_st_rmtern_ok->->:qq = @q;
+    LF_aw7_b_st_rmtern_ok->->->:qqq = @qq;
+    HH_aw7_b_st_rmtern_ok->:hxp = @hx;
+    LF_aw7_b_st_rmtern_ok->->[1]:qa = [qq];
+    LF_aw7_b_st_rmtern_ok->?:oq = @fB;
+    SS_aw7_b_st_rmtern_ok->?:ob = @b;
+    SS_aw7_b_st_rmtern_ok?:sa = SS_aw7_b_st_rmtern_ok{ p: @b, own: raw mk_aw7_b_st_rmtern_ok(), s: raw mks_aw7_b_st_rmtern_ok(), z: 1i64 };
+    VH_aw7_b_st_rmtern_ok:vh = VH_aw7_b_st_rmtern_ok{ v: string_bytes(fA.s), z: 0i64 };
+    ND_aw7_b_st_rmtern_ok->[1]:na = [@nA];
+    LF_aw7_b_st_rmtern_ok->->[1]:ppa = [qq];
+    discard(raw pv_aw7_b_st_rmtern_ok(@nA, @vh));
+    discard(raw wsn_aw7_b_st_rmtern_ok(@nC));
+    fixed uint8[]:vw = vh.v;
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:cell_main_aw7_b_st_rmtern_ok = int32() never fails { pass (((raw f_aw7_b_st_rmtern_ok(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

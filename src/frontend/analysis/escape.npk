@@ -1150,12 +1150,61 @@ func:record_summary = NIL(Escape->:x, ExprId:v) never fails {
     for (int64:i in 0i64...refs.count) {
         ViewRef:r = refs[i];
         int32:k = raw param_index_of(x, r.root);
+        if ((r.kind != (raw REF_PASS())) && (!x.noload)) { drop sum_through_holder(x, r, k, 0i32 - 1i32); }   // DEF-728; F10: off in the `noload` pass
         if (k < 0i32) { continue; }
         if ((r.kind == (raw VIEW_DIRECT())) || (r.kind == (raw VIEW_LAUNDERED()))) {
             drop sv_add(x, k, raw ref_full_path(x, r));
         } else {
             drop pass_set(x, k, r.xc);
             if ((r.kind == (raw REF_PASS())) && (r.read != 0i32) && (!(raw load_reads_own(x, v)))) { drop load_set(x, k); }   // DEF-681; DEF-736: not an own member's read
+        }
+    }
+    pass NIL;
+};
+
+// A VIEW OR AN ADDRESS ROOTED AT A BINDING THAT HOLDS A PARAMETER'S VALUE (DEF-728): a local copy of it (`LF->:p = o;`), a copy of a copy, an unwrap,
+// a cast or a call that hands it back into a local, or a parameter the body reassigned (`o = o2;`, `predef`), is a view of THAT parameter's pointee at
+// the same path, or carries its address: the binding's chain names the parameters whose whole value it holds (a PASS ref read as no member, `read` 0).
+// Below a pointee-changing cast on the copy's road the path is the whole pointee. A value loaded through a parameter (`read` nonzero) is DEF-681's.
+func:sum_through_holder = NIL(Escape->:x, ViewRef:r, int32:k, int32:sj) never fails {   // DEF-728: `sj` < 0 is the return road; else the store into parameter sj's pointee (DEF-681's out-parameter store road, `vo_wpc`)
+    if (r.root == 0i32) { pass NIL; }
+    Symbol:hs = raw symtab_get(x.tab, r.root);
+    if (k >= 0i32) {
+        if (hs.origin_kind != (raw SYM_DECL())) { pass NIL; }
+        if (!x.predef[hs.origin => int64]) { pass NIL; }
+    }
+    List<ViewRef>:held = raw list_init::<ViewRef>(4i64);
+    drop push_binding_refs(x, r.root, @held);
+    // DEF-728: a `for` or `pick` binding's value is its SOURCE's (`push_source_refs`), as `collect_view_refs` reads it (`ag1_for`)
+    if (raw sym_is_sourced(x, r.root)) { drop push_source_refs(x, hs.link, raw ESCAPE_DEPTH(), @held); }
+    bool:rview = (r.kind == (raw VIEW_DIRECT())) || (r.kind == (raw VIEW_LAUNDERED()));
+    // DEF-728: a `for` binding over an array, a slice or a `List` is one of its source's elements, so its path starts with an element step (`ag1b_fsl`)
+    int32:rp0 = raw ref_full_path(x, r);
+    int32:rp = rp0;
+    int32:cs = r.root;   // a `for` over a `for` binding nests: one element step a level, down to the name that isn't sourced (`ag2e_fn`)
+    for (int32:lvl in 0i32...(raw BORROW_FUEL())) {
+        if ((cs == 0i32) || (!(raw sym_is_sourced(x, cs)))) { break; }
+        ExprId:se = ExprId{ index: (raw symtab_get(x.tab, cs)).link };
+        int32:st = raw exprtypes_get(x.etypes, se);
+        if (((raw type_kind(x.types, st)) == (raw TY_ARRAY())) || ((raw type_kind(x.types, st)) == (raw TY_SLICE())) || (raw type_is_list(x.tr, st))) { rp = raw path_join(x, raw path_intern(x, "E"), rp); }
+        cs = raw root_symbol(x, se);
+    }
+    for (int64:j in 0i64...held.count) {
+        ViewRef:c = held[j];
+        if (c.root == r.root) { continue; }
+        // DEF-728 (a pointer-to-pointer local, `rh_pp`): THE ADDRESS OF A PLACE ROOTED AT A PARAMETER that the binding holds (`pp = @o`, `@((<-hh).lp)`,
+        // `@self`), read back through the binding, is that place's own value, so the view lies at the ref's path below the addressed place (a path names no dereference)
+        if ((c.kind == (raw REF_ADDR())) && rview && ((raw param_index_of(x, c.root)) >= 0i32)) { if (sj < 0i32) { drop sv_add(x, raw param_index_of(x, c.root), raw path_join(x, raw ref_full_path(x, c), rp)); } else { drop fv_add(x, sj, raw param_index_of(x, c.root), raw path_join(x, raw ref_full_path(x, c), rp)); } }
+        if (c.kind != (raw REF_PASS())) { continue; }
+        // DEF-728: a VIEW through a value LOADED out of the parameter's pointee (`p = <-oo`, `read` nonzero) is a view of that pointee at the ref's
+        // path, as the direct spelling `(<-(<-oo)).s` records it (`ag1_ldpp`); a carried value or an address through one stays DEF-681's
+        if ((c.read != 0i32) && ((!rview) || ((raw type_kind(x.types, raw type_unwrapped(x.types, c.read))) != (raw TY_POINTER())))) { continue; }   // DEF-728: only a POINTER loaded out of the pointee (`p = <-oo`); `xs_ok`'s `<-p` reads an `SS`
+        int32:kc = raw param_index_of(x, c.root);
+        if (kc < 0i32) { continue; }
+        if (rview) {
+            if (sj < 0i32) { drop sv_add(x, kc, is (c.xc != 0i32) : 0i32 : rp); } else { drop fv_add(x, sj, kc, is (c.xc != 0i32) : 0i32 : rp); }
+        } else {
+            if (sj < 0i32) { drop pass_set(x, kc, raw escape_xc_join(r.xc, c.xc)); } else { drop flow_pass_set(x, sj, kc, raw escape_xc_join(r.xc, c.xc)); }
         }
     }
     pass NIL;
@@ -1394,6 +1443,10 @@ func:view_hop_suffix = int32(Escape->:x, int32:t0, int32:path) never fails {
         prev = t;
         // the type past this one step, as `escape_path_end_type` reads it
         t = raw escape_path_end_type(x, t, raw path_intern(x, string_slice(txt, i, j) ?! ProvenSlice));
+        // DEF-728: A FIELD OR A DEREFERENCE THE TYPE IT IS LAID ON DOESN'T HAVE (`E/f161` on an `LF->[][]`: the callee's holder walk counted an
+        // element step short, a holder between two `for` levels or an index on the `for` source) is a path whose upper steps the callee lost. The hop is taken AT
+        // that step, so the rest is laid below every held ref, level by level (the closed direction), as an unlaid first field is (`view_first_unlaid`)
+        if ((t == 0i32) && ((txt.ptr[i] == 102u8) || (txt.ptr[i] == 120u8))) { cut = i; break; }
         steps = steps + 1i64;
         i = j + 1i64;
     }
@@ -2006,6 +2059,7 @@ func:fold_flow_into_param = NIL(Escape->:x, ExprId:dest, List<ViewRef>->:refs, b
     for (int64:i in 0i64...refs.count) {
         ViewRef:r = (<-refs)[i];
         int32:k = raw param_index_of(x, r.root);
+        if ((r.kind != (raw REF_PASS())) && (!x.noload)) { drop sum_through_holder(x, r, k, j); }   // F10: off in the `noload` pass. DEF-681's store road through a holder, as the return road asks it (`vo_wpc`, `vo_w2l`, `vo_wf`)
         if (k < 0i32) { continue; }
         if ((r.kind == (raw VIEW_DIRECT())) || (r.kind == (raw VIEW_LAUNDERED()))) {
             drop fv_add(x, j, k, raw ref_full_path(x, r));

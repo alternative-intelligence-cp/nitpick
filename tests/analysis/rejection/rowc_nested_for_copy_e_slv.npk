@@ -1,0 +1,47 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 25:21
+// 2026-11-26 (landing 177d2f, item 7, row 3: row C, form RABC5F, DEF-728; rulings l.24471 item 1). A VIEW RETURNED FROM A NESTED `for` THROUGH A
+// LOCAL COPY OF THE SLICE IS ROW C'S CLASS, DEF-728: The getter returns `string_bytes((<-p).s)` from a nested `for` over `LF->[][]` whose inner
+// loop runs over a local copy `LF->[]:ps2 = ps` (reaching `fB`); the caller then replaces `fB.s` (`ws1(@fB)`) and reads the freed view. CLOSED
+// FACE: on main (3a45b7c4) it is accepted, and it exits 140 on every road 0-8 at -O0 and -O2, and 97 under the detector; the same on row B's build;
+// refused from row C on. From `nitpick/.internal/ag2f-2026-11-21/cells/e/ag2f_e_slv.npk`.
+mod:rowc_nested_for_copy_e_slv;
+error:E5;
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks = string() never fails { pass string_concat("a", "b"); };
+struct:LF = { List<int64>:own; string:s; int64:z; };
+func:ws1 = int64(LF->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:RW = { LF->[2]:cells; int64:z; };
+func:cellsof = LF->[2](RW:r) never fails { pass r.cells; };
+func:getr = fixed uint8[](LF->[][]:pss, LF->:o) never fails { for (LF->[]:ps in pss) { LF->[]:ps2 = ps; for (LF->:p in ps2) { pass string_bytes((<-p).s); } } pass string_bytes((<-o).s); };
+func:f = int64(int64:n) never fails {
+    LF:fA = LF{ own: raw mk(), s: raw mks(), z: 1i64 };
+    LF:fB = LF{ own: raw mk(), s: raw mks(), z: 1i64 };
+    LF:fC = LF{ own: raw mk(), s: raw mks(), z: 1i64 };
+    LF->:q = @fB;
+    LF->[1]:arr = [q];
+    LF->[][1]:arr2 = [arr[0i64...1i64]];
+    fixed uint8[]:vw = raw getr(arr2[0i64...1i64], @fA);
+    discard(raw ws1(@fB));
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};
