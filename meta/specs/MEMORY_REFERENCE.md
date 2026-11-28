@@ -586,9 +586,9 @@ blueprint philosophy refuses; D-152 split them.
 ```nitpick
 arena<int64>:my_arena = arena_make(1000i64);
 Handle<int64>:h = my_arena.alloc();
-drop my_arena.put(h, 41i64);             // write through the handle
-int64:val = my_arena.get(h) ? 0i64;      // read a COPY, with a default
-drop my_arena.free(h);
+my_arena.put(h, 41i64) ?| NIL;              // write through the handle
+int64:val = my_arena.get(h) ?| 0i64;        // read a COPY, with a default
+my_arena.free(h) ?| NIL;
 my_arena.destroy();
 ```
 
@@ -597,7 +597,12 @@ The set is `alloc() -> Handle<T>`, `get(h) -> Result<T>`,
 `destroy() -> NIL` (D-017 as amended by D-152). `get` returns the element
 **by value**: a borrow-returning `get` would be a returned borrow, which
 D-004 refuses everywhere — mutation is spelled `put`. A stale handle fails
-`get`/`put`/`free` with **`-4106` in `Result.err`**, never a trap.
+`get`/`put`/`free` with **`-4106` in `Result.err`**, never a trap. A program
+that uses an arena verb still names `(StaleHandle)` in its `failsafe`
+(`NITPICK-REACH-002` otherwise): the reachable-error census counts it wherever
+an arena verb appears, D-179's over-approximation
+(`src/frontend/analysis/reach.npk` l.13–16), though the verbs themselves never
+trap.
 `destroy` CONSUMES the arena (a compile-time move, like `dalloc`), and an
 un-destroyed arena is a wild-role leak the exit-time check names (D-151). Its
 receiver is storage the function OWNS — a binding, or a field or element of
@@ -607,10 +612,13 @@ flag to clear, and the owner freed the arena again); a destroyed FIELD is
 vacated as a moved-out field is (D-254), so the aggregate stays live and drops
 its siblings (DEF-158).
 
-> Note the operator: `?` takes a **fallback value**; `?!` takes a **failsafe error
+> Note the operator: `?|` takes a **fallback value** (D-175; a bare `?` is
+> `NITPICK-PARSE-011`); `?!` takes a **failsafe error
 > code** and traps (D-009). An earlier revision of this section wrote
 > `my_arena.get(h) ?! 0i64`, which would call `failsafe(0)` on a stale handle
-> rather than yielding `0`.
+> rather than yielding `0`. `put` and `free` are not `never fails`, so their
+> results are handled (`?| NIL` above), never `drop`ped: `drop` is licensed only
+> by a `never fails` callee (D-163, `NITPICK-TYPE-042`).
 
 `.` handles all member access and auto-dereferences pointers (D-006). Chained
 access through arenas embedded in structs works as ordinary member-place

@@ -1,5 +1,17 @@
 # Nitpick Streams and I/O
 
+> **Status (⟦FILL: DATE⟧, 1.6.1e landing 177d2f — DEF-787).** This document was written ahead of
+> the code, and part of it is not landed. LANDED: the floor's descriptor calls (`open`, `read`,
+> `write`, `close`, `own_fd`; BUILTIN_REFERENCE §2b); `lib/nio.npk`, the line-discipline text
+> layer over them (`nio_stdout`, `nio_line`, `nio_end`, …); and, in the prelude
+> (`src/prelude/prelude.npk`), the `Reader` and `Writer` traits, `ByteReader`/`ByteWriter`
+> (`byte_reader_open`, `byte_writer_create`, a `ByteReader`'s `seek` with `Whence`),
+> `LineBufWriter`, `TextReader`/`TextWriter` (`text_reader`, `text_writer`) and
+> `std_in()`/`std_out()`/`std_err()`. NOT LANDED: a `Stream` trait (§1's word; the prelude's
+> traits are `Reader` and `Writer`, and `lib/nio.npk`'s header still waits for one),
+> `text_writer_create` (§3's spelling: the prelude's constructor is `text_writer`, which
+> takes the inner writer and a `LineEnding` and never fails), and §10's open items.
+
 Written rather than adopted — the carried-over spec set has no I/O chapter, and
 `PRE_PLANNING_REVIEW.md` §4 records it as missing and needed by the driver and by
 diagnostics.
@@ -108,7 +120,7 @@ Line-ending policy belongs to the stream (D-050), and the two disciplines are
 | Translation | **none, ever** | on |
 | Read | bytes as they are | `\r\n`, `\n`, and lone `\r` all yield `\n` |
 | Write | bytes as they are | `\n`, unless opened requesting otherwise |
-| Unit | `uint8[]` | `string`, by line or by span |
+| Unit | `uint8[]` to read into, `fixed uint8[]` to write from (§1; `string_bytes(s)` is one, D-351) | `string`, by line or by span |
 
 There is no "text mode by accident": a byte stream never translates, and a text
 stream is a different type you had to name.

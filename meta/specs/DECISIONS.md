@@ -2679,6 +2679,14 @@ none: adding two file descriptors is not an operation, and `fd + 1` as a way to
 reach "the next descriptor" is precisely the kind of guess the type exists to
 prevent.
 
+*[⟦FILL: DATE⟧, 1.6.1e landing 177d2f — a dated note (DEF-780 (e)).]* The table's `<`, `<=`, `>` and
+`>=`, and the paragraph above, are superseded by D-093 §2: ordering (`< <= > >= <=>`) requires an
+ordered type, and the kernel identifiers "compare, and do not sort", so the five have equality
+(`==`, `!=`) only. The checker follows D-093: `<`, `>=` and `<=>` on a `pid` or an `fd` are
+`NITPICK-TYPE-008`, and `==` is accepted. A `poll` or `select` bound is computed over the
+descriptors cast to an integer (`fd => int32`, below). A record of what the checker already does,
+not a language change.
+
 ### The property this buys, beyond pedantry
 
 Combined with the universal `Result<T>` rule, **an `fd` value is always valid.**

@@ -445,9 +445,13 @@ Two checks that the compiler enforces aggressively:
 
 ### 4.4 Assertions
 
-*   **`prove(cond);`** — a **compile-time** proof obligation discharged by Z3 under
-    `--verify`. Path-condition aware: enclosing branch guards are asserted as
-    axioms first. If the solver finds a counterexample, **compilation fails**.
+*   **`prove(cond);`** — a **compile-time** proof obligation, decided by Z3 in the
+    VERIFIED build (`npkg verify`). Path-condition aware: enclosing branch guards are
+    asserted as axioms first. If the solver does not discharge it, **the verified
+    build fails** (`NITPICK-VERIFY-001`); the plain build lowers it to nothing and
+    checks nothing. Until DEF-774 is fixed, the verified build can discharge a false
+    claim on a path where a signed `+%`, `-%` or `*%` gives a negative result
+    (VERIFICATION §1.2).
 *   **`assert_static(cond);`** — compile-time constant evaluation; halts
     compilation if false.
 

@@ -23,7 +23,7 @@ Nitpick fundamentally rejects unsafe behavior. To achieve this, it deeply integr
 ## 1. Formal Proofs (`prove` and `assert_static`)
 
 ### 1.1 `assert_static`
-The `assert_static` builtin allows developers to encode compile-time logic checks. If the expression evaluates to false, compilation immediately halts.
+The `assert_static` statement (a keyword, as `prove` is: LEXICAL_REFERENCE §4's `VerificationKeyword`) allows developers to encode compile-time logic checks. Its expression must fold to a constant `bool` at compile time: if it reads a run-time value, or folds to false, compilation halts (`NITPICK-TYPE-069`; the note below).
 
 ```nitpick
 assert_static(1i32 == 1i32);
@@ -40,9 +40,9 @@ assert_static(1i32 == 1i32);
 > inventory line, no query, no guard.
 
 ### 1.2 `prove`
-The `prove` keyword interacts directly with the Z3 verification backend (when the `--verify` compiler flag is set). It forces the SMT solver to construct a mathematical proof that the subsequent expression holds true across all possible control flows and variable states. 
+The `prove` statement (a keyword, as `assert_static` is) states a claim for the Z3 verification backend to prove: that the expression holds on every path that reaches it, in every variable state. **Only the VERIFIED build checks it** (`npkg verify`, which compiles with `--elide`; D-219, D-269). The plain build lowers the statement to nothing and checks nothing, so a false `prove` compiles and runs there.
 
-If the solver finds a path where the expression is false, compilation fails. The compiler extracts a counterexample showing the failing variable assignments (visible via `--prove-report`).
+In the verified build, a `prove` the solver does not discharge refuses the build: `NITPICK-VERIFY-001` at the statement, naming the row's verdict word, and `npkg verify --explain` writes the model of an open row, the failing variable assignments (the note below). **Until DEF-774 is fixed, the verified build can also discharge a FALSE `prove`:** the encoder takes a signed `+%`, `-%` or `*%` never to give a negative result, so a path on which one does is read as impossible, and any `prove` on it is discharged.
 
 ```nitpick
 int32:x = get_val();
@@ -83,9 +83,9 @@ The `prove` keyword is path-condition-aware. Branch guards from enclosing `if`, 
 > artifact carries no unproven claim, and `npkg verify --explain` writes the
 > model of an open one. A `bool` proposition always has at least an opaque
 > term, so a `prove` row is `open` rather than `unencoded` when the encoder
-> cannot express it. The `--verify` and `--prove-report` flags above are the
-> pre-D-219 spelling: the verified build is `npkg verify`'s, and the report
-> is `--explain`'s.
+> cannot express it. The `--verify` and `--prove-report` flags this section
+> once named are the pre-D-219 spelling: the verified build is `npkg verify`'s,
+> and the report is `--explain`'s.
 
 ---
 
@@ -2281,6 +2281,17 @@ code checks nothing; and that the switches' assembly (`npk_switch_stack`,
 
 ## 10. The schedule explorer (D-212, D-298…D-303; landed 1.5.7, 2026-09-18)
 
+**In brief.** The explorer is the `explore` stage of both test runners, the harness and `npkg`
+(`nitpick.toml`'s `[[test]]` table, which both read: D-238). Its units are the `// stress:` programs in
+`tests/backend/programs/`. A unit marked `// explore: N` is compiled by the real backend, linked
+against the EXPLORED FLOOR (the runtime floor, `runtime/npkrt.ll`, transformed as below) and the
+shim, and run under N seeds (1,000, or fewer with a reason beside the marker: D-300), its first
+seed twice to check the replay. A unit marked `// explore: no <reason>` is not run (D-299), and the stage
+prints its reason. For each unit run, the stage prints its thread count n, its schedule length k,
+the depth d, its seeds and PCT's per-run bound 1/(n·k^(d−1)); then the number of units explored
+and of units marked not explored, and each negative control's finding seed. A run is red when the
+exit is wrong or the shim reports a verdict (below).
+
 A proof decides what a model says, and a protocol model says what its author
 wrote (§9.4). A stress run executes the real code, but under the kernel's
 scheduler, which reaches a narrow interleaving by luck: `// stress: 40` ran
@@ -2350,7 +2361,10 @@ on an ADDRESS. A thread's end is settled before anyone else steps (X-19): the
 kernel's clear of the `CHILD_CLEARTID` word is waited for, because the joiner
 reads that word. Everything else is the real syscall, after a point.
 
-**The scheduler is PCT with a fairness rule.** A seed-0, depth-1 run measures
+**The scheduler is PCT with a fairness rule.** PCT is Probabilistic Concurrency
+Testing, the randomized scheduler of "A Randomized Scheduler with Probabilistic
+Guarantees of Finding Bugs" (ASPLOS 2010), which D-212 adopted on the r6
+research (`meta/roadmap/research/r6.md`, its references 62 and 63). A seed-0, depth-1 run measures
 the schedule's length k. Each seeded run then assigns random priorities and
 d − 1 change points (d = 3 unless `// explore: N d=D` says otherwise), and
 always runs the highest-priority thread that can step. The bands are ORDERED:
@@ -2431,8 +2445,10 @@ schedule that finds it goes through that defect.
 every gate, under `meta/roadmap/done/1.5/tools/explore_prototype/`, as the IR shim's
 behavioural reference. `hashcmp.sh` runs both shims alternately on every
 explorable program and requires the same exit, step count, schedule hash and
-verdict word per seed. At 1.5.7's close all 39 agree on 20 seeds each;
-`driver_spawn_fail` is the real-child exception.
+verdict word per seed. At 1.5.7's close all 39 explored programs agree on 20
+seeds each. `driver_spawn_fail` is not among them: it is one of the ten marked
+`no` (it forks a real child, whose real time decides the schedule), and
+`hashcmp.sh` skips it by that marker.
 
 **What it found.** The explorer's first floor defect was DEF-57, at step 4:
 `npk_step`'s `frozen:` block answered the trap flag by trapping `Unreachable`

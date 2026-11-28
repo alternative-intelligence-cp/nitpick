@@ -355,6 +355,17 @@ runtime mechanism, no scheduler cooperation. It is the largest single
 contributor to race freedom in the language, and it is enforced by the same
 escape analysis that governs `stack`.
 
+What crosses a spawn instead (D-180 and its dated notes): plain data, and a
+`Channel` endpoint (a handle, §6.5), by value; an owner — a `string`, a `List`,
+a struct holding one, a generic `T` — only into a `move` parameter; and a
+`Mutex`, `RwLock`, `CondVar`, `Barrier` or `shared_arena<T>` by pointer, LENT
+until the block whose exit joins the task ends (§5.2: before then a
+write-capable access of it is `NITPICK-BORROW-016`, except the kind's own
+concurrent operations — a lock's acquisitions, waits and signals, a shared
+arena's `alloc` and `get` — and `@s` to a callee that writes nothing through
+it). Any other borrow, or an owner handed by value, is `NITPICK-BORROW-004` at
+the spawn.
+
 ### 5.2 Arenas across threads
 
 | | `arena<T>` | `shared_arena<T>` |
@@ -383,7 +394,7 @@ there is nothing to consume, `NITPICK-TYPE-091` (DEF-157).
 
 ### 5.3 What this adds up to
 
-Race freedom comes from three structural properties, none of them runtime checks:
+Race freedom comes from five structural properties, none of them runtime checks:
 
 1. borrows cannot cross a thread spawn or `await` (D-004);
 2. tasks do not migrate between threads (D-032);

@@ -443,6 +443,8 @@ BlockStringLiteral ::= '"""' (SourceCharacter - '"""')* '"""'
 CharacterLiteral   ::= "'" ((SourceCharacter - ("'" | "\")) | EscapeSequence) "'"
 ```
 
+`\xNN` in a string literal denotes U+00NN encoded as UTF-8 (two bytes for 80 to FF); in a `char8` literal it is the byte NN (DEF-807). A decided change, D-372, will refuse 80 to FF in string literals when it lands.
+
 > **Raw and block strings are retained** (D-024). `FORMAL_DRAFT` 01 omitted them
 > on the grounds that the v0.61.82 parser rejected them — a statement about the
 > prototype's implementation, not a design decision. `OP_REFERENCE.md` §9 lists

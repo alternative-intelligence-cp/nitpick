@@ -1710,6 +1710,8 @@ extern:"storage_driver" = {
 
 ## 14. SIMD Types (Tier 0 — LLVM Vector Types)
 
+For example (the rule for every instance is the note below the table):
+
 | Nitpick Type | LLVM IR Type | Size | Alignment |
 |---|---|---|---|
 | `simd<flt32, 4>` | `<4 x float>` | 16 bytes | 16 |
@@ -1717,10 +1719,17 @@ extern:"storage_driver" = {
 | `simd<int32, 8>` | `<8 x i32>` | 32 bytes | 32 |
 
 > **Implemented at 1.3.1 (D-194).** Elements: the integer widths 8..64,
-> `flt32`/`flt64`, and `bool` (comparison results must be bindable); lanes
+> signed and unsigned (`int8`…`int64`, `uint8`…`uint64`), `flt32`/`flt64`,
+> and `bool` (comparison results must be bindable); lanes
 > 2..64, total ≤ 64 bytes; alignment = next power of two ≥ size, capped 64.
 > `simd(…)` constructs annotation-directed — N components, or ONE that
-> splats. Operations are elementwise on identical types (`+ - * / %`; and
+> splats. The annotation is the declared `simd<T, N>` type of the slot the
+> value fills (a binding's, an assigned binding's, a parameter's), which gives
+> the element and the lane count:
+> `simd<flt32, 4>:v = simd(1.0f32, 2.0f32, 3.0f32, 4.0f32);` is N components,
+> `simd<flt32, 4>:h = simd(0.5f32);` one, splatted. With no such type,
+> `simd(…)` is `NITPICK-TYPE-001`.
+> Operations are elementwise on identical types (`+ - * / %`; and
 > `& | ^ << >>` on integer lanes); comparisons yield `simd<bool, N>`;
 > `v[i]` is a bounds-checked lane place; `.len` is the lane count. Integer
 > vector division carries D-007 as ANY-LANE checks (zero → DivByZero,
@@ -1751,10 +1760,10 @@ extern:"storage_driver" = {
 | Nitpick Type | Backing | Layout |
 |---|---|---|
 | `vec2` | `simd<flt64, 2>` | 16 bytes |
-| `vec3` | `simd<flt64, 3>` | 24 bytes |
+| `vec3` | `simd<flt64, 3>` | 32 bytes |
 | `vec4` | `simd<flt64, 4>` | 32 bytes |
-| `matrix<T>` | `{ptr, i32, i32}` (data, rows, cols) | 24 bytes |
-| `tensor<T>` | `{ptr, ptr, i32}` (data, dims_array, ndims) | 24 bytes |
+| `matrix<T>` | `{buffer, int64, int64}` (cells, rows, cols; `lib/ntensor.npk`, §25) | 40 bytes |
+| `tensor<T>` | `{buffer, int64, int64[9]}` (cells, ndims, dims; `lib/ntensor.npk`, §25) | 104 bytes |
 
 > **These are LIBRARY types and are not keywords** (D-135). They were keywords, and
 > `vec2` was backed by a **struct** `{flt64, flt64}` — which is the shape that does
@@ -2093,8 +2102,9 @@ Structs of one `simd<flt64, N>` field, with constructor FUNCTIONS
 bare names are the structs'). Methods, all `never fails`: lane reads
 `.x()/.y()/.z()/.w()`, `.dot(o)` (the elementwise product's `.sum()` — the
 1.3.1 ordered reduction), `.length2()`, `.length()` (`#sqrt` — the
-instruction, because a hand-rolled Newton iteration computes a subtly
-DIFFERENT number), and `.cross(o)` on `vec3` alone — the one dimension where
+square-root instruction on `flt32`/`flt64`, `#` being the compiler-directive
+sigil (BUILTIN_REFERENCE §4, D-020); the instruction because a hand-rolled
+Newton iteration computes a subtly DIFFERENT number), and `.cross(o)` on `vec3` alone — the one dimension where
 it means what it says.
 
 ### vec9 — nine named fields
@@ -2494,7 +2504,7 @@ level, because `q.x` does.
 | `/` | divide | `sdiv`/`fdiv` | div-by-zero → failsafe |
 | `%` | remainder | `srem`/`frem` | |
 | `**` | power | library call | Tier 1 |
-| `<=>` | spaceship | `icmp`+select | Returns -1/0/1 (`int32`). Lowered since 1.6.1d step 4 (DEF-131: every form was EMIT-002 before) for an integer, a `char`, a kernel identifier and the twisted kinds — the operands evaluated once, `<` and `>` composed, a twisted pair's ERR guard once (`err-exit`); the folder folds a constant pair and the encoder reads `(ite (< a b) -1 (ite (> a b) 1 0))`. **Refused on floats** (`NITPICK-TYPE-088`, D-330: no total order — NaN is neither below, above nor equal, and `0` would say "equal") and on a frac (its order is the exact core's); `<`, `==` and `>` stay. |
+| `<=>` | spaceship | `icmp`+select | Returns -1/0/1 (`int32`). Lowered since 1.6.1d step 4 (DEF-131: every form was EMIT-002 before) for an integer, a `char` and the twisted kinds — the operands evaluated once, `<` and `>` composed, a twisted pair's ERR guard once (`err-exit`); the folder folds a constant pair and the encoder reads `(ite (< a b) -1 (ite (> a b) 1 0))`. **Refused on floats** (`NITPICK-TYPE-088`, D-330: no total order — NaN is neither below, above nor equal, and `0` would say "equal") and on a frac (its order is the exact core's); `<`, `==` and `>` stay. |
 
 ### Bitwise
 | Operator | Meaning | IR | Notes |
