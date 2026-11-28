@@ -46,7 +46,7 @@ These are different features. The verification chapters are far more detailed an
 internally consistent, which argues they are correct — but a runtime-checked
 variant may also be wanted, under a different name.
 
-> **Note (⟦FILL: DATE⟧, 1.6.1e landing 177d2f — DEF-780 (a)):** the first bullet's
+> **Note (2026-11-28, 1.6.1e landing 177d2f — DEF-780 (a)):** the first bullet's
 > "rejects compilation" is the reading before D-219 and D-269. Since 1.5.4 a
 > `prove` is checked by the VERIFIED build alone (`npkg verify`): one the solver
 > does not discharge refuses that build, `NITPICK-VERIFY-001`, and the plain build

@@ -1,6 +1,6 @@
 # Nitpick Streams and I/O
 
-> **Status (⟦FILL: DATE⟧, 1.6.1e landing 177d2f — DEF-787).** This document was written ahead of
+> **Status (2026-11-28, 1.6.1e landing 177d2f — DEF-787).** This document was written ahead of
 > the code, and part of it is not landed. LANDED: the floor's descriptor calls (`open`, `read`,
 > `write`, `close`, `own_fd`; BUILTIN_REFERENCE §2b); `lib/nio.npk`, the line-discipline text
 > layer over them (`nio_stdout`, `nio_line`, `nio_end`, …); and, in the prelude
