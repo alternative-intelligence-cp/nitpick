@@ -1,0 +1,42 @@
+// expect-exit: 67
+// 2026-11-26 (landing 177d2f, item 7, row 1: row A, form RA5F, DEF-681's own root and its clean fallback; rulings l.24870 item 2(b), l.24966 item
+// 3). THE WAY OUT OF DEF-739'S WIDENED PRICE `aw7_l_gs_sub_ok` (in `self_wire_def739_widened_prices.npk`): the same program with its getter written
+// by name. It exits 67 on every road 0-8 at -O0 and -O2 and under the detector on main (3a45b7c4) and on every build of the stack (W7X's runs).
+// From `nitpick/.internal/w8-2026-11-22/cells/w8/p/w8_p_gs_sub_ok_bn.npk`.
+mod:self_wire_def739_wayout_w8_p_gs_sub_bn_ok;
+error:E5;
+struct:S = { int64:k; int64->:p; };
+struct:SH = { S->:q; int64:z; };
+struct:SHH = { SH->:hp; int64:z; };
+func:gq = S->(SH->:hh) never fails { pass (<-hh).q; };
+func:gqs = S->(SH->:hh, S->:v) never fails { (<-hh).q = v; pass (<-hh).q; };
+func:gqs2 = S->(SH->:hh, S->:v) never fails { discard(raw setq(hh, v)); pass (<-hh).q; };
+func:gqw = S->(SHH->:w) never fails { pass (<-((<-w).hp)).q; };
+func:setq = int64(SH->:hh, S->:v) never fails { (<-hh).q = v; pass 0i64; };
+func:setqq = int64(SH->->:hpp, S->:v) never fails { (<-(<-hpp)).q = v; pass 0i64; };
+func:setv = int64(S->->:qq, S->:v) never fails { <-qq = v; pass 0i64; };
+func:seth = int64(SH->:hh, SH:nv) never fails { <-hh = nv; pass 0i64; };
+func:idh = SH->(SH->:a) never fails { pass a; };
+func:f = int64(int64:n) never fails { int64:z0 = 2i64; S:y = S{ k: 2i64, p: @z0 }; int64:z = 2i64; S:t = S{ k: 2i64, p: @z }; SH:h = SH{ q: @t, z: 0i64 }; h.q = @y; S->:sp = h.q; (<-sp).p = @((<-sp).k); pass (<-(y.p)); };
+func:g = int64(int64:n) never fails { int64:v = raw f(n); int64:junk = raw clob(n); pass v + junk - 9i64; };
+func:clob = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:main = int32(cstring[]:argv) { int64:v = raw g(argv.len - 1i64); exit ((v + 65i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

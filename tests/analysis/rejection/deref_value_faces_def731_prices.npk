@@ -1,0 +1,60 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 34:14
+mod:deref_value_faces_def731_prices;
+// 2026-11-26 (landing 177d2f, item 7's row A: DEF-681's own root and its clean fallback). MOVED HERE from
+// `tests/backend/programs/deref_value_faces_ok.npk` (its case 9, `field_addr_getter_one_view_no_view`: `drop wsl(raw getsl_s(@b.sl))` on a one-view
+// holder with no other view live), by rulings l.22384 item 3: every refused `_ok` case moves to a prices file, pinned at its code and site. A right
+// program: main accepts it and it gives 2. Row A refuses it at BORROW-015 at the `wsl` call. It is DEF-731's price (LOW, fails closed, made by
+// DEF-681's row; l.22351 item 2): a getter's result passed as a slice is refused where its place spelling is accepted; it is at parity only with
+// the copy (`t = <-(@b.sl); drop wsl(t)`, which main refuses). The place spelling stays in the `_ok` program.
+error:E1;
+struct:H2 = { string:o; int64:k; };
+struct:S = { string:s; int64:k; };
+struct:SV = { fixed uint8[]:s; int64:k; };
+struct:BS = { H2[]:sl; int64:k; };
+struct:P = { H2[2]:arr; };
+func:idsl = H2[]->(H2[]->:q) never fails { pass q; };
+func:getsl = H2[](BS->:q) never fails { pass q.sl; };
+func:getsl_s = H2[](H2[]->:q) never fails { pass (<-q); };
+func:idfld = H2[]->(BS->:q) never fails { pass @q.sl; };
+func:idany = any->(any->:q) never fails { pass q; };
+func:wsl = NIL(H2[]:s) never fails { s[0i64].o = string_concat("x", "y"); pass NIL; };
+func:store_into = NIL(BS->:d, H2[]:s) never fails { d.sl = s; pass NIL; };
+func:flow = NIL(BS->:dst, BS->:pl) never fails { dst.sl = (<-pl).sl; pass NIL; };
+func:fwd = NIL(BS->:dst, BS->:pl) never fails { drop store_into(dst, (<-pl).sl); pass NIL; };
+func:pair = int64(string:v, string->:p) never fails { (<-p) = string_concat("x", "y"); string:junk = string_concat("qqqqqqqq", "qqq"); pass (v.ptr[0i64] => int64); };
+func:mk2 = P() never fails { pass P{ arr: [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }] }; };
+func:view_of_param = fixed uint8[](SV->:hp) never fails { pass (<-hp).s; };
+func:slice_of_param = H2[](BS->:bp) never fails { pass (<-bp).sl; };
+
+// 9. (DEF-329) the field's address handed to a getter returning the slice, `wsl(raw getsl_s(@b.sl))`, one-view holder, no other view
+func:field_addr_getter_one_view_no_view = int64() never fails {
+    P:p = raw mk2();
+    BS:b = BS{ sl: p.arr[0i64...2i64], k: 1i64 };
+    drop wsl(raw getsl_s(@b.sl));
+    pass p.arr[0i64].o.len;
+};
+
+func:main = int32(cstring[]:_~argv) {
+    if ((raw field_addr_getter_one_view_no_view()) != 2i64) { exit 19i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (HeapBadRequest)    { exit 91i32; },
+        (HeapOom)           { exit 92i32; },
+        (Unreachable)       { exit 95i32; },
+        (WildLeak)          { exit 96i32; },
+        (StackExhausted)    { exit 106i32; },
+        (MachineFault)      { exit 107i32; },
+        (IntOverflow)       { exit 108i32; },
+        (OutOfBounds)       { exit 109i32; },
+        (LimitViolated)     { exit 110i32; },
+        (DecreasesViolated) { exit 111i32; },
+        (DeadlineExceeded)  { exit 112i32; },
+        (StaleHandle)       { exit 113i32; },
+        (E1)                { exit 114i32; },
+        (*)                 { exit 99i32; }
+    }
+    exit 9i32;
+};

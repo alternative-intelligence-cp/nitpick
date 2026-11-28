@@ -1,5 +1,8 @@
 // expect-exit: 0
 mod:list_ptr_open_type_ok;
+// 2026-11-26 (landing 177d2f, item 7's row A: DEF-681's own root and its clean fallback). The cell `zr_x_hX_ok` moved to
+// `tests/analysis/rejection/list_ptr_open_type_def681_prices.npk`: row A refuses it, a price at parity (rulings l.22384 item 3). Its exit 148 is no
+// longer checked.
 // WHAT DEF-600 AND DEF-611 LEAVE LEGAL (landing 177d2b3): the takes of `tests/analysis/rejection/list_ptr_open_type.npk` with nothing growing the `List`, each cell
 // reading its own right value, the same on every build and under the freed-heap detector. The cells stand at file level under each cell's name as a suffix, as there,
 // and the legend is that file's. `…c_ok` is the control of the cell of that name.
@@ -804,21 +807,6 @@ func:f_zr_x_hLc_ok = int64(int64:n) never fails {
     WX_zr_x_hLc_ok:k = WX_zr_x_hLc_ok{ kk: K{ k: 3i64 }, l2: raw mk(), hp: @h0, z: 0i64 };
     pass raw g_zr_x_hLc_ok(@k, n);
 };
-// zr_x_hX_ok
-struct:WX_zr_x_hX_ok = { K:kk; List<int64>:l2; H->:hp; int64:z; };
-impl:WX_zr_x_hX_ok = { func:tgx = H->(WX_zr_x_hX_ok->:self) never fails { pass self.hp; }; func:fx = int64->(WX_zr_x_hX_ok->:self) never fails { pass @((<-self).l2[0i64]); };
-            func:lx = List<int64>->(WX_zr_x_hX_ok->:self) never fails { pass @self.l2; }; };
-func:growl_zr_x_hX_ok = int64(List<int64>->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(w, 1i64); } pass 7i64; };
-func:g_zr_x_hX_ok = int64(WX_zr_x_hX_ok->:q, int64:n) never fails {
-    int64->:e = raw q.fx();
-    discard(raw growh(raw q.tgx()));
-    pass (<-e) + 6i64;
-};
-func:f_zr_x_hX_ok = int64(int64:n) never fails {
-    H:h0 = raw mkh();
-    WX_zr_x_hX_ok:k = WX_zr_x_hX_ok{ kk: K{ k: 3i64 }, l2: raw mk(), hp: @h0, z: 0i64 };
-    pass raw g_zr_x_hX_ok(@k, n);
-};
 // zt1gc_store_through_getter_ok
 struct:G_zt1gc_store_through_getter_ok = { H->:hp2; int64:z; };
 struct:WG_zt1gc_store_through_getter_ok = { G_zt1gc_store_through_getter_ok:gv; int64:z; };
@@ -943,7 +931,6 @@ func:main = int32(cstring[]:argv) {
     if ((raw f_zr_t_gVc_ok(argv.len)) != 7i64) { exit 145i32; }
     if ((raw f_zr_t_gWc_ok(argv.len)) != 7i64) { exit 146i32; }
     if ((raw f_zr_x_hLc_ok(argv.len)) != 7i64) { exit 147i32; }
-    if ((raw f_zr_x_hX_ok(argv.len)) != 7i64) { exit 148i32; }
     if ((raw f_zt1gc_store_through_getter_ok(argv.len)) != 7i64) { exit 149i32; }
     if ((raw f_zt1hc_store_through_getter_ok(argv.len)) != 7i64) { exit 150i32; }
     if ((raw f_zt2gc_store_through_getter_ok(argv.len)) != 7i64) { exit 151i32; }

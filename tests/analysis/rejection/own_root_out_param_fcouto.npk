@@ -1,0 +1,60 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 37:23
+// 2026-11-26 (landing 177d2f, item 7, row 1: row A, form RA5F, DEF-681's own root and its clean fallback; rulings l.24359 item 2). A STORE THROUGH
+// AN OUT-PARAMETER REACHED THROUGH AN `Optional` POINTER (A3b), DEF-681: `puto(op, @r)` stores `(<-(p ??! E5)).q` (`@m3`, whose `lp` is `hq`) into
+// `r` through the out-parameter `HPO->->:out`, reached through an `Optional` pointer; `e = fp((<-r).lp)` points into `hq.l`, `growh(hq)`
+// reallocates it, and `<-e` reads freed memory. CLOSED FACE: on main (3a45b7c4) it is accepted, and it exits 236 on every road 0-8 at -O0 and -O2,
+// and 97 under the detector; the same on row 0's build; refused from row A on. From
+// `nitpick/.internal/g2f-2026-11-21/cells/ag2e/fc/ag2e_fcouto.npk`.
+mod:own_root_out_param_fcouto;
+error:E5;
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks = string() never fails { pass string_concat("a", "b"); };
+struct:LF = { List<int64>:own; string:s; int64:z; };
+func:ws1 = int64(LF->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+impl:LF = { func:sv = fixed uint8[](LF->:self) never fails { pass string_bytes((<-self).s); }; };
+struct:H = { List<int64>:l; int64:k; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO = { H->:lp; List<int64>:own; };
+struct:X = { H->:lp; HPO->:q; };
+struct:Y = { X->?:xo; int64:z; };
+func:gety = HPO->(Y:y) never fails { pass (<-(y.xo ??! E5)).q; };
+func:geto = HPO->(X->?:p) never fails { pass (<-(p ??! E5)).q; };
+func:putx = int64(X->:p, HPO->->:out) never fails { <-out = (<-p).q; pass 0i64; };
+func:puty = int64(Y:y, HPO->->:out) never fails { <-out = (<-(y.xo ??! E5)).q; pass 0i64; };
+func:puto = int64(X->?:p, HPO->->:out) never fails { <-out = (<-(p ??! E5)).q; pass 0i64; };
+func:g = int64(H->:hq, H->:hz, int64:n) never fails {
+    HPO:m3 = HPO{ lp: hq, own: raw mk() };
+    X:mx = X{ lp: hz, q: @m3 };
+    X->?:op = @mx;
+    HPO:m0 = HPO{ lp: hz, own: raw mk() };
+    HPO->:r = @m0;
+    discard(raw puto(op, @r));
+    H->:hh = (<-r).lp;
+    int64->:e = raw fp(hh);
+    discard(raw growh(hq));
+    pass (<-e) + 6i64;
+};
+func:f = int64(int64:n) never fails { H:hq = raw mkh(); H:hz = raw mkh(); pass raw g(@hq, @hz, n); };
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

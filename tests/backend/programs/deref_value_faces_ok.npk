@@ -18,6 +18,9 @@
 // to an unrelated pointee) is `tests/types/rejection/pointer_retype_plain.npk` and its legal half
 // `pointer_retype_plain_ok.npk`.
 mod:deref_value_faces_ok;
+// 2026-11-26 (landing 177d2f, item 7's row A: DEF-681's own root and its clean fallback). Case 9 (`field_addr_getter_one_view_no_view`) moved to
+// `tests/analysis/rejection/deref_value_faces_def731_prices.npk`: row A refuses it, DEF-731's price (rulings l.22384 item 3). Its exit 19 is no
+// longer checked.
 error:E1;
 struct:H2 = { string:o; int64:k; };
 struct:S = { string:s; int64:k; };
@@ -118,14 +121,6 @@ func:field_addr_one_view_holder_no_view = int64() never fails {
     pass p.arr[0i64].o.len;
 };
 
-// 9. (DEF-329) the field's address handed to a getter returning the slice, `wsl(raw getsl_s(@b.sl))`, one-view holder, no other view
-func:field_addr_getter_one_view_no_view = int64() never fails {
-    P:p = raw mk2();
-    BS:b = BS{ sl: p.arr[0i64...2i64], k: 1i64 };
-    drop wsl(raw getsl_s(@b.sl));
-    pass p.arr[0i64].o.len;
-};
-
 // 10. (DEF-330) the field-address getter's result written through with NO view live
 func:field_addr_getter_write_no_view = int64() never fails {
     H2[2]:arr = [H2{ o: string_concat("a", "b"), k: 1i64 }, H2{ o: string_concat("c", "d"), k: 2i64 }];
@@ -211,7 +206,6 @@ func:main = int32(cstring[]:_~argv) {
     if ((raw arg_view_through_deref_same_scope()) != 97i64) { exit 16i32; }
     if ((raw slice_copy_read_through_deref_call()) != 99i64) { exit 17i32; }
     if ((raw field_addr_one_view_holder_no_view()) != 2i64) { exit 18i32; }
-    if ((raw field_addr_getter_one_view_no_view()) != 2i64) { exit 19i32; }
     if ((raw field_addr_getter_write_no_view()) != 2i64) { exit 20i32; }
     if ((raw named_ptr_to_field_write_no_view()) != 2i64) { exit 21i32; }
     if ((raw field_addr_getter_read_under_view()) != 99i64) { exit 22i32; }

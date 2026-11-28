@@ -1,0 +1,88 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 55:58
+mod:ptr_receiver_implicit_address_def743_prices;
+// 2026-11-26 (landing 177d2f, item 7's row A: DEF-681's own root and its clean fallback). MOVED HERE from
+// `tests/backend/programs/ptr_receiver_implicit_address_ok.npk` (its cell `r_for_keepp_impl_i_ok`: under a `for` over element pointers, a
+// write-capable pointer argument to a slot that the same call's out-parameter has just loaded with an element pointer into the frozen `List`), by
+// rulings l.22384 item 3: every refused `_ok` case moves to a prices file, pinned at its code and site. A right program: main accepts it and it
+// gives 67. Row A refuses it at BORROW-015 at the call. It is DEF-743's price (LOW, fails closed, at parity; l.24359 item 2): row A's out-parameter
+// road; main refuses the by-name spelling at the same site.
+error:Bad;
+mod:r_for_keepp_impl_i_ok = {
+error:E5_r_for_keepp_impl_i_ok;
+struct:H = { List<int64>:l; string:s; int64:k; };
+struct:PE = { int64->:p; int64:z; };
+struct:VW = { fixed uint8[]:b; int64:z; };
+enum:EH = { A(H); Z; };
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 1i64); pass l; };
+func:mks = string() never fails { pass string_concat("A", ""); };
+func:mkh = H() never fails { pass H{ l: raw mk(), s: raw mks(), k: 1i64 }; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+impl:H = {
+    func:mp = int64->(H->:self) never fails { pass @((<-self).l[0i64]); };
+    func:ms = H->(H->:self) never fails { pass self; };
+    func:mk = int64->(H->:self) never fails { pass @((<-self).k); };
+    func:msl = int64[](H->:self) never fails { pass (<-self).l[0i64...1i64]; };
+    func:mv = fixed uint8[](H->:self) never fails { pass string_bytes((<-self).s); };
+    func:keep = NIL(H->:self, H->->:o) never fails { <-o = self; pass NIL; };
+    func:keepp = NIL(H->:self, int64->->:o) never fails { <-o = raw fp(self); pass NIL; };
+};
+func:fmp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+func:fms = H->(H->:q) never fails { pass q; };
+func:fmk = int64->(H->:q) never fails { pass @((<-q).k); };
+func:fmsl = int64[](H->:q) never fails { pass (<-q).l[0i64...1i64]; };
+func:fmv = fixed uint8[](H->:q) never fails { pass string_bytes((<-q).s); };
+func:fkeep = NIL(H->:q, H->->:o) never fails { <-o = q; pass NIL; };
+func:fkeepp = NIL(H->:q, int64->->:o) never fails { <-o = raw fp(q); pass NIL; };
+impl:PE = {
+    func:mp = int64->(PE->:self) never fails { pass self.p; };
+    func:mk = int64->(PE->:self) never fails { pass @((<-self).z); };
+    func:keep = NIL(PE->:self, PE->->:o) never fails { <-o = self; pass NIL; };
+    func:keepp = NIL(PE->:self, int64->->:o) never fails { <-o = self.p; pass NIL; };
+};
+func:gmp = int64->(PE->:q) never fails { pass (<-q).p; };
+func:gmk = int64->(PE->:q) never fails { pass @((<-q).z); };
+func:gkeep = NIL(PE->:q, PE->->:o) never fails { <-o = q; pass NIL; };
+func:gkeepp = NIL(PE->:q, int64->->:o) never fails { <-o = (<-q).p; pass NIL; };
+func:g = int64(H->:hp, int64:n) never fails {
+    int64:one = 1i64;
+    int64[1]:arr0 = [1i64];
+    string:s0 = raw mks();
+    PE:pe0 = PE{ p: @one, z: 1i64 };
+    PE[2]:src = [PE{ p: raw fp(hp), z: 1i64 }, PE{ p: raw fp(hp), z: 1i64 }];
+    int64:r = 0i64;
+    for (PE:pe in src) { int64->:e = @one; drop pe.keepp(@e); r = <-e; }
+    pass r + 6i64;
+};
+func:f = int64(int64:n) never fails {
+    H:h0 = raw mkh();
+    pass raw g(@h0, n);
+};
+pub func:cell_main = int32(int64:alen) never fails { pass (((raw f(alen)) + 60i64) =>! int32); };
+};
+func:main = int32(cstring[]:argv) {
+    if ((raw r_for_keepp_impl_i_ok.cell_main(argv.len)) != 67i32) { exit 115i32; }
+    exit 0i32;
+};
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (Bad)              { exit 75i32; },
+        (DeadlineExceeded) { exit 76i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (ptr_receiver_implicit_address_def743_prices.E5_r_for_keepp_impl_i_ok) { exit 75i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

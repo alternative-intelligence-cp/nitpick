@@ -1,0 +1,37 @@
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 15:112
+// 2026-11-26 (landing 177d2f, item 7, row 1: row A, form RA5F, DEF-681's own root and its clean fallback; rulings l.24966 item 6, l.24755 item
+// 6(b)). A SELF-WIRING STORE THROUGH A `dyn` GETTER'S RESULT, ROW A'S CLEAN FALLBACK: `f` puts `@s` (its `move` parameter) in a holder coerced to
+// `dyn Gt`, gets it back by `d.gq()`, self-wires `(<-sp).p = @((<-sp).k)` and passes `s` out, so the caller's `r.p` points into `f`'s dead frame
+// and is read after `clob`. CLOSED FACE: on main (3a45b7c4) it is accepted, and it exits 74 on every road 0-8 at -O0 and 67 at -O2, and 74 under
+// the detector; the same on row 0's build; refused from row A on. -O2 hides the read of the dead frame (l.24755 item 6(b)). From
+// `nitpick/.internal/ag2f-2026-11-21/cells/dy/ag2f_dy_d1.npk`.
+mod:own_root_fallback_dy_d1;
+error:E5;
+struct:S = { int64:k; int64->:p; };
+trait:Gt = { func:gq = S->(Self->:self) never fails; };
+struct:SH = { S->:q; int64:z; };
+impl:SH:Gt = { func:gq = S->(SH->:self) never fails { pass (<-self).q; }; };
+func:f = S(move S:s) never fails { SH:h = SH{ q: @s, z: 0i64 }; dyn Gt:d = move(h); S->:sp = raw d.gq(); (<-sp).p = @((<-sp).k); pass s; };
+func:g = int64(int64:n) never fails { int64:z = 2i64; S:r = raw f(S{ k: 2i64, p: @z }); int64:junk = raw clob(n); pass (<-(r.p)) + junk - 9i64; };
+func:clob = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:main = int32(cstring[]:argv) { int64:v = raw g(argv.len - 1i64); exit ((v + 65i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

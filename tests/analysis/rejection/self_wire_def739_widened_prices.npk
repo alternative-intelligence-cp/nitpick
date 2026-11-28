@@ -1,0 +1,63 @@
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 19:126
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 40:333
+// 2026-11-26 (landing 177d2f, item 7, row 1: row A, form RA5F, DEF-681's own root and its clean fallback; rulings l.24870 item 2(b) and,
+// for `aw7_l_gs_sub_ok`'s way out, l.24966 item 3). PRICES OFF PARITY, DEF-739 WIDENED BY ROW A (LOW, fails closed; no new number): a self-wiring store through a getter's result whose target
+// stays in the caller's frame is refused by row A (BORROW-009), while main accepts every spelling of it. Way out: the getter written by name,
+// `self_wire_def739_wayout_ag2f_p5_sbn_ok.npk` (`S->:sp = ss[0i64];` for `raw gs(ss)`) and `self_wire_def739_wayout_w8_p_gs_sub_bn_ok.npk` (`h.q =
+// @y; S->:sp = h.q;` for `raw gqs2(@h, @y)`), each of which runs 67 on main and on every build of the stack. The two prices, one case each, in the
+// form of main's prices files.
+mod:self_wire_def739_widened_prices;
+error:E5;
+// PRICE OFF PARITY, DEF-739 widened (row 1): `wire` gets `ss[0]` (`@s`) through the getter `gs(ss)` over an `S->[]` and self-wires `(<-sp).p =
+// @((<-sp).k)`; `s` lives in the caller, so reading `s.p` is right. T11 accepts every spelling; RA5F refuses this one at BORROW-009. Right: on main
+// (3a45b7c4) it exits 67 on every road 0-8 at -O0 and -O2 and under the detector. Way out: `self_wire_def739_wayout_ag2f_p5_sbn_ok.npk`. From
+// `nitpick/.internal/ag2f-2026-11-21/cells/p5/ag2f_p5_sg_ok.npk`.
+struct:S_ag2f_p5_sg_ok = { int64:k; int64->:p; };
+func:gs_ag2f_p5_sg_ok = S_ag2f_p5_sg_ok->(S_ag2f_p5_sg_ok->[]:ss) never fails { pass ss[0i64]; };
+func:wire_ag2f_p5_sg_ok = int64(S_ag2f_p5_sg_ok->[]:ss) never fails { S_ag2f_p5_sg_ok->:sp = raw gs_ag2f_p5_sg_ok(ss); (<-sp).p = @((<-sp).k); pass 0i64; };
+func:f_ag2f_p5_sg_ok = int64(int64:n) never fails { int64:z0 = 2i64; S_ag2f_p5_sg_ok:s = S_ag2f_p5_sg_ok{ k: 2i64, p: @z0 }; S_ag2f_p5_sg_ok->[1]:sa = [@s]; discard(raw wire_ag2f_p5_sg_ok(sa[0i64...1i64])); pass (<-(s.p)); };
+func:g_ag2f_p5_sg_ok = int64(int64:n) never fails { int64:v = raw f_ag2f_p5_sg_ok(n); int64:junk = raw clob_ag2f_p5_sg_ok(n); pass v + junk - 9i64; };
+func:clob_ag2f_p5_sg_ok = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:cell_main_ag2f_p5_sg_ok = int32() never fails { int64:v = raw g_ag2f_p5_sg_ok(1i64 - 1i64); pass ((v + 65i64) =>! int32); };
+// PRICE OFF PARITY, DEF-739 widened (row 1): `gqs2(@h, @y)` stores `@y` into `h.q` through a nested callee (`setq`) and returns `(<-hh).q`; the
+// self-wiring store through that result keeps `y` in `f`'s frame, so reading `y.p` is right. T11 accepts it; RA5F refuses it at BORROW-009. Right:
+// on main (3a45b7c4) it exits 67 on every road 0-8 at -O0 and -O2 and under the detector. Way out: `self_wire_def739_wayout_w8_p_gs_sub_bn_ok.npk`.
+// From `Team/TMP/atk-177d2f-w7-2026-11-22/cells/aw7/a1l/aw7_l_gs_sub_ok.npk`.
+struct:S_aw7_l_gs_sub_ok = { int64:k; int64->:p; };
+struct:SH_aw7_l_gs_sub_ok = { S_aw7_l_gs_sub_ok->:q; int64:z; };
+struct:SHH_aw7_l_gs_sub_ok = { SH_aw7_l_gs_sub_ok->:hp; int64:z; };
+func:gq_aw7_l_gs_sub_ok = S_aw7_l_gs_sub_ok->(SH_aw7_l_gs_sub_ok->:hh) never fails { pass (<-hh).q; };
+func:gqs_aw7_l_gs_sub_ok = S_aw7_l_gs_sub_ok->(SH_aw7_l_gs_sub_ok->:hh, S_aw7_l_gs_sub_ok->:v) never fails { (<-hh).q = v; pass (<-hh).q; };
+func:gqs2_aw7_l_gs_sub_ok = S_aw7_l_gs_sub_ok->(SH_aw7_l_gs_sub_ok->:hh, S_aw7_l_gs_sub_ok->:v) never fails { discard(raw setq_aw7_l_gs_sub_ok(hh, v)); pass (<-hh).q; };
+func:gqw_aw7_l_gs_sub_ok = S_aw7_l_gs_sub_ok->(SHH_aw7_l_gs_sub_ok->:w) never fails { pass (<-((<-w).hp)).q; };
+func:setq_aw7_l_gs_sub_ok = int64(SH_aw7_l_gs_sub_ok->:hh, S_aw7_l_gs_sub_ok->:v) never fails { (<-hh).q = v; pass 0i64; };
+func:setqq_aw7_l_gs_sub_ok = int64(SH_aw7_l_gs_sub_ok->->:hpp, S_aw7_l_gs_sub_ok->:v) never fails { (<-(<-hpp)).q = v; pass 0i64; };
+func:setv_aw7_l_gs_sub_ok = int64(S_aw7_l_gs_sub_ok->->:qq, S_aw7_l_gs_sub_ok->:v) never fails { <-qq = v; pass 0i64; };
+func:seth_aw7_l_gs_sub_ok = int64(SH_aw7_l_gs_sub_ok->:hh, SH_aw7_l_gs_sub_ok:nv) never fails { <-hh = nv; pass 0i64; };
+func:idh_aw7_l_gs_sub_ok = SH_aw7_l_gs_sub_ok->(SH_aw7_l_gs_sub_ok->:a) never fails { pass a; };
+func:f_aw7_l_gs_sub_ok = int64(int64:n) never fails { int64:z0 = 2i64; S_aw7_l_gs_sub_ok:y = S_aw7_l_gs_sub_ok{ k: 2i64, p: @z0 }; int64:z = 2i64; S_aw7_l_gs_sub_ok:t = S_aw7_l_gs_sub_ok{ k: 2i64, p: @z }; SH_aw7_l_gs_sub_ok:h = SH_aw7_l_gs_sub_ok{ q: @t, z: 0i64 }; S_aw7_l_gs_sub_ok->:sp = raw gqs2_aw7_l_gs_sub_ok(@h, @y); (<-sp).p = @((<-sp).k); pass (<-(y.p)); };
+func:g_aw7_l_gs_sub_ok = int64(int64:n) never fails { int64:v = raw f_aw7_l_gs_sub_ok(n); int64:junk = raw clob_aw7_l_gs_sub_ok(n); pass v + junk - 9i64; };
+func:clob_aw7_l_gs_sub_ok = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:cell_main_aw7_l_gs_sub_ok = int32() never fails { int64:v = raw g_aw7_l_gs_sub_ok(1i64 - 1i64); pass ((v + 65i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

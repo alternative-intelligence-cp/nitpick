@@ -1,5 +1,9 @@
 // expect-exit: 0
 mod:trait_qualified_operand_ok;
+// 2026-11-26 (landing 177d2f, item 7's row A: DEF-681's own root and its clean fallback). The cells `rgq_cpick_held_i_sc_ok`,
+// `rgq_cpick_live_i_sc_ok`, `rgq_for_held_i_sc_ok` and `rgq_for_live_i_sc_ok` moved to
+// `tests/analysis/rejection/trait_qualified_operand_def743_prices.npk`: row A refuses each, DEF-743's price at parity (rulings l.22384 item 3,
+// l.24359 item 2). Their exits 115, 118, 121 and 124 are no longer checked.
 // WHAT DEF-624 LEAVES LEGAL (landing 177d2b3), each module one cell that reads its own right value, the same on every build and under the
 // freed-heap detector. The trait-qualified call `Trait.m(@x, …)` (D-172) with its result or its store held in a holder whose life ends before the
 // hazard (`…_tk_ok`; the legend of the faces is in `trait_qualified_operand.npk`); the awaited call (`paw_tk_ok`); the trait imported by name from an
@@ -319,32 +323,6 @@ func:f_rgq_cpick_held_i_qkc_ok = int64(int64:n) never fails {
     pass raw g_rgq_cpick_held_i_qkc_ok(@h0, n);
 };
 func:cell_main_rgq_cpick_held_i_qkc_ok = int32(int64:alen) never fails { pass (((raw f_rgq_cpick_held_i_qkc_ok(alen)) + 60i64) =>! int32); };
-// --- rgq_cpick_held_i_sc_ok
-struct:H_rgq_cpick_held_i_sc_ok = { List<int64>:l; int64:k; K:kk; };
-func:mkh_rgq_cpick_held_i_sc_ok = H_rgq_cpick_held_i_sc_ok() never fails { pass H_rgq_cpick_held_i_sc_ok{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
-func:growh_rgq_cpick_held_i_sc_ok = int64(H_rgq_cpick_held_i_sc_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:fp_rgq_cpick_held_i_sc_ok = int64->(H_rgq_cpick_held_i_sc_ok->:q) never fails { pass @((<-q).l[0i64]); };
-func:mkpa_rgq_cpick_held_i_sc_ok = int64->[2](H_rgq_cpick_held_i_sc_ok->:q) never fails { int64->[2]:a = [raw fp_rgq_cpick_held_i_sc_ok(q), raw fp_rgq_cpick_held_i_sc_ok(q)]; pass a; };
-func:mkpe2_rgq_cpick_held_i_sc_ok = PE[2](H_rgq_cpick_held_i_sc_ok->:q) never fails { PE[2]:a = [PE{ p: raw fp_rgq_cpick_held_i_sc_ok(q), z: 0i64 }, PE{ p: raw fp_rgq_cpick_held_i_sc_ok(q), z: 1i64 }]; pass a; };
-func:mkpaa_rgq_cpick_held_i_sc_ok = int64->[2][2](H_rgq_cpick_held_i_sc_ok->:q) never fails { int64->[2][2]:a = [raw mkpa_rgq_cpick_held_i_sc_ok(q), raw mkpa_rgq_cpick_held_i_sc_ok(q)]; pass a; };
-func:mkek_rgq_cpick_held_i_sc_ok = EK(H_rgq_cpick_held_i_sc_ok->:q) never fails { pass EK.A(raw fp_rgq_cpick_held_i_sc_ok(q)); };
-func:mkep_rgq_cpick_held_i_sc_ok = EP(H_rgq_cpick_held_i_sc_ok->:q) never fails { pass EP.A(PE{ p: raw fp_rgq_cpick_held_i_sc_ok(q), z: 0i64 }); };
-func:mkea_rgq_cpick_held_i_sc_ok = EA(H_rgq_cpick_held_i_sc_ok->:q) never fails { pass EA.A(raw mkpa_rgq_cpick_held_i_sc_ok(q)); };
-func:mkeo_rgq_cpick_held_i_sc_ok = EOK(H_rgq_cpick_held_i_sc_ok->:q) never fails { pass EOK.A(PO{ p: raw fp_rgq_cpick_held_i_sc_ok(q), own: raw mk() }); };
-func:g_rgq_cpick_held_i_sc_ok = int64(H_rgq_cpick_held_i_sc_ok->:hp, int64:n) never fails {
-    int64:z0 = 1i64;
-    int64:r = 1i64;
-    {
-        EOK:src = raw mkeo_rgq_cpick_held_i_sc_ok(hp);
-        pick (move(src)) { (EOK.A(b)) { int64->:e2 = @z0; drop Tks.tks(@b, @e2);  r = <-e2; }, (EOK.Z) { r = 1i64; } }
-    }
-    pass r + 6i64;
-};
-func:f_rgq_cpick_held_i_sc_ok = int64(int64:n) never fails {
-    H_rgq_cpick_held_i_sc_ok:h0 = raw mkh_rgq_cpick_held_i_sc_ok();
-    pass raw g_rgq_cpick_held_i_sc_ok(@h0, n);
-};
-func:cell_main_rgq_cpick_held_i_sc_ok = int32(int64:alen) never fails { pass (((raw f_rgq_cpick_held_i_sc_ok(alen)) + 60i64) =>! int32); };
 // --- rgq_cpick_live_i_qc_ok
 struct:H_rgq_cpick_live_i_qc_ok = { List<int64>:l; int64:k; K:kk; };
 func:mkh_rgq_cpick_live_i_qc_ok = H_rgq_cpick_live_i_qc_ok() never fails { pass H_rgq_cpick_live_i_qc_ok{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
@@ -393,30 +371,6 @@ func:f_rgq_cpick_live_i_qkc_ok = int64(int64:n) never fails {
     pass raw g_rgq_cpick_live_i_qkc_ok(@h0, n);
 };
 func:cell_main_rgq_cpick_live_i_qkc_ok = int32(int64:alen) never fails { pass (((raw f_rgq_cpick_live_i_qkc_ok(alen)) + 60i64) =>! int32); };
-// --- rgq_cpick_live_i_sc_ok
-struct:H_rgq_cpick_live_i_sc_ok = { List<int64>:l; int64:k; K:kk; };
-func:mkh_rgq_cpick_live_i_sc_ok = H_rgq_cpick_live_i_sc_ok() never fails { pass H_rgq_cpick_live_i_sc_ok{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
-func:growh_rgq_cpick_live_i_sc_ok = int64(H_rgq_cpick_live_i_sc_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:fp_rgq_cpick_live_i_sc_ok = int64->(H_rgq_cpick_live_i_sc_ok->:q) never fails { pass @((<-q).l[0i64]); };
-func:mkpa_rgq_cpick_live_i_sc_ok = int64->[2](H_rgq_cpick_live_i_sc_ok->:q) never fails { int64->[2]:a = [raw fp_rgq_cpick_live_i_sc_ok(q), raw fp_rgq_cpick_live_i_sc_ok(q)]; pass a; };
-func:mkpe2_rgq_cpick_live_i_sc_ok = PE[2](H_rgq_cpick_live_i_sc_ok->:q) never fails { PE[2]:a = [PE{ p: raw fp_rgq_cpick_live_i_sc_ok(q), z: 0i64 }, PE{ p: raw fp_rgq_cpick_live_i_sc_ok(q), z: 1i64 }]; pass a; };
-func:mkpaa_rgq_cpick_live_i_sc_ok = int64->[2][2](H_rgq_cpick_live_i_sc_ok->:q) never fails { int64->[2][2]:a = [raw mkpa_rgq_cpick_live_i_sc_ok(q), raw mkpa_rgq_cpick_live_i_sc_ok(q)]; pass a; };
-func:mkek_rgq_cpick_live_i_sc_ok = EK(H_rgq_cpick_live_i_sc_ok->:q) never fails { pass EK.A(raw fp_rgq_cpick_live_i_sc_ok(q)); };
-func:mkep_rgq_cpick_live_i_sc_ok = EP(H_rgq_cpick_live_i_sc_ok->:q) never fails { pass EP.A(PE{ p: raw fp_rgq_cpick_live_i_sc_ok(q), z: 0i64 }); };
-func:mkea_rgq_cpick_live_i_sc_ok = EA(H_rgq_cpick_live_i_sc_ok->:q) never fails { pass EA.A(raw mkpa_rgq_cpick_live_i_sc_ok(q)); };
-func:mkeo_rgq_cpick_live_i_sc_ok = EOK(H_rgq_cpick_live_i_sc_ok->:q) never fails { pass EOK.A(PO{ p: raw fp_rgq_cpick_live_i_sc_ok(q), own: raw mk() }); };
-func:g_rgq_cpick_live_i_sc_ok = int64(H_rgq_cpick_live_i_sc_ok->:hp, int64:n) never fails {
-    int64:z0 = 1i64;
-    int64:r = 1i64;
-    EOK:src = raw mkeo_rgq_cpick_live_i_sc_ok(hp);
-    pick (move(src)) { (EOK.A(b)) { int64->:e2 = @z0; drop Tks.tks(@b, @e2);  r = <-e2; }, (EOK.Z) { r = 1i64; } }
-    pass r + 6i64;
-};
-func:f_rgq_cpick_live_i_sc_ok = int64(int64:n) never fails {
-    H_rgq_cpick_live_i_sc_ok:h0 = raw mkh_rgq_cpick_live_i_sc_ok();
-    pass raw g_rgq_cpick_live_i_sc_ok(@h0, n);
-};
-func:cell_main_rgq_cpick_live_i_sc_ok = int32(int64:alen) never fails { pass (((raw f_rgq_cpick_live_i_sc_ok(alen)) + 60i64) =>! int32); };
 // --- rgq_for_held_i_qc_ok
 struct:H_rgq_for_held_i_qc_ok = { List<int64>:l; int64:k; K:kk; };
 func:mkh_rgq_for_held_i_qc_ok = H_rgq_for_held_i_qc_ok() never fails { pass H_rgq_for_held_i_qc_ok{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
@@ -469,32 +423,6 @@ func:f_rgq_for_held_i_qkc_ok = int64(int64:n) never fails {
     pass raw g_rgq_for_held_i_qkc_ok(@h0, n);
 };
 func:cell_main_rgq_for_held_i_qkc_ok = int32(int64:alen) never fails { pass (((raw f_rgq_for_held_i_qkc_ok(alen)) + 60i64) =>! int32); };
-// --- rgq_for_held_i_sc_ok
-struct:H_rgq_for_held_i_sc_ok = { List<int64>:l; int64:k; K:kk; };
-func:mkh_rgq_for_held_i_sc_ok = H_rgq_for_held_i_sc_ok() never fails { pass H_rgq_for_held_i_sc_ok{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
-func:growh_rgq_for_held_i_sc_ok = int64(H_rgq_for_held_i_sc_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:fp_rgq_for_held_i_sc_ok = int64->(H_rgq_for_held_i_sc_ok->:q) never fails { pass @((<-q).l[0i64]); };
-func:mkpa_rgq_for_held_i_sc_ok = int64->[2](H_rgq_for_held_i_sc_ok->:q) never fails { int64->[2]:a = [raw fp_rgq_for_held_i_sc_ok(q), raw fp_rgq_for_held_i_sc_ok(q)]; pass a; };
-func:mkpe2_rgq_for_held_i_sc_ok = PE[2](H_rgq_for_held_i_sc_ok->:q) never fails { PE[2]:a = [PE{ p: raw fp_rgq_for_held_i_sc_ok(q), z: 0i64 }, PE{ p: raw fp_rgq_for_held_i_sc_ok(q), z: 1i64 }]; pass a; };
-func:mkpaa_rgq_for_held_i_sc_ok = int64->[2][2](H_rgq_for_held_i_sc_ok->:q) never fails { int64->[2][2]:a = [raw mkpa_rgq_for_held_i_sc_ok(q), raw mkpa_rgq_for_held_i_sc_ok(q)]; pass a; };
-func:mkek_rgq_for_held_i_sc_ok = EK(H_rgq_for_held_i_sc_ok->:q) never fails { pass EK.A(raw fp_rgq_for_held_i_sc_ok(q)); };
-func:mkep_rgq_for_held_i_sc_ok = EP(H_rgq_for_held_i_sc_ok->:q) never fails { pass EP.A(PE{ p: raw fp_rgq_for_held_i_sc_ok(q), z: 0i64 }); };
-func:mkea_rgq_for_held_i_sc_ok = EA(H_rgq_for_held_i_sc_ok->:q) never fails { pass EA.A(raw mkpa_rgq_for_held_i_sc_ok(q)); };
-func:mkeo_rgq_for_held_i_sc_ok = EOK(H_rgq_for_held_i_sc_ok->:q) never fails { pass EOK.A(PO{ p: raw fp_rgq_for_held_i_sc_ok(q), own: raw mk() }); };
-func:g_rgq_for_held_i_sc_ok = int64(H_rgq_for_held_i_sc_ok->:hp, int64:n) never fails {
-    int64:z0 = 1i64;
-    int64:r = 1i64;
-    {
-        PE[2]:src = raw mkpe2_rgq_for_held_i_sc_ok(hp);
-        for (PE:b in src) { int64->:e2 = @z0; drop Tks.tks(@b, @e2);  r = <-e2; }
-    }
-    pass r + 6i64;
-};
-func:f_rgq_for_held_i_sc_ok = int64(int64:n) never fails {
-    H_rgq_for_held_i_sc_ok:h0 = raw mkh_rgq_for_held_i_sc_ok();
-    pass raw g_rgq_for_held_i_sc_ok(@h0, n);
-};
-func:cell_main_rgq_for_held_i_sc_ok = int32(int64:alen) never fails { pass (((raw f_rgq_for_held_i_sc_ok(alen)) + 60i64) =>! int32); };
 // --- rgq_for_live_i_qc_ok
 struct:H_rgq_for_live_i_qc_ok = { List<int64>:l; int64:k; K:kk; };
 func:mkh_rgq_for_live_i_qc_ok = H_rgq_for_live_i_qc_ok() never fails { pass H_rgq_for_live_i_qc_ok{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
@@ -543,30 +471,6 @@ func:f_rgq_for_live_i_qkc_ok = int64(int64:n) never fails {
     pass raw g_rgq_for_live_i_qkc_ok(@h0, n);
 };
 func:cell_main_rgq_for_live_i_qkc_ok = int32(int64:alen) never fails { pass (((raw f_rgq_for_live_i_qkc_ok(alen)) + 60i64) =>! int32); };
-// --- rgq_for_live_i_sc_ok
-struct:H_rgq_for_live_i_sc_ok = { List<int64>:l; int64:k; K:kk; };
-func:mkh_rgq_for_live_i_sc_ok = H_rgq_for_live_i_sc_ok() never fails { pass H_rgq_for_live_i_sc_ok{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
-func:growh_rgq_for_live_i_sc_ok = int64(H_rgq_for_live_i_sc_ok->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
-func:fp_rgq_for_live_i_sc_ok = int64->(H_rgq_for_live_i_sc_ok->:q) never fails { pass @((<-q).l[0i64]); };
-func:mkpa_rgq_for_live_i_sc_ok = int64->[2](H_rgq_for_live_i_sc_ok->:q) never fails { int64->[2]:a = [raw fp_rgq_for_live_i_sc_ok(q), raw fp_rgq_for_live_i_sc_ok(q)]; pass a; };
-func:mkpe2_rgq_for_live_i_sc_ok = PE[2](H_rgq_for_live_i_sc_ok->:q) never fails { PE[2]:a = [PE{ p: raw fp_rgq_for_live_i_sc_ok(q), z: 0i64 }, PE{ p: raw fp_rgq_for_live_i_sc_ok(q), z: 1i64 }]; pass a; };
-func:mkpaa_rgq_for_live_i_sc_ok = int64->[2][2](H_rgq_for_live_i_sc_ok->:q) never fails { int64->[2][2]:a = [raw mkpa_rgq_for_live_i_sc_ok(q), raw mkpa_rgq_for_live_i_sc_ok(q)]; pass a; };
-func:mkek_rgq_for_live_i_sc_ok = EK(H_rgq_for_live_i_sc_ok->:q) never fails { pass EK.A(raw fp_rgq_for_live_i_sc_ok(q)); };
-func:mkep_rgq_for_live_i_sc_ok = EP(H_rgq_for_live_i_sc_ok->:q) never fails { pass EP.A(PE{ p: raw fp_rgq_for_live_i_sc_ok(q), z: 0i64 }); };
-func:mkea_rgq_for_live_i_sc_ok = EA(H_rgq_for_live_i_sc_ok->:q) never fails { pass EA.A(raw mkpa_rgq_for_live_i_sc_ok(q)); };
-func:mkeo_rgq_for_live_i_sc_ok = EOK(H_rgq_for_live_i_sc_ok->:q) never fails { pass EOK.A(PO{ p: raw fp_rgq_for_live_i_sc_ok(q), own: raw mk() }); };
-func:g_rgq_for_live_i_sc_ok = int64(H_rgq_for_live_i_sc_ok->:hp, int64:n) never fails {
-    int64:z0 = 1i64;
-    int64:r = 1i64;
-    PE[2]:src = raw mkpe2_rgq_for_live_i_sc_ok(hp);
-    for (PE:b in src) { int64->:e2 = @z0; drop Tks.tks(@b, @e2);  r = <-e2; }
-    pass r + 6i64;
-};
-func:f_rgq_for_live_i_sc_ok = int64(int64:n) never fails {
-    H_rgq_for_live_i_sc_ok:h0 = raw mkh_rgq_for_live_i_sc_ok();
-    pass raw g_rgq_for_live_i_sc_ok(@h0, n);
-};
-func:cell_main_rgq_for_live_i_sc_ok = int32(int64:alen) never fails { pass (((raw f_rgq_for_live_i_sc_ok(alen)) + 60i64) =>! int32); };
 // --- rgq_for_param_i_qc_ok
 struct:H_rgq_for_param_i_qc_ok = { List<int64>:l; int64:k; K:kk; };
 func:mkh_rgq_for_param_i_qc_ok = H_rgq_for_param_i_qc_ok() never fails { pass H_rgq_for_param_i_qc_ok{ l: raw mk(), k: 2i64, kk: K{ k: 3i64 } }; };
@@ -724,16 +628,12 @@ async func:main = int32(cstring[]:argv) {
     if ((raw cell_main_ret_tk_ok(argv.len)) != 67i32) { exit 112i32; }
     if ((raw cell_main_rgq_cpick_held_i_qc_ok(argv.len)) != 67i32) { exit 113i32; }
     if ((raw cell_main_rgq_cpick_held_i_qkc_ok(argv.len)) != 67i32) { exit 114i32; }
-    if ((raw cell_main_rgq_cpick_held_i_sc_ok(argv.len)) != 67i32) { exit 115i32; }
     if ((raw cell_main_rgq_cpick_live_i_qc_ok(argv.len)) != 67i32) { exit 116i32; }
     if ((raw cell_main_rgq_cpick_live_i_qkc_ok(argv.len)) != 67i32) { exit 117i32; }
-    if ((raw cell_main_rgq_cpick_live_i_sc_ok(argv.len)) != 67i32) { exit 118i32; }
     if ((raw cell_main_rgq_for_held_i_qc_ok(argv.len)) != 67i32) { exit 119i32; }
     if ((raw cell_main_rgq_for_held_i_qkc_ok(argv.len)) != 67i32) { exit 120i32; }
-    if ((raw cell_main_rgq_for_held_i_sc_ok(argv.len)) != 67i32) { exit 121i32; }
     if ((raw cell_main_rgq_for_live_i_qc_ok(argv.len)) != 67i32) { exit 122i32; }
     if ((raw cell_main_rgq_for_live_i_qkc_ok(argv.len)) != 67i32) { exit 123i32; }
-    if ((raw cell_main_rgq_for_live_i_sc_ok(argv.len)) != 67i32) { exit 124i32; }
     if ((raw cell_main_rgq_for_param_i_qc_ok(argv.len)) != 67i32) { exit 125i32; }
     if ((raw cell_main_rgq_for_param_i_qkc_ok(argv.len)) != 67i32) { exit 126i32; }
     if ((raw cell_main_rgq_for_param_i_sc_ok(argv.len)) != 67i32) { exit 127i32; }

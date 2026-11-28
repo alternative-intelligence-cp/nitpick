@@ -1,0 +1,40 @@
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 18:140
+// 2026-11-26 (landing 177d2f, item 7, row 1: row A, form RA5F, DEF-681's own root and its clean fallback; rulings l.24966 item 4). DEF-718'S NEW
+// FACE (HIGH), CLOSED BY ROW A'S FALLBACK: One-level getter `gp0(@x)` over a holder `X` that holds an `S` inline returns `x.q2` (`@y`, the `move`
+// parameter); the self-wiring store `(<-r).p = @((<-r).k)` makes `y.p` point into `y`, `y` is passed out, and the caller reads `f`'s dead frame.
+// CLOSED FACE: on main (3a45b7c4) it is accepted, and it exits 74 on every road 0-8 at -O0 and 55 at -O2, and 74 under the detector; the same on
+// row 0's build; refused from row A on. A measured closure; DEF-718 stays open on its other roads. From
+// `nitpick/.internal/w8-2026-11-22/cells/w8/p/w8_p_a2_bv_d3.npk`.
+mod:own_root_fallback_a2_bv_d3;
+error:E5;
+struct:S = { int64:k; int64->:p; };
+struct:X = { S:iv; S->:q2; };
+struct:W = { X->:q; };
+struct:RH = { S->:rp; int64:z; };
+struct:HW = { W->:pw; int64:z; };
+func:gx = S->(W:wv) never fails { pass (<-(wv.q)).q2; };
+func:gp0 = S->(X->:xx) never fails { pass (<-xx).q2; };
+func:f = S(move S:y) never fails { int64:z = 2i64; X:x = X{ iv: S{ k: 2i64, p: @z }, q2: @y }; W:w = W{ q: @x }; S->:r = raw gp0(@x); (<-r).p = @((<-r).k); pass y; };
+func:g = int64(int64:n) never fails { int64:z = 2i64; S:r = raw f(S{ k: 2i64, p: @z }); int64:junk = raw clob(n); pass (<-(r.p)) + junk - 9i64; };
+func:clob = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:main = int32(cstring[]:argv) { int64:v = raw g(argv.len - 1i64); exit ((v + 65i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

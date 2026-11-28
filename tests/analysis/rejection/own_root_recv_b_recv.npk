@@ -1,0 +1,53 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 30:23
+// 2026-11-26 (landing 177d2f, item 7, row 1: row A, form RA5F, DEF-681's own root and its clean fallback; rulings l.24966 item 5). A STORE THROUGH
+// A METHOD'S RECEIVER IS ROW A'S STORE ROAD: `os.put(@mx)` stores `(<-p).q` (`@m3`, whose `lp` is `hq`) into `(<-self).r` through the method's
+// receiver; `e = fp((<-(os.r)).lp)` then points into `hq.l`, `growh(hq)` reallocates it, and `<-e` reads freed memory. CLOSED FACE: on main
+// (3a45b7c4) it is accepted, and it exits 236 on every road 0-8 at -O0 and -O2, and 97 under the detector; the same on row 0's build; refused from
+// row A on. From `nitpick/.internal/ag2f-2026-11-21/cells/b/ag2f_b_recv.npk`.
+mod:own_root_recv_b_recv;
+error:E5;
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+struct:H = { List<int64>:l; int64:k; };
+func:mkh = H() never fails { pass H{ l: raw mk(), k: 2i64 }; };
+func:growh = int64(H->:w) never fails { loop(0i64, 64i64, 1i64) { drop list_push(@w.l, 1i64); } pass 7i64; };
+func:fp = int64->(H->:q) never fails { pass @((<-q).l[0i64]); };
+struct:HPO = { H->:lp; List<int64>:own; };
+struct:X = { H->:lp; HPO->:q; };
+struct:OS = { HPO->:r; int64:z; };
+struct:X2 = { H->:lp; H->:lq; };
+func:putx = int64(X->:p, HPO->->:out) never fails { <-out = (<-p).q; pass 0i64; };
+impl:OS = { func:put = int64(OS->:self, X->:p) never fails { (<-self).r = (<-p).q; pass 0i64; }; };
+func:g = int64(H->:hq, H->:hz, int64:n) never fails {
+    HPO:m3 = HPO{ lp: hq, own: raw mk() };
+    X:mx = X{ lp: hz, q: @m3 };
+    HPO:m0 = HPO{ lp: hz, own: raw mk() };
+    HPO->:r = @m0;
+    OS:os = OS{ r: @m0, z: 0i64 };
+    discard(raw os.put(@mx));
+    H->:hh = (<-(os.r)).lp;
+    int64->:e = raw fp(hh);
+    discard(raw growh(hq));
+    pass (<-e) + 6i64;
+};
+func:f = int64(int64:n) never fails { H:hq = raw mkh(); H:hz = raw mkh(); pass raw g(@hq, @hz, n); };
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

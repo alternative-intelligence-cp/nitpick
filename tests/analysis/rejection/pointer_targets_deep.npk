@@ -1,18 +1,20 @@
 // expect-error: NITPICK-BORROW-007
-// expect-error-at: 31:437
-// expect-error: NITPICK-BORROW-007
-// expect-error-at: 66:966
+// expect-error-at: 33:437
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 87:923
-// expect-error: NITPICK-BORROW-007
-// expect-error-at: 88:399
-// expect-error: NITPICK-BORROW-007
-// expect-error-at: 91:511
-// expect-error: NITPICK-BORROW-007
-// expect-error-at: 92:399
+// expect-error-at: 68:966
 // expect-error: NITPICK-BORROW-015
-// expect-error-at: 92:465
+// expect-error-at: 89:923
+// expect-error: NITPICK-BORROW-007
+// expect-error-at: 90:399
+// expect-error: NITPICK-BORROW-007
+// expect-error-at: 93:511
+// expect-error: NITPICK-BORROW-007
+// expect-error-at: 94:399
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 94:465
 mod:pointer_targets_deep;
+// 2026-11-26 (landing 177d2f, item 7's row A: DEF-681's own root and its clean fallback). One site re-coded (G728's list, rulings l.22384 item 3;
+// G2F's list, l.24359): the walk's fuel end BORROW-007 becomes BORROW-015 at the same place, the load reading answering before the fuel runs out.
 // A POINTER'S TARGETS PAST THE WALKS' REACH ARE REFUSED (DEF-430's own walks, landing 177d2b4). `pointer_targets_of` resolves a pointer through
 // the pointers below it, one fuel each (8), and `targets_held` reads what a holder holds, holder by holder (its own 16, counting the pointer
 // locals below a pointer level and then the holders). Each answered "nothing more" at its end, so a write through the pointer freed a string

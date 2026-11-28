@@ -197,6 +197,7 @@ pub struct:Escape = {
     List<int32>:sv_path;
     List<int32>:sv_next;
     wild int32->:sum_pass;
+    wild int32->:sum_load;   // DEF-681: the result may carry a value READ through parameter k's pointee (a getter's `pass (<-w).q`, `pass <-pp`)
     // THE STORE MATRIX (D-325): per declaration and per pointer parameter j
     // (32 slots, the 32nd for the rest), the parameters k whose views (a
     // chain of (k, path) per (declaration, j)) or whose values and addresses
@@ -330,6 +331,7 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
     if (dsize < 1i64) { dsize = 1i64; }
     wild int8->:svmem = alloc(dsize * #size_of<int32>());
     wild int8->:spmem = alloc(dsize * #size_of<int32>());
+    wild int8->:slmem = alloc(dsize * #size_of<int32>());
     wild int8->:fvmem = alloc(dsize * 32i64 * #size_of<int32>());
     wild int8->:fpmem = alloc(dsize * 32i64 * #size_of<int32>());
     wild int8->:mumem = alloc(dsize * 32i64 * #size_of<int32>());
@@ -369,7 +371,7 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                        sv_param: raw list_init::<int32>(64i64),
                        sv_path: raw list_init::<int32>(64i64),
                        sv_next: raw list_init::<int32>(64i64),
-                       sum_pass: spmem =>! wild int32->,
+                       sum_pass: spmem =>! wild int32->, sum_load: slmem =>! wild int32->,
                        fv_head: fvmem =>! wild int32->,
                        fv_param: raw list_init::<int32>(64i64),
                        fv_path: raw list_init::<int32>(64i64),
@@ -398,6 +400,7 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
     for (int64:j in 0i64...dsize) {
         x.sv_head[j] = 0i32 - 1i32;
         x.sum_pass[j] = 0i32;
+        x.sum_load[j] = 0i32;
         x.vp_head[j] = 0i32 - 1i32;
         x.override_of[j] = 0i32;
         x.pholds[j] = false;
@@ -900,6 +903,8 @@ func:merge_summary = NIL(Escape->:x, int32:from, int32:into) never fails {
     if ((from <= 0i32) || (into <= 0i32)) { pass NIL; }
     if ((from >= x.decl_count) || (into >= x.decl_count)) { pass NIL; }
     if (from == into) { pass NIL; }
+    int32:lw = x.sum_load[from => int64];
+    if ((x.sum_load[into => int64] | lw) != x.sum_load[into => int64]) { x.sum_load[into => int64] = x.sum_load[into => int64] | lw; x.changed = true; }
     int32:pw = x.sum_pass[from => int64];
     if ((x.sum_pass[into => int64] | pw) != x.sum_pass[into => int64]) {
         x.sum_pass[into => int64] = x.sum_pass[into => int64] | pw;
@@ -1150,8 +1155,41 @@ func:record_summary = NIL(Escape->:x, ExprId:v) never fails {
             drop sv_add(x, k, raw ref_full_path(x, r));
         } else {
             drop pass_set(x, k, r.xc);
+            if ((r.kind == (raw REF_PASS())) && (r.read != 0i32) && (!(raw load_reads_own(x, v)))) { drop load_set(x, k); }   // DEF-681; DEF-736: not an own member's read
         }
     }
+    pass NIL;
+};
+
+// DEF-736: IS A RETURNED VALUE A MEMBER OR AN ELEMENT OF A BY-VALUE PARAMETER'S OWN STORAGE (`pass a[0i64];`, `pass sp.qq;`): field steps on structs and
+// index steps on inline arrays, down to a parameter (`symbol_is_param`, past at least one hop), crossing no pointer? Such a read is the argument's own
+// value, which the PASS bit hands the caller; read as a LOAD, the caller would read one level deeper than the callee went (`q8_awp_ok`). Any other shape answers no, and stays a LOAD.
+func:load_reads_own = bool(Escape->:x, ExprId:v) never fails {
+    ExprId:cur = v;
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        if (raw expr_is_none(cur)) { pass false; }
+        ExprNode:n = raw ast_expr(x.ast, cur);
+        if (n.kind == ExprKind.ExprIdentifierExpr) { pass (hop > 0i32) && (raw symbol_is_param(x, raw symtab_get(x.tab, n.a))); }   // a parameter's own member: a local may hold a loaded value
+        if ((n.kind != ExprKind.ExprMemberAccessExpr) && (n.kind != ExprKind.ExprIndexExpr)) { pass false; }
+        ExprId:op = raw expr_operand(n);
+        if (n.kind == ExprKind.ExprIndexExpr) { op = raw expr_lhs(n); }
+        int32:ok = raw type_kind(x.types, raw exprtypes_get(x.etypes, op));
+        if (!(((n.kind == ExprKind.ExprMemberAccessExpr) && (ok == (raw TY_STRUCT())) && (!(raw type_is_list(x.tr, raw exprtypes_get(x.etypes, op))))) || ((n.kind == ExprKind.ExprIndexExpr) && (ok == (raw TY_ARRAY()))))) { pass false; }
+        cur = op;
+    }
+    pass false;
+};
+
+// DEF-681: the result may carry a value read through parameter k's pointee: the caller reads it as `<-arg` by name (`collect_call_refs`).
+func:load_set = NIL(Escape->:x, int32:k) never fails {
+    if (x.noload) { pass NIL; }   // F8: no load bit, so no load road reads one
+    if ((x.cur_fn < 0i32) || (x.cur_fn >= x.decl_count)) { pass NIL; }
+    int32:bit = raw param_bit(k);
+    if (bit == 0i32) { pass NIL; }
+    int64:at = x.cur_fn => int64;
+    if ((x.sum_load[at] & bit) != 0i32) { pass NIL; }
+    x.sum_load[at] = x.sum_load[at] | bit;
+    x.changed = true;
     pass NIL;
 };
 
@@ -1486,6 +1524,15 @@ func:record_dest_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, bool:auto_ref,
                 }
             }
             if (raw sum_has(fp, k)) { drop arg_refs_pass(x, ak, ak_auto, ak_thru, depth, @got); drop refuse_rootless_store(x, ak, ak_auto); }
+            // DEF-681's out-parameter road: where the callee may store into j's pointee a value it READ through k's pointee (`putx`'s `<-out = (<-p).q`),
+            // the destination holds what the caller reads by name through the argument, as a getter's result does (`collect_call_refs`)
+            if ((callee > 0i32) && (k != j) && (raw sum_has(fp, k)) && (raw sum_has(x.sum_load[callee => int64], k))) {
+                int64:g0 = got.count;
+                if (ak_auto) { drop collect_view_refs(x, ak, depth, @got); }
+                else if ((raw type_kind(x.types, raw exprtypes_get(x.etypes, ak))) == (raw TY_POINTER())) { drop collect_base_refs(x, ak, true, raw type_elem(x.types, raw exprtypes_get(x.etypes, ak)), depth, @got); }
+                else { drop load_through_held(x, ak, depth, @got); }
+                drop load_mark(@got, g0);   // DEF-681: the out-parameter road's load is a load reading too (`q_o2n`)
+            }
             if (got.count > before) { drop list_push(@srcs, ak); }
         }
         if (got.count == 0i64) { continue; }
@@ -1823,6 +1870,7 @@ func:fold_flow_into_param = NIL(Escape->:x, ExprId:dest, List<ViewRef>->:refs, b
             drop fv_add(x, j, k, raw ref_full_path(x, r));
         } else {
             drop flow_pass_set(x, j, k, r.xc);
+            if ((r.read != 0i32) && (k != j)) { drop load_set(x, k); }   // DEF-681's out-parameter road (`<-out = (<-p).q`): what the callee read through k's pointee, the caller reads through the argument; a store back into the same parameter (`<-pp = <-pp`) is there already
         }
     }
     pass NIL;
@@ -2499,6 +2547,7 @@ func:record_matrix_at = NIL(Escape->:x, int32:j, ViewRef:pr, List<ViewRef>->:ref
             drop fv_add(x, j, k, raw ref_full_path(x, r));
         } else {
             drop flow_pass_set(x, j, k, r.xc);
+            if ((r.read != 0i32) && (k != j)) { drop load_set(x, k); }   // DEF-681's out-parameter road (`<-out = (<-p).q`): what the callee read through k's pointee, the caller reads through the argument; a store back into the same parameter (`<-pp = <-pp`) is there already
         }
     }
     pass NIL;
@@ -2828,7 +2877,7 @@ pub func:escape_type_holds = bool(Escape->:x, int32:t, int32:want, int32:fuel) d
     // one, and a pointer `fp` took before it read freed heap (`zq_a_gV`, `zq_e_gV`, `zr_f_gV`, `zr_i_gV`, `zr_j_gV`), where every concrete twin is BORROW-015.
     if ((fuel <= 0i32) || (raw escape_type_open(x, t))) { pass true; }
     int32:k = raw type_kind(x.types, t);
-    if ((k == (raw TY_ARRAY())) || (k == (raw TY_OPTIONAL())) || (k == (raw TY_SLICE()))) { pass (raw escape_type_holds(x, raw type_elem(x.types, t), want, fuel - 1i32)); }   // a slice holds its element type behind its pointer, as a `List` does
+    if ((k == (raw TY_ARRAY())) || (k == (raw TY_OPTIONAL())) || (k == (raw TY_SLICE())) || ((k == (raw TY_RESULT())) && (!x.noload))) { pass (raw escape_type_holds(x, raw type_elem(x.types, t), want, fuel - 1i32)); }   // a slice holds its element type behind its pointer, as a `List` does; a `Result` its value (DEF-681's function-value road, `ag2_rqfv`)
     if (k == (raw TY_ENUM())) { pass (raw enum_has_payload(x.ast, x.types, t)); }   // a payload may be `want`: the closed direction, as the fuel's end (R12)
     if (k != (raw TY_STRUCT())) { pass false; }
     // CD (DEF-716): A STRUCT'S ANSWER ONCE PER (type, wanted type, fuel). The hop walk of DEF-348's row a asks `rrti_is_target`'s holder question W^2 times a call, each
@@ -4438,12 +4487,12 @@ func:collect_base_refs = NIL(Escape->:x, ExprId:base, bool:through, int32:read, 
         ViewRef:dr = dtmp[di];
         if (dr.kind == (raw REF_ADDR())) {
             bool:hopped = false;
-            for (int64:dj in 0i64...di) { if ((dtmp[dj].kind == dr.kind) && (dtmp[dj].root == dr.root) && (dtmp[dj].place == dr.place)) { hopped = true; } }
+            for (int64:dj in 0i64...di) { if ((dtmp[dj].kind == dr.kind) && (dtmp[dj].root == dr.root) && (dtmp[dj].place == dr.place) && ((x.noload) || (dtmp[dj].rm == dr.rm))) { hopped = true; } }   // DEF-681: a marked load (`rm` -1) hops beside its unmarked twin
             if (hopped) { continue; }
             drop push_binding_refs(x, dr.root, out);
             // A RETYPED ADDRESS IS KEPT (177d2b4 row 8, hole 5): read under another type, the bytes are no copy of the pointee (a `List`'s header yields its buffer
             // pointer), so the value read out may point into any `List` under the place: the ref stays, marked −2 (`rh1`, `rh1a`, `rh3i`).
-            if (dr.xc == (0i32 - 2i32)) { drop list_push(out, dr); }
+            if ((dr.xc == (0i32 - 2i32)) || (dr.rm < 0i32)) { drop list_push(out, dr); }   // DEF-681: so is a marked load: its mark goes on with what was read through it
             // THE HOP THAT LANDS ON A PARAMETER: `HP->:q = @hv;` over a by-value `hv`, `H->->:pp = @hp;` over a pointer `hp`. What the place holds is the parameter's own
             // value, which its chain doesn't say (a parameter's chain is what the body stored into it): the PASS ref its name gives, at the addressed place.
             // A VARIADIC TAIL'S OWN ADDRESS too (DEF-670's address road, `int32[]->:pv = @vs; setsv(w2, <-pv)`): the tail is no `DeclParamDecl`, and its name's PASS ref
@@ -4717,11 +4766,13 @@ func:collect_call_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, int32:start, 
     }
     int32:callee = raw call_callee_fn(x, call);
     int32:spass = 0i32 - 1i32;
+    int32:sload = 0i32;   // DEF-681: the summary's load bit, which only a known callee has; an unknown callee's load is read below (`unknown_call_loads`: an identity such as `q_min_fv_ok`'s loads nothing)
     if (callee > 0i32) {
+        sload = x.sum_load[callee => int64];
         spass = x.sum_pass[callee => int64];
         // A KNOWN CALLEE THAT HANDS NOTHING BACK: no argument need be read (the
         // common case, and the cost of the walk over the compiler's own source).
-        if ((spass == 0i32) && (x.sv_head[callee => int64] < 0i32)) { pass NIL; }
+        if ((spass == 0i32) && (sload == 0i32) && (x.sv_head[callee => int64] < 0i32)) { pass NIL; }
     }
     int32:base = 0i32;
     if (!(raw expr_is_none(recv))) { base = 1i32; }
@@ -4755,12 +4806,103 @@ func:collect_call_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, int32:start, 
             }
         }
         if (raw sum_has(spass, k)) { drop arg_refs_pass(x, a, a_auto, a_thru, depth, out); }
+        int64:l0 = out.count;   // DEF-681: the load readings' refs begin here (`load_mark`)
+        // DEF-681: a value the callee read through parameter k's pointee is what the caller reads by name through the argument: `<-a`, or the
+        // receiver's own value where the call took its address
+        if ((!ctor) && (raw sum_has(sload, k))) {
+            if (a_auto) { drop collect_view_refs(x, a, depth, out); }
+            else if ((raw type_kind(x.types, raw exprtypes_get(x.etypes, a))) == (raw TY_POINTER())) { drop collect_base_refs(x, a, true, raw type_elem(x.types, raw exprtypes_get(x.etypes, a)), depth, out); }
+            else { drop load_through_held(x, a, depth, out); }   // DEF-681: a wrapped or held argument
+        }
+        // DEF-681: A CALLEE NO SUMMARY NAMES (a function value, a `dyn` method) may hand back a value it read through a pointer argument's pointee:
+        // read as a load where that pointee's type holds a member of the result's type (`gety`, `HPO->(X->)` over `X{ q: HPO-> }`); an identity
+        // (`idb`, `HPB->(HPB->)`, `q_min_fv_ok`) loads nothing, since `HPB` holds no `HPB->`
+        int64:ol0 = out.count;   // DEF-681: the load reader's refs begin here: values read THROUGH the argument, which DEF-674's mark below doesn't take (no cast is on their road: `fcr_fvy_ok`)
+        if ((callee <= 0i32) && (!ctor) && (raw unknown_call_loads(x, call, a, a_auto))) {
+            if (a_auto) { drop collect_view_refs(x, a, depth, out); }
+            else if ((raw type_kind(x.types, raw exprtypes_get(x.etypes, a))) == (raw TY_POINTER())) { drop collect_base_refs(x, a, true, raw type_elem(x.types, raw exprtypes_get(x.etypes, a)), depth, out); }
+            else { drop load_through_held(x, a, depth, out); }   // DEF-681: a wrapped or held argument
+        }
+        drop load_mark(out, l0);
         // DEF-674 (177d2b7): A CALLEE NO SUMMARY NAMES (a function value, a `dyn` method) may hand back what it was given cast to another pointee, so a ref
         // its result's type can't reach is marked as DEF-585 marks a named callee that retypes (`s.q = raw fv(@mb)` over `conv`, `HPO->(HPB->)`); one it
         // reaches stays unmarked, so an identity's result (`idb`, `HPB->(HPB->)`, `q_min_fv_ok`) is no target of a sibling's store
-        if ((callee <= 0i32) && (!ctor)) { for (int64:oi in ok0...out.count) { if (!(raw escape_ref_fits_result(x, (<-out)[oi], raw exprtypes_get(x.etypes, call)))) { (<-out)[oi].xc = raw escape_xc_join((<-out)[oi].xc, 0i32 - 2i32); } } }
+        if ((callee <= 0i32) && (!ctor)) { for (int64:oi in ok0...ol0) { if (!(raw escape_ref_fits_result(x, (<-out)[oi], raw exprtypes_get(x.etypes, call)))) { (<-out)[oi].xc = raw escape_xc_join((<-out)[oi].xc, 0i32 - 2i32); } } }
     }
     if ((callee > 0i32) && (x.retypes[callee => int64] != 0i32)) { for (int64:oi in o0...out.count) { (<-out)[oi].xc = raw escape_xc_join((<-out)[oi].xc, x.retypes[callee => int64]); } }   // DEF-585
+    pass NIL;
+};
+
+// DEF-681: MAY A CALLEE NO SUMMARY NAMES HAND BACK A VALUE READ THROUGH ARGUMENT `a`'s POINTEE -- does that pointee's type (the receiver's own,
+// where the call took its address) hold a member of the result's type (`Result`/`Optional` peeled)? An untyped result, or an open pointee, answers yes.
+func:unknown_call_loads = bool(Escape->:x, ExprId:call, ExprId:a, bool:a_auto) never fails {
+    if (x.noload) { pass false; }   // F8
+    int32:rt = raw exprtypes_get(x.etypes, call);
+    for (int32:pk in 0i32...2i32) { if ((rt != 0i32) && (((raw type_kind(x.types, rt)) == (raw TY_RESULT())) || ((raw type_kind(x.types, rt)) == (raw TY_OPTIONAL())))) { rt = raw type_elem(x.types, rt); } }
+    if (rt == 0i32) { pass true; }
+    int32:pe = raw exprtypes_get(x.etypes, a);
+    if (!a_auto) {
+        if ((raw type_kind(x.types, pe)) != (raw TY_POINTER())) { pass (raw held_pointee_holds(x, pe, rt, 8i32)); }   // DEF-681: a wrapped or held argument asks each pointer it holds
+        pe = raw type_elem(x.types, pe);
+    }
+    pass (raw escape_type_holds(x, pe, rt, 8i32));
+};
+
+// DEF-681's WRAPPED AND HELD ARGUMENTS: does a pointer that a value of type `t` holds point at a type holding `rt` -- a pointer
+// argument's question, asked of every pointer the type holds (an Optional's, a Result's, a struct's fields, an array's, a slice's or a `List`'s
+// elements). An untyped or open type, or the fuel's end, answers yes; a kind not read here answers whether it holds a pointer at all.
+func:held_pointee_holds = bool(Escape->:x, int32:t, int32:rt, int32:fuel) decreases fuel never fails {
+    if ((t == 0i32) || (fuel <= 0i32) || (raw escape_type_open(x, t))) { pass true; }
+    int32:k = raw type_kind(x.types, t);
+    if (k == (raw TY_POINTER())) { pass (raw escape_type_holds(x, raw type_elem(x.types, t), rt, 8i32)); }
+    if ((k == (raw TY_ARRAY())) || (k == (raw TY_OPTIONAL())) || (k == (raw TY_SLICE())) || (k == (raw TY_RESULT()))) { pass (raw held_pointee_holds(x, raw type_elem(x.types, t), rt, fuel - 1i32)); }
+    if (k == (raw TY_ENUM())) { pass (raw enum_has_payload(x.ast, x.types, t)); }
+    if (k != (raw TY_STRUCT())) { pass (raw type_holds_pointer(x.types, t, 8i32)); }
+    if (raw type_is_list(x.tr, t)) { pass (raw held_pointee_holds(x, raw list_elem_type(x.tr, t), rt, fuel - 1i32)); }
+    int32:sdi = raw type_decl(x.types, t);
+    if ((sdi < 0i32) || (sdi >= (raw ast_decl_count(x.ast)))) { pass true; }
+    DeclNode:d = raw ast_decl(x.ast, DeclId{ index: sdi });
+    for (int32:mi in 0i32...(raw item_member_count(x.ast, d))) {
+        DeclNode:m = raw ast_decl(x.ast, raw item_member(x.ast, d, mi));
+        if (m.kind != DeclKind.DeclFieldDecl) { continue; }
+        if (raw held_pointee_holds(x, raw struct_member_type(x.tr, t, m, 0i32), rt, fuel - 1i32)) { pass true; }
+    }
+    pass false;
+};
+
+// DEF-681's fallback (DEF-718's mixed binding, and a load reading a callee's store made stale): A LOAD READING OF A CALL'S RESULT IS MARKED (`rm` -1), EVERY ONE.
+// The caller reads a load ONE level through the argument (`<-a`'s held refs). The callee may have read further (`g2`'s two levels), the value may sit below
+// a parameter's pointee (a PASS ref), and a callee's store the caller records nothing for makes the record it reads stale (`seth2`'s `(<-(w.hp)).q = v`),
+// so no reading names storage the self-wire walk may trust. A DEF-714 copy (`rm` > 0) keeps its member: its twin, pushed before it, takes the mark.
+// The mark rides in the binding's chain (its identity keeps `rm`), and the self-wire walk alone reads it (`esc_mark_through`): a marked ref names no storage.
+func:load_mark = NIL(List<ViewRef>->:out, int64:from) never fails {
+    for (int64:i in from...out.count) {
+        if ((<-out)[i].rm == 0i32) { (<-out)[i].rm = 0i32 - 1i32; }
+    }
+    pass NIL;
+};
+
+// DEF-681: A LOAD THROUGH AN ARGUMENT THAT IS NO PLAIN POINTER (an Optional, a Result, a by-value struct, an array, a slice) reads through every
+// pointer the argument holds: the addresses its value carries, read through as `<-a` reads them (`collect_base_refs`), and a viewed storage's held
+// pointers read through (a slice's elements); a view of a parameter's pointee is that parameter read, as a hop landing on a parameter is
+func:load_through_held = NIL(Escape->:x, ExprId:a, int32:depth, List<ViewRef>->:out) never fails {
+    int32:at = raw exprtypes_get(x.etypes, a);
+    drop collect_base_refs(x, a, true, at, depth, out);
+    List<ViewRef>:vs = raw list_init::<ViewRef>(4i64);
+    drop collect_view_refs(x, a, depth, @vs);
+    for (int64:i in 0i64...vs.count) {
+        ViewRef:v = vs[i];
+        if ((v.kind != (raw VIEW_DIRECT())) && (v.kind != (raw VIEW_LAUNDERED()))) { continue; }
+        if (v.root == 0i32) { continue; }
+        if (raw symbol_is_param(x, raw symtab_get(x.tab, v.root))) { drop list_push(out, ViewRef{ root: v.root, place: v.place, kind: raw REF_PASS(), path: 0i32, read: at, xc: v.xc, rm: 0i32 }); }
+        List<ViewRef>:held = raw list_init::<ViewRef>(4i64);
+        drop push_binding_refs(x, v.root, @held);
+        for (int64:j in 0i64...held.count) {
+            ViewRef:h = held[j];
+            if ((h.kind == (raw REF_ADDR())) && (h.root != 0i32)) { drop push_binding_refs(x, h.root, out); }
+            else { drop list_push(out, h); }
+        }
+    }
     pass NIL;
 };
 
@@ -8104,6 +8246,11 @@ func:esc_mark_through = bool(Escape->:x, ExprId:pe, int32:fuel) decreases fuel n
     if (pn.kind == ExprKind.ExprDerefExpr) { q = raw expr_operand(pn); }
     List<ViewRef>:tg = raw list_init::<ViewRef>(4i64);
     drop escape_pointer_targets(x, q, @tg);
+    // DEF-681's fallback (DEF-718's mixed binding; a stale load reading): A SOURCE THAT IS A CALL'S LOAD NAMES NO STORAGE. The pointer's refs are read again as
+    // they stand (the target filter above drops by type), and one marked ref (`load_mark`) fails the walk closed, whatever its other sources name.
+    List<ViewRef>:lr = raw list_init::<ViewRef>(4i64);
+    drop collect_view_refs(x, q, raw ESCAPE_DEPTH(), @lr);
+    for (int64:li in 0i64...lr.count) { if (lr[li].rm < 0i32) { pass false; } }
     bool:ok = true;
     int64:named = 0i64;
     int64:npass = 0i64;
@@ -8741,6 +8888,7 @@ pub func:escape_dump = string(Escape->:x) never fails {
             e = x.sv_next[e => int64];
         }
         drop sink_write(@s, "\n");
+        if (x.sum_load[d => int64] != 0i32) { drop sink_write(@s, "  LOAD "); drop sink_write(@s, int_to_string(x.sum_load[d => int64] => int64)); drop sink_write(@s, "\n"); }
         // the store matrix and the mutation summary, per parameter slot
         for (int32:j in 0i32...32i32) {
             int64:slot = raw flow_slot(d, j);

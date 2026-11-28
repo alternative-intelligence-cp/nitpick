@@ -1,0 +1,185 @@
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 42:326
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 53:258
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 64:308
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 75:186
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 86:324
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 96:338
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 109:358
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 120:260
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 130:252
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 140:267
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 151:370
+// expect-error: NITPICK-BORROW-009
+// expect-error-at: 162:370
+// 2026-11-26 (landing 177d2f, item 7, row 1: row A, form RA5F, DEF-681's own root and its clean fallback; rulings l.24870 item 2(c), l.24966 items
+// 3 and 4). PRICES AT PARITY, DEF-739 (LOW, fails closed): row A's clean fallback asks BORROW-009's fail-closed arm of every call's result a
+// self-wiring store goes through, so six right programs whose getter hands back storage of the caller's own frame are refused (BORROW-009). Each
+// one's plain-getter twin `_d1` is refused on main too, so they are at parity. Way out, each: the getter's body written by name (W8's `_d2` cells,
+// `nitpick/.internal/w8-2026-11-22/cells/w8/p/`), which runs 67 on main and on row A's build (W7X's runs). The six prices, then their six twins,
+// one case each, each declared name suffixed by the cell's, in the form of main's prices files.
+mod:own_root_fallback_def739_prices;
+error:E5;
+// PRICE AT PARITY, DEF-739 (row 1): A by-value getter `gx(w)` returns `(<-(wv.q)).q2` (`@y`, a local of `f`), and the self-wiring store `(<-r).p =
+// @((<-r).k)` through that call's result is right because `y` stays in `f`'s frame; RA5F refuses it at BORROW-009. Right: on main (3a45b7c4) it
+// exits 67 on every road 0-8 at -O0 and -O2 and under the detector. From `nitpick/.internal/ag2f-2026-11-21/cells/a2/ag2f_a2_bv_ok.npk`.
+struct:S_ag2f_a2_bv_ok = { int64:k; int64->:p; };
+struct:X_ag2f_a2_bv_ok = { S_ag2f_a2_bv_ok:iv; S_ag2f_a2_bv_ok->:q2; };
+struct:W_ag2f_a2_bv_ok = { X_ag2f_a2_bv_ok->:q; };
+struct:RH_ag2f_a2_bv_ok = { S_ag2f_a2_bv_ok->:rp; int64:z; };
+struct:HW_ag2f_a2_bv_ok = { W_ag2f_a2_bv_ok->:pw; int64:z; };
+func:gx_ag2f_a2_bv_ok = S_ag2f_a2_bv_ok->(W_ag2f_a2_bv_ok:wv) never fails { pass (<-(wv.q)).q2; };
+func:f_ag2f_a2_bv_ok = int64(int64:n) never fails { int64:z0 = 2i64; S_ag2f_a2_bv_ok:y = S_ag2f_a2_bv_ok{ k: 2i64, p: @z0 }; int64:z = 2i64; X_ag2f_a2_bv_ok:x = X_ag2f_a2_bv_ok{ iv: S_ag2f_a2_bv_ok{ k: 2i64, p: @z }, q2: @y }; W_ag2f_a2_bv_ok:w = W_ag2f_a2_bv_ok{ q: @x }; S_ag2f_a2_bv_ok->:r = raw gx_ag2f_a2_bv_ok(w); (<-r).p = @((<-r).k); pass (<-(y.p)); };
+func:g_ag2f_a2_bv_ok = int64(int64:n) never fails { int64:v = raw f_ag2f_a2_bv_ok(n); int64:junk = raw clob_ag2f_a2_bv_ok(n); pass v + junk - 9i64; };
+func:clob_ag2f_a2_bv_ok = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:cell_main_ag2f_a2_bv_ok = int32() never fails { int64:v = raw g_ag2f_a2_bv_ok(1i64 - 1i64); pass ((v + 65i64) =>! int32); };
+// PRICE AT PARITY, DEF-739 (row 1): `f` keeps `s` local, puts `@s` in an `SH` coerced to `dyn Gt`, gets it back by `d.gq()` and self-wires
+// `(<-sp).p = @((<-sp).k)`, then reads `s.p` in its own frame: right, refused from RA5F on at BORROW-009. Right: on main (3a45b7c4) it exits 67 on
+// every road 0-8 at -O0 and -O2 and under the detector. From `nitpick/.internal/ag2f-2026-11-21/cells/dy/ag2f_dy_d1_ok.npk`.
+struct:S_ag2f_dy_d1_ok = { int64:k; int64->:p; };
+trait:Gt_ag2f_dy_d1_ok = { func:gq = S_ag2f_dy_d1_ok->(Self->:self) never fails; };
+struct:SH_ag2f_dy_d1_ok = { S_ag2f_dy_d1_ok->:q; int64:z; };
+impl:SH_ag2f_dy_d1_ok:Gt_ag2f_dy_d1_ok = { func:gq = S_ag2f_dy_d1_ok->(SH_ag2f_dy_d1_ok->:self) never fails { pass (<-self).q; }; };
+func:f_ag2f_dy_d1_ok = int64(int64:n) never fails { int64:z0 = 2i64; S_ag2f_dy_d1_ok:s = S_ag2f_dy_d1_ok{ k: 2i64, p: @z0 }; SH_ag2f_dy_d1_ok:h = SH_ag2f_dy_d1_ok{ q: @s, z: 0i64 }; dyn Gt_ag2f_dy_d1_ok:d = move(h); S_ag2f_dy_d1_ok->:sp = raw d.gq(); (<-sp).p = @((<-sp).k); pass (<-(s.p)); };
+func:g_ag2f_dy_d1_ok = int64(int64:n) never fails { int64:v = raw f_ag2f_dy_d1_ok(n); int64:junk = raw clob_ag2f_dy_d1_ok(n); pass v + junk - 9i64; };
+func:clob_ag2f_dy_d1_ok = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:cell_main_ag2f_dy_d1_ok = int32() never fails { int64:v = raw g_ag2f_dy_d1_ok(1i64 - 1i64); pass ((v + 65i64) =>! int32); };
+// PRICE AT PARITY, DEF-739 (row 1): `po(@h, @sp)` loads `raw gq(ph)` (`@s`) into the out-parameter `sp`, and the self-wiring store `(<-sp).p =
+// @((<-sp).k)` keeps `s` in `f`'s frame, so reading `s.p` is right; refused from RA5F on at BORROW-009. Right: on main (3a45b7c4) it exits 67 on
+// every road 0-8 at -O0 and -O2 and under the detector. From `nitpick/.internal/ag2f-2026-11-21/cells/q/ag2f_q_o1_ok.npk`.
+struct:S_ag2f_q_o1_ok = { int64:k; int64->:p; };
+struct:SH_ag2f_q_o1_ok = { S_ag2f_q_o1_ok->:q; int64:z; };
+func:gq_ag2f_q_o1_ok = S_ag2f_q_o1_ok->(SH_ag2f_q_o1_ok->:hh) never fails { pass (<-hh).q; };
+func:po_ag2f_q_o1_ok = int64(SH_ag2f_q_o1_ok->:ph, S_ag2f_q_o1_ok->->:out) never fails { <-out = raw gq_ag2f_q_o1_ok(ph); pass 0i64; };
+func:f_ag2f_q_o1_ok = int64(int64:n) never fails { int64:z0 = 2i64; S_ag2f_q_o1_ok:s = S_ag2f_q_o1_ok{ k: 2i64, p: @z0 }; SH_ag2f_q_o1_ok:h = SH_ag2f_q_o1_ok{ q: @s, z: 0i64 }; S_ag2f_q_o1_ok:dm = S_ag2f_q_o1_ok{ k: 1i64, p: @(s.k) }; S_ag2f_q_o1_ok->:sp = @dm; discard(raw po_ag2f_q_o1_ok(@h, @sp)); (<-sp).p = @((<-sp).k); pass (<-(s.p)); };
+func:g_ag2f_q_o1_ok = int64(int64:n) never fails { int64:v = raw f_ag2f_q_o1_ok(n); int64:junk = raw clob_ag2f_q_o1_ok(n); pass v + junk - 9i64; };
+func:clob_ag2f_q_o1_ok = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:cell_main_ag2f_q_o1_ok = int32() never fails { int64:v = raw g_ag2f_q_o1_ok(1i64 - 1i64); pass ((v + 65i64) =>! int32); };
+// PRICE AT PARITY, DEF-739 (row 1): The getter `gq(S->:o)` returns its parameter through a pointer-to-pointer local (`S->->:pp = @o; pass <-pp;`),
+// and the self-wiring store through its result keeps `s` in `f`'s frame, so reading `s.p` is right; refused from RA5F on at BORROW-009. Right: on
+// main (3a45b7c4) it exits 67 on every road 0-8 at -O0 and -O2 and under the detector. From
+// `nitpick/.internal/ag2f-2026-11-21/cells/sp/ag2f_sp_gps_ok.npk`.
+struct:S_ag2f_sp_gps_ok = { int64:k; int64->:p; };
+struct:SH_ag2f_sp_gps_ok = { S_ag2f_sp_gps_ok->:q; int64:z; };
+func:gq_ag2f_sp_gps_ok = S_ag2f_sp_gps_ok->(S_ag2f_sp_gps_ok->:o) never fails { S_ag2f_sp_gps_ok->->:pp = @o; pass <-pp; };
+func:f_ag2f_sp_gps_ok = int64(int64:n) never fails { int64:z0 = 2i64; S_ag2f_sp_gps_ok:s = S_ag2f_sp_gps_ok{ k: 2i64, p: @z0 }; S_ag2f_sp_gps_ok->:sp = raw gq_ag2f_sp_gps_ok(@s); (<-sp).p = @((<-sp).k); pass (<-(s.p)); };
+func:g_ag2f_sp_gps_ok = int64(int64:n) never fails { int64:v = raw f_ag2f_sp_gps_ok(n); int64:junk = raw clob_ag2f_sp_gps_ok(n); pass v + junk - 9i64; };
+func:clob_ag2f_sp_gps_ok = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:cell_main_ag2f_sp_gps_ok = int32() never fails { int64:v = raw g_ag2f_sp_gps_ok(1i64 - 1i64); pass ((v + 65i64) =>! int32); };
+// PRICE AT PARITY, DEF-739 (row 1): A method on a by-value receiver, `w.gm()`, returns `(<-(self.q)).q2` (`@s`, a local), and the self-wiring store
+// through its result keeps `s` in `f`'s frame, so reading `s.p` is right; refused from RA5F on at BORROW-009. Right: on main (3a45b7c4) it exits 67
+// on every road 0-8 at -O0 and -O2 and under the detector. From `nitpick/.internal/ag2f-2026-11-21/cells/wh/ag2f_wh_bvm_ok.npk`.
+struct:S_ag2f_wh_bvm_ok = { int64:k; int64->:p; };
+struct:X_ag2f_wh_bvm_ok = { S_ag2f_wh_bvm_ok:iv; S_ag2f_wh_bvm_ok->:q2; };
+struct:W_ag2f_wh_bvm_ok = { X_ag2f_wh_bvm_ok->:q; };
+impl:W_ag2f_wh_bvm_ok = { func:gm = S_ag2f_wh_bvm_ok->(W_ag2f_wh_bvm_ok:self) never fails { pass (<-(self.q)).q2; }; };
+func:f_ag2f_wh_bvm_ok = int64(int64:n) never fails { int64:z0 = 2i64; S_ag2f_wh_bvm_ok:s = S_ag2f_wh_bvm_ok{ k: 2i64, p: @z0 }; int64:z = 2i64; X_ag2f_wh_bvm_ok:x = X_ag2f_wh_bvm_ok{ iv: S_ag2f_wh_bvm_ok{ k: 2i64, p: @z }, q2: @s }; W_ag2f_wh_bvm_ok:w = W_ag2f_wh_bvm_ok{ q: @x }; S_ag2f_wh_bvm_ok->:sp = raw w.gm(); (<-sp).p = @((<-sp).k); pass (<-(s.p)); };
+func:g_ag2f_wh_bvm_ok = int64(int64:n) never fails { int64:v = raw f_ag2f_wh_bvm_ok(n); int64:junk = raw clob_ag2f_wh_bvm_ok(n); pass v + junk - 9i64; };
+func:clob_ag2f_wh_bvm_ok = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:cell_main_ag2f_wh_bvm_ok = int32() never fails { int64:v = raw g_ag2f_wh_bvm_ok(1i64 - 1i64); pass ((v + 65i64) =>! int32); };
+// PRICE AT PARITY, DEF-739 (row 1): the sixth of the fallback's six, a by-value receiver's method as `ag2f_wh_bvm_ok`. Right: on main (3a45b7c4) it
+// exits 67 on every road 0-8 at -O0 and -O2 and under the detector. From `nitpick/.internal/ag2f-2026-11-21/cells/wh/ag2f_wh_bvw_ok.npk`.
+struct:S_ag2f_wh_bvw_ok = { int64:k; int64->:p; };
+struct:X_ag2f_wh_bvw_ok = { S_ag2f_wh_bvw_ok:iv; S_ag2f_wh_bvw_ok->:q2; };
+struct:W_ag2f_wh_bvw_ok = { X_ag2f_wh_bvw_ok->:q; };
+func:gx_ag2f_wh_bvw_ok = S_ag2f_wh_bvw_ok->(W_ag2f_wh_bvw_ok:wv) never fails { pass (<-(wv.q)).q2; };
+func:f_ag2f_wh_bvw_ok = int64(int64:n) never fails { int64:z0 = 2i64; S_ag2f_wh_bvw_ok:s = S_ag2f_wh_bvw_ok{ k: 2i64, p: @z0 }; int64:z = 2i64; X_ag2f_wh_bvw_ok:x = X_ag2f_wh_bvw_ok{ iv: S_ag2f_wh_bvw_ok{ k: 2i64, p: @z }, q2: @s }; W_ag2f_wh_bvw_ok:w = W_ag2f_wh_bvw_ok{ q: @x }; S_ag2f_wh_bvw_ok->:sp = raw gx_ag2f_wh_bvw_ok(w); (<-sp).p = @((<-sp).k); pass (<-(s.p)); };
+func:g_ag2f_wh_bvw_ok = int64(int64:n) never fails { int64:v = raw f_ag2f_wh_bvw_ok(n); int64:junk = raw clob_ag2f_wh_bvw_ok(n); pass v + junk - 9i64; };
+func:clob_ag2f_wh_bvw_ok = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:cell_main_ag2f_wh_bvw_ok = int32() never fails { int64:v = raw g_ag2f_wh_bvw_ok(1i64 - 1i64); pass ((v + 65i64) =>! int32); };
+// ITS PLAIN-GETTER TWIN `w8_p_a2_bv_ok_d1`: main refuses it too (BORROW-009), so the price is at parity. From
+// `nitpick/.internal/w8-2026-11-22/cells/w8/p/w8_p_a2_bv_ok_d1.npk`.
+struct:S_w8_p_a2_bv_ok_d1 = { int64:k; int64->:p; };
+struct:X_w8_p_a2_bv_ok_d1 = { S_w8_p_a2_bv_ok_d1:iv; S_w8_p_a2_bv_ok_d1->:q2; };
+struct:W_w8_p_a2_bv_ok_d1 = { X_w8_p_a2_bv_ok_d1->:q; };
+struct:RH_w8_p_a2_bv_ok_d1 = { S_w8_p_a2_bv_ok_d1->:rp; int64:z; };
+struct:HW_w8_p_a2_bv_ok_d1 = { W_w8_p_a2_bv_ok_d1->:pw; int64:z; };
+func:gx_w8_p_a2_bv_ok_d1 = S_w8_p_a2_bv_ok_d1->(W_w8_p_a2_bv_ok_d1:wv) never fails { pass (<-(wv.q)).q2; };
+func:gx0_w8_p_a2_bv_ok_d1 = S_w8_p_a2_bv_ok_d1->(W_w8_p_a2_bv_ok_d1->:pw) never fails { pass (<-((<-pw).q)).q2; };
+func:f_w8_p_a2_bv_ok_d1 = int64(int64:n) never fails { int64:z0 = 2i64; S_w8_p_a2_bv_ok_d1:y = S_w8_p_a2_bv_ok_d1{ k: 2i64, p: @z0 }; int64:z = 2i64; X_w8_p_a2_bv_ok_d1:x = X_w8_p_a2_bv_ok_d1{ iv: S_w8_p_a2_bv_ok_d1{ k: 2i64, p: @z }, q2: @y }; W_w8_p_a2_bv_ok_d1:w = W_w8_p_a2_bv_ok_d1{ q: @x }; S_w8_p_a2_bv_ok_d1->:r = raw gx0_w8_p_a2_bv_ok_d1(@w); (<-r).p = @((<-r).k); pass (<-(y.p)); };
+func:g_w8_p_a2_bv_ok_d1 = int64(int64:n) never fails { int64:v = raw f_w8_p_a2_bv_ok_d1(n); int64:junk = raw clob_w8_p_a2_bv_ok_d1(n); pass v + junk - 9i64; };
+func:clob_w8_p_a2_bv_ok_d1 = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:cell_main_w8_p_a2_bv_ok_d1 = int32() never fails { int64:v = raw g_w8_p_a2_bv_ok_d1(1i64 - 1i64); pass ((v + 65i64) =>! int32); };
+// ITS PLAIN-GETTER TWIN `w8_p_dy_d1_ok_d1`: main refuses it too (BORROW-009), so the price is at parity. From
+// `nitpick/.internal/w8-2026-11-22/cells/w8/p/w8_p_dy_d1_ok_d1.npk`.
+struct:S_w8_p_dy_d1_ok_d1 = { int64:k; int64->:p; };
+trait:Gt_w8_p_dy_d1_ok_d1 = { func:gq = S_w8_p_dy_d1_ok_d1->(Self->:self) never fails; };
+struct:SH_w8_p_dy_d1_ok_d1 = { S_w8_p_dy_d1_ok_d1->:q; int64:z; };
+impl:SH_w8_p_dy_d1_ok_d1:Gt_w8_p_dy_d1_ok_d1 = { func:gq = S_w8_p_dy_d1_ok_d1->(SH_w8_p_dy_d1_ok_d1->:self) never fails { pass (<-self).q; }; };
+func:gq0_w8_p_dy_d1_ok_d1 = S_w8_p_dy_d1_ok_d1->(SH_w8_p_dy_d1_ok_d1->:hh) never fails { pass (<-hh).q; };
+func:f_w8_p_dy_d1_ok_d1 = int64(int64:n) never fails { int64:z0 = 2i64; S_w8_p_dy_d1_ok_d1:s = S_w8_p_dy_d1_ok_d1{ k: 2i64, p: @z0 }; SH_w8_p_dy_d1_ok_d1:h = SH_w8_p_dy_d1_ok_d1{ q: @s, z: 0i64 }; S_w8_p_dy_d1_ok_d1->:sp = raw gq0_w8_p_dy_d1_ok_d1(@h); (<-sp).p = @((<-sp).k); pass (<-(s.p)); };
+func:g_w8_p_dy_d1_ok_d1 = int64(int64:n) never fails { int64:v = raw f_w8_p_dy_d1_ok_d1(n); int64:junk = raw clob_w8_p_dy_d1_ok_d1(n); pass v + junk - 9i64; };
+func:clob_w8_p_dy_d1_ok_d1 = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:cell_main_w8_p_dy_d1_ok_d1 = int32() never fails { int64:v = raw g_w8_p_dy_d1_ok_d1(1i64 - 1i64); pass ((v + 65i64) =>! int32); };
+// ITS PLAIN-GETTER TWIN `w8_p_q_o1_ok_d1`: main refuses it too (BORROW-009), so the price is at parity. From
+// `nitpick/.internal/w8-2026-11-22/cells/w8/p/w8_p_q_o1_ok_d1.npk`.
+struct:S_w8_p_q_o1_ok_d1 = { int64:k; int64->:p; };
+struct:SH_w8_p_q_o1_ok_d1 = { S_w8_p_q_o1_ok_d1->:q; int64:z; };
+func:gq_w8_p_q_o1_ok_d1 = S_w8_p_q_o1_ok_d1->(SH_w8_p_q_o1_ok_d1->:hh) never fails { pass (<-hh).q; };
+func:po_w8_p_q_o1_ok_d1 = int64(SH_w8_p_q_o1_ok_d1->:ph, S_w8_p_q_o1_ok_d1->->:out) never fails { <-out = raw gq_w8_p_q_o1_ok_d1(ph); pass 0i64; };
+func:f_w8_p_q_o1_ok_d1 = int64(int64:n) never fails { int64:z0 = 2i64; S_w8_p_q_o1_ok_d1:s = S_w8_p_q_o1_ok_d1{ k: 2i64, p: @z0 }; SH_w8_p_q_o1_ok_d1:h = SH_w8_p_q_o1_ok_d1{ q: @s, z: 0i64 }; S_w8_p_q_o1_ok_d1->:sp = raw gq_w8_p_q_o1_ok_d1(@h); (<-sp).p = @((<-sp).k); pass (<-(s.p)); };
+func:g_w8_p_q_o1_ok_d1 = int64(int64:n) never fails { int64:v = raw f_w8_p_q_o1_ok_d1(n); int64:junk = raw clob_w8_p_q_o1_ok_d1(n); pass v + junk - 9i64; };
+func:clob_w8_p_q_o1_ok_d1 = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:cell_main_w8_p_q_o1_ok_d1 = int32() never fails { int64:v = raw g_w8_p_q_o1_ok_d1(1i64 - 1i64); pass ((v + 65i64) =>! int32); };
+// ITS PLAIN-GETTER TWIN `w8_p_sp_gps_ok_d1`: main refuses it too (BORROW-009), so the price is at parity. From
+// `nitpick/.internal/w8-2026-11-22/cells/w8/p/w8_p_sp_gps_ok_d1.npk`.
+struct:S_w8_p_sp_gps_ok_d1 = { int64:k; int64->:p; };
+struct:SH_w8_p_sp_gps_ok_d1 = { S_w8_p_sp_gps_ok_d1->:q; int64:z; };
+func:gq_w8_p_sp_gps_ok_d1 = S_w8_p_sp_gps_ok_d1->(S_w8_p_sp_gps_ok_d1->:o) never fails { S_w8_p_sp_gps_ok_d1->->:pp = @o; pass <-pp; };
+func:gq0_w8_p_sp_gps_ok_d1 = S_w8_p_sp_gps_ok_d1->(SH_w8_p_sp_gps_ok_d1->:hh) never fails { pass (<-hh).q; };
+func:f_w8_p_sp_gps_ok_d1 = int64(int64:n) never fails { int64:z0 = 2i64; S_w8_p_sp_gps_ok_d1:s = S_w8_p_sp_gps_ok_d1{ k: 2i64, p: @z0 }; SH_w8_p_sp_gps_ok_d1:h = SH_w8_p_sp_gps_ok_d1{ q: @s, z: 0i64 }; S_w8_p_sp_gps_ok_d1->:sp = raw gq0_w8_p_sp_gps_ok_d1(@h); (<-sp).p = @((<-sp).k); pass (<-(s.p)); };
+func:g_w8_p_sp_gps_ok_d1 = int64(int64:n) never fails { int64:v = raw f_w8_p_sp_gps_ok_d1(n); int64:junk = raw clob_w8_p_sp_gps_ok_d1(n); pass v + junk - 9i64; };
+func:clob_w8_p_sp_gps_ok_d1 = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:cell_main_w8_p_sp_gps_ok_d1 = int32() never fails { int64:v = raw g_w8_p_sp_gps_ok_d1(1i64 - 1i64); pass ((v + 65i64) =>! int32); };
+// ITS PLAIN-GETTER TWIN `w8_p_wh_bvm_ok_d1`: main refuses it too (BORROW-009), so the price is at parity. From
+// `nitpick/.internal/w8-2026-11-22/cells/w8/p/w8_p_wh_bvm_ok_d1.npk`.
+struct:S_w8_p_wh_bvm_ok_d1 = { int64:k; int64->:p; };
+struct:X_w8_p_wh_bvm_ok_d1 = { S_w8_p_wh_bvm_ok_d1:iv; S_w8_p_wh_bvm_ok_d1->:q2; };
+struct:W_w8_p_wh_bvm_ok_d1 = { X_w8_p_wh_bvm_ok_d1->:q; };
+impl:W_w8_p_wh_bvm_ok_d1 = { func:gm = S_w8_p_wh_bvm_ok_d1->(W_w8_p_wh_bvm_ok_d1:self) never fails { pass (<-(self.q)).q2; }; };
+func:gx0_w8_p_wh_bvm_ok_d1 = S_w8_p_wh_bvm_ok_d1->(W_w8_p_wh_bvm_ok_d1->:pw) never fails { pass (<-((<-pw).q)).q2; };
+func:f_w8_p_wh_bvm_ok_d1 = int64(int64:n) never fails { int64:z0 = 2i64; S_w8_p_wh_bvm_ok_d1:s = S_w8_p_wh_bvm_ok_d1{ k: 2i64, p: @z0 }; int64:z = 2i64; X_w8_p_wh_bvm_ok_d1:x = X_w8_p_wh_bvm_ok_d1{ iv: S_w8_p_wh_bvm_ok_d1{ k: 2i64, p: @z }, q2: @s }; W_w8_p_wh_bvm_ok_d1:w = W_w8_p_wh_bvm_ok_d1{ q: @x }; S_w8_p_wh_bvm_ok_d1->:sp = raw gx0_w8_p_wh_bvm_ok_d1(@w); (<-sp).p = @((<-sp).k); pass (<-(s.p)); };
+func:g_w8_p_wh_bvm_ok_d1 = int64(int64:n) never fails { int64:v = raw f_w8_p_wh_bvm_ok_d1(n); int64:junk = raw clob_w8_p_wh_bvm_ok_d1(n); pass v + junk - 9i64; };
+func:clob_w8_p_wh_bvm_ok_d1 = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:cell_main_w8_p_wh_bvm_ok_d1 = int32() never fails { int64:v = raw g_w8_p_wh_bvm_ok_d1(1i64 - 1i64); pass ((v + 65i64) =>! int32); };
+// ITS PLAIN-GETTER TWIN `w8_p_wh_bvw_ok_d1`: main refuses it too (BORROW-009), so the price is at parity. From
+// `nitpick/.internal/w8-2026-11-22/cells/w8/p/w8_p_wh_bvw_ok_d1.npk`.
+struct:S_w8_p_wh_bvw_ok_d1 = { int64:k; int64->:p; };
+struct:X_w8_p_wh_bvw_ok_d1 = { S_w8_p_wh_bvw_ok_d1:iv; S_w8_p_wh_bvw_ok_d1->:q2; };
+struct:W_w8_p_wh_bvw_ok_d1 = { X_w8_p_wh_bvw_ok_d1->:q; };
+func:gx_w8_p_wh_bvw_ok_d1 = S_w8_p_wh_bvw_ok_d1->(W_w8_p_wh_bvw_ok_d1:wv) never fails { pass (<-(wv.q)).q2; };
+func:gx0_w8_p_wh_bvw_ok_d1 = S_w8_p_wh_bvw_ok_d1->(W_w8_p_wh_bvw_ok_d1->:pw) never fails { pass (<-((<-pw).q)).q2; };
+func:f_w8_p_wh_bvw_ok_d1 = int64(int64:n) never fails { int64:z0 = 2i64; S_w8_p_wh_bvw_ok_d1:s = S_w8_p_wh_bvw_ok_d1{ k: 2i64, p: @z0 }; int64:z = 2i64; X_w8_p_wh_bvw_ok_d1:x = X_w8_p_wh_bvw_ok_d1{ iv: S_w8_p_wh_bvw_ok_d1{ k: 2i64, p: @z }, q2: @s }; W_w8_p_wh_bvw_ok_d1:w = W_w8_p_wh_bvw_ok_d1{ q: @x }; S_w8_p_wh_bvw_ok_d1->:sp = raw gx0_w8_p_wh_bvw_ok_d1(@w); (<-sp).p = @((<-sp).k); pass (<-(s.p)); };
+func:g_w8_p_wh_bvw_ok_d1 = int64(int64:n) never fails { int64:v = raw f_w8_p_wh_bvw_ok_d1(n); int64:junk = raw clob_w8_p_wh_bvw_ok_d1(n); pass v + junk - 9i64; };
+func:clob_w8_p_wh_bvw_ok_d1 = int64(int64:n) never fails { int64[8]:a = [9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64, 9i64]; pass a[0i64] + (n * 0i64); };
+func:cell_main_w8_p_wh_bvw_ok_d1 = int32() never fails { int64:v = raw g_w8_p_wh_bvw_ok_d1(1i64 - 1i64); pass ((v + 65i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};
