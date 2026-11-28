@@ -1,0 +1,177 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 58:30
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 105:31
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 154:32
+// 2026-11-26 (landing 177d2f, item 7, row 4: row B2, form RABC5B2Hfv (W7's B2, W11's function-value try, W13's H); rulings l.25205 item 4, l.25258,
+// l.25278 item 5, l.25355 item 7, l.25383). PRICES OFF PARITY, DEF-754 (LOW, fails closed, made by row B2 with W11's function-value try): a getter
+// named as a function value is taken as one that may hand back a view of what it is given, so a right program that names one is refused
+// (BORROW-015), while the same program with the call written by name is accepted. Three faces, one case each: W11's `w11_fv2c`, AW9's `aw9_p3gnA`
+// (three getters of one type) and W13's `w13_gp3_ok` (inside a generic). Ways out: `fv_getter_def754_wayout_w11_fv2c_d_ok.npk` and
+// `fv_getter_def754_wayout_w11_fv2c_bn_ok.npk`, which run 67 on main and on every build from row 4 on. In the form of main's prices files.
+mod:fv_getter_def754_prices;
+error:E5;
+// PRICE OFF PARITY, DEF-754 (row 4): A right program: a local function value `g = getv0`, which views only `nD.s`, is called while `getv` of the
+// same type is also named as a value. The later `wsn(@nA)` is refused, because a call through a function value takes the view entries of every
+// function of its type that is named as a value. Right: on main (3a45b7c4) it exits 67 on every road 0-8 at -O0 and -O2 and under the detector. Way
+// out: `fv_getter_def754_wayout_w11_fv2c_d_ok.npk` (the call by name) or `fv_getter_def754_wayout_w11_fv2c_bn_ok.npk` (the body in place). From
+// `nitpick/.internal/w11-2026-11-22/cells/w11/fv/w11_fv2c.npk`.
+func:mk_w11_fv2c = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks_w11_fv2c = string() never fails { pass string_concat("a", "b"); };
+struct:LF_w11_fv2c = { List<int64>:own; string:s; int64:z; };
+impl:LF_w11_fv2c = { func:sv = fixed uint8[](LF_w11_fv2c->:self) never fails { pass string_bytes((<-self).s); }; };
+func:nlf_w11_fv2c = LF_w11_fv2c() never fails { pass LF_w11_fv2c{ own: raw mk_w11_fv2c(), s: raw mks_w11_fv2c(), z: 1i64 }; };
+func:ws1_w11_fv2c = int64(LF_w11_fv2c->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:HL_w11_fv2c = { LF_w11_fv2c->:lp; LF_w11_fv2c->:lq; int64:z; };
+struct:HH_w11_fv2c = { HL_w11_fv2c->:hp; int64:z; };
+struct:SS_w11_fv2c = { SS_w11_fv2c->?:p; List<int64>:own; string:s; int64:z; };
+impl:SS_w11_fv2c = { func:sv = fixed uint8[](SS_w11_fv2c->:self) never fails { pass string_bytes((<-self).s); }; };
+func:wss_w11_fv2c = int64(SS_w11_fv2c->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:ND_w11_fv2c = { ND_w11_fv2c->?:nx; string:s; int64:z; };
+func:wsn_w11_fv2c = int64(ND_w11_fv2c->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+func:getv0_w11_fv2c = fixed uint8[](ND_w11_fv2c->:o) never fails { pass string_bytes((<-o).s); };
+func:getv_w11_fv2c = fixed uint8[](ND_w11_fv2c->:o) never fails { ND_w11_fv2c->:p = (<-o).nx ??! E5; pass string_bytes((<-p).s); };
+func:f_w11_fv2c = int64(int64:n) never fails {
+    LF_w11_fv2c:fA = raw nlf_w11_fv2c();
+    LF_w11_fv2c:fB = raw nlf_w11_fv2c();
+    LF_w11_fv2c:fC = raw nlf_w11_fv2c();
+    SS_w11_fv2c:c = SS_w11_fv2c{ p: NIL, own: raw mk_w11_fv2c(), s: raw mks_w11_fv2c(), z: 1i64 };
+    SS_w11_fv2c:c2 = SS_w11_fv2c{ p: NIL, own: raw mk_w11_fv2c(), s: raw mks_w11_fv2c(), z: 1i64 };
+    SS_w11_fv2c:b = SS_w11_fv2c{ p: @c, own: raw mk_w11_fv2c(), s: raw mks_w11_fv2c(), z: 1i64 };
+    SS_w11_fv2c:a = SS_w11_fv2c{ p: @b, own: raw mk_w11_fv2c(), s: raw mks_w11_fv2c(), z: 1i64 };
+    ND_w11_fv2c:nB = ND_w11_fv2c{ nx: NIL, s: raw mks_w11_fv2c(), z: 1i64 };
+    ND_w11_fv2c:nC = ND_w11_fv2c{ nx: NIL, s: raw mks_w11_fv2c(), z: 1i64 };
+    ND_w11_fv2c:nA = ND_w11_fv2c{ nx: @nB, s: raw mks_w11_fv2c(), z: 1i64 };
+    ND_w11_fv2c:nD = ND_w11_fv2c{ nx: @nA, s: raw mks_w11_fv2c(), z: 1i64 };
+    HL_w11_fv2c:hl = HL_w11_fv2c{ lp: @fB, lq: @fA, z: 0i64 };
+    HH_w11_fv2c:hx = HH_w11_fv2c{ hp: @hl, z: 0i64 };
+    LF_w11_fv2c->:q = @fB;
+    LF_w11_fv2c->->:qq = @q;
+    LF_w11_fv2c->->->:qqq = @qq;
+    HH_w11_fv2c->:hxp = @hx;
+    LF_w11_fv2c->->[1]:qa = [qq];
+    LF_w11_fv2c->?:oq = @fB;
+    SS_w11_fv2c->?:ob = @b;
+    SS_w11_fv2c?:sa = SS_w11_fv2c{ p: @b, own: raw mk_w11_fv2c(), s: raw mks_w11_fv2c(), z: 1i64 };
+    func fixed uint8[](ND_w11_fv2c->) never fails:g = getv0_w11_fv2c; func fixed uint8[](ND_w11_fv2c->) never fails:h = getv_w11_fv2c; fixed uint8[]:vw = raw g(@nD);
+    discard(raw wsn_w11_fv2c(@nA));
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:cell_main_w11_fv2c = int32() never fails { pass (((raw f_w11_fv2c(1i64)) + 60i64) =>! int32); };
+// PRICE OFF PARITY, DEF-754 widened (row 4, l.25278 item 5): A right program: three getters of one type, `getv0`, `getv` and `getv2`, are named as
+// values, and only `g = getv0` (which views `nD.s`) is called. The later `wsn(@nA)` is refused because the call takes the view entries of every
+// getter of that type named as a value. Right: on main (3a45b7c4) it exits 67 on every road 0-8 at -O0 and -O2 and under the detector. Way out: the
+// call by name. From `nitpick/.internal/aw9-2026-11-22/cells/fv3/aw9_p3gnA.npk`.
+func:mk_aw9_p3gnA = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks_aw9_p3gnA = string() never fails { pass string_concat("a", "b"); };
+struct:LF_aw9_p3gnA = { List<int64>:own; string:s; int64:z; };
+impl:LF_aw9_p3gnA = { func:sv = fixed uint8[](LF_aw9_p3gnA->:self) never fails { pass string_bytes((<-self).s); }; };
+func:nlf_aw9_p3gnA = LF_aw9_p3gnA() never fails { pass LF_aw9_p3gnA{ own: raw mk_aw9_p3gnA(), s: raw mks_aw9_p3gnA(), z: 1i64 }; };
+func:ws1_aw9_p3gnA = int64(LF_aw9_p3gnA->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:HL_aw9_p3gnA = { LF_aw9_p3gnA->:lp; LF_aw9_p3gnA->:lq; int64:z; };
+struct:HH_aw9_p3gnA = { HL_aw9_p3gnA->:hp; int64:z; };
+struct:SS_aw9_p3gnA = { SS_aw9_p3gnA->?:p; List<int64>:own; string:s; int64:z; };
+impl:SS_aw9_p3gnA = { func:sv = fixed uint8[](SS_aw9_p3gnA->:self) never fails { pass string_bytes((<-self).s); }; };
+func:wss_aw9_p3gnA = int64(SS_aw9_p3gnA->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:ND_aw9_p3gnA = { ND_aw9_p3gnA->?:nx; string:s; int64:z; };
+func:wsn_aw9_p3gnA = int64(ND_aw9_p3gnA->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+func:getv0_aw9_p3gnA = fixed uint8[](ND_aw9_p3gnA->:o) never fails { pass string_bytes((<-o).s); };
+func:getv_aw9_p3gnA = fixed uint8[](ND_aw9_p3gnA->:o) never fails { ND_aw9_p3gnA->:p = (<-o).nx ??! E5; pass string_bytes((<-p).s); };
+func:getv2_aw9_p3gnA = fixed uint8[](ND_aw9_p3gnA->:o) never fails { ND_aw9_p3gnA->:p1 = (<-o).nx ??! E5; ND_aw9_p3gnA->:p2 = (<-p1).nx ??! E5; pass string_bytes((<-p2).s); };
+func:f_aw9_p3gnA = int64(int64:n) never fails {
+    LF_aw9_p3gnA:fA = raw nlf_aw9_p3gnA();
+    LF_aw9_p3gnA:fB = raw nlf_aw9_p3gnA();
+    LF_aw9_p3gnA:fC = raw nlf_aw9_p3gnA();
+    SS_aw9_p3gnA:c = SS_aw9_p3gnA{ p: NIL, own: raw mk_aw9_p3gnA(), s: raw mks_aw9_p3gnA(), z: 1i64 };
+    SS_aw9_p3gnA:c2 = SS_aw9_p3gnA{ p: NIL, own: raw mk_aw9_p3gnA(), s: raw mks_aw9_p3gnA(), z: 1i64 };
+    SS_aw9_p3gnA:b = SS_aw9_p3gnA{ p: @c, own: raw mk_aw9_p3gnA(), s: raw mks_aw9_p3gnA(), z: 1i64 };
+    SS_aw9_p3gnA:a = SS_aw9_p3gnA{ p: @b, own: raw mk_aw9_p3gnA(), s: raw mks_aw9_p3gnA(), z: 1i64 };
+    ND_aw9_p3gnA:nB = ND_aw9_p3gnA{ nx: NIL, s: raw mks_aw9_p3gnA(), z: 1i64 };
+    ND_aw9_p3gnA:nC = ND_aw9_p3gnA{ nx: NIL, s: raw mks_aw9_p3gnA(), z: 1i64 };
+    ND_aw9_p3gnA:nA = ND_aw9_p3gnA{ nx: @nB, s: raw mks_aw9_p3gnA(), z: 1i64 };
+    ND_aw9_p3gnA:nD = ND_aw9_p3gnA{ nx: @nA, s: raw mks_aw9_p3gnA(), z: 1i64 };
+    HL_aw9_p3gnA:hl = HL_aw9_p3gnA{ lp: @fB, lq: @fA, z: 0i64 };
+    HH_aw9_p3gnA:hx = HH_aw9_p3gnA{ hp: @hl, z: 0i64 };
+    LF_aw9_p3gnA->:q = @fB;
+    LF_aw9_p3gnA->->:qq = @q;
+    LF_aw9_p3gnA->->->:qqq = @qq;
+    HH_aw9_p3gnA->:hxp = @hx;
+    LF_aw9_p3gnA->->[1]:qa = [qq];
+    LF_aw9_p3gnA->?:oq = @fB;
+    SS_aw9_p3gnA->?:ob = @b;
+    SS_aw9_p3gnA?:sa = SS_aw9_p3gnA{ p: @b, own: raw mk_aw9_p3gnA(), s: raw mks_aw9_p3gnA(), z: 1i64 };
+    func fixed uint8[](ND_aw9_p3gnA->) never fails:g = getv0_aw9_p3gnA; func fixed uint8[](ND_aw9_p3gnA->) never fails:h = getv_aw9_p3gnA; func fixed uint8[](ND_aw9_p3gnA->) never fails:h2 = getv2_aw9_p3gnA; fixed uint8[]:vw = raw g(@nD);
+    discard(raw wsn_aw9_p3gnA(@nA));
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:cell_main_aw9_p3gnA = int32() never fails { pass (((raw f_aw9_p3gnA(1i64)) + 60i64) =>! int32); };
+// PRICE OFF PARITY, DEF-754 (row 4, l.25355 item 7): A right program: `mid::<XD>(@xD, getx0)` calls a getter that views only `xD.t`, yet the later
+// `wsx(@xB)` is refused. The generic `mid<T>`'s one summary, made for every instance, takes the view entries of `getv`, an `ND` getter named as a
+// value. Right: on main (3a45b7c4) it exits 67 on every road 0-8 at -O0 and -O2 and under the detector. Way out: the call by name. From
+// `nitpick/.internal/w13-2026-11-22/cells/w13/o/w13_gp3_ok.npk`.
+func:mk_w13_gp3_ok = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks_w13_gp3_ok = string() never fails { pass string_concat("a", "b"); };
+struct:LF_w13_gp3_ok = { List<int64>:own; string:s; int64:z; };
+impl:LF_w13_gp3_ok = { func:sv = fixed uint8[](LF_w13_gp3_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:nlf_w13_gp3_ok = LF_w13_gp3_ok() never fails { pass LF_w13_gp3_ok{ own: raw mk_w13_gp3_ok(), s: raw mks_w13_gp3_ok(), z: 1i64 }; };
+func:ws1_w13_gp3_ok = int64(LF_w13_gp3_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:HL_w13_gp3_ok = { LF_w13_gp3_ok->:lp; LF_w13_gp3_ok->:lq; int64:z; };
+struct:HH_w13_gp3_ok = { HL_w13_gp3_ok->:hp; int64:z; };
+struct:SS_w13_gp3_ok = { SS_w13_gp3_ok->?:p; List<int64>:own; string:s; int64:z; };
+impl:SS_w13_gp3_ok = { func:sv = fixed uint8[](SS_w13_gp3_ok->:self) never fails { pass string_bytes((<-self).s); }; };
+func:wss_w13_gp3_ok = int64(SS_w13_gp3_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+struct:ND_w13_gp3_ok = { ND_w13_gp3_ok->?:nx; string:s; int64:z; };
+func:wsn_w13_gp3_ok = int64(ND_w13_gp3_ok->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+func:getv_w13_gp3_ok = fixed uint8[](ND_w13_gp3_ok->:o) never fails { ND_w13_gp3_ok->:p = (<-o).nx ??! E5; pass string_bytes((<-p).s); };
+func:mid_w13_gp3_ok<T> = fixed uint8[](T->:o, func fixed uint8[](T->) never fails:g) never fails { pass raw g(o); };
+struct:XD_w13_gp3_ok = { XD_w13_gp3_ok->?:ny; string:t; int64:z; };
+func:wsx_w13_gp3_ok = int64(XD_w13_gp3_ok->:o) never fails { (<-o).t = string_concat("q", "r"); pass 7i64; };
+func:getx0_w13_gp3_ok = fixed uint8[](XD_w13_gp3_ok->:o) never fails { pass string_bytes((<-o).t); };
+func:f_w13_gp3_ok = int64(int64:n) never fails {
+    LF_w13_gp3_ok:fA = raw nlf_w13_gp3_ok();
+    LF_w13_gp3_ok:fB = raw nlf_w13_gp3_ok();
+    LF_w13_gp3_ok:fC = raw nlf_w13_gp3_ok();
+    SS_w13_gp3_ok:c = SS_w13_gp3_ok{ p: NIL, own: raw mk_w13_gp3_ok(), s: raw mks_w13_gp3_ok(), z: 1i64 };
+    SS_w13_gp3_ok:c2 = SS_w13_gp3_ok{ p: NIL, own: raw mk_w13_gp3_ok(), s: raw mks_w13_gp3_ok(), z: 1i64 };
+    SS_w13_gp3_ok:b = SS_w13_gp3_ok{ p: @c, own: raw mk_w13_gp3_ok(), s: raw mks_w13_gp3_ok(), z: 1i64 };
+    SS_w13_gp3_ok:a = SS_w13_gp3_ok{ p: @b, own: raw mk_w13_gp3_ok(), s: raw mks_w13_gp3_ok(), z: 1i64 };
+    ND_w13_gp3_ok:nB = ND_w13_gp3_ok{ nx: NIL, s: raw mks_w13_gp3_ok(), z: 1i64 };
+    ND_w13_gp3_ok:nC = ND_w13_gp3_ok{ nx: NIL, s: raw mks_w13_gp3_ok(), z: 1i64 };
+    ND_w13_gp3_ok:nA = ND_w13_gp3_ok{ nx: @nB, s: raw mks_w13_gp3_ok(), z: 1i64 };
+    ND_w13_gp3_ok:nD = ND_w13_gp3_ok{ nx: @nA, s: raw mks_w13_gp3_ok(), z: 1i64 };
+    HL_w13_gp3_ok:hl = HL_w13_gp3_ok{ lp: @fB, lq: @fA, z: 0i64 };
+    HH_w13_gp3_ok:hx = HH_w13_gp3_ok{ hp: @hl, z: 0i64 };
+    LF_w13_gp3_ok->:q = @fB;
+    LF_w13_gp3_ok->->:qq = @q;
+    LF_w13_gp3_ok->->->:qqq = @qq;
+    HH_w13_gp3_ok->:hxp = @hx;
+    LF_w13_gp3_ok->->[1]:qa = [qq];
+    LF_w13_gp3_ok->?:oq = @fB;
+    SS_w13_gp3_ok->?:ob = @b;
+    SS_w13_gp3_ok?:sa = SS_w13_gp3_ok{ p: @b, own: raw mk_w13_gp3_ok(), s: raw mks_w13_gp3_ok(), z: 1i64 };
+    XD_w13_gp3_ok:xB = XD_w13_gp3_ok{ ny: NIL, t: raw mks_w13_gp3_ok(), z: 1i64 }; XD_w13_gp3_ok:xA = XD_w13_gp3_ok{ ny: @xB, t: raw mks_w13_gp3_ok(), z: 1i64 }; XD_w13_gp3_ok:xD = XD_w13_gp3_ok{ ny: @xA, t: raw mks_w13_gp3_ok(), z: 1i64 }; func fixed uint8[](ND_w13_gp3_ok->) never fails:h = getv_w13_gp3_ok; fixed uint8[]:vw = raw mid_w13_gp3_ok::<XD_w13_gp3_ok>(@xD, getx0_w13_gp3_ok);
+    discard(raw wsx_w13_gp3_ok(@xB));
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:cell_main_w13_gp3_ok = int32() never fails { pass (((raw f_w13_gp3_ok(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

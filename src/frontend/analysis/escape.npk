@@ -197,6 +197,10 @@ pub struct:Escape = {
     List<int32>:sv_path;
     List<int32>:sv_next;
     wild int32->:sum_pass;
+    int32:pe_t; int32:pe_p; int32:pe_r;   // DEF-681's function-value road, its cost: `escape_path_end_type`'s last question and its answer
+    wild int32->:fv_type;   // DEF-681's function-value road: the function type a name hands this declaration on as a value at (0: never; -1: more than one type)
+    int32:fv_skip;   // DEF-681's function-value road: the callee name of a resolved call, which is no value
+    List<int32>:fv_list;   // DEF-681's function-value road: the declarations `fv_type` records, in the order they were first named as values
     wild int32->:sum_load;   // DEF-681: the result may carry a value READ through parameter k's pointee (a getter's `pass (<-w).q`, `pass <-pp`)
     // THE STORE MATRIX (D-325): per declaration and per pointer parameter j
     // (32 slots, the 32nd for the rest), the parameters k whose views (a
@@ -332,6 +336,7 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
     wild int8->:svmem = alloc(dsize * #size_of<int32>());
     wild int8->:spmem = alloc(dsize * #size_of<int32>());
     wild int8->:slmem = alloc(dsize * #size_of<int32>());
+    wild int8->:ftmem = alloc(dsize * #size_of<int32>());
     wild int8->:fvmem = alloc(dsize * 32i64 * #size_of<int32>());
     wild int8->:fpmem = alloc(dsize * 32i64 * #size_of<int32>());
     wild int8->:mumem = alloc(dsize * 32i64 * #size_of<int32>());
@@ -371,7 +376,7 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                        sv_param: raw list_init::<int32>(64i64),
                        sv_path: raw list_init::<int32>(64i64),
                        sv_next: raw list_init::<int32>(64i64),
-                       sum_pass: spmem =>! wild int32->, sum_load: slmem =>! wild int32->,
+                       sum_pass: spmem =>! wild int32->, pe_t: 0i32, pe_p: 0i32, pe_r: 0i32, sum_load: slmem =>! wild int32->, fv_type: ftmem =>! wild int32->, fv_skip: 0i32 - 1i32, fv_list: raw list_init::<int32>(8i64),
                        fv_head: fvmem =>! wild int32->,
                        fv_param: raw list_init::<int32>(64i64),
                        fv_path: raw list_init::<int32>(64i64),
@@ -401,6 +406,7 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
         x.sv_head[j] = 0i32 - 1i32;
         x.sum_pass[j] = 0i32;
         x.sum_load[j] = 0i32;
+        x.fv_type[j] = 0i32;
         x.vp_head[j] = 0i32 - 1i32;
         x.override_of[j] = 0i32;
         x.pholds[j] = false;
@@ -1128,6 +1134,26 @@ func:ref_full_path = int32(Escape->:x, ViewRef:r) never fails {
     pass (raw path_join(x, raw path_rel(x, ExprId{ index: r.place }), rp));
 };
 
+// DEF-681 (`usp`, `unf`, `uu`): THE PATH ABOVE AN UNWRAP. A place below an unwrap (`((<-o).p ??! E5).s`) is rooted at the unwrapped parameter
+// (`escape_unwrap_root`) with its path cut at the unwrap (`path_rel_compute` ends there), so the summary said `s` of the parameter's own pointee, and the
+// caller viewed the wrong storage. This is the same ref's path with every unwrap's operand laid above it (`p/s`), which the caller's hop walk lays on the
+// argument's type and takes below the pointer it meets. It is written BESIDE the cut entry. A ref rooted elsewhere (a `??` default's side) keeps its path.
+func:sum_uncut_path = int32(Escape->:x, ViewRef:r) never fails {
+    int32:p = raw ref_full_path(x, r);
+    ExprId:cur = ExprId{ index: r.place };
+    for (int32:hop in 0i32...(raw BORROW_FUEL())) {
+        PlaceRoot:pr = raw esc_place_root(x, cur);
+        if (pr.exhausted || (raw expr_is_none(pr.id))) { break; }
+        ExprNode:un = raw ast_expr(x.ast, pr.id);
+        if ((un.kind != ExprKind.ExprEmphaticCoalesceExpr) && (un.kind != ExprKind.ExprEmphaticUnwrapExpr) && (un.kind != ExprKind.ExprNullCoalesceExpr) && (un.kind != ExprKind.ExprSafeUnwrapExpr)) { break; }
+        cur = raw expr_operand(un);
+        p = raw path_join(x, raw path_rel(x, cur), p);
+        ExprId:rid = raw root_ident_id(x, cur);
+        if (!(raw expr_is_none(rid))) { pass (is ((raw ast_expr(x.ast, rid)).a == r.root) : p : (raw ref_full_path(x, r))); }
+    }
+    pass (raw ref_full_path(x, r));
+};
+
 // THE SUMMARY OF A RETURNED VALUE: every ref of it rooted at a parameter of the
 // current function -- a view (direct, or through a callee) an entry (k, path)
 // of the view summary, a carried value or address the PASS bit.
@@ -1154,6 +1180,7 @@ func:record_summary = NIL(Escape->:x, ExprId:v) never fails {
         if (k < 0i32) { continue; }
         if ((r.kind == (raw VIEW_DIRECT())) || (r.kind == (raw VIEW_LAUNDERED()))) {
             drop sv_add(x, k, raw ref_full_path(x, r));
+            if (!x.noload) { drop sv_add(x, k, raw sum_uncut_path(x, r)); }   // DEF-681: the path above the unwrap; F10: off in the `noload` pass
         } else {
             drop pass_set(x, k, r.xc);
             if ((r.kind == (raw REF_PASS())) && (r.read != 0i32) && (!(raw load_reads_own(x, v)))) { drop load_set(x, k); }   // DEF-681; DEF-736: not an own member's read
@@ -1191,7 +1218,7 @@ func:sum_through_holder = NIL(Escape->:x, ViewRef:r, int32:k, int32:sj) never fa
     }
     for (int64:j in 0i64...held.count) {
         ViewRef:c = held[j];
-        if (c.root == r.root) { continue; }
+        if ((c.root == r.root) && ((c.rm <= 0i32) || (k < 0i32))) { continue; }   // DEF-681: a reassigned parameter's read of its own member is followed (`rc_rre`)
         // DEF-728 (a pointer-to-pointer local, `rh_pp`): THE ADDRESS OF A PLACE ROOTED AT A PARAMETER that the binding holds (`pp = @o`, `@((<-hh).lp)`,
         // `@self`), read back through the binding, is that place's own value, so the view lies at the ref's path below the addressed place (a path names no dereference)
         if ((c.kind == (raw REF_ADDR())) && rview && ((raw param_index_of(x, c.root)) >= 0i32)) { if (sj < 0i32) { drop sv_add(x, raw param_index_of(x, c.root), raw path_join(x, raw ref_full_path(x, c), rp)); } else { drop fv_add(x, sj, raw param_index_of(x, c.root), raw path_join(x, raw ref_full_path(x, c), rp)); } }
@@ -1201,6 +1228,12 @@ func:sum_through_holder = NIL(Escape->:x, ViewRef:r, int32:k, int32:sj) never fa
         if ((c.read != 0i32) && ((!rview) || ((raw type_kind(x.types, raw type_unwrapped(x.types, c.read))) != (raw TY_POINTER())))) { continue; }   // DEF-728: only a POINTER loaded out of the pointee (`p = <-oo`); `xs_ok`'s `<-p` reads an `SS`
         int32:kc = raw param_index_of(x, c.root);
         if (kc < 0i32) { continue; }
+        // DEF-681 (a holder below an unwrap, `rc_ru`): A POINTER LOADED OUT OF A MEMBER of the parameter's pointee (`p = (<-o).nx ??! E5`) views below THAT member:
+        // the member's path (DEF-714's `rm` copy names it), then the view's. Written beside the entry at the parameter's own pointee; the caller's hop walk
+        // takes it below the pointer the member is.
+        if (rview && (c.read != 0i32) && (c.rm > 0i32) && (c.xc == 0i32)) {
+            if (sj < 0i32) { drop sv_add(x, kc, raw path_join(x, raw path_rel(x, ExprId{ index: c.rm }), rp)); } else { drop fv_add(x, sj, kc, raw path_join(x, raw path_rel(x, ExprId{ index: c.rm }), rp)); }
+        }
         if (rview) {
             if (sj < 0i32) { drop sv_add(x, kc, is (c.xc != 0i32) : 0i32 : rp); } else { drop fv_add(x, sj, kc, is (c.xc != 0i32) : 0i32 : rp); }
         } else {
@@ -1439,7 +1472,12 @@ func:view_hop_suffix = int32(Escape->:x, int32:t0, int32:path) never fails {
         bool:owned = (prev != 0i32) && (((raw type_kind(x.types, prev)) == (raw TY_STRING())) || ((raw type_kind(x.types, prev)) == (raw TY_CSTRING())) || ((raw type_kind(x.types, prev)) == (raw TY_BUFFER())) || (raw type_is_list(x.tr, prev)));
         if ((steps > 0i64) && (t == 0i32) && owned) { break; }   // inside the owner's buffer: its own storage to the end, no hop
         if ((steps > 0i64) && (hop || open || (t == 0i32))) { cut = i; break; }
-        if (hop) { t = raw type_elem(x.types, u); }
+        if (hop) {
+            t = raw type_elem(x.types, u);
+            // DEF-681 (its `@qq` face): THE FIRST STEP ENTERED AT A SECOND POINTER (`f161` on an `LF->->`). A path names no dereference, and the type reader looks
+            // through one more pointer, so the step "fits" one level up: the storage is a hop below the place's own pointee, and the whole path is the hop's suffix
+            if ((steps == 0i64) && ((raw type_kind(x.types, raw type_unwrapped(x.types, t))) == (raw TY_POINTER()))) { cut = i; break; }
+        }
         prev = t;
         // the type past this one step, as `escape_path_end_type` reads it
         t = raw escape_path_end_type(x, t, raw path_intern(x, string_slice(txt, i, j) ?! ProvenSlice));
@@ -1581,6 +1619,10 @@ func:arg_refs_view = NIL(Escape->:x, ExprId:a, bool:auto_ref, int32:path, int32:
         if ((r.kind == (raw REF_PASS())) || (r.kind == (raw REF_ADDR()))) {
             if (!(raw expr_is_none(place))) { continue; }
             drop list_push(out, ViewRef{ root: r.root, place: r.place, kind: raw VIEW_LAUNDERED(), path: raw path_join(x, r.path, path), read: 0i32, xc: 0i32, rm: 0i32 });
+            // DEF-681: THE SAME VIEW AT THE UNWRAP THE ARGUMENT IS (`((<-o).p ??! E5).sv()`), so the summary can name the path above it (`sum_uncut_path`)
+            if ((!x.noload) && (r.kind == (raw REF_PASS())) && ((an.kind == ExprKind.ExprEmphaticCoalesceExpr) || (an.kind == ExprKind.ExprEmphaticUnwrapExpr) || (an.kind == ExprKind.ExprNullCoalesceExpr) || (an.kind == ExprKind.ExprSafeUnwrapExpr))) {
+                drop list_push(out, ViewRef{ root: r.root, place: a.index, kind: raw VIEW_LAUNDERED(), path: raw path_join(x, r.path, path), read: 0i32, xc: 0i32, rm: 0i32 });
+            }
             // DEF-681: A CALL'S RESULT OR A TERNARY AS THE ARGUMENT has no place of its own. A pointer's refs, and a carried parameter, name the storage the path
             // starts on, so the hop is below each (`ag2e_vrpcall`); an address a BY-VALUE value carries is what a pointer it holds points at, so the path's
             // steps past the hop are below it (`ag2e_vrcall`, `ag2e_vrtern`)
@@ -2063,6 +2105,7 @@ func:fold_flow_into_param = NIL(Escape->:x, ExprId:dest, List<ViewRef>->:refs, b
         if (k < 0i32) { continue; }
         if ((r.kind == (raw VIEW_DIRECT())) || (r.kind == (raw VIEW_LAUNDERED()))) {
             drop fv_add(x, j, k, raw ref_full_path(x, r));
+            if (!x.noload) { drop fv_add(x, j, k, raw sum_uncut_path(x, r)); }   // DEF-681, the path above an unwrap: the store road; F10: off in the `noload` pass
         } else {
             drop flow_pass_set(x, j, k, r.xc);
             if ((r.read != 0i32) && (k != j)) { drop load_set(x, k); }   // DEF-681's out-parameter road (`<-out = (<-p).q`): what the callee read through k's pointee, the caller reads through the argument; a store back into the same parameter (`<-pp = <-pp`) is there already
@@ -2740,6 +2783,7 @@ func:record_matrix_at = NIL(Escape->:x, int32:j, ViewRef:pr, List<ViewRef>->:ref
         if (k < 0i32) { continue; }
         if ((r.kind == (raw VIEW_DIRECT())) || (r.kind == (raw VIEW_LAUNDERED()))) {
             drop fv_add(x, j, k, raw ref_full_path(x, r));
+            if (!x.noload) { drop fv_add(x, j, k, raw sum_uncut_path(x, r)); }   // DEF-681, the path above an unwrap: the store road; F10: off in the `noload` pass
         } else {
             drop flow_pass_set(x, j, k, r.xc);
             if ((r.read != 0i32) && (k != j)) { drop load_set(x, k); }   // DEF-681's out-parameter road (`<-out = (<-p).q`): what the callee read through k's pointee, the caller reads through the argument; a store back into the same parameter (`<-pp = <-pp`) is there already
@@ -3229,8 +3273,17 @@ func:escape_ref_is_run_of = bool(Escape->:x, ViewRef:r, int32:pte) never fails {
 // element, a range keeps the run (its element is the run's). A
 // path of `PATH_MAX_STEPS` steps may have been cut (a broader place) and
 // answers 0.
+// DEF-681's function-value road, its cost (the cost cell `aw9_c2_k8l4n8m8`): THE LAST QUESTION IS KEPT. A call no summary names asks, for every ref of every argument, whether the
+// result's type reaches it (`escape_ref_fits_result`), and the cut walk asks at every place whether a path's first step is laid; each asks this,
+// and each answer re-read the path's text and re-resolved every field's type on it (half the compile on that cell). The answer is a function
+// of the type and the path alone: what it reads is fixed while the pass runs, as `view_hop_suffix`'s is.
 pub func:escape_path_end_type = int32(Escape->:x, int32:t0, int32:path) never fails {
     if (path == 0i32) { pass t0; }
+    if (x.noload) { pass (raw escape_path_end_walk(x, t0, path)); }   // F10: the `noload` pass asks the walk, as T0 does
+    if ((x.pe_p != path) || (x.pe_t != t0)) { x.pe_r = raw escape_path_end_walk(x, t0, path); x.pe_t = t0; x.pe_p = path; }
+    pass x.pe_r;
+};
+func:escape_path_end_walk = int32(Escape->:x, int32:t0, int32:path) never fails {
     string:txt = raw path_text(x, path);
     fixed uint8[]:b = string_bytes(txt);
     int32:t = t0;
@@ -4938,6 +4991,74 @@ func:collect_view_refs = NIL(Escape->:x, ExprId:id, int32:depth, List<ViewRef>->
     pass NIL;
 };
 
+// DEF-681's function-value VIEW road (`aw8_fvc1`): A FUNCTION NAMED AS A VALUE. A function value is a function some name handed on (`g = getv`, an
+// argument, a field, an arm; a module-qualified `mq.getv`), and that name's expression has the function's type. Each such declaration is recorded with
+// that type; a name that is a resolved call's own callee is no value, and a call is its result. A second type for one declaration (a generic's
+// instances) answers every type.
+func:fv_note = NIL(Escape->:x, ExprId:id, ExprNode:n) never fails {
+    if ((id.index == x.fv_skip) || (n.kind == ExprKind.ExprCallExpr) || (n.kind == ExprKind.ExprMethodCallExpr)) { pass NIL; }
+    int32:d = raw exprtypes_ns_decl(x.etypes, id);
+    if ((n.kind == ExprKind.ExprIdentifierExpr) && (n.a != 0i32) && ((raw symtab_get(x.tab, n.a)).origin_kind == (raw SYM_DECL()))) { d = (raw symtab_get(x.tab, n.a)).origin; }
+    if ((d <= 0i32) || (d >= x.decl_count)) { pass NIL; }
+    if ((raw ast_decl(x.ast, DeclId{ index: d })).kind != DeclKind.DeclFunctionDecl) { pass NIL; }
+    int32:ft = raw exprtypes_get(x.etypes, id);
+    int32:was = x.fv_type[d => int64];
+    if ((ft == 0i32) || ((was != 0i32) && (was != ft))) { ft = 0i32 - 1i32; }
+    if (was == 0i32) { drop list_push(@x.fv_list, d); }
+    if (was != ft) { x.fv_type[d => int64] = ft; x.changed = true; }
+    pass NIL;
+};
+// DO TWO FUNCTION TYPES AGREE, as the checker's `func_types_equal` asks: the result and each parameter the same type, a function type inside one by the
+// same rule (`aw9_pnt`). A declaration's type and a value's annotation are two entries of one shape, so their ids differ.
+// DEF-681's function-value road: AN OPEN TYPE AGREES WITH ANY TYPE. A generic body is walked once with its `T`, and a trait's default body once with `Self`, so the callee's type
+// there is `func R(T->)` where the recorded getter's is `func R(ND->)`: by id they never agree, and the wrapper's summary viewed its argument's own
+// pointee alone (`aw9_g1`, `aw9_tr1`). So a parameter, `Self` or an associated type agrees with whatever stands in its place, and a type built over
+// one agrees with the same build over anything: a function's result and parameters (slot `a`, then the window `b`, `c`), a generic struct's or
+// enum's arguments under one declaration (the same slots), one element under a pointer, a slice, an Optional, an array, a `Result`. Two closed
+// types agree only by id, as before: one element under two ids differs in a count or a level. The fuel's end agrees, the closed direction.
+func:fv_ty1 = bool(Escape->:x, int32:p, int32:q, int32:fuel) decreases fuel never fails {
+    Type:tp = raw tt_get(x.types, p);
+    Type:tq = raw tt_get(x.types, q);
+    if ((p == q) || (fuel <= 0i32) || (tp.kind == (raw TY_PARAM())) || (tp.kind == (raw TY_SELF())) || (tp.kind == (raw TY_ASSOC())) || (tq.kind == (raw TY_PARAM())) || (tq.kind == (raw TY_SELF())) || (tq.kind == (raw TY_ASSOC()))) { pass true; }
+    if ((p == 0i32) || (q == 0i32) || (tp.kind != tq.kind)) { pass false; }
+    bool:fn = (tp.kind == (raw TY_FUNC())) || (tp.kind == (raw TY_FUNC_VARIADIC()));
+    if (fn || (tp.kind == (raw TY_STRUCT())) || (tp.kind == (raw TY_ENUM()))) {
+        if ((tp.c != tq.c) || ((!fn) && ((tp.c == 0i32) || (tp.a != tq.a))) || (fn && (!(raw fv_ty1(x, tp.a, tq.a, fuel - 1i32))))) { pass false; }
+        for (int32:i in 0i32...tp.c) { if (!(raw fv_ty1(x, raw ast_id_at(x.ast, tp.b, i), raw ast_id_at(x.ast, tq.b, i), fuel - 1i32))) { pass false; } }
+        pass true;
+    }
+    pass ((raw type_kind_has_elem(tp.kind)) && (tp.a != tq.a) && (raw fv_ty1(x, tp.a, tq.a, fuel - 1i32)));
+};
+// A CALL NO SUMMARY NAMES views, beside the argument's own pointee, WHAT ANY FUNCTION OF THE CALLEE'S TYPE NAMED AS A VALUE VIEWS: each one's view entries
+// for this position, read as a named call's are, so a getter reached through a function value is judged as the same getter called by name. An untyped
+// callee takes every recorded function.
+// DEF-681's function-value road, its cost (the cost cell `aw9_c2_k8l4n32m32`): THE RECORDED FUNCTIONS ARE A LIST, AND A PATH IS WALKED ONCE A POSITION. The loop ran over every
+// declaration at every such call, and walked every agreeing candidate's every entry: N getters of one shape gave the same path N times, each a whole
+// walk below the argument (calls times candidates, times the cut walk). The entries of one position are a SET of paths, so each distinct path is read
+// once, as the one by-name call reads it.
+func:fv_met = bool(List<int32>->:l, int32:v) never fails {
+    for (int64:i in 0i64...l.count) { if ((<-l)[i] == v) { pass true; } }
+    drop list_push(l, v);
+    pass false;
+};
+func:fv_cand_views = NIL(Escape->:x, ExprId:call, int32:k, ExprId:a, bool:a_auto, int32:depth, List<ViewRef>->:out) never fails {
+    if (x.fv_list.count == 0i64) { pass NIL; }
+    int32:ft = raw exprtypes_callee_ft(x.etypes, call);
+    List<int32>:paths = raw list_init::<int32>(4i64);
+    for (int64:ci in 0i64...x.fv_list.count) {
+        int32:c = x.fv_list[ci];
+        int32:ct = x.fv_type[c => int64];
+        if ((ft != 0i32) && (ct != (0i32 - 1i32)) && (!(raw fv_ty1(x, ct, ft, 8i32)))) { continue; }
+        int32:e = x.sv_head[c => int64];
+        while (e >= 0i32) decreases e + 1i32 {
+            int32:ek = x.sv_param[e => int64];
+            if (((ek == k) || ((ek == 31i32) && (k >= 31i32))) && (!(raw fv_met(@paths, x.sv_path[e => int64])))) { drop arg_refs_view(x, a, a_auto, x.sv_path[e => int64], depth, out); }
+            e = x.sv_next[e => int64];
+        }
+    }
+    pass NIL;
+};
+
 // WHAT A CALL'S RESULT MAY VIEW, argument by argument under the callee's
 // summary (D-325): position k is the receiver when the call has one, then the
 // arguments in order. An `@p`/`$$ p` argument under a VIEW bit is a LAUNDERED
@@ -4989,7 +5110,7 @@ func:collect_call_refs = NIL(Escape->:x, ExprId:call, ExprId:recv, int32:start, 
         int32:a_thru = is (k < base) : (raw recv_auto_deref(x, call, recv)) : 0i32;
         if (k >= base) { a = ExprId{ index: raw ast_id_at(x.ast, start, k - base) }; a_auto = false; }
         if (callee <= 0i32) {
-            if (!ctor) { drop arg_refs_view(x, a, a_auto, 0i32, depth, out); }
+            if (!ctor) { drop arg_refs_view(x, a, a_auto, 0i32, depth, out); if (!x.noload) { drop fv_cand_views(x, call, k, a, a_auto, depth, out); } }   // F10: the function-value views off in the `noload` pass
         } else {
             int32:e = x.sv_head[callee => int64];
             while (e >= 0i32) decreases e + 1i32 {
@@ -7221,6 +7342,7 @@ func:type_holds_pointer = bool(TypeTable->:table, int32:t, int32:fuel) never fai
 func:escape_expr = bool(Escape->:x, ExprId:id, int32:depth) never fails {
     if (raw expr_is_none(id)) { pass false; }
     ExprNode:n = raw ast_expr(x.ast, id);
+    if (!x.noload) { drop fv_note(x, id, n); }   // F10: off in the `noload` pass (rulings l.32895 item 3, l.32936 item 1)
 
     // FAIL CLOSED. An expression nested deeper than the bound is REFUSED rather
     // than assumed harmless: an analysis that answers "no borrow here" when it
@@ -7643,6 +7765,7 @@ func:escape_binding = bool(Escape->:x, ExprNode:n) never fails {
 // local — is the compiler's other universal idiom.
 func:escape_call_like = bool(Escape->:x, ExprId:id, ExprId:recv, int32:start,
                              int32:count, ExprId:callee, int32:depth) never fails {
+    if ((raw call_callee_fn(x, id)) > 0i32) { x.fv_skip = callee.index; }   // DEF-681's function-value road: a resolved call's callee name is no value
     discard(raw escape_expr(x, callee, depth));
 
     int32:borrowed = 0i32;

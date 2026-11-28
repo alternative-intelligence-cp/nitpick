@@ -2578,7 +2578,18 @@ func:push_target_party = NIL(Alias->:x, ExprId:tgt, int32:holder) never fails {
 // a struct holding one, `@l`, the implicit `@recv` and a root pointer handed to ANY callee is judged WHOLE against the live targets alone, the callee's summary UNREAD -- the summary misses writes (`q2_helper`,
 // `q2_change`) -- and COMPARED BY PATH: `e.binds[0] = raw grow(@e.syms)` is legal. What the value holds is read off its refs, one hop per fuel, a holder of a holder too (`W->:wp = @w; l[0] = raw wp.gr()`).
 // A callee that writes nothing (`d415_readonly`, `l[i] = raw f(@l)`) or only a SIBLING of the container (`r_e_other`, the pointer root's nine sites in `src/`) is over-refused: the post-180 list; a target with no named root stays open (`s3_rootless`), and the road the row's limit names is the emitter's order (DEF-418).
-func:target_handed = NIL(Alias->:x, ExprId:a, Span:at, int32:judge, bool:own, int32:fuel) decreases fuel never fails {
+// DEF-681's view road, its cost: ONE EXPANSION PER (place, fuel) OF A WALK. The walk read what a value holds along every ROUTE, so a graph of holders cost its fan-out to
+// the power of its depth (`aw8_cost_k8l6_x8`); a place met again with the same fuel left gives the same judgments and the same fuel's end, so it is met once.
+func:target_handed = NIL(Alias->:x, ExprId:a, Span:at, int32:judge, bool:own, int32:fuel) never fails {
+    List<int32>:seen = raw list_init::<int32>(8i64);
+    drop target_handed_in(x, a, at, judge, own, fuel, @seen);
+    pass NIL;
+};
+func:target_handed_in = NIL(Alias->:x, ExprId:a, Span:at, int32:judge, bool:own, int32:fuel, List<int32>->:seen) decreases fuel never fails {
+    if (!x.m0) {   // F10: inside `al0`, main's walk, every route walked
+        for (int64:si in 0i64...(seen.count / 2i64)) { if (((<-seen)[si * 2i64] == a.index) && ((<-seen)[(si * 2i64) + 1i64] == fuel)) { pass NIL; } }
+        drop list_push(seen, a.index); drop list_push(seen, fuel);
+    }
     bool:live = judge > 0i32;
     for (int64:i in 0i64...x.live.count) {
         if (x.live[i].kind == (raw PARTY_TARGET())) { live = true; }
@@ -2601,7 +2612,7 @@ func:target_handed = NIL(Alias->:x, ExprId:a, Span:at, int32:judge, bool:own, in
         // K (management_12's ruling of 2026-11-01 10:31): a value holding an address into ITSELF (`o.p = @o.s; selfw(o)`, 83 on 175 and 176b) is judged against its own snapshot, one step. A WHOLE-self address (a callee summary's `vec_push(@a, ...)`) stays out: 17 sites of `vec_unit` otherwise, and `k2_whole` (`o.me = @o; selfw(o)`, and `selfstore(@o); selfw(o)` by the summary road) stays open, on DEF-418's row.
         if ((vr.root == 0i32) || ((vr.root == r) && (own || (judge <= 0i32) || (vr.kind != (raw REF_ADDR())) || ((raw ast_expr(x.ast, ExprId{ index: vr.place })).kind == ExprKind.ExprIdentifierExpr)))) { continue; }
         if ((vr.kind != (raw REF_ADDR())) && (vr.kind != (raw REF_PASS()))) { continue; }
-        drop target_handed(x, ExprId{ index: vr.place }, at, judge, true, fuel - 1i32);
+        drop target_handed_in(x, ExprId{ index: vr.place }, at, judge, true, fuel - 1i32, seen);
     }
     pass NIL;
 };

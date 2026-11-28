@@ -1,0 +1,72 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 27:43
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 48:46
+// 2026-11-26 (landing 177d2f, item 7, row 4: row B2, form RABC5B2Hfv (W7's B2, W11's function-value try, W13's H); rulings l.25278). A PRICE AT
+// PARITY OF ROW B2 (no number): AW9's `aw9_b2p`, a right program refused from row B2 on (BORROW-015), whose twin `aw9_b2p_dv` main refuses too. The
+// price, then its twin, in the form of main's prices files.
+mod:fv_getter_rowb2_parity_prices;
+error:E5;
+// PRICE AT PARITY (row 4): A right program: two views of `n1_0.s`, taken by `getv0(@t0)` and `getv0(@t1)`, stay live while `wsf(@nx)` rewrites an
+// unrelated node's `s`; row B2 refuses it at BORROW-015@17:35 as its handed holder against a live view. Right: on main (3a45b7c4) it exits 67 on
+// every road 0-8 at -O0 and -O2 and under the detector. From `nitpick/.internal/aw9-2026-11-22/cells/cand/aw9_b2p.npk`.
+func:mk_aw9_b2p = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks_aw9_b2p = string() never fails { pass string_concat("a", "b"); };
+struct:FN_aw9_b2p = { FN_aw9_b2p->?:f0; FN_aw9_b2p->?:f1; string:s; int64:z; };
+func:wsf_aw9_b2p = int64(FN_aw9_b2p->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+func:getv0_aw9_b2p = fixed uint8[](FN_aw9_b2p->:o) never fails { FN_aw9_b2p->:p = (<-o).f0 ??! E5; pass string_bytes((<-p).s); };
+func:f_aw9_b2p = int64(int64:n) never fails {
+    FN_aw9_b2p:nx = FN_aw9_b2p{ f0: NIL, f1: NIL, s: raw mks_aw9_b2p(), z: 1i64 };
+    FN_aw9_b2p:n1_0 = FN_aw9_b2p{ f0: NIL, f1: NIL, s: raw mks_aw9_b2p(), z: 1i64 };
+    FN_aw9_b2p:n1_1 = FN_aw9_b2p{ f0: NIL, f1: NIL, s: raw mks_aw9_b2p(), z: 1i64 };
+    FN_aw9_b2p:n0_0 = FN_aw9_b2p{ f0: @n1_0, f1: @n1_1, s: raw mks_aw9_b2p(), z: 1i64 };
+    func fixed uint8[](FN_aw9_b2p->) never fails:g0 = getv0_aw9_b2p;
+    FN_aw9_b2p:t0 = FN_aw9_b2p{ f0: @n1_0, f1: @n1_1, s: raw mks_aw9_b2p(), z: 1i64 };
+    FN_aw9_b2p:t1 = FN_aw9_b2p{ f0: @n1_0, f1: @n1_1, s: raw mks_aw9_b2p(), z: 1i64 };
+    fixed uint8[]:vw0 = raw getv0_aw9_b2p(@t0);
+    fixed uint8[]:vw1 = raw getv0_aw9_b2p(@t1);
+    discard(raw wsf_aw9_b2p(@nx));
+    pass (((vw0[0i64] => int64) + (vw1[0i64] => int64)) => int64) - 187i64;
+};
+func:cell_main_aw9_b2p = int32() never fails { pass (((raw f_aw9_b2p(1i64)) + 60i64) =>! int32); };
+// ITS TWIN `aw9_b2p_dv`: main refuses it too (err=3ff1ecd636a76dc6 BORROW-015@17:35), so the price is at parity. From
+// `nitpick/.internal/aw9-2026-11-22/cells/cand/aw9_b2p_dv.npk`.
+func:mk_aw9_b2p_dv = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks_aw9_b2p_dv = string() never fails { pass string_concat("a", "b"); };
+struct:FN_aw9_b2p_dv = { FN_aw9_b2p_dv->?:f0; FN_aw9_b2p_dv->?:f1; string:s; int64:z; };
+func:wsf_aw9_b2p_dv = int64(FN_aw9_b2p_dv->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+func:getv0_aw9_b2p_dv = fixed uint8[](FN_aw9_b2p_dv->:o) never fails { FN_aw9_b2p_dv->:p = (<-o).f0 ??! E5; pass string_bytes((<-p).s); };
+func:f_aw9_b2p_dv = int64(int64:n) never fails {
+    FN_aw9_b2p_dv:nx = FN_aw9_b2p_dv{ f0: NIL, f1: NIL, s: raw mks_aw9_b2p_dv(), z: 1i64 };
+    FN_aw9_b2p_dv:n1_0 = FN_aw9_b2p_dv{ f0: NIL, f1: NIL, s: raw mks_aw9_b2p_dv(), z: 1i64 };
+    FN_aw9_b2p_dv:n1_1 = FN_aw9_b2p_dv{ f0: NIL, f1: NIL, s: raw mks_aw9_b2p_dv(), z: 1i64 };
+    FN_aw9_b2p_dv:n0_0 = FN_aw9_b2p_dv{ f0: @n1_0, f1: @n1_1, s: raw mks_aw9_b2p_dv(), z: 1i64 };
+    func fixed uint8[](FN_aw9_b2p_dv->) never fails:g0 = getv0_aw9_b2p_dv;
+    FN_aw9_b2p_dv:t0 = FN_aw9_b2p_dv{ f0: @n1_0, f1: @n1_1, s: raw mks_aw9_b2p_dv(), z: 1i64 };
+    FN_aw9_b2p_dv:t1 = FN_aw9_b2p_dv{ f0: @n1_0, f1: @n1_1, s: raw mks_aw9_b2p_dv(), z: 1i64 };
+    fixed uint8[]:vw0 = string_bytes(n1_0.s);
+    fixed uint8[]:vw1 = raw getv0_aw9_b2p_dv(@t1);
+    discard(raw wsf_aw9_b2p_dv(@nx));
+    pass (((vw0[0i64] => int64) + (vw1[0i64] => int64)) => int64) - 187i64;
+};
+func:cell_main_aw9_b2p_dv = int32() never fails { pass (((raw f_aw9_b2p_dv(1i64)) + 60i64) =>! int32); };
+func:main = int32(cstring[]:argv) { exit 0i32; };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};

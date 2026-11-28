@@ -1,0 +1,53 @@
+// expect-error: NITPICK-BORROW-015
+// expect-error-at: 30:21
+// 2026-11-26 (landing 177d2f, item 7, row 4: row B2, form RABC5B2Hfv (W7's B2, W11's function-value try, W13's H); rulings l.24755). A STORE
+// THROUGH AN UNWRAPPED POINTER, AMONG RABC5B2'S NEW REFUSALS (l.24755), DEF-681: `pv(@a, @vh)` stores into the out holder `vh.v` a view of `b.s`,
+// reached through `a.p`. `wss(@b)` then rewrites `b.s`, freeing the viewed bytes, and `vw[0]`, read from `vh.v`, reads them. CLOSED FACE: on main
+// (3a45b7c4) it is accepted, and it exits 140 on every road 0-8 at -O0 and -O2, and 97 under the detector; the same on row C's build; refused from
+// row B2 on. From `nitpick/.internal/w7-2026-11-21/cells/w7/w7_uw_ost.npk`.
+mod:rowb2_unwrap_store_w7_uw_ost;
+error:E5;
+func:mk = List<int64>() never fails { List<int64>:l = raw list_init::<int64>(1i64); drop list_push(@l, 7i64); pass l; };
+func:mks = string() never fails { pass string_concat("a", "b"); };
+struct:LF = { List<int64>:own; string:s; int64:z; };
+func:ws1 = int64(LF->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+impl:LF = { func:sv = fixed uint8[](LF->:self) never fails { pass string_bytes((<-self).s); }; };
+struct:SS = { SS->?:p; List<int64>:own; string:s; int64:z; };
+func:wss = int64(SS->:o) never fails { (<-o).s = string_concat("q", "r"); pass 7i64; };
+impl:SS = { func:sv = fixed uint8[](SS->:self) never fails { pass string_bytes((<-self).s); }; };
+func:getv = fixed uint8[](SS->:o) never fails { pass raw ((<-o).p ??! E5).sv(); };
+struct:VH = { fixed uint8[]:v; int64:z; };
+func:pv = int64(SS->:o, VH->:h) never fails { <-h = VH{ v: raw ((<-o).p ??! E5).sv(), z: 0i64 }; pass 7i64; };
+func:f = int64(int64:n) never fails {
+    LF:fA = LF{ own: raw mk(), s: raw mks(), z: 1i64 };
+    LF:fB = LF{ own: raw mk(), s: raw mks(), z: 1i64 };
+    LF:fC = LF{ own: raw mk(), s: raw mks(), z: 1i64 };
+    SS:c = SS{ p: NIL, own: raw mk(), s: raw mks(), z: 1i64 };
+    SS:b = SS{ p: @c, own: raw mk(), s: raw mks(), z: 1i64 };
+    SS:a = SS{ p: @b, own: raw mk(), s: raw mks(), z: 1i64 };
+    VH:vh = VH{ v: string_bytes(fA.s), z: 0i64 };
+    discard(raw pv(@a, @vh));
+    discard(raw wss(@b));
+    fixed uint8[]:vw = vh.v;
+    pass (vw[0i64] => int64) - 90i64;
+};
+func:main = int32(cstring[]:argv) { exit (((raw f(argv.len)) + 60i64) =>! int32); };
+func:failsafe = int32(Error:e) {
+    pick (e) {
+        (Unreachable)      { exit 74i32; },
+        (E5)               { exit 75i32; },
+        (IntOverflow)      { exit 91i32; },
+        (HeapOom)          { exit 92i32; },
+        (HeapBadRequest)   { exit 93i32; },
+        (WildLeak)         { exit 94i32; },
+        (StackExhausted)   { exit 96i32; },
+        (MachineFault)     { exit 97i32; },
+        (OutOfBounds)      { exit 98i32; },
+        (DivByZero)        { exit 88i32; },
+        (DivOverflow)      { exit 89i32; },
+        (LimitViolated)    { exit 95i32; },
+        (DecreasesViolated) { exit 95i32; },
+        (*)                { exit 99i32; }
+    }
+    exit 9i32;
+};
