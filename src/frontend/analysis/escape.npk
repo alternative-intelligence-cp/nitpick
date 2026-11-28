@@ -115,6 +115,7 @@ pub struct:Escape = {
     // conservative — it refuses a program that is in fact fine — and conservative
     // is the direction a borrow checker is allowed to be wrong in.
     bool:reporting;
+    bool:noload;   // 177d2f's item 7 (F8): DEF-681's load roads off, for the aliasing walk's replay of main's own walk (`esc0`)
     bool:changed;
     // `escape_pick_gives` asks `collect_gives_refs` for the `give` operands themselves (E-c, landing 177a).
     bool:gives_ids;
@@ -349,7 +350,7 @@ pub func:escape_init = Escape(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
     Escape:x = Escape{ ast: ast, tab: tab, types: types, etypes: etypes,
                        diags: diags, tr: tr, holds: mem =>! wild bool->,
                        holds_count: size =>! int32, redef: rdmem =>! wild bool->,
-                       reporting: false, changed: false, gives_ids: false,
+                       reporting: false, noload: false, changed: false, gives_ids: false,
                        givex: raw list_init::<int32>(8i64),
                        vr_head: hmem =>! wild int32->, vr_ptr: pmem =>! wild bool->,
                        vr_root: raw list_init::<int32>(64i64),

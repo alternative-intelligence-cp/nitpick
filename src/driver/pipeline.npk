@@ -588,11 +588,48 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // THE REFS DUMP (DEF-275's reading tool): the state after the fixpoint, before the
     // aliasing walk reads it; `npkc FILE --dump-refs OUT` writes the text.
     if (f.dump_refs) { f.refs_dump = raw escape_dump(@esc); }
+    // 177d2f's item 7 (F8): MAIN'S OWN REFS, for the aliasing walk's replay. The same escape pass again with DEF-681's load roads off (`noload`), its
+    // diagnostics in a list of its own: the refs main computes, which `pointer_targets_of` walks a second time with main's walk, for its end alone.
+    DiagList:dg0 = raw diaglist_init();
+    Escape:esc0 = raw escape_init(@f.g.ast, @f.g.tab, @f.types, @f.ets, @dg0,
+                                  @tr, @f.im);
+    esc0.noload = true;
+    int32:round0 = 0i32;
+    bool:settling0 = true;
+    while (settling0) decreases (raw ESCAPE_ROUNDS()) - round0 {
+        if (round0 >= (raw ESCAPE_ROUNDS())) { break; }
+        drop escape_new_round(@esc0);
+        drop escape_walk(@esc0, @f.g);
+        settling0 = raw escape_changed(@esc0);
+        round0 = round0 + 1i32;
+    }
+    drop escape_report_mode(@esc0);
+    drop escape_walk(@esc0, @f.g);
+    drop escape_report_door(@esc0);
 
     // THE ALIASING HALF OF D-004 (D-286, 1.5.5 step 1): `$$m` excludes, `$$i`
     // shares, `@` claims nothing. One forward walk per function, no fixpoint
     // -- a holder is never copied, so every party has one admission site.
-    Alias:als = raw alias_init(@f.g.ast, @f.g.tab, @f.types, @f.ets, @f.it, @f.diags, @tr, @esc);
+    // 177d2f's item 7 (F10, rulings l.32895 item 3, l.32936 item 2; F11, l.33185, l.33275): MAIN'S ALIASING WALK, A WHOLE PASS OF ITS OWN (`al0`), RUN
+    // FIRST. Main's aliasing code over `esc0`, main's own refs (the `noload` pass, every road the stack adds off in it), into a diagnostic list of its own
+    // (`da0`), whose entries go into `f.diags` at the function's end as F9 pushes `dg0`'s: so the stack refuses everything main's aliasing walk refuses,
+    // at every call main's walk makes. Inside it the walk is main's: `m0` turns off the in-walk replay (`mo`, `momark`) and row 4's `target_handed_in` seen.
+    // It alone writes the guard marks (`exprtypes_mark_alias`) that reach, the emitter and the encoder read; the stack's pass below keeps its own in a
+    // table of its own (`m1_mark`), so the run-time guards are main's. And it runs BEFORE the stack's pass (l.33275), so it reads `esc0` as `esc0`'s own
+    // pass left it. The stack's in-walk replay (`pointer_targets_of`) writes `esc0`'s caches and `cur_fn` (w7ag/CENSUS.md, row 7), so running `al0`
+    // first closes that and every other table to it (l.33275). Root B came through the marks, which the stack's walk wrote first (l.33185, l.33275).
+    DiagList:da0 = raw diaglist_init();
+    Alias:al0 = raw alias_init(@f.g.ast, @f.g.tab, @f.types, @f.ets, @f.it, @da0, @tr, @esc0, @esc0);
+    al0.m0 = true;
+    int32:ya0 = 0i32;
+    while (ya0 < nmods) decreases nmods - ya0 {
+        ModuleEntry:ea0 = raw graph_at(@f.g, ya0);
+        drop alias_module(@al0, DeclId{ index: ea0.root }, ea0.scope);
+        ya0 = ya0 + 1i32;
+    }
+
+    // The stack's own walk, after `al0` (F11): its refusals go into `f.diags` directly, and `da0`'s join them at the function's end.
+    Alias:als = raw alias_init(@f.g.ast, @f.g.tab, @f.types, @f.ets, @f.it, @f.diags, @tr, @esc, @esc0);   // F8: `esc0`, main's own refs
     int32:ya = 0i32;
     while (ya < nmods) decreases nmods - ya {
         ModuleEntry:ea = raw graph_at(@f.g, ya);
@@ -734,6 +771,45 @@ func:front_run_passes = int32(Front->:f, string:root) never fails {
     // next pass added after this line would inherit the gap silently.
     drop check_instantiations_from(@f.inst, @f.im, @f.bd, @tr, decided);
 
+
+    // 177d2f's item 7 (F9, rulings l.32745 item 2; l.32573 item 4's remedy): WHAT `esc0` FINDS COUNTS. After every other front pass has
+    // reported, each diagnostic in `esc0`'s own list at a site (file, line, col) where `f.diags` holds no report, of any code (a site the stack
+    // re-codes keeps its one report, D-332; rulings l.32998), is pushed into `f.diags` as itself (an owning
+    // copy: `diaglist_at` hands back a view whose strings `dg0` keeps), and `esc0`'s fixpoint ending unsettled while `esc`'s settled refuses
+    // the program as `esc`'s own unsettled end does (BORROW-010). It only adds reports, so nothing `esc` refuses is accepted here. Past
+    // `dg0`'s cap, the entries it kept are errors, so the program is refused either way.
+    if (settling0 && (!settling)) {
+        drop escape_unsettled(@esc, (raw ast_decl(@f.g.ast,
+            DeclId{ index: (raw graph_at(@f.g, 0i32)).root })).span);
+    }
+    int64:f9n0 = raw diaglist_count(@dg0);
+    int64:f9nf = raw diaglist_count(@f.diags);
+    for (int64:f9i in 0i64...f9n0) {
+        Diagnostic:f9d = raw diaglist_at(@dg0, f9i);
+        bool:f9held = false;
+        for (int64:f9j in 0i64...f9nf) {
+            Diagnostic:f9e = raw diaglist_at(@f.diags, f9j);
+            if ((f9e.span.file == f9d.span.file) && (f9e.span.line == f9d.span.line) && (f9e.span.col == f9d.span.col)) { f9held = true; }
+        }
+        if (!f9held) {
+            drop diaglist_push(@f.diags, raw diag_make(f9d.severity, string_concat("", f9d.code), string_concat("", f9d.message), f9d.span));
+        }
+    }
+    // F10: WHAT `al0` FINDS COUNTS, as `dg0`'s entries do above: each diagnostic in `da0` at a site where `f.diags` holds no report is pushed as itself
+    // (an owning copy). It only adds reports; past `da0`'s cap the entries it kept are errors, so the program is refused either way.
+    int64:a0n = raw diaglist_count(@da0);
+    int64:a0nf = raw diaglist_count(@f.diags);
+    for (int64:a0i in 0i64...a0n) {
+        Diagnostic:a0d = raw diaglist_at(@da0, a0i);
+        bool:a0held = false;
+        for (int64:a0j in 0i64...a0nf) {
+            Diagnostic:a0e = raw diaglist_at(@f.diags, a0j);
+            if ((a0e.span.file == a0d.span.file) && (a0e.span.line == a0d.span.line) && (a0e.span.col == a0d.span.col)) { a0held = true; }
+        }
+        if (!a0held) {
+            drop diaglist_push(@f.diags, raw diag_make(a0d.severity, string_concat("", a0d.code), string_concat("", a0d.message), a0d.span));
+        }
+    }
 
     int64:n = raw diaglist_count(@f.diags);
     if (n != 0i64) {

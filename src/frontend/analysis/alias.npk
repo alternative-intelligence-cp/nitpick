@@ -157,6 +157,7 @@ pub struct:Alias = {
     InternTable->:it;
     DiagList->:diags;
     TypeResolver->:tr;
+    Escape->:esc0;             // 177d2f's item 7 (F8): the refs of the escape pass with DEF-681's load roads off, main's own, for `pointer_targets_of`'s replay
     Escape->:esc;              // the view references a binding holds (D-325), computed at the escape fixpoint
     int32:scope;               // the module scope the function is folded in
     List<Party>:live;          // the live parties, a stack
@@ -189,11 +190,17 @@ pub struct:Alias = {
     int32:uwm;
     bool:uw_seen;   // the walk under 1 met an unwrap of a pointer, which the walk under 0 steps
     int64:dmark;    // under the second walk, the diagnostics' count before the first: one report per site, the first walk's
+    bool:mo;        // 177d2f's item 7 (F8): `pointer_targets_of`'s replay, main's walk over `esc0`
+    bool:m0;        // 177d2f's item 7 (F10, `al0`): main's whole pass, run before the stack's (F11): no in-walk replay, row 4's `target_handed_in` seen off
+    int64:momark;   // under it, the diagnostics' count before the first walk: it reports only at a site the first walk didn't refuse
+    List<int32>:m1_site;     // 177d2f's item 7 (F11, rulings l.33185 item 2, l.33248 item 1): THE STACK'S WALK'S GUARD SITES, a table of its own (F6's form,
+    List<int32>:m1_party;    // row B's l.29827): only `al0` (main's walk over `esc0`) writes `f.ets`'s, which reach, the emitter and the encoder read
+    List<int32>:m1_holder;
 };
 
 pub func:alias_init = Alias(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                             ExprTypes->:etypes, InternTable->:it, DiagList->:diags,
-                            TypeResolver->:tr, Escape->:esc) never fails {
+                            TypeResolver->:tr, Escape->:esc, Escape->:esc0) never fails {
     int32:sc = raw ast_stmt_count(ast);
     if (sc < 1i32) { sc = 1i32; }
     wild int8->:mem = alloc((sc => int64) * #size_of<int32>());
@@ -215,7 +222,7 @@ pub func:alias_init = Alias(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
         }
     }
     pass Alias{ ast: ast, tab: tab, types: types, etypes: etypes, it: it, diags: diags, tr: tr,
-                esc: esc,
+                esc: esc, esc0: esc0,
                 scope: 0i32,
                 live: raw list_init::<Party>(16i64),
                 frames: raw list_init::<int64>(16i64),
@@ -224,7 +231,8 @@ pub func:alias_init = Alias(Ast->:ast, SymbolTable->:tab, TypeTable->:types,
                 stmt_sym: map, stmt_count: sc, decl_sym: dmap, decl_count: dc,
                 spawn_call: raw expr_none(), skip_lent: false, skip_view: false, judge_only: 0i32,
                 pv_n: 0i64, pv_at: raw span_none(), pv_root: 0i32,
-                uwm: 1i32, uw_seen: false, dmark: 0i64 - 1i64 };
+                uwm: 1i32, uw_seen: false, dmark: 0i64 - 1i64, mo: false, momark: 0i64 - 1i64, m0: false,
+                m1_site: raw list_init::<int32>(4i64), m1_party: raw list_init::<int32>(4i64), m1_holder: raw list_init::<int32>(4i64) };
 };
 
 // The symbol a declaration (a parameter) made, or 0.
@@ -239,7 +247,22 @@ func:party_in_scope = bool(Alias->:x, Party:p) never fails {
     if (x.judge_only < 0i32) { pass (p.kind == (raw PARTY_TARGET())); }
     pass (p.site.index == x.judge_only);
 };
+// F11: `exprtypes_mark_alias`'s record, into the stack's walk's own table (one entry per site and party, the first holder kept, as there).
+func:m1_mark = NIL(Alias->:x, int32:site, int32:party, int32:holder) never fails {
+    for (int64:i in 0i64...x.m1_site.count) { if ((x.m1_site[i] == site) && (x.m1_party[i] == party)) { pass NIL; } }
+    drop list_push(@x.m1_site, site);
+    drop list_push(@x.m1_party, party);
+    drop list_push(@x.m1_holder, holder);
+    pass NIL;
+};
 func:alias_err = NIL(Alias->:x, move string:code, move string:msg, Span:sp) never fails {
+    if (x.mo) {   // 177d2f's item 7: main's walk adds a site, never a second report at one
+        int64:mn = raw diaglist_count(x.diags);
+        for (int64:i in x.momark...mn) {
+            Diagnostic:dg = raw diaglist_at(x.diags, i);
+            if ((dg.span.file == sp.file) && (dg.span.line == sp.line) && (dg.span.col == sp.col)) { pass NIL; }
+        }
+    }
     if (x.dmark >= 0i64) {   // DEF-720: the second walk adds a site, never a second report at one
         int64:dn = raw diaglist_count(x.diags);
         for (int64:i in x.dmark...dn) {
@@ -1605,7 +1628,8 @@ func:check_access_reported = bool(Alias->:x, ExprId:place, int32:extra, int32:ak
         // A VIEW'S EXTENT HAS NO GUARD (D-325): a computed pair against a view
         // party refuses statically, the closed direction.
         if ((cls == (raw OV_COMPUTED())) && (!summary_judged)) {
-            drop exprtypes_mark_alias(x.etypes, place.index, p.site.index, p.holder);
+            if (x.m0) { drop exprtypes_mark_alias(x.etypes, place.index, p.site.index, p.holder); }   // F11: `al0`'s, main's, alone
+            else { drop m1_mark(x, place.index, p.site.index, p.holder); }   // F11: the stack's walk's into its own table
             continue;
         }
         // A PLAIN ADDRESS INTO A `List` ELEMENT (DEF-304): view-like, frozen
@@ -2062,7 +2086,7 @@ func:sourced_targets = NIL(Alias->:x, ExprId:pe, int32:pty, int32:pte, int32:ski
 // ITS END REFUSES (DEF-430, landing 177d2b4): past 8 pointers it answered "no target" (`x5_chain_09`, 83). It refuses at `at`, the place its
 // caller is checking (a write or a handing-on through a pointer, a write by name against a view taken through one, or a lend's own pointer),
 // as `targets_held` does: where the caller then refuses that place itself, the two reports share a span and D-240's pass keeps the caller's.
-func:pointer_targets_of = NIL(Alias->:x, Span:at, ExprId:pe_in, int32:fuel, List<ViewRef>->:out) decreases fuel never fails {
+func:pointer_targets_rd = NIL(Alias->:x, Span:at, ExprId:pe_in, int32:fuel, List<ViewRef>->:out) decreases fuel never fails {
     if (fuel <= 0i32) { drop alias_err(x, raw BORROW_TOO_DEEP(), "checking this needs what a pointer points at, and that pointer is reached through more pointers than the aliasing analysis will follow (DEF-430), so this cannot be checked against the views and loans of what it points at -- bind a nearer pointer to a local, and go through that", at); pass NIL; }
     ExprId:pe = raw peel_ptr_casts(x, pe_in);   // DEF-343: the pointer under its casts
     if (raw expr_is_none(pe)) { pass NIL; }
@@ -2085,7 +2109,7 @@ func:pointer_targets_of = NIL(Alias->:x, Span:at, ExprId:pe_in, int32:fuel, List
     if (!(raw expr_is_none(inner))) {
         // reached through a pointer: resolve it, then each pointee's chain
         List<ViewRef>:innertgts = raw list_init::<ViewRef>(4i64);
-        drop pointer_targets_of(x, at, inner, fuel - 1i32, @innertgts);
+        drop pointer_targets_rd(x, at, inner, fuel - 1i32, @innertgts);
         for (int64:ii in 0i64...innertgts.count) {
             int32:rr = innertgts[ii].root;
             if (rr == 0i32) { continue; }
@@ -2119,6 +2143,28 @@ func:pointer_targets_of = NIL(Alias->:x, Span:at, ExprId:pe_in, int32:fuel, List
         if (!(raw ptr_ref_is_target(x, vr, pty, pte))) { continue; }
         drop list_push(out, vr);
     }
+    pass NIL;
+};
+
+// 177d2f's item 7 (F8): MAIN'S OWN WALK RUNS TOO, OVER MAIN'S OWN REFS, FOR ITS END. DEF-681's load readings give the walk above roads main's doesn't have: a
+// call's result holds the argument's own refs (`hp = raw walk(@n16)` holds `n16`'s `@n15`), each a start one hop below the argument with the whole fuel, and
+// what a load reading leads to (a store through it, a summary, a caller) is a ref of its own. Read first, such a road marks a pair in `seen`, and main's longer
+// road to the pair is cut short of the end that refused it (AW17's `aw17c`, AW16's `aw16b`, W14's `lv17`, all faulting at run time). So the walk runs as it is,
+// for the targets, and then main's walk, unchanged, over `esc0`: the escape pass run again with the load roads off, whose refs are main's. It is read for its
+// end alone: it reports only at a site the first walk didn't refuse (`momark`), and its targets are dropped.
+func:pointer_targets_of = NIL(Alias->:x, Span:at, ExprId:pe_in, int32:fuel, List<ViewRef>->:out) never fails {
+    int64:m0 = raw diaglist_count(x.diags);
+    drop pointer_targets_rd(x, at, pe_in, fuel, out);
+    if (x.mo || x.m0) { pass NIL; }   // F10: inside `al0` the walk is main's, with no replay
+    List<ViewRef>:mt = raw list_init::<ViewRef>(4i64);
+    Escape->:e1 = x.esc;
+    x.esc0.cur_fn = e1.cur_fn;
+    x.esc = x.esc0;
+    x.mo = true;
+    x.momark = m0;
+    drop pointer_targets_rd(x, at, pe_in, fuel, @mt);
+    x.mo = false;
+    x.esc = e1;
     pass NIL;
 };
 
